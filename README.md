@@ -16,6 +16,7 @@ Copilot and shell terminals, and an exact count of the AI cost and time the task
 [![License: MIT](https://img.shields.io/badge/license-MIT-122f5c)](LICENSE)
 
 [**Download for Windows**](https://github.com/UnreliableWitness/Shellie/releases/latest) ·
+[macOS](docs/macos-release.md) ·
 [Features](#features) ·
 [Getting started](#getting-started) ·
 [`.shellie.yml`](#configure-a-repo-with-shellieyml) ·
@@ -165,7 +166,7 @@ projects), and add your first repository. Every step can be skipped and finished
 | Platform | How |
 | --- | --- |
 | **Windows** | Download `Shellie-Setup.exe` from the [latest release](https://github.com/UnreliableWitness/Shellie/releases/latest). Shellie updates itself after that. |
-| **macOS** | Build from source (see [Development](#development)). macOS is where Shellie is developed; Windows is the release target. |
+| **macOS** (Apple Silicon) | Open `Shellie.dmg` from the [latest release](https://github.com/UnreliableWitness/Shellie/releases/latest) and drag Shellie to Applications; it updates itself from there. Until the signing secrets are set up ([docs/macos-release.md](docs/macos-release.md)) releases carry no Mac build: build from source (see [Development](#development)). |
 
 > [!NOTE]
 > Until the first signed build ships, Windows SmartScreen may warn about the installer. Choose **More info → Run
