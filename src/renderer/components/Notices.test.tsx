@@ -147,3 +147,51 @@ describe('notices', () => {
     expect(screen.getByText('Shellie 1.0.3 is ready')).toBeInTheDocument();
   });
 });
+
+describe('move to Applications notice', () => {
+  it('shows the Move card when update:needsMove is true', async () => {
+    installFakeApi({ 'update:needsMove': () => true });
+    render(<Notices />);
+    expect(
+      await screen.findByText('Move Shellie to Applications to get updates'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Move' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument();
+  });
+
+  it('shows no card when update:needsMove is false', async () => {
+    const { calls } = installFakeApi({ 'update:needsMove': () => false });
+    render(<Notices />);
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'update:needsMove')).toBe(true),
+    );
+    expect(screen.queryByText(/Move Shellie to Applications/)).toBeNull();
+  });
+
+  it('Not now hides it for this launch', async () => {
+    installFakeApi({ 'update:needsMove': () => true });
+    render(<Notices />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Not now' }),
+    );
+    expect(screen.queryByText(/Move Shellie to Applications/)).toBeNull();
+  });
+
+  it('Move calls update:moveToApplications and keeps the card when it returns false', async () => {
+    const { calls } = installFakeApi({
+      'update:needsMove': () => true,
+      'update:moveToApplications': () => false,
+    });
+    render(<Notices />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Move' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'update:moveToApplications')).toBe(
+        true,
+      ),
+    );
+    expect(
+      await screen.findByText('Move Shellie to Applications to get updates'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Move' })).toBeEnabled();
+  });
+});

@@ -42,6 +42,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `onboarding.step` | a step of first-run setup was left; `step` (`agents`, `connect`, `repository`), `outcome` (`continued`, `skipped`, `back`) |
 | `update.ready` | an update finished downloading (Windows); sent again when a newer one downloads while the first waits (#126); none |
 | `update.restart`, `update.later` | the choice on the update notice; none |
+| `update.move`, `update.moveLater` | the choice on the Move to Applications card (macOS build outside /Applications); none |
 | `update.checkFailed` | the first failed update check of a launch (Windows, #126; later failures are only logged); none, not the error text |
 | `whatsNew.shown` | Home showed the What's new card after an update (#126); `releases` (count covered), `fetched` (whether GitHub's release notes loaded) |
 | `whatsNew.dismissed`, `whatsNew.opened` | Dismiss on the What's new card, or its Release notes on GitHub link; none |

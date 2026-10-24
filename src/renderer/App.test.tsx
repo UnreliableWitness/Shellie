@@ -108,6 +108,7 @@ describe('App', () => {
         'settings:get',
         'tasks:list',
         'time:focus',
+        'update:needsMove',
         'update:status',
       ]),
     );

@@ -452,6 +452,10 @@ export type Channels = {
   'update:status': { args: []; result: PendingUpdate | null };
   /** Quits Shellie and starts the downloaded update. */
   'update:install': { args: []; result: void };
+  /** True when a packaged macOS build runs outside /Applications and so cannot update itself. */
+  'update:needsMove': { args: []; result: boolean };
+  /** Moves Shellie to /Applications; true when the move started (Electron relaunches from there), false on refusal or error. */
+  'update:moveToApplications': { args: []; result: boolean };
   /** Home's What's new card for the releases since the last dismissed one; null when none is due (always in dev). */
   'app:whatsNew': { args: []; result: WhatsNew | null };
   'app:info': {

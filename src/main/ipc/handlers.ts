@@ -311,6 +311,10 @@ export type Services = {
     pending(): PendingUpdate | null;
     /** Quits and starts the update; false when none is downloaded. */
     install(): boolean;
+    /** macOS packaged build outside /Applications (it cannot update from there). */
+    needsMove(): boolean;
+    /** Moves the app to /Applications; false on refusal or error. */
+    moveToApplications(): boolean;
   };
   /** Home's What's new card after an update (#126). Absent in dev and in tests. */
   whatsNew?: { get(): Promise<WhatsNew | null> };
@@ -3793,6 +3797,9 @@ export function createHandlers(s: Services): Handlers {
       officialAsOf: OFFICIAL_RATES_AS_OF,
     }),
     'update:status': async () => s.update?.pending() ?? null,
+    'update:needsMove': async () => s.update?.needsMove() ?? false,
+    'update:moveToApplications': async () =>
+      s.update?.moveToApplications() ?? false,
     'update:install': async () => {
       if (!s.update?.pending())
         throw new Error('No update is ready to install');

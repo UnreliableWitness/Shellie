@@ -76,6 +76,71 @@ function UpdateNotice() {
   );
 }
 
+/** macOS builds update only from /Applications: offers to move the app there, once per launch. */
+function MoveNotice() {
+  const notify = useStore((s) => s.notify);
+  const [needsMove, setNeedsMove] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void api()
+      .invoke('update:needsMove')
+      .then((v) => {
+        if (live && v === true) setNeedsMove(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!needsMove || dismissed) return null;
+  const move = async () => {
+    track('update.move');
+    setBusy(true);
+    const started = await tryInvoke(
+      () => api().invoke('update:moveToApplications'),
+      notify,
+    );
+    // On success Electron relaunches from /Applications; a refusal leaves the card for another try.
+    if (!started) setBusy(false);
+  };
+  return (
+    <div className="notice notice-update">
+      <div className="notice-update-body">
+        <strong>Move Shellie to Applications to get updates</strong>
+        <span className="muted small">
+          Shellie can only update itself from the Applications folder. It
+          restarts from there.
+        </span>
+        <div className="notice-update-actions">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={move}
+            disabled={busy}
+          >
+            Move
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              track('update.moveLater');
+              setDismissed(true);
+            }}
+            disabled={busy}
+          >
+            Not now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export const NOTICE_MS = { info: 6000, warn: 10000, error: 12000 } as const;
 /** Messages longer than this get a 4-line clamp and a Show all toggle. */
 export const LONG_NOTICE = 200;
@@ -140,6 +205,7 @@ export function Notices() {
         <NoticeItem key={n.id} notice={n} />
       ))}
       <UpdateNotice />
+      <MoveNotice />
     </div>
   );
 }

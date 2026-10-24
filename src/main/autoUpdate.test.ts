@@ -86,23 +86,105 @@ describe('canAutoUpdate', () => {
   });
 
   it('is on for packaged Windows builds and packaged macOS builds in Applications', () => {
-    expect(canAutoUpdate({ isPackaged: true, platform: 'win32', enabled: undefined })).toBe(true);
-    expect(canAutoUpdate({ isPackaged: true, platform: 'darwin', enabled: undefined, inApplicationsFolder: true })).toBe(true);
-    expect(canAutoUpdate({ isPackaged: true, platform: 'darwin', enabled: undefined, inApplicationsFolder: false })).toBe(false);
-    expect(canAutoUpdate({ isPackaged: true, platform: 'darwin', enabled: undefined })).toBe(false);
-    expect(canAutoUpdate({ isPackaged: true, platform: 'darwin', enabled: false, inApplicationsFolder: true })).toBe(false);
-    expect(canAutoUpdate({ isPackaged: false, platform: 'darwin', enabled: undefined, inApplicationsFolder: true })).toBe(false);
-    expect(canAutoUpdate({ isPackaged: true, platform: 'linux', enabled: undefined, inApplicationsFolder: true })).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'win32',
+        enabled: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(true);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: false,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: false,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'linux',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
   });
 });
 
 describe('needsMoveToApplications', () => {
   it('asks to move only packaged macOS builds outside Applications that would update', () => {
-    expect(needsMoveToApplications({ isPackaged: true, platform: 'darwin', enabled: undefined, inApplicationsFolder: false })).toBe(true);
-    expect(needsMoveToApplications({ isPackaged: true, platform: 'darwin', enabled: undefined, inApplicationsFolder: true })).toBe(false);
-    expect(needsMoveToApplications({ isPackaged: true, platform: 'darwin', enabled: false, inApplicationsFolder: false })).toBe(false);
-    expect(needsMoveToApplications({ isPackaged: false, platform: 'darwin', enabled: undefined, inApplicationsFolder: false })).toBe(false);
-    expect(needsMoveToApplications({ isPackaged: true, platform: 'win32', enabled: undefined, inApplicationsFolder: false })).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(true);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: false,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: false,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'win32',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -111,7 +193,11 @@ describe('startAutoUpdate', () => {
     for (const over of [
       { isPackaged: false },
       { platform: 'darwin' as const, arch: 'arm64' },
-      { platform: 'darwin' as const, arch: 'arm64', inApplicationsFolder: false },
+      {
+        platform: 'darwin' as const,
+        arch: 'arm64',
+        inApplicationsFolder: false,
+      },
       { enabled: false },
     ]) {
       const { handle, updater, timeouts, intervals } = setup(over);
