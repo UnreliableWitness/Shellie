@@ -32,6 +32,16 @@ const config: ForgeConfig = {
     ignore: (file: string) => !keepInPackage(file),
     executableName: 'Shellie',
     icon: 'assets/icon/shellie',
+    // macOS only (Windows ignores extendInfo): the hardened runtime asks for these when a CLI run in a
+    // Shellie terminal uses the microphone, camera or Apple Events.
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        'A program running in a Shellie terminal wants to use the microphone.',
+      NSCameraUsageDescription:
+        'A program running in a Shellie terminal wants to use the camera.',
+      NSAppleEventsUsageDescription:
+        'A program running in a Shellie terminal wants to control another app.',
+    },
     ...(signing ? { windowsSign: signing } : {}),
     // macOS: signed and notarized only when CI sets MAC_SIGN=true (see tools/forge/macSigning.mjs).
     ...macSigning(process.env),

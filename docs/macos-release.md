@@ -12,11 +12,14 @@ Updates only work from `/Applications`. Started from the mounted DMG (or any oth
 shows a card, "Move Shellie to Applications to get updates", with **Move** (moves the app and relaunches it from
 Applications) and **Not now** (hides the card until the next launch).
 
+Switching from a source build: the signed app asks once for the "Shellie Safe Storage" keychain item. Choose **Always
+Allow**; Deny makes every connection ask for its PAT again.
+
 ## How it ships
 
 - `.github/workflows/ci.yml` job `macos-release` runs on `macos-latest` after `windows-release` and reuses its tag, so
   both platforms carry the same version. If Windows made no release, it publishes nothing.
-- Signing is on when all the secrets below exist (`MAC_SIGN=true`). It imports the certificate into a temporary keychain
+- Signing is on when all the secrets below and the variable `APPLE_TEAM_ID` exist (`MAC_SIGN=true`). It imports the certificate into a temporary keychain
   (deleted in an `always()` step), signs with the hardened runtime (`assets/entitlements.mac.plist`), notarizes with the
   App Store Connect API key (`tools/forge/macSigning.mjs`) and uploads the DMG and ZIP to the run's release with
   `gh release upload --clobber`.
@@ -54,7 +57,8 @@ Not done yet; it needs the setup above.
 ## Known gaps
 
 - The first signed build, notarization and the vN to vN+1 update are unverified until the owner's setup.
-- Entitlements are `allow-jit` and `allow-unsigned-executable-memory` only. `disable-library-validation`, and
-  microphone, camera or Apple Events for CLIs run in terminals, may be needed; the first signed run decides.
+- Entitlements are `allow-jit`, `allow-unsigned-executable-memory`, microphone, camera and Apple Events (for CLIs run
+  in terminals, with matching usage descriptions in Info.plist). `disable-library-validation` may still be needed; the
+  first signed run decides.
 - The DMG itself is not signed or notarized (the `.app` inside is).
 - No Intel build, no delta updates.

@@ -36,7 +36,7 @@ Download the installer from GitHub: open the Actions run for the commit, then th
     - Publish vN+1. Within about an hour (or restart Shellie and wait 30 s), a notice says the new version is downloaded and a dialog offers Restart now or Later.
     - Pick Later, quit Shellie and start it again from the Start menu: Settings shows version N+1.
     - Repeat with vN+2 and pick Restart now: Shellie closes, restarts and shows version N+2. Open terminals are closed by the restart.
-    - The first start after an install (Squirrel's `--squirrel-firstrun`) does not check; the hourly check still does.
+    - The first start after an install (Squirrel's `--squirrel-firstrun`) does not check; the 10-minute check still does.
     - With `"autoUpdate": false` in `%APPDATA%\Shellie\settings.json`, no update is downloaded.
     - `https://update.electronjs.org/UnreliableWitness/Shellie/win32-x64/<N>/RELEASES` returns a line naming the vN+1 `.nupkg`.
 

@@ -113,7 +113,7 @@ function MoveNotice() {
         <strong>Move Shellie to Applications to get updates</strong>
         <span className="muted small">
           Shellie can only update itself from the Applications folder. It
-          restarts from there.
+          restarts from there. Open terminals close.
         </span>
         <div className="notice-update-actions">
           <button
