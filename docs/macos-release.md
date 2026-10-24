@@ -44,7 +44,7 @@ Once, about 20 minutes:
 Not done yet; it needs the setup above.
 
 1. Install vN from the DMG into `/Applications` and start it.
-2. Merge something to `main`. Within about 25 minutes (30 s first check, then hourly, plus the build) the update card
+2. Merge something to `main`. Within about 25 minutes (30 s first check, then every 10 minutes, plus the build) the update card
    appears.
 3. **Restart and update** relaunches on vN+1. This proves `quitAndInstall` gets past the `will-quit` hold (up to 2 s)
    in `src/main.ts`.
