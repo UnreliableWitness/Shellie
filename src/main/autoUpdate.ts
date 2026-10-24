@@ -1,10 +1,14 @@
 /**
- * Auto-update for packaged Windows builds (Squirrel.Windows), fed by update.electronjs.org.
+ * Auto-update for packaged Windows builds (Squirrel.Windows) and packaged macOS builds (Squirrel.Mac), fed by
+ * update.electronjs.org.
  *
  * update.electronjs.org reads the GitHub Releases of a public repo: the newest non-draft, non-prerelease
- * release with a semver tag that has an `.exe` asset, plus its `RELEASES` file and the `.nupkg` that file
- * names. Electron's autoUpdater fetches `<feed>/RELEASES`, downloads the package in the background and
- * Squirrel runs the new version on the next start; `quitAndInstall` applies it right away. When a download is
+ * release with a semver tag. On Windows it needs an `.exe` asset, plus its `RELEASES` file and the `.nupkg`
+ * that file names; Electron's autoUpdater fetches `<feed>/RELEASES`, downloads the package in the background
+ * and Squirrel runs the new version on the next start. On macOS it needs a `darwin` zip asset (the app,
+ * signed with the same identity as the installed one, which Squirrel.Mac checks), and the app must run from
+ * /Applications (a translocated or read-only location cannot replace itself). `quitAndInstall` applies it
+ * right away. When a download is
  * ready, `onReady` tells the app, which offers Restart and update in a quiet in-app card (no modal dialog).
  *
  * Checks keep running after a download (#126): every merge to main is a release, so a newer one often appears
@@ -69,6 +73,8 @@ export type AutoUpdateDeps = {
   argv: readonly string[];
   /** The `autoUpdate` setting; undefined means on. */
   enabled: boolean | undefined;
+  /** macOS only: the app runs from /Applications (undefined counts as false). */
+  inApplicationsFolder?: boolean;
   updater: UpdaterLike;
   /** A downloaded update is ready; `version` is parsed from the release name, null when it has none. */
   onReady(version: string | null): void;
@@ -107,11 +113,26 @@ export function updateFeedUrl(
   return `${UPDATE_SERVER}/${UPDATE_REPO}/${platform}-${arch}/${version}`;
 }
 
-/** Only installed (packaged) Windows builds update; dev runs and macOS never do. */
-export function canAutoUpdate(
-  d: Pick<AutoUpdateDeps, 'isPackaged' | 'platform' | 'enabled'>,
-): boolean {
-  return d.isPackaged && d.platform === 'win32' && d.enabled !== false;
+type UpdateGate = Pick<
+  AutoUpdateDeps,
+  'isPackaged' | 'platform' | 'enabled' | 'inApplicationsFolder'
+>;
+
+/** Installed (packaged) Windows builds and packaged macOS builds in /Applications update; dev runs never do. */
+export function canAutoUpdate(d: UpdateGate): boolean {
+  if (!d.isPackaged || d.enabled === false) return false;
+  if (d.platform === 'win32') return true;
+  return d.platform === 'darwin' && d.inApplicationsFolder === true;
+}
+
+/** A packaged macOS build outside /Applications that would otherwise update: the app should offer to move. */
+export function needsMoveToApplications(d: UpdateGate): boolean {
+  return (
+    d.isPackaged &&
+    d.platform === 'darwin' &&
+    d.enabled !== false &&
+    d.inApplicationsFolder !== true
+  );
 }
 
 /**
