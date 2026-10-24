@@ -23,7 +23,11 @@ describe('macSigning', () => {
       appleApiKeyId: keys.APPLE_API_KEY_ID,
       appleApiIssuer: keys.APPLE_API_ISSUER,
     });
-    const sign = result?.osxSign as { optionsForFile: (f: string) => unknown };
+    const sign = result?.osxSign as {
+      continueOnError: boolean;
+      optionsForFile: (f: string) => unknown;
+    };
+    expect(sign.continueOnError).toBe(false);
     expect(sign.optionsForFile('x')).toEqual({
       hardenedRuntime: true,
       entitlements: 'assets/entitlements.mac.plist',

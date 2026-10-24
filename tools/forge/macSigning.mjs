@@ -10,6 +10,8 @@ export function macSigning(env) {
     throw new Error(`Mac signing is on but missing: ${missing.join(', ')}`);
   return {
     osxSign: {
+      // Packager logs and carries on after a sign error unless this is false; fail the build instead.
+      continueOnError: false,
       // Every file, node-pty's .node and spawn-helper included, gets the hardened runtime.
       optionsForFile: () => ({
         hardenedRuntime: true,
