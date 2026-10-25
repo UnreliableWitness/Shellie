@@ -204,7 +204,11 @@ describe('cost server end to end', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     await vi.waitFor(() => expect(again.stored.size).toBe(2));
     expect([...again.stored.keys()].sort()).toEqual(['cc:m3', 'cc:m4']);
-    expect(first.ledger.dirty(100)).toEqual([]);
+    // The server stores before it answers; the ledger is marked clean only once the answer arrives.
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(first.ledger.dirty(100)).toEqual([]);
+    });
     const ids = again.bodies.flatMap((b) =>
       (JSON.parse(b) as { records: { id: string }[] }).records.map((r) => r.id),
     );
