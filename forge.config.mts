@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
+import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
@@ -9,6 +10,7 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { keepInPackage } from './tools/forge/packageFilter.mjs';
 import { trimLocales } from './tools/forge/trimLocales.mjs';
+import { macSigning } from './tools/forge/macSigning.mjs';
 
 // Signing is switched on by CI only (Azure Artifact Signing), see tools/windows-sign.
 const signing = process.env.ARTIFACT_SIGNING_ENDPOINT
@@ -30,7 +32,19 @@ const config: ForgeConfig = {
     ignore: (file: string) => !keepInPackage(file),
     executableName: 'Shellie',
     icon: 'assets/icon/shellie',
+    // macOS only (Windows ignores extendInfo): the hardened runtime asks for these when a CLI run in a
+    // Shellie terminal uses the microphone, camera or Apple Events.
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        'A program running in a Shellie terminal wants to use the microphone.',
+      NSCameraUsageDescription:
+        'A program running in a Shellie terminal wants to use the camera.',
+      NSAppleEventsUsageDescription:
+        'A program running in a Shellie terminal wants to control another app.',
+    },
     ...(signing ? { windowsSign: signing } : {}),
+    // macOS: signed and notarized only when CI sets MAC_SIGN=true (see tools/forge/macSigning.mjs).
+    ...macSigning(process.env),
   },
   rebuildConfig: {},
   hooks: {
@@ -59,6 +73,7 @@ const config: ForgeConfig = {
         'https://raw.githubusercontent.com/UnreliableWitness/Shellie/main/assets/icon/shellie.ico',
       ...(signing ? { windowsSign: signing } : {}),
     }),
+    new MakerDMG({ format: 'ULFO' }, ['darwin']),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),

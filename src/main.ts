@@ -108,7 +108,11 @@ import {
   trackHandlerFailures,
 } from './main/telemetry/helpers';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
-import { type AutoUpdate, startAutoUpdate } from './main/autoUpdate';
+import {
+  type AutoUpdate,
+  needsMoveToApplications,
+  startAutoUpdate,
+} from './main/autoUpdate';
 import { appUrlMatcher, guardWindow, trustedSender } from './main/windowGuards';
 import {
   chromeColors,
@@ -190,6 +194,8 @@ const timeWrites = new Set<Promise<void>>();
 /** Window focus, for active time (set once the tracker exists). */
 let onWindowFocus: (focused: boolean) => void = () => {};
 let updates: AutoUpdate | null = null;
+const inApplicationsFolder = () =>
+  process.platform === 'darwin' && app.isInApplicationsFolder();
 /** Set when an update has downloaded; the renderer offers Restart and update. */
 let pendingUpdate: PendingUpdate | null = null;
 
@@ -809,6 +815,21 @@ async function boot(): Promise<void> {
       update: {
         pending: () => pendingUpdate,
         install: () => updates?.install() ?? false,
+        needsMove: () =>
+          needsMoveToApplications({
+            isPackaged: app.isPackaged,
+            platform: process.platform,
+            enabled: settings.get().autoUpdate,
+            inApplicationsFolder: inApplicationsFolder(),
+          }),
+        moveToApplications: () => {
+          try {
+            return app.moveToApplicationsFolder();
+          } catch (e) {
+            console.error('[update] could not move to Applications', e);
+            return false;
+          }
+        },
       },
       // Dev builds keep package.json's fixed version, which has no release.
       whatsNew: app.isPackaged
@@ -1084,6 +1105,7 @@ async function boot(): Promise<void> {
       version: app.getVersion(),
       argv: process.argv,
       enabled: settings.get().autoUpdate,
+      inApplicationsFolder: inApplicationsFolder(),
       updater: autoUpdater,
       onReady: (version) => {
         pendingUpdate = { version };

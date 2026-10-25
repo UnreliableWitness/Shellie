@@ -5,6 +5,7 @@ import {
   MIN_WAKE_GAP_MS,
   STUCK_CHECK_MS,
   canAutoUpdate,
+  needsMoveToApplications,
   releaseVersion,
   startAutoUpdate,
   updateFeedUrl,
@@ -82,17 +83,121 @@ describe('canAutoUpdate', () => {
     expect(
       canAutoUpdate({ ...base, isPackaged: false, enabled: undefined }),
     ).toBe(false);
+  });
+
+  it('is on for packaged Windows builds and packaged macOS builds in Applications', () => {
     expect(
-      canAutoUpdate({ ...base, platform: 'darwin', enabled: undefined }),
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'win32',
+        enabled: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(true);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: false,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: false,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      canAutoUpdate({
+        isPackaged: true,
+        platform: 'linux',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('needsMoveToApplications', () => {
+  it('asks to move only packaged macOS builds outside Applications that would update', () => {
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(true);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'darwin',
+        enabled: false,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: false,
+        platform: 'darwin',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
+    ).toBe(false);
+    expect(
+      needsMoveToApplications({
+        isPackaged: true,
+        platform: 'win32',
+        enabled: undefined,
+        inApplicationsFolder: false,
+      }),
     ).toBe(false);
   });
 });
 
 describe('startAutoUpdate', () => {
-  it('does nothing in dev, on macOS or when turned off', () => {
+  it('does nothing in dev, on macOS outside Applications or when turned off', () => {
     for (const over of [
       { isPackaged: false },
-      { platform: 'darwin' as const },
+      { platform: 'darwin' as const, arch: 'arm64' },
+      {
+        platform: 'darwin' as const,
+        arch: 'arm64',
+        inApplicationsFolder: false,
+      },
       { enabled: false },
     ]) {
       const { handle, updater, timeouts, intervals } = setup(over);
@@ -100,6 +205,22 @@ describe('startAutoUpdate', () => {
       expect(updater.setFeedURL).not.toHaveBeenCalled();
       expect(timeouts.size + intervals.size).toBe(0);
     }
+  });
+
+  it('on macOS in Applications: sets the darwin-arm64 feed and checks after the first delay', () => {
+    const { updater, timeouts } = setup({
+      platform: 'darwin',
+      arch: 'arm64',
+      version: '1.2.0',
+      inApplicationsFolder: true,
+    });
+    expect(updater.setFeedURL).toHaveBeenCalledWith({
+      url: updateFeedUrl('darwin', 'arm64', '1.2.0'),
+    });
+    const [first] = [...timeouts.values()];
+    expect(first.ms).toBe(FIRST_CHECK_DELAY_MS);
+    first.fn();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
   });
 
   it('sets the feed, checks after a short delay and then every interval', () => {

@@ -1382,7 +1382,12 @@ describe('handlers: update', () => {
     const install = vi.fn(() => true);
     let pending: { version: string | null } | null = null;
     const { h } = await harness(fakeCrypto(), {
-      update: { pending: () => pending, install },
+      update: {
+        pending: () => pending,
+        install,
+        needsMove: () => false,
+        moveToApplications: () => false,
+      },
     });
     await expect(h['update:install']()).rejects.toThrow();
     expect(install).not.toHaveBeenCalled();
@@ -1390,6 +1395,24 @@ describe('handlers: update', () => {
     expect(await h['update:status']()).toEqual({ version: '1.0.3' });
     await h['update:install']();
     expect(install).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports whether Shellie must move to Applications and starts the move', async () => {
+    const { h: dev } = await harness();
+    expect(await dev['update:needsMove']()).toBe(false);
+    expect(await dev['update:moveToApplications']()).toBe(false);
+    const moveToApplications = vi.fn(() => true);
+    const { h } = await harness(fakeCrypto(), {
+      update: {
+        pending: () => null,
+        install: () => false,
+        needsMove: () => true,
+        moveToApplications,
+      },
+    });
+    expect(await h['update:needsMove']()).toBe(true);
+    expect(await h['update:moveToApplications']()).toBe(true);
+    expect(moveToApplications).toHaveBeenCalledTimes(1);
   });
 
   it("gives no What's new card in dev, and the service's card in packaged builds", async () => {
