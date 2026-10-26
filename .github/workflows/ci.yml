@@ -99,6 +99,11 @@ jobs:
   # a merge that only touches the agent pipeline, docs, art sources, tests or dev tools makes no new version.
   release-needed:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # In the release queue: it runs after a release still being made has been tagged, so it compares with the
+    # real newest release (otherwise two quick merges both saw the older tag and the second released again).
+    concurrency:
+      group: windows-release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
