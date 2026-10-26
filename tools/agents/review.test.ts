@@ -249,4 +249,12 @@ describe('runReview', () => {
     expect(d.prompts[0]).toContain('Problem: p');
     expect(d.prompts[0]).toContain('src/a.ts');
   });
+
+  it('skips a PR it cannot tie to an issue', async () => {
+    const gh = fake();
+    gh.pr.body = 'no link';
+    const d = opts(gh, [answer()]);
+    await runReview(d.o as never);
+    expect(d.prompts).toEqual([]);
+  });
 });

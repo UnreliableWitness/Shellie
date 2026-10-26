@@ -80,6 +80,10 @@ export async function runReview({
         reviews: {},
       };
       if (prState.reviews[sha]) continue;
+      if (!Number.isInteger(prState.issue)) {
+        summary(`PR #${pr.number}: skip (no "Fixes #n" to find its issue)`);
+        continue;
+      }
       if (
         now.getTime() - Date.parse(own.failedAt?.[pr.number] ?? '') <
         RETRY_MS
