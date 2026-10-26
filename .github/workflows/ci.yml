@@ -1,20 +1,20 @@
 name: CI
 on:
+  # main and v* tags only: a PR runs through pull_request, so a branch push no longer runs CI a second time
   push:
-    branches: ['**']
+    branches: [main]
     tags: ['v*']
   pull_request:
+  # a branch without a PR: Actions › CI › Run workflow
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    name: test (macos-latest)
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -23,23 +23,52 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # the same on both systems, so once is enough
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       # The packaged app must load node-pty and spawn a pty (Windows does this in the installer jobs).
       # Unsigned here (MAC_SIGN is set only in macos-release); make also checks the DMG and zip makers.
       - name: Make and smoke-test (macOS)
-        if: runner.os == 'macOS'
         env:
           APPINSIGHTS_CONNECTION_STRING: ${{ vars.APPINSIGHTS_CONNECTION_STRING }}
         run: |
           npx electron-forge make --arch=arm64
           node tools/forge/smoke.mjs
 
+  # The suite takes ~15 min on one Windows runner (real git and processes are slow there) against ~3 on macOS,
+  # so Windows runs it in three parts at once.
+  test-windows:
+    name: test (windows-latest, part ${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --shard=${{ matrix.shard }}/3
+
+  # One check named like the old Windows job, so required checks and the agents' merge rule keep working.
+  test-windows-result:
+    name: test (windows-latest)
+    needs: test-windows
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All Windows parts passed
+        run: test "${{ needs.test-windows.result }}" = success
+
   windows-installer:
     # Unsigned build for pull requests and non-release branches. Never signs.
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
-    needs: test
+    # Not waiting for the tests: it is an unsigned artifact only, and the release jobs below still need them.
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -71,7 +100,7 @@ jobs:
     # Every push to main (each merged PR) publishes the next minor version, so it can be tested through
     # auto-update; a v* tag pushed by hand publishes exactly that version.
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: test
+    needs: [test, test-windows]
     # One release at a time, so two quick merges never pick the same version. A newer push replaces a
     # waiting one; its release then contains both.
     concurrency:
