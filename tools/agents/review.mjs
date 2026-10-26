@@ -191,6 +191,15 @@ export async function runReview({
             verdict: review.verdict,
             at: now.toISOString(),
             findings: review.findings.length,
+            // what the fixer works from: the blocking findings, kept short
+            items: review.findings
+              .filter((f) => f.severity !== 'minor')
+              .slice(0, 20)
+              .map((f) => ({
+                ...f,
+                problem: f.problem.slice(0, 500),
+                scenario: f.scenario.slice(0, 500),
+              })),
             tokens: r.tokens,
           },
         },

@@ -28,7 +28,7 @@ const input = (
     issue: 4,
     reviews: { [sha]: { verdict: 'approve', items: [] } },
     fixRounds: 0,
-    lastSeenCommentId: 10,
+    lastSeenAt: '2026-10-26T10:00:00Z',
     ...prState,
   },
   checks: { state: 'green', failed: [] as string[] },
@@ -89,7 +89,12 @@ describe('decidePr: fixing', () => {
     const comment = decidePr(
       input({
         trustedComments: [
-          { id: 11, author: 'UnreliableWitness', body: 'rename it' },
+          {
+            id: 11,
+            at: '2026-10-26T11:00:00Z',
+            author: 'UnreliableWitness',
+            body: 'rename it',
+          },
         ],
       }) as never,
     );
@@ -101,7 +106,12 @@ describe('decidePr: fixing', () => {
       decidePr(
         input({
           trustedComments: [
-            { id: 9, author: 'UnreliableWitness', body: 'old' },
+            {
+              id: 99,
+              at: '2026-10-26T09:00:00Z',
+              author: 'UnreliableWitness',
+              body: 'old',
+            },
           ],
         }) as never,
       ).action,

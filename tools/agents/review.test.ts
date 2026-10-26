@@ -200,6 +200,15 @@ describe('runReview', () => {
       issue: 4,
       reviews: { sha1: { verdict: 'changes', findings: 1 } },
     });
+    expect(prStatus(gh).reviews.sha1.items).toEqual([
+      {
+        file: 'src/a.ts',
+        line: 2,
+        severity: 'important',
+        problem: 'x',
+        scenario: 'y',
+      },
+    ]);
     await runReview(d.o as never);
     expect(d.prompts).toHaveLength(1);
     gh.pr.head.sha = 'sha2';

@@ -100,6 +100,49 @@ export function createGitHub(repo, token) {
       (await list(`${r}/pulls/${n}/files?per_page=100`)).map((f) => f.filename),
     createReview: (n, payload) =>
       api(`${r}/pulls/${n}/reviews`, { method: 'POST', body: payload }),
+    getPull: (n) => api(`${r}/pulls/${n}`),
+    listCheckRuns: async (sha) =>
+      (await api(`${r}/commits/${sha}/check-runs?per_page=100`)).check_runs,
+    latestMainCi: async () =>
+      (
+        await api(
+          `${r}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=1`,
+        )
+      ).workflow_runs[0] ?? null,
+    listReviews: (n) => list(`${r}/pulls/${n}/reviews?per_page=100`),
+    // the PR's conversation and its line comments, one list
+    listPrComments: async (n) => [
+      ...(await list(`${r}/issues/${n}/comments?per_page=100`)),
+      ...(await list(`${r}/pulls/${n}/comments?per_page=100`)),
+    ],
+    listPullFileStats: (n) => list(`${r}/pulls/${n}/files?per_page=100`),
+    updateBranch: (n, sha) =>
+      api(`${r}/pulls/${n}/update-branch`, {
+        method: 'PUT',
+        body: { expected_head_sha: sha },
+      }),
+    // sha: GitHub refuses the merge if the head moved since it was checked
+    mergePull: (n, sha) =>
+      api(`${r}/pulls/${n}/merge`, {
+        method: 'PUT',
+        body: { sha, merge_method: 'squash' },
+      }),
+    jobLogTail: async (id) => {
+      const text = await new Promise((resolve, reject) =>
+        execFile(
+          'gh',
+          ['api', `${r}/actions/jobs/${id}/logs`],
+          { env, maxBuffer: 64 * 1024 * 1024 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout)),
+        ),
+      );
+      return String(text)
+        .split('\n')
+        .map((l) => l.replace(/^\S+Z /, ''))
+        .slice(-150)
+        .join('\n')
+        .slice(-8000);
+    },
     mainSha: async () => (await api(`${r}/git/ref/heads/main`)).object.sha,
     createPull: ({ title, body, head }) =>
       api(`${r}/pulls`, {

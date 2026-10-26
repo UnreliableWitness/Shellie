@@ -2,7 +2,7 @@
 
 /**
  * @param {{ pr: any, prState: any, checks: { state: 'pending' | 'green' | 'red', failed: string[] }, mainGreen: boolean,
- *   mode: string, config: any, ownerApproved: boolean, trustedComments: { id: number, author: string, body: string }[],
+ *   mode: string, config: any, ownerApproved: boolean, trustedComments: { id: number, at: string, author: string, body: string }[],
  *   paths: { denied: string[], ownerOnly: string[] }, lines: number }} o
  * @returns {{ action: 'wait' | 'fix' | 'give-up' | 'update-branch' | 'merge' | 'awaits-owner', reason?: string,
  *   reasons?: string[], fixInput?: { ciFailures: string[], findings: any[], comments: any[], conflict: boolean } }}
@@ -35,7 +35,7 @@ export function decidePr({
   if (!conflict && !review) return wait('review-pending');
 
   const fresh = trustedComments.filter(
-    (c) => c.id > (prState.lastSeenCommentId ?? 0),
+    (c) => !prState.lastSeenAt || c.at > prState.lastSeenAt,
   );
   const ciFailures = checks.state === 'red' ? checks.failed : [];
   const findings = review?.verdict === 'changes' ? (review.items ?? []) : [];
