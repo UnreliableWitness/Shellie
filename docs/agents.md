@@ -74,9 +74,11 @@ Every 15 minutes, after the review, the PR poller looks at each agent PR and doe
 
 - **Waits** while CI runs or the review of the newest commit is not in yet.
 - **Fixes**: when CI is red, the review found something critical or important, you commented on the PR (you or another trusted person), or the PR conflicts with `main`. A fix runs like the implementer: a macOS job with only the Claude token (Sonnet) gets the review findings, the end of the failing CI log and your comments, commits on the PR branch, and a fresh job checks the commits (they must build on the PR head: no history rewrite, no protected paths) and pushes them. Then CI and the reviewer run again. After 3 fix rounds it stops: `agent:hold-merge` on the PR, `agent:needs-owner` on the issue.
-- **Updates the branch** with `main` when it is behind (GitHub's update-branch, no agent).
+- **Updates the branch** with `main` when `main` has moved on and the PR could otherwise merge (GitHub's update-branch, no agent; CI and the review then run again on the new commit).
 - **Merges** (only in `full` mode), squash, when all of these hold for the newest commit: the three CI checks are green (`test (macos-latest)`, `test (windows-latest)`, `windows-installer`), the agent review found nothing blocking, `main`'s last CI run is green, no `agent:hold-merge` or `agent:stop`, and either it is a low-risk bug fix or chore of at most 400 changed lines touching no owner-only file, or **you approved it** (an Approve review on that commit). One merge per poll.
-- **Asks you** otherwise (`agent:awaits-owner` and one comment per commit saying why: a feature, high risk, size, an owner-only file, `main` is red, or `implement` mode).
+- **Asks you** otherwise (`agent:awaits-owner` and one comment per commit saying why: a feature, high risk, size, an owner-only file, `main` is red, your Request changes, or `implement` mode).
+
+**What you can do on an agent PR:** comment (the fixer acts on it), **Request changes** (the text goes to the fixer, and nothing merges until your latest review is an Approve), **Approve** (lets the agents merge in `full` mode what only you may merge; never past a red `main` or `agent:hold-merge`), push commits yourself, or close it. When the fixer has given up (`agent:hold-merge`), taking that label off lets it start over with 3 new rounds. A fix that changed nothing is retried after an hour, not on the next poll.
 
 Owner-only files, which never merge without your approval: dependencies (`package.json`, `package-lock.json`), the updater, secrets, cost, migrations, `forge.config.mts`, `.claude/`, `scripts/`, `.npmrc`, `.mcp.json`, the vite and vitest configs, and `CLAUDE.md` when lines are changed or removed (adding a Status line is fine).
 

@@ -130,7 +130,17 @@ function fake(
     }[],
     mainGreen: true,
     async listOpenIssues() {
-      return [issue];
+      return (issue as { state?: string }).state === 'closed' ? [] : [issue];
+    },
+    async listIssuesByLabel(label: string) {
+      return issue.labels.some((l) => l.name === label) ? [issue] : [];
+    },
+    behindBy: 0,
+    async compare() {
+      return { behind_by: gh.behindBy };
+    },
+    async deleteBranch(ref: string) {
+      writes.push(`delete-branch ${ref}`);
     },
     async listComments(n: number) {
       return comments[n] ?? [];
@@ -177,8 +187,13 @@ function fake(
         started_at: '2026-10-26T11:00:00Z',
       }));
     },
-    async latestMainCi() {
-      return { conclusion: gh.mainGreen ? 'success' : 'failure' };
+    async listMainCiRuns() {
+      return [
+        {
+          status: 'completed',
+          conclusion: gh.mainGreen ? 'success' : 'failure',
+        },
+      ];
     },
     async listReviews() {
       return gh.reviews;
@@ -532,5 +547,89 @@ describe('runPublishFix', () => {
       ) as never,
     );
     expect(statusOf(gh, 9).fixRounds).toBe(2);
+  });
+});
+
+describe('runDecide: review fixes', () => {
+  it('notices a PR the owner merged by hand even though GitHub already closed the issue', async () => {
+    const gh = fake({
+      prOver: {
+        state: 'closed',
+        merged_at: '2026-10-26T11:00:00Z',
+        merge_commit_sha: 'm9',
+      },
+    });
+    (gh.issue as { state?: string }).state = 'closed';
+    await runDecide(opts(gh) as never);
+    expect(gh.issue.labels.map((l) => l.name)).toContain('agent:merged');
+  });
+  it('updates a branch that is behind main instead of merging it', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    gh.behindBy = 3;
+    await runDecide(opts(gh) as never);
+    expect(gh.writes).toContain('update-branch #9');
+    expect(gh.writes.filter((w) => w.startsWith('merge'))).toEqual([]);
+  });
+  it("does not merge past the owner's Request changes, and gives its text to the fixer", async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    gh.reviews = [
+      {
+        user: { login: 'UnreliableWitness' },
+        state: 'CHANGES_REQUESTED',
+        commit_id: 'h1',
+        body: 'use the helper instead',
+        submitted_at: '2026-10-26T11:45:00Z',
+      } as never,
+    ];
+    const task = await runDecide(opts(gh) as never);
+    expect(gh.writes.filter((w) => w.startsWith('merge'))).toEqual([]);
+    expect(task!.comments).toEqual([
+      { author: 'UnreliableWitness', body: 'use the helper instead' },
+    ]);
+  });
+  it('deletes the branch after a merge', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    await runDecide(opts(gh) as never);
+    expect(gh.writes).toContain('delete-branch agent/issues/4-breaks');
+  });
+  it('carries on when GitHub refuses a merge', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    gh.mergePull = async () => {
+      throw new Error(
+        'gh PUT pulls/9/merge: HTTP 405 Base branch was modified',
+      );
+    };
+    const lines: string[] = [];
+    await expect(
+      runDecide({
+        ...opts(gh),
+        summary: (l: string) => lines.push(l),
+      } as never),
+    ).resolves.toBeNull();
+    expect(lines.join('\n')).toMatch(/PR #9: .*405/);
+  });
+  it('skips a PR it cannot tie to an issue', async () => {
+    const gh = fake({
+      verdict: 'approve',
+      conclusion: 'success',
+      prOver: { body: 'no link' },
+    });
+    gh.comments[9] = [];
+    await runDecide(opts(gh) as never);
+    expect(gh.writes.filter((w) => w.startsWith('merge'))).toEqual([]);
+  });
+  it('starts over when the owner takes agent:hold-merge off a PR the fixer gave up on', async () => {
+    const gh = fake({
+      verdict: 'changes',
+      items: [finding],
+      conclusion: 'success',
+    });
+    const s = parseStatus(gh.comments[9][0].body);
+    gh.comments[9][0].body = renderStatus(
+      { ...s, fixRounds: 3, gaveUp: true },
+      'x',
+    );
+    const task = await runDecide(opts(gh) as never);
+    expect(task).toMatchObject({ round: 1 });
   });
 });

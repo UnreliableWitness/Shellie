@@ -17,7 +17,7 @@ import { combined, loadActivity, saveActivity } from './activityStore.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import { bundleGit, runAgentJob, workDir } from './implement.mjs';
-import { decidePr, prBookkeeping } from './pr-decide.mjs';
+import { decidePr, mainCiGreen, prBookkeeping } from './pr-decide.mjs';
 import {
   claudeMdAddsOnly,
   classifyPaths,
@@ -101,32 +101,37 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
   const bot = config.botLogin;
   const trustedHuman = (login) => login !== bot && isTrusted(trusted, login);
 
-  // issues whose agent PR was merged or closed since the last poll
-  for (const issue of (await gh.listOpenIssues()).filter((i) =>
-    i.labels.some((l) => l.name === 'agent:pr-open'),
-  )) {
-    const { comment, status } = await statusOf(gh, issue.number, bot);
-    if (!status?.pr) continue;
-    const done = prBookkeeping(await gh.getPull(status.pr));
-    if (done?.outcome === 'merged') {
-      await markMerged(gh, issue.number, bot, { ...done, pr: status.pr });
-      summary(`#${issue.number}: PR #${status.pr} was merged`);
-    } else if (done?.outcome === 'closed') {
-      await gh.addLabels(issue.number, ['agent:needs-owner']);
-      for (const l of ['agent:pr-open', 'claude-working'])
-        await gh.removeLabel(issue.number, l);
-      await writeStatus(
-        gh,
-        issue.number,
-        comment,
-        { ...status, state: 'needs-owner' },
-        `**Needs the owner:** PR #${status.pr} was closed without merging. Add \`agent:go\` to have it implemented again, or comment.`,
-      );
-      summary(`#${issue.number}: PR #${status.pr} was closed without merging`);
+  // issues whose agent PR was merged or closed since the last poll; open or closed, since a merge with
+  // "Fixes #n" closes the issue at once
+  for (const issue of await gh.listIssuesByLabel('agent:pr-open')) {
+    try {
+      const { comment, status } = await statusOf(gh, issue.number, bot);
+      if (!status?.pr) continue;
+      const done = prBookkeeping(await gh.getPull(status.pr));
+      if (done?.outcome === 'merged') {
+        await markMerged(gh, issue.number, bot, { ...done, pr: status.pr });
+        summary(`#${issue.number}: PR #${status.pr} was merged`);
+      } else if (done?.outcome === 'closed') {
+        await gh.addLabels(issue.number, ['agent:needs-owner']);
+        for (const l of ['agent:pr-open', 'claude-working'])
+          await gh.removeLabel(issue.number, l);
+        await writeStatus(
+          gh,
+          issue.number,
+          comment,
+          { ...status, state: 'needs-owner' },
+          `**Needs the owner:** PR #${status.pr} was closed without merging. Add \`agent:go\` to have it implemented again, or comment.`,
+        );
+        summary(
+          `#${issue.number}: PR #${status.pr} was closed without merging`,
+        );
+      }
+    } catch (e) {
+      summary(`#${issue.number}: bookkeeping failed: ${e.message}`);
     }
   }
 
-  const mainGreen = (await gh.latestMainCi())?.conclusion === 'success';
+  const mainGreen = mainCiGreen(await gh.listMainCiRuns());
   const pulls = (await gh.listOpenPulls())
     .filter(
       (p) =>
@@ -135,26 +140,46 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
     .sort((a, b) => a.number - b.number);
   let task = null;
   let merged = false;
-  for (const listed of pulls) {
+
+  /** One PR; its own failures are reported and do not stop the others. */
+  const handle = async (listed) => {
     const pr = await gh.getPull(listed.number);
     const sha = pr.head.sha;
     const found = await statusOf(gh, pr.number, bot);
     let prComment = found.comment;
-    const status = found.status;
     const issueNumber = Number(
       [...(pr.body ?? '').matchAll(/Fixes #(\d+)/g)].at(-1)?.[1],
     );
-    let prState = status ?? {
+    let prState = found.status ?? {
       v: 1,
       kind: 'pr',
       issue: issueNumber,
       reviews: {},
     };
+    if (!Number.isInteger(prState.issue)) {
+      summary(`PR #${pr.number}: skip (no "Fixes #n" to find its issue)`);
+      return;
+    }
     const savePr = async (line) => {
       const body = renderStatus(prState, line);
       if (prComment) await gh.editComment(prComment.id, body);
       else prComment = await gh.comment(pr.number, body);
     };
+    // the owner took agent:hold-merge off a PR the fixer gave up on: start the rounds over
+    if (
+      prState.gaveUp &&
+      !pr.labels.some((l) => l.name === 'agent:hold-merge')
+    ) {
+      prState = {
+        ...prState,
+        gaveUp: false,
+        fixRounds: 0,
+        lastFixSha: undefined,
+      };
+      await savePr(
+        '**Agent PR status:** the owner took the hold off; the fixer may try again.',
+      );
+    }
 
     const checks = summarizeChecks(await gh.listCheckRuns(sha));
     const stats = await gh.listPullFileStats(pr.number);
@@ -165,20 +190,40 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       stats.map((f) => f.filename),
       { claudeMdAddsOnly: claudeMdAddsOnly(numstat) },
     );
-    const ownerApproved = (await gh.listReviews(pr.number)).some(
-      (r) =>
-        r.user?.login?.toLowerCase() === trusted.owner &&
-        r.state === 'APPROVED' &&
-        r.commit_id === sha,
-    );
-    const trustedComments = (await gh.listPrComments(pr.number))
-      .filter((c) => trustedHuman(c.user?.login))
-      .map((c) => ({
+    // the owner's latest review decides: Approve on this commit, or Request changes
+    const ownerReviews = (await gh.listReviews(pr.number))
+      .filter(
+        (r) =>
+          r.user?.login?.toLowerCase() === trusted.owner &&
+          ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state),
+      )
+      .sort((a, b) =>
+        (a.submitted_at ?? '').localeCompare(b.submitted_at ?? ''),
+      );
+    const ownerLatest = ownerReviews.at(-1);
+    const ownerApproved =
+      ownerLatest?.state === 'APPROVED' && ownerLatest.commit_id === sha;
+    const ownerChangesRequested = ownerLatest?.state === 'CHANGES_REQUESTED';
+    const trustedComments = [
+      ...(await gh.listPrComments(pr.number)).map((c) => ({
         id: c.id,
         at: c.created_at,
-        author: c.user.login,
+        user: c.user,
         body: c.body,
-      }));
+      })),
+      // review texts count as comments too (a Request changes often has no line comments)
+      ...(await gh.listReviews(pr.number))
+        .filter((r) => r.body?.trim())
+        .map((r) => ({
+          id: r.id,
+          at: r.submitted_at,
+          user: r.user,
+          body: r.body,
+        })),
+    ]
+      .filter((c) => trustedHuman(c.user?.login))
+      .map((c) => ({ id: c.id, at: c.at, author: c.user.login, body: c.body }));
+    const behindMain = ((await gh.compare('main', sha))?.behind_by ?? 0) > 0;
 
     const d = decidePr({
       pr,
@@ -191,6 +236,9 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       trustedComments,
       paths,
       lines: countChangedLines(numstat),
+      behindMain,
+      ownerChangesRequested,
+      now,
     });
     summary(
       `PR #${pr.number}: ${d.action}${d.reason ? ` (${d.reason})` : ''}${d.reasons ? `: ${d.reasons.join('; ')}` : ''}`,
@@ -201,6 +249,7 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       // one merge per poll: each merge moves main, and the next PR is checked against the new main next time
       await gh.mergePull(pr.number, sha);
       merged = true;
+      await gh.deleteBranch(pr.head.ref).catch(() => {});
       const after = await gh.getPull(pr.number);
       await markMerged(gh, prState.issue, bot, {
         mergeSha: after.merge_commit_sha,
@@ -211,7 +260,7 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       await gh.addLabels(pr.number, ['agent:awaits-owner']);
       await gh.comment(
         pr.number,
-        `**Ready for the owner** (\`${sha.slice(0, 7)}\`): ${d.reasons.join('; ')}.\n\nCI is green and the agent review found nothing blocking. Merge it, approve it (the agents then merge it in full mode), or comment with what to change.`,
+        `**Ready for the owner** (\`${sha.slice(0, 7)}\`): ${d.reasons.join('; ')}.\n\nMerge it, approve it (the agents then merge it in full mode when nothing else stands in the way), or comment with what to change.`,
       );
       prState = { ...prState, awaitsOwnerSha: sha };
       await savePr(
@@ -222,7 +271,7 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       await gh.addLabels(prState.issue, ['agent:needs-owner']);
       await gh.comment(
         pr.number,
-        `**The agents stopped fixing this PR** after ${config.maxFixRounds} rounds. It needs the owner: push a fix, comment, or close it.`,
+        `**The agents stopped fixing this PR** after ${config.maxFixRounds} rounds. It needs the owner: push a fix, comment, or close it. Taking \`agent:hold-merge\` off lets the fixer start over.`,
       );
       prState = { ...prState, gaveUp: true };
       await savePr(
@@ -242,7 +291,7 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       );
       if (!can.ok) {
         summary(`PR #${pr.number}: no fix run (${can.reason})`);
-        continue;
+        return;
       }
       const issueStatus = (await statusOf(gh, prState.issue, bot)).status;
       const failedRuns = checks.runs.filter((r) =>
@@ -258,6 +307,8 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
         ...prState,
         fixRounds: (prState.fixRounds ?? 0) + 1,
         lastSeenAt: now.toISOString(),
+        lastFixSha: sha,
+        lastFixAt: now.toISOString(),
       };
       await savePr(
         `**Agent PR status:** fix round ${prState.fixRounds} of ${config.maxFixRounds} running.`,
@@ -283,6 +334,14 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
         conflict: d.fixInput.conflict,
         round: prState.fixRounds,
       };
+    }
+  };
+
+  for (const listed of pulls) {
+    try {
+      await handle(listed);
+    } catch (e) {
+      summary(`PR #${listed.number}: failed: ${e.message}`);
     }
   }
   return task;

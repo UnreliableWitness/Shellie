@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from './config.mjs';
-import { decidePr, prBookkeeping } from './pr-decide.mjs';
+import { decidePr, mainCiGreen, prBookkeeping } from './pr-decide.mjs';
 
 const sha = 'h1';
 const finding = {
@@ -39,6 +39,9 @@ const input = (
   trustedComments: [] as { id: number; author: string; body: string }[],
   paths: { denied: [] as string[], ownerOnly: [] as string[] },
   lines: 40,
+  behindMain: false,
+  ownerChangesRequested: false,
+  now: new Date('2026-10-26T12:00:00Z'),
   ...over,
 });
 const labels = (...names: string[]) => names.map((name) => ({ name }));
@@ -235,5 +238,86 @@ describe('prBookkeeping', () => {
       outcome: 'closed',
     });
     expect(prBookkeeping({ state: 'open', merged_at: null })).toBeNull();
+  });
+});
+
+describe('decidePr: review fixes', () => {
+  it('updates a branch that is behind main only when it could otherwise merge', () => {
+    expect(decidePr(input({ behindMain: true }) as never).action).toBe(
+      'update-branch',
+    );
+    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:low') };
+    expect(decidePr(input({ behindMain: true }, feature) as never).action).toBe(
+      'awaits-owner',
+    );
+  });
+  it("never merges past the owner's Request changes", () => {
+    expect(
+      decidePr(input({ ownerChangesRequested: true }) as never).reasons,
+    ).toContain('the owner requested changes');
+    expect(
+      decidePr(
+        input({ ownerChangesRequested: true, ownerApproved: true }) as never,
+      ).action,
+    ).toBe('awaits-owner');
+  });
+  it('waits an hour before retrying a fix that changed nothing', () => {
+    const red = { checks: { state: 'red', failed: ['x'] } };
+    expect(
+      decidePr(
+        input(
+          red,
+          {},
+          { fixRounds: 1, lastFixSha: sha, lastFixAt: '2026-10-26T11:30:00Z' },
+        ) as never,
+      ).reason,
+    ).toBe('fix-retry-later');
+    expect(
+      decidePr(
+        input(
+          red,
+          {},
+          { fixRounds: 1, lastFixSha: sha, lastFixAt: '2026-10-26T10:30:00Z' },
+        ) as never,
+      ).action,
+    ).toBe('fix');
+    expect(
+      decidePr(
+        input(
+          red,
+          {},
+          {
+            fixRounds: 1,
+            lastFixSha: 'old',
+            lastFixAt: '2026-10-26T11:30:00Z',
+          },
+        ) as never,
+      ).action,
+    ).toBe('fix');
+  });
+  it('asks the owner when the review wants changes but gave no findings', () => {
+    expect(
+      decidePr(
+        input({}, {}, { reviews: { [sha]: { verdict: 'changes' } } }) as never,
+      ).reasons,
+    ).toContain('the agent review wants changes but listed no findings to fix');
+  });
+});
+
+describe('mainCiGreen', () => {
+  it('reads the newest finished run that was not cancelled, and waits while one runs', () => {
+    const run = (status: string, conclusion: string | null) => ({
+      status,
+      conclusion,
+    });
+    expect(mainCiGreen([run('completed', 'success')])).toBe(true);
+    expect(
+      mainCiGreen([run('in_progress', null), run('completed', 'success')]),
+    ).toBe(false);
+    expect(
+      mainCiGreen([run('completed', 'cancelled'), run('completed', 'success')]),
+    ).toBe(true);
+    expect(mainCiGreen([run('completed', 'failure')])).toBe(false);
+    expect(mainCiGreen([])).toBe(false);
   });
 });

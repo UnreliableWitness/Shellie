@@ -103,12 +103,18 @@ export function createGitHub(repo, token) {
     getPull: (n) => api(`${r}/pulls/${n}`),
     listCheckRuns: async (sha) =>
       (await api(`${r}/commits/${sha}/check-runs?per_page=100`)).check_runs,
-    latestMainCi: async () =>
+    // newest first; push runs only (a dispatch or a re-run of an old commit says nothing about main now)
+    listMainCiRuns: async () =>
       (
         await api(
-          `${r}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=1`,
+          `${r}/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=5`,
         )
-      ).workflow_runs[0] ?? null,
+      ).workflow_runs,
+    deleteBranch: (ref) =>
+      api(
+        `${r}/git/refs/heads/${ref.split('/').map(encodeURIComponent).join('/')}`,
+        { method: 'DELETE' },
+      ),
     listReviews: (n) => list(`${r}/pulls/${n}/reviews?per_page=100`),
     // the PR's conversation and its line comments, one list
     listPrComments: async (n) => [

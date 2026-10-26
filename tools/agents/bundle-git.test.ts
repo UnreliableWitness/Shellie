@@ -66,4 +66,36 @@ describe('bundleGit', () => {
     );
     expect(countChangedLines(await g.prNumstat('agent/issues/1-x'))).toBe(3);
   });
+
+  it("counts only the fix's own commits when it merged a busy main", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bundle-merge-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 't@example.com');
+    git('config', 'user.name', 't');
+    writeFileSync(join(dir, 'a.txt'), 'a\n');
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    git('checkout', '-qb', 'agent/issues/2-y');
+    writeFileSync(join(dir, 'b.txt'), 'pr\n');
+    git('add', '.');
+    git('commit', '-qm', 'pr');
+    const head = git('rev-parse', 'HEAD').trim();
+    git('checkout', '-q', 'main');
+    for (let i = 0; i < 60; i++)
+      git('commit', '-q', '--allow-empty', '-m', `main ${i}`);
+    git('checkout', '-q', 'agent/issues/2-y');
+    git('merge', '-q', '--no-edit', 'main');
+    git(
+      'bundle',
+      'create',
+      '-q',
+      'branch.bundle',
+      `${head}..refs/heads/agent/issues/2-y`,
+    );
+    const g = bundleGit(join(dir, 'branch.bundle'), 'o/r', 'token', dir);
+    expect(await g.isAncestor(head, 'agent/issues/2-y')).toBe(true);
+    expect(await g.commitCount(head, 'agent/issues/2-y')).toBe(1);
+  });
 });

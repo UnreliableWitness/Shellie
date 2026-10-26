@@ -450,7 +450,12 @@ export function bundleGit(bundlePath, repo, token, cwd = ROOT) {
       await fetch(branch);
       return Number(
         (
-          await git('rev-list', '--count', `${base}..${ref(branch)}`)
+          await git(
+            'rev-list',
+            '--count',
+            '--first-parent',
+            `${base}..${ref(branch)}`,
+          )
         ).stdout.trim(),
       );
     },
@@ -583,6 +588,20 @@ export async function runAgentJob({
     'user.email',
     `${config.botUserId}+${config.botLogin}@users.noreply.github.com`,
   );
+  // the agent's instructions come from main's checkout, read before the branch replaces it
+  const schemaText = readFileSync(
+    new URL(`./schemas/${schema}.json`, import.meta.url),
+    'utf8',
+  );
+  const skillFile = join(workDir(), `${skill}.md`);
+  mkdirSync(workDir(), { recursive: true });
+  writeFileSync(
+    skillFile,
+    readFileSync(
+      new URL(`../../.claude/skills/${skill}/SKILL.md`, import.meta.url),
+      'utf8',
+    ),
+  );
   await git('checkout', '-B', branch, startSha);
   if (mergeMain) await git('merge', '--no-edit', 'origin/main').catch(() => {});
 
@@ -593,13 +612,8 @@ export async function runAgentJob({
     maxTurns,
     tools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'Agent'],
     allowedTools: IMPLEMENT_ALLOWED_TOOLS,
-    schema: readFileSync(
-      new URL(`./schemas/${schema}.json`, import.meta.url),
-      'utf8',
-    ),
-    systemPromptFile: fileURLToPath(
-      new URL(`../../.claude/skills/${skill}/SKILL.md`, import.meta.url),
-    ),
+    schema: schemaText,
+    systemPromptFile: skillFile,
     timeoutMs: 60 * 60000,
   });
   // whatever the agent left uncommitted (or a merge it did not finish) is committed, so the bundle holds all of it
