@@ -96,3 +96,20 @@ the Shell oil scallop. On Windows the clam fills the square with no tile; the -s
 - The four SVGs in `assets/icon` place it inside each platform's tile: the 48 px+ drawings crop to the inside of
   Gemini's own rounded tile (pixels 40-984), the 16-32 px drawings crop closer to the shell (140-884). `npm run icons`
   renders the PNGs, `.ico` and `.icns`; `MindMark.tsx` shows `png/64.png`.
+
+## agents/avatar.png (the shellie-agents GitHub App's avatar)
+
+- Generated 2026-10-26 with `gemini-2.5-flash-image`, 1:1, seven candidates over two rounds (section "Agent avatar" and
+  "Agent avatar, robot" in `tools/art/prompts.md`). The first round (a clam with a cursor eye, an antenna, a prompt)
+  was not bot-like enough; the second asked for LED eyes, a visor or screen face and an antenna.
+- Candidate: `avatar-bot-hermit-2026-10-26-13-07-27.png`
+- Pick: the owner chose the hermit crab bot.
+- Post-processing: GitHub shows avatars as a 20-40 px circle, so the square is cropped to 700 px around (471, 469) of
+  the 1024 px candidate, the smallest crop whose circle still holds the antenna's glowing tip (the circle trims the
+  shell's outer tips), then scaled back to 1024 px with Lanczos: the bot shows 1.46x larger. PNG, uploaded by the
+  owner at github.com/settings/apps/shellie-agents (GitHub has no API for an app's avatar).
+- Prompt (style block, then subject):
+
+  > A GitHub profile avatar for "shellie-agents", a friendly robot that triages, fixes and ships a developer tool called Shellie. Unmistakably a robot: glowing LED eyes, a visor or screen face, an antenna. Flat faceted low-poly style like the Shellie app icon, crisp flat planes in four blues, near-white (#f1f7ff), #a9d0f8, #1f56a8 and navy (#122f5c), with the eyes and glowing parts in bright ice-cyan (#7fe3ff). Centred, filling about two thirds of the square. The soft pale blue (#dbeafb) background fills the whole square edge to edge: no tile, no rounded corners, no dark corners, no border. GitHub crops it to a circle and shows it at 20 to 40 pixels, so one bold, cheerful silhouette with big simple shapes and no fine detail. No text, no letters, no numbers, no logos, no watermark.
+  >
+  > A tiny faceted robot hermit crab peeking out of a faceted clam shell, two glowing ice-cyan eyes on short stalks, one small claw raised in a wave, the shell bigger than the crab.
