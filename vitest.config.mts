@@ -15,6 +15,7 @@ export default defineConfig({
             'tools/art/*.test.ts',
             'tools/forge/*.test.ts',
             'tools/release/*.test.ts',
+            'tools/agents/*.test.ts',
           ],
           testTimeout: 20000,
         },

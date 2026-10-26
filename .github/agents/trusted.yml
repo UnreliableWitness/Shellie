@@ -1,0 +1,5 @@
+# GitHub logins whose issues and comments the agents read. Anyone else's issue waits for the owner's agent:go label.
+owner: UnreliableWitness
+logins:
+  - UnreliableWitness
+  - maximedebraekeleer
