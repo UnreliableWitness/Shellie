@@ -227,7 +227,8 @@ describe('ChangesTab', () => {
     await waitFor(() => expect(reads()).toBeGreaterThan(before), {
       timeout: 5000,
     });
-  });
+    // two waits of up to 5 s each: the test itself needs more than vitest's default 5 s (macOS CI timed out)
+  }, 15000);
 
   it('switches to Uncommitted and to one commit', async () => {
     const api = mount();

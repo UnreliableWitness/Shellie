@@ -17,7 +17,8 @@ export default defineConfig({
             'tools/release/*.test.ts',
             'tools/agents/*.test.ts',
           ],
-          testTimeout: 20000,
+          // tests that run real git are slow on the Windows CI runner (the suite takes ~15 min there, ~4 on macOS)
+          testTimeout: process.platform === 'win32' ? 60000 : 20000,
         },
       },
       {
