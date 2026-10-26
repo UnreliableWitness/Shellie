@@ -2,8 +2,15 @@
   "type": "object",
   "description": "The review. The verdict follows from the findings: any critical or important finding means changes are needed.",
   "properties": {
-    "summary": { "type": "string", "description": "two or three plain sentences: does the change fix the issue as specified, and what matters most" },
-    "risk": { "type": "string", "enum": ["low", "high"], "description": "high if the change touches risky ground (see your instructions), else low" },
+    "summary": {
+      "type": "string",
+      "description": "two or three plain sentences: does the change fix the issue as specified, and what matters most"
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "high"],
+      "description": "high if the change touches risky ground (see your instructions), else low"
+    },
     "riskReason": { "type": "string", "description": "when risk is high: why" },
     "findings": {
       "type": "array",
@@ -11,10 +18,23 @@
         "type": "object",
         "properties": {
           "file": { "type": "string", "description": "repo-relative path" },
-          "line": { "type": "integer", "minimum": 1, "description": "a line in the new version of the file that the PR changed" },
-          "severity": { "type": "string", "enum": ["critical", "important", "minor"] },
-          "problem": { "type": "string", "description": "what is wrong, in one or two sentences" },
-          "scenario": { "type": "string", "description": "concrete input or state, and the wrong result or crash" }
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "a line in the new version of the file that the PR changed"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "important", "minor"]
+          },
+          "problem": {
+            "type": "string",
+            "description": "what is wrong, in one or two sentences"
+          },
+          "scenario": {
+            "type": "string",
+            "description": "concrete input or state, and the wrong result or crash"
+          }
         },
         "required": ["file", "line", "severity", "problem", "scenario"]
       }
