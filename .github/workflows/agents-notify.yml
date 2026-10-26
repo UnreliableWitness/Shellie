@@ -2,9 +2,14 @@
 # No LLM: tells reporters which release has their fix, and the owner when a merged fix is not released.
 name: Agents · notify
 on:
+  # the polls are a safety net; it also starts when CI finished on main (the release job is part of it)
   schedule:
     - cron: '11,41 * * * *'
   workflow_dispatch:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -21,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:

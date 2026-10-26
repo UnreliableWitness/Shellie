@@ -204,7 +204,11 @@ function fake(
     async listPullFileStats() {
       return [
         { filename: 'src/a.ts', additions: 10, deletions: 2 },
-        { filename: 'CLAUDE.md', additions: 1, deletions: 0 },
+        {
+          filename: 'docs/changes/2026-10-26-4-breaks.md',
+          additions: 1,
+          deletions: 0,
+        },
       ];
     },
     async updateBranch(n: number) {

@@ -16,7 +16,7 @@ The prompt holds the issue in `<issue>`, trusted comments in `<comment>` (those 
 
 ## What to do
 
-1. Understand the report. Read `CLAUDE.md` (already in your context) for what Shellie is and its "Known gaps".
+1. Understand the report. `CLAUDE.md` (already in your context) says what Shellie is; the change notes in `docs/changes/` (one file per change) hold each feature's details and known gaps: grep them for the area the issue is about.
 2. Find the code involved: Grep, Glob and Read; `git log`, `git show`, `git grep` and `git blame` for history. Locate the cause with `file:line` where you can. Spend your turns on reading code, not on restating the issue.
 3. Check `<possible-duplicates>`: is this the same problem as another issue (open, or closed recently and maybe not fixed)?
 4. Decide one of:
@@ -26,7 +26,7 @@ The prompt holds the issue in `<issue>`, trusted comments in `<comment>` (those 
      - `cause`: why, with `file:line` references.
      - `change`: the planned change, specific enough to implement (functions, files, behaviour). Prefer the smallest change that fixes the cause.
      - `test`: the test that fails before the fix and passes after (file and what it asserts). Shellie uses Vitest; tests sit next to the code.
-     - `docs`: the CLAUDE.md Status line to add, `docs/telemetry.md` if telemetry events change, or `none`.
+     - `docs`: the change note to add in `docs/changes/` (what it should say), `docs/telemetry.md` if telemetry events change.
      - `outOfScope`: what this fix deliberately does not do.
      - `kind`: `bug` (something does not work as intended), `feature` (new behaviour), `chore` (housekeeping, dependencies, tests).
      - `risk`: `high` when the change touches any of: `.github/`, release or update code (`src/main/autoUpdate.ts`, `tools/release/`, `forge.config.mts`), signing, secrets (`src/main/secrets/`), cost numbers (`src/main/ledger/`, `src/main/costServer/`, `src/main/budget/`), time numbers, stored data formats or migrations (`src/main/migrate/`), authentication or tokens, anything that deletes user data or worktrees, dependency changes, or more than about 400 changed lines. Otherwise `low`.

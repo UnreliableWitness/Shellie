@@ -35,7 +35,18 @@ Later stages add an Azure login for the health agent and branch protection on `m
 | `implement` | Triage, implementer, reviewer, fixer and notifier. **Nothing merges by itself**: a PR that is green and reviewed gets `agent:awaits-owner` and a comment, and you merge it. |
 | `full` | Everything, and the agents merge a PR themselves when it meets the merge rule below. |
 
-Run a poller by hand: Actions › Agents · triage (or · implement, · PR) › Run workflow.
+Run a poller by hand: Actions › Agents · triage (or · implement, · PR, · notify) › Run workflow.
+
+**When they run.** The 15-minute schedules are only a safety net: GitHub starts scheduled runs late, or not at all, under load (20-40 minutes apart was seen). Each poller also starts as soon as something happens:
+
+| Poller | Starts on |
+|---|---|
+| Triage | an issue opened, reopened or labelled, a comment on an issue (not the agents' own) |
+| Implement | triage finished; a PR closed (the one agent PR slot may be free) |
+| PR | CI finished on any branch (a new or fixed agent PR, or `main`); a review or comment on a PR (not the agents' own) |
+| Notify | CI finished on `main` |
+
+The scripts ignore whatever does not concern them, so an extra start costs a minute of free runner time and no Claude usage. Every agent job checks out `main`, whatever the event, so a PR's own code never runs with the App token.
 
 ## Labels
 
@@ -57,7 +68,7 @@ They leave alone any issue that is assigned to someone, or that has a branch `is
 ## How an issue becomes a PR
 
 1. **Pick** (a small Linux job with the app's token): the oldest `agent:ready` issue, bugs before chores before features, when no other agent PR is open. It adds `claude-working` (the lock) and notes the attempt in the status comment.
-2. **Implement** (a macOS job with only your Claude token, no GitHub token): Claude Code (Opus) writes a failing test, the fix, the CLAUDE.md Status line, runs `npm test`, typecheck and lint, and commits on `agent/issues/<n>-<slug>`. The job packs the branch into a git bundle.
+2. **Implement** (a macOS job with only your Claude token, no GitHub token): Claude Code (Opus) writes a failing test, the fix, a change note in `docs/changes/`, runs `npm test`, typecheck and lint, and commits on `agent/issues/<n>-<slug>`. The job packs the branch into a git bundle.
 3. **Publish** (a fresh Linux job with the app's token): checks the bundle itself: one branch, starting from the `main` commit pick saw, at most 50 commits, no change to the agents' own files, workflows, release or signing. Then it pushes and opens the PR (`Fixes #n`, labels `agent-pr`, `kind:*`, `risk:*`). Touching owner-only files (dependencies, the updater, secrets, cost, migrations), more than 400 changed lines, or failing checks make it `risk:high` and are listed in the PR under "Agent checks".
 
 The agent runs code (tests), so it never shares a machine with a GitHub write token; publish trusts nothing it hands over.
@@ -80,7 +91,7 @@ Every 15 minutes, after the review, the PR poller looks at each agent PR and doe
 
 **What you can do on an agent PR:** comment (the fixer acts on it), **Request changes** (the text goes to the fixer, and nothing merges until your latest review is an Approve), **Approve** (lets the agents merge in `full` mode what only you may merge; never past a red `main` or `agent:hold-merge`), push commits yourself, or close it. When the fixer has given up (`agent:hold-merge`), taking that label off lets it start over with 3 new rounds. A fix that changed nothing is retried after an hour, not on the next poll.
 
-Owner-only files, which never merge without your approval: dependencies (`package.json`, `package-lock.json`), the updater, secrets, cost, migrations, `forge.config.mts`, `.claude/`, `scripts/`, `.npmrc`, `.mcp.json`, the vite and vitest configs, and `CLAUDE.md` when lines are changed or removed (adding a Status line is fine).
+Owner-only files, which never merge without your approval: dependencies (`package.json`, `package-lock.json`), the updater, secrets, cost, migrations, `forge.config.mts`, `.claude/`, `scripts/`, `.npmrc`, `.mcp.json`, the vite and vitest configs, and `CLAUDE.md` (agents write change notes to `docs/changes/` instead).
 
 If you merge an agent PR yourself, or close it, the agents notice: a merge goes on to the release notice, a close hands the issue back to you (`agent:needs-owner`; `agent:go` has it implemented again).
 

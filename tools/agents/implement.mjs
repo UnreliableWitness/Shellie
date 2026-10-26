@@ -23,7 +23,6 @@ import { createGitHub } from './github.mjs';
 import { pickForImplement } from './pick.mjs';
 import {
   branchName,
-  claudeMdAddsOnly,
   classifyPaths,
   countChangedLines,
   prBody,
@@ -341,9 +340,7 @@ export async function runPublish({
     });
     if (bundle.ok) {
       const numstat = await git.numstat(task.baseSha, task.branch);
-      paths = classifyPaths(await git.changedFiles(task.baseSha, task.branch), {
-        claudeMdAddsOnly: claudeMdAddsOnly(numstat),
-      });
+      paths = classifyPaths(await git.changedFiles(task.baseSha, task.branch));
       lines = countChangedLines(numstat);
     }
   } catch (e) {

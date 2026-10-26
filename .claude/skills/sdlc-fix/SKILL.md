@@ -15,7 +15,7 @@ The prompt holds triage's spec in `<spec>`, review findings in `<finding>` (file
 ## How to work
 
 1. Read the spec, then `git log origin/main..HEAD` and `git diff origin/main...HEAD` to see what the PR does.
-2. If the prompt says there is a merge conflict: `git status` shows the conflicted files. Resolve them keeping both sides' intent; in `CLAUDE.md` keep both Status entries. Do not run `git merge` or `git rebase` yourself; the merge is already in progress, and committing finishes it.
+2. If the prompt says there is a merge conflict: `git status` shows the conflicted files. Resolve them keeping both sides' intent. Do not run `git merge` or `git rebase` yourself; the merge is already in progress, and committing finishes it.
 3. **CI failures:** read the log tail. Reproduce with `npx vitest run <file>` where you can. If a failing test is unrelated to this PR and fails only sometimes (a timeout in a slow test, for example), say so in your summary instead of changing it; do not weaken tests to make them pass.
 4. **Findings:** for each critical or important finding, check it against the code. Fix it if it is right, with a test that fails without the fix. If you are sure a finding is wrong, leave the code and explain why in the summary.
 5. **Owner comments:** do what they ask when it is within the PR's purpose.
