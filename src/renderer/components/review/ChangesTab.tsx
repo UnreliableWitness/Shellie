@@ -221,10 +221,18 @@ export function ChangesTab({ task }: { task: TaskView }) {
             x.file.hash,
         )) ||
       list[0];
-    setSelected(
-      first
-        ? { workspaceId: first.repo.workspaceId, path: first.file.path }
-        : null,
+    // Decided on the selection as it is now, not as this effect's render saw it: a click on a file that
+    // lands before this effect runs (a slow machine, right as the list appears) must not be undone.
+    setSelected((now) =>
+      now &&
+      list.some(
+        (x) =>
+          x.repo.workspaceId === now.workspaceId && x.file.path === now.path,
+      )
+        ? now
+        : first
+          ? { workspaceId: first.repo.workspaceId, path: first.file.path }
+          : null,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files, current, list]);

@@ -29,6 +29,8 @@ const input = (
     reviews: { [sha]: { verdict: 'approve', items: [] } },
     fixRounds: 0,
     lastSeenAt: '2026-10-26T10:00:00Z',
+    // the free re-run of a red CI is done unless a test says otherwise
+    ciRerunSha: sha,
     ...prState,
   },
   checks: { state: 'green', failed: [] as string[] },
@@ -169,9 +171,15 @@ describe('decidePr: merging', () => {
       o: Record<string, unknown>,
       pr: Record<string, unknown> = {},
     ) => decidePr(input(o, pr) as never).reasons;
+    // low-risk features merge like bugs since 2026-10-26 (the owner's call)
     expect(
-      reasons({}, { labels: labels('agent-pr', 'kind:feature', 'risk:low') }),
-    ).toContain('a feature');
+      decidePr(
+        input(
+          {},
+          { labels: labels('agent-pr', 'kind:feature', 'risk:low') },
+        ) as never,
+      ).action,
+    ).toBe('merge');
     expect(
       reasons({}, { labels: labels('agent-pr', 'kind:bug', 'risk:high') }),
     ).toContain('high risk');
@@ -252,7 +260,7 @@ describe('decidePr: review fixes', () => {
     expect(decidePr(input({ behindMain: true }) as never).action).toBe(
       'update-branch',
     );
-    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:low') };
+    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:high') };
     expect(decidePr(input({ behindMain: true }, feature) as never).action).toBe(
       'awaits-owner',
     );
@@ -334,10 +342,10 @@ describe('decidePr: main not green and the owner-told mark', () => {
       action: 'wait',
       reason: 'main-not-green',
     });
-    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:low') };
+    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:high') };
     expect(
       decidePr(input({ mainGreen: false }, feature) as never),
-    ).toMatchObject({ action: 'awaits-owner', reasons: ['a feature'] });
+    ).toMatchObject({ action: 'awaits-owner', reasons: ['high risk'] });
   });
   it('merges once the reasons are gone, even after the owner was told about this commit', () => {
     expect(
@@ -351,12 +359,12 @@ describe('decidePr: main not green and the owner-told mark', () => {
     ).toBe('merge');
   });
   it('tells the owner again when the reasons change', () => {
-    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:low') };
+    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:high') };
     expect(
       decidePr(
         input({}, feature, {
           awaitsOwnerSha: sha,
-          awaitsOwnerReasons: 'a feature',
+          awaitsOwnerReasons: 'high risk',
         }) as never,
       ).action,
     ).toBe('wait');
@@ -364,9 +372,33 @@ describe('decidePr: main not green and the owner-told mark', () => {
       decidePr(
         input({ lines: 500 }, feature, {
           awaitsOwnerSha: sha,
-          awaitsOwnerReasons: 'a feature',
+          awaitsOwnerReasons: 'high risk',
         }) as never,
       ).action,
     ).toBe('awaits-owner');
+  });
+});
+
+describe('decidePr: re-run a red CI once before a fix', () => {
+  const red = { checks: { state: 'red', failed: ['test (windows-latest)'] } };
+  it('re-runs the failed jobs once for a head commit, then fixes', () => {
+    expect(
+      decidePr(input(red, {}, { ciRerunSha: undefined }) as never),
+    ).toMatchObject({
+      action: 'rerun',
+      reason: 'ci-red',
+    });
+    expect(decidePr(input(red, {}, { ciRerunSha: sha }) as never).action).toBe(
+      'fix',
+    );
+  });
+  it('does not re-run when the fix is needed anyway', () => {
+    const changes = {
+      reviews: { [sha]: { verdict: 'changes', items: [finding] } },
+    };
+    expect(
+      decidePr(input(red, {}, { ...changes, ciRerunSha: undefined }) as never)
+        .action,
+    ).toBe('fix');
   });
 });

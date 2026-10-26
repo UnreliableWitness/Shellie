@@ -72,6 +72,10 @@ function fake(
     async close(n: number) {
       writes.push(`close #${n}`);
     },
+    files: ['src/main/a.ts'],
+    async commitFiles() {
+      return this.files;
+    },
     async listReleases() {
       return releases.map(({ tag_name, published_at }) => ({
         tag_name,
@@ -153,11 +157,11 @@ describe('runNotify', () => {
     expect(gh.writes).not.toContain('close #4');
   });
 
-  it('waits for a release, and hands over to the owner once after 90 minutes', async () => {
-    const gh = fake({ mergedAt: '2026-10-26T11:00:00Z' });
+  it('waits for the next bundled release, and hands over to the owner once a release was missed (26 h)', async () => {
+    const gh = fake({ mergedAt: '2026-10-25T13:00:00Z' });
     await runNotify(opts(gh) as never);
     expect(gh.writes).toEqual([]);
-    const late = fake({ mergedAt: '2026-10-26T10:00:00Z' });
+    const late = fake({ mergedAt: '2026-10-25T09:00:00Z' });
     await runNotify(opts(late) as never);
     await runNotify(opts(late) as never);
     expect(
@@ -180,5 +184,24 @@ describe('runNotify', () => {
     });
     await runNotify(opts(gh, 'triage') as never);
     expect(gh.writes).toEqual([]);
+  });
+
+  it('closes a fix without app changes at once: there is no new version to wait for', async () => {
+    const gh = fake({ state: 'open', mergedAt: '2026-10-26T10:00:00Z' });
+    gh.files = [
+      'src/main/ipc/handlers.part1.test.ts',
+      'docs/changes/2026-10-26-x.md',
+    ];
+    await runNotify(opts(gh) as never);
+    const comment = gh.writes.find((w) => w.startsWith('comment #4'))!;
+    expect(comment).toContain('no new version');
+    expect(gh.writes).toEqual(
+      expect.arrayContaining([
+        'label #4 +agent:released',
+        'label #4 -agent:merged',
+        'close #4',
+      ]),
+    );
+    expect(gh.writes).not.toContain('label #4 +agent:needs-owner');
   });
 });

@@ -369,6 +369,19 @@ const publishOpts = (
 ) => ({ gh, config, task, result, git, now, summary: () => {} });
 
 describe('runPublish', () => {
+  it('reports the PR it opened, and nothing when it opened none', async () => {
+    const { gh, task } = await locked();
+    expect(
+      await runPublish(publishOpts(gh, task, done, fakeGit().git) as never),
+    ).toEqual({ opened: 500 });
+    const second = await locked();
+    expect(
+      await runPublish(
+        publishOpts(second.gh, second.task, null, fakeGit().git) as never,
+      ),
+    ).toEqual({ opened: null });
+  });
+
   it('pushes the branch and opens a PR that fixes the issue', async () => {
     const { gh, task } = await locked();
     const { git, pushed } = fakeGit();
@@ -602,5 +615,22 @@ describe('runPublish', () => {
     await runPublish(publishOpts(gh, task, done, git) as never);
     expect(gh.pulls[0].labels.map((l) => l.name)).toContain('risk:high');
     expect(gh.pulls[0].body).toContain('CLAUDE.md');
+  });
+
+  it('says plainly that the agent committed nothing', async () => {
+    const { gh, task } = await locked();
+    const { git, pushed } = fakeGit({
+      bundleHeads: async () => {
+        throw new Error('should not be read');
+      },
+    });
+    await runPublish(
+      publishOpts(gh, task, { ...done, commits: 0 }, git) as never,
+    );
+    expect(pushed).toEqual([]);
+    expect(statusOf(gh, 4).state).toBe('ready');
+    expect(gh.comments[4].map((c) => c.body).join()).toContain(
+      'committed nothing',
+    );
   });
 });

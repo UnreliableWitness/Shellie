@@ -104,6 +104,10 @@ jobs:
     if: always() && needs.pick.outputs.issue != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # actions: write to start the next implementation after a PR (up to maxOpenAgentPrs at once)
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -129,8 +133,16 @@ jobs:
         with:
           name: result
           path: ${{ runner.temp }}/agents/result
-      - name: Check and publish
+      - id: publish
+        name: Check and publish
         env:
           AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/implement.mjs publish
+      # a PR is open: start the next implementation now instead of waiting for a poll; a run that picks
+      # nothing opens no PR and starts nothing, so this cannot loop
+      - name: Start the next implementation
+        if: steps.publish.outputs.opened != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run agents-implement.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}"

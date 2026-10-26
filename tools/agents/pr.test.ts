@@ -185,6 +185,7 @@ function fake(
               ? null
               : 'success',
         started_at: '2026-10-26T11:00:00Z',
+        html_url: `https://github.com/o/r/actions/runs/777/job/${100 + i}`,
       }));
     },
     async listMainCiRuns() {
@@ -252,6 +253,15 @@ const statusOf = (gh: ReturnType<typeof fake>, n: number) =>
   );
 
 describe('runDecide', () => {
+  it('tells the reporter at the merge that the fix ships with the next release', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    Object.assign(gh, { commitFiles: async () => ['src/main/a.ts'] });
+    await runDecide(opts(gh) as never);
+    expect(gh.comments[4].map((c) => c.body).join()).toMatch(
+      /ships with the next release/,
+    );
+  });
+
   it('merges a green, approved low-risk bug fix on the checked head, and marks the issue merged', async () => {
     const gh = fake({ verdict: 'approve', conclusion: 'success' });
     expect(await runDecide(opts(gh) as never)).toBeNull();
@@ -635,5 +645,47 @@ describe('runDecide: review fixes', () => {
     );
     const task = await runDecide(opts(gh) as never);
     expect(task).toMatchObject({ round: 1 });
+  });
+});
+
+describe('runDecide: a red CI is re-run once before a fix', () => {
+  it('re-runs the failed workflow run, then hands out a fix on the next red result', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'failure' });
+    const reruns: number[] = [];
+    const o = {
+      ...opts(gh),
+      rerun: async (id: number) => {
+        reruns.push(id);
+      },
+    };
+    expect(await runDecide(o as never)).toBeNull();
+    expect(reruns).toEqual([777]);
+    expect(statusOf(gh, 9).ciRerunSha).toBe('h1');
+    const task = await runDecide(o as never);
+    expect(reruns).toEqual([777]);
+    expect(task).toMatchObject({
+      pr: 9,
+      ciFailures: [{ job: 'test (windows-latest)' }],
+    });
+  });
+});
+
+describe('runPublishFix: nothing to change', () => {
+  it('hands the PR to the owner with a clear reason when the fixer committed nothing', async () => {
+    const gh = fake();
+    const { git, pushes } = fixGit({
+      bundleHeads: async () => {
+        throw new Error('should not be read');
+      },
+    });
+    await runPublishFix(pubOpts(gh, { ...fixed, commits: 0 }, git) as never);
+    expect(pushes).toEqual([]);
+    expect(gh.writes).toEqual(
+      expect.arrayContaining([
+        'label #9 +agent:hold-merge',
+        'label #4 +agent:needs-owner',
+      ]),
+    );
+    expect(gh.comments[9].at(-1)!.body).toContain('found nothing to change');
   });
 });
