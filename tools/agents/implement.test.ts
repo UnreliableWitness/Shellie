@@ -574,4 +574,33 @@ describe('runPublish', () => {
       reviews: {},
     });
   });
+
+  it("shows the failing check's output in the PR", async () => {
+    const { gh, task } = await locked();
+    const { git } = fakeGit();
+    await runPublish(
+      publishOpts(
+        gh,
+        task,
+        {
+          ...done,
+          checks: { test: false, typecheck: true, lint: true },
+          checkOutput: { test: 'FAIL src/x.test.ts > times out' },
+        },
+        git,
+      ) as never,
+    );
+    expect(gh.pulls[0].body).toContain('FAIL src/x.test.ts > times out');
+  });
+
+  it('makes a PR that removes CLAUDE.md lines owner-only', async () => {
+    const { gh, task } = await locked();
+    const { git } = fakeGit({
+      changedFiles: async () => ['CLAUDE.md', 'src/a.ts'],
+      numstat: async () => '2\t5\tCLAUDE.md\0' + '3\t0\tsrc/a.ts\0',
+    });
+    await runPublish(publishOpts(gh, task, done, git) as never);
+    expect(gh.pulls[0].labels.map((l) => l.name)).toContain('risk:high');
+    expect(gh.pulls[0].body).toContain('CLAUDE.md');
+  });
 });

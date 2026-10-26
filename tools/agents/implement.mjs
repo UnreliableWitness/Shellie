@@ -7,9 +7,12 @@ import { execFile as execFileCb } from 'node:child_process';
 import {
   appendFileSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { canRunAgent, recordPause, recordRun } from './activity.mjs';
@@ -20,6 +23,7 @@ import { createGitHub } from './github.mjs';
 import { pickForImplement } from './pick.mjs';
 import {
   branchName,
+  claudeMdAddsOnly,
   classifyPaths,
   countChangedLines,
   prBody,
@@ -336,8 +340,11 @@ export async function runPublish({
       commitCount: await git.commitCount(task.baseSha, task.branch),
     });
     if (bundle.ok) {
-      paths = classifyPaths(await git.changedFiles(task.baseSha, task.branch));
-      lines = countChangedLines(await git.numstat(task.baseSha, task.branch));
+      const numstat = await git.numstat(task.baseSha, task.branch);
+      paths = classifyPaths(await git.changedFiles(task.baseSha, task.branch), {
+        claudeMdAddsOnly: claudeMdAddsOnly(numstat),
+      });
+      lines = countChangedLines(numstat);
     }
   } catch (e) {
     return fail(`the branch could not be read: ${e.message}`);
@@ -383,7 +390,7 @@ export async function runPublish({
     existing ??
     (await gh.createPull({
       title: prTitle(v.value.prTitle, n),
-      body: prBody(v.value.prBody, n, notes),
+      body: prBody(v.value.prBody, n, notes, result.checkOutput ?? {}),
       head: task.branch,
     }));
   await gh.addLabels(pr.number, [
@@ -490,69 +497,116 @@ export function bundleGit(bundlePath, repo, token, cwd = ROOT) {
   };
 }
 
-/** The implement job: branch, agent, the project's checks, bundle. Never has a GitHub token. */
-async function runJob(task, config) {
-  const sh = (cmd, args, opts = {}) =>
-    execFile(cmd, args, {
+/** Where a job's own files live: outside the checkout, so they are never linted, tested or committed. */
+export const workDir = (env = process.env) =>
+  env.AGENTS_WORK ?? join(tmpdir(), 'shellie-agents');
+
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/** Runs a command; on failure keeps the last 60 lines of its output. */
+async function check(cmd, args, timeout) {
+  try {
+    await execFile(cmd, args, {
       cwd: ROOT,
       maxBuffer: 64 * 1024 * 1024,
-      ...opts,
-    }).then(
-      () => true,
-      () => false,
-    );
-  const git = (...args) => execFile('git', args, { cwd: ROOT });
+      timeout,
+    });
+    return { ok: true, out: '' };
+  } catch (e) {
+    const out = `${e.stdout ?? ''}\n${e.stderr ?? ''}`
+      .replace(ANSI, '')
+      .split('\n')
+      .filter((l) => l.trim())
+      .slice(-60)
+      .join('\n');
+    return {
+      ok: false,
+      out: e.killed
+        ? `timed out after ${timeout / 60000} minutes\n${out}`
+        : out,
+    };
+  }
+}
+
+/**
+ * An agent job on the implement/fix machine: a branch at `startSha` (optionally with origin/main merged in,
+ * conflicts left for the agent), the agent, the project's checks, and a bundle of the new commits.
+ * Never has a GitHub token.
+ * @param {{ config: any, branch: string, startSha: string, mergeMain?: boolean, prompt: string, skill: string,
+ *   schema: string, model: string, maxTurns: number, label: string }} o
+ */
+export async function runAgentJob({
+  config,
+  branch,
+  startSha,
+  mergeMain = false,
+  prompt,
+  skill,
+  schema,
+  model,
+  maxTurns,
+  label,
+}) {
+  const git = (...args) =>
+    execFile('git', args, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
   await git('config', 'user.name', config.botLogin);
   await git(
     'config',
     'user.email',
     `${config.botUserId}+${config.botLogin}@users.noreply.github.com`,
   );
-  // the job's own files never end up in a commit
-  appendFileSync(
-    `${ROOT}.git/info/exclude`,
-    '\ntask.json\nresult.json\nbranch.bundle\nresult/\n',
-  );
-  await git('checkout', '-B', task.branch, task.baseSha);
+  await git('checkout', '-B', branch, startSha);
+  if (mergeMain) await git('merge', '--no-edit', 'origin/main').catch(() => {});
 
   const agent = await runClaude({
-    prompt: buildImplementPrompt(task),
+    prompt,
     cwd: ROOT,
-    model: config.models.implement,
-    maxTurns: config.maxTurns.implement,
+    model,
+    maxTurns,
     tools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'Agent'],
     allowedTools: IMPLEMENT_ALLOWED_TOOLS,
     schema: readFileSync(
-      new URL('./schemas/implement.json', import.meta.url),
+      new URL(`./schemas/${schema}.json`, import.meta.url),
       'utf8',
     ),
     systemPromptFile: fileURLToPath(
-      new URL('../../.claude/skills/sdlc-implement/SKILL.md', import.meta.url),
+      new URL(`../../.claude/skills/${skill}/SKILL.md`, import.meta.url),
     ),
     timeoutMs: 60 * 60000,
   });
-  // whatever the agent left uncommitted is committed, so the bundle holds all of it
+  // whatever the agent left uncommitted (or a merge it did not finish) is committed, so the bundle holds all of it
   if ((await git('status', '--porcelain')).stdout.trim()) {
     await git('add', '-A');
     await git(
       'commit',
       '-m',
-      `Agent changes for #${task.issue}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`,
+      `Agent changes for ${label}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`,
     );
   }
-  const ten = { timeout: 8 * 60000 };
-  const checks = {
-    test: await sh('npm', ['test'], ten),
-    typecheck: await sh('npm', ['run', 'typecheck'], ten),
-    lint: await sh('npm', ['run', 'lint'], ten),
+  const minutes = 8 * 60000;
+  const results = {
+    test: await check('npm', ['test'], minutes),
+    typecheck: await check('npm', ['run', 'typecheck'], minutes),
+    lint: await check('npm', ['run', 'lint'], minutes),
   };
+  mkdirSync(workDir(), { recursive: true });
   await git(
     'bundle',
     'create',
-    'branch.bundle',
-    `${task.baseSha}..refs/heads/${task.branch}`,
+    join(workDir(), 'branch.bundle'),
+    `${startSha}..refs/heads/${branch}`,
   ).catch(() => {});
-  return { agent, checks };
+  return {
+    agent,
+    checks: Object.fromEntries(
+      Object.entries(results).map(([k, r]) => [k, r.ok]),
+    ),
+    checkOutput: Object.fromEntries(
+      Object.entries(results)
+        .filter(([, r]) => !r.ok)
+        .map(([k, r]) => [k, r.out]),
+    ),
+  };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
@@ -586,29 +640,43 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       now: new Date(),
       summary,
     });
-    if (task) writeFileSync('task.json', JSON.stringify(task, null, 2));
+    mkdirSync(workDir(), { recursive: true });
+    if (task)
+      writeFileSync(
+        join(workDir(), 'task.json'),
+        JSON.stringify(task, null, 2),
+      );
     if (process.env.GITHUB_OUTPUT)
       appendFileSync(process.env.GITHUB_OUTPUT, `issue=${task?.issue ?? ''}\n`);
   } else if (step === 'run') {
-    const task = readJson('task.json');
-    const result = await runJob(task, config);
-    writeFileSync('result.json', JSON.stringify(result, null, 2));
+    const task = readJson(join(workDir(), 'task.json'));
+    const result = await runAgentJob({
+      config,
+      branch: task.branch,
+      startSha: task.baseSha,
+      prompt: buildImplementPrompt(task),
+      skill: 'sdlc-implement',
+      schema: 'implement',
+      model: config.models.implement,
+      maxTurns: config.maxTurns.implement,
+      label: `#${task.issue}`,
+    });
+    writeFileSync(
+      join(workDir(), 'result.json'),
+      JSON.stringify(result, null, 2),
+    );
     summary(
       `#${task.issue}: agent ${result.agent.ok ? 'answered' : `failed (${result.agent.error})`}; checks ${JSON.stringify(result.checks)}`,
     );
   } else if (step === 'publish') {
-    const task = readJson('task.json');
+    const task = readJson(join(workDir(), 'task.json'));
     const token = process.env.AGENTS_GH_TOKEN;
     await runPublish({
       gh: createGitHub(repo, token),
       config,
       task,
-      result: readJson('result/result.json'),
-      git: bundleGit(
-        fileURLToPath(pathToFileURL(`${process.cwd()}/result/branch.bundle`)),
-        repo,
-        token,
-      ),
+      result: readJson(join(workDir(), 'result', 'result.json')),
+      git: bundleGit(join(workDir(), 'result', 'branch.bundle'), repo, token),
       now: new Date(),
       summary,
     });
