@@ -1,5 +1,6 @@
 // Checks the publish job makes on what the implement job handed over, before anything is pushed (spec 5.2, 6.2).
 // The implement job ran an agent that executes code, so its bundle and result are untrusted input here.
+import { defang } from './state.mjs';
 
 /** Paths an agent PR may never touch: the agents' own rules, workflows, release and signing. */
 const DENIED = [
@@ -153,7 +154,7 @@ export function prBody(body, n, notes, checkOutput = {}) {
     );
   return [
     // only the script's own "Fixes #n" may close an issue, and the attribution line is added once, below
-    body
+    defang(body)
       .replaceAll(ATTRIBUTION, '')
       .trim()
       .replace(

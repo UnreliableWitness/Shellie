@@ -23,7 +23,12 @@ import {
   classifyPaths,
   countChangedLines,
 } from './publish-checks.mjs';
-import { findStatusComment, parseStatus, renderStatus } from './state.mjs';
+import {
+  defang,
+  findStatusComment,
+  parseStatus,
+  renderStatus,
+} from './state.mjs';
 
 const LIVE_MODES = ['implement', 'full'];
 export const REQUIRED_CHECKS = [
@@ -355,12 +360,17 @@ export async function runPublishFix({
     );
     await gh.comment(
       n,
-      `**The fixer stopped** (round ${task.round}): ${reason}\n\nIt needs the owner: push a fix, comment, or close the PR.`,
+      defang(
+        `**The fixer stopped** (round ${task.round}): ${reason}\n\nIt needs the owner: push a fix, comment, or close the PR.`,
+      ),
     );
     summary(`PR #${n}: to the owner: ${reason}`);
   };
   const noChange = async (reason) => {
-    await gh.comment(n, `Fix round ${task.round} made no change: ${reason}`);
+    await gh.comment(
+      n,
+      defang(`Fix round ${task.round} made no change: ${reason}`),
+    );
     summary(`PR #${n}: round ${task.round} made no change: ${reason}`);
   };
 
@@ -435,7 +445,9 @@ export async function runPublishFix({
     .map(([k]) => k);
   await gh.comment(
     n,
-    `**Fix round ${task.round}:** ${out.summary.slice(0, 3000)}${failed.length ? `\n\nIn the fixer's own job these still failed: ${failed.join(', ')}. CI on the new commit decides.` : ''}`,
+    defang(
+      `**Fix round ${task.round}:** ${out.summary.slice(0, 3000)}${failed.length ? `\n\nIn the fixer's own job these still failed: ${failed.join(', ')}. CI on the new commit decides.` : ''}`,
+    ),
   );
   summary(`PR #${n}: round ${task.round} pushed`);
 }
