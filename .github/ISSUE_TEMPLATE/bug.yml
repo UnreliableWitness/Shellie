@@ -1,0 +1,30 @@
+name: Something doesn't work
+description: Shellie does something wrong, crashes or shows an error
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did and what Shellie did. Screenshots help; paste error text as text too.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: "1. Start a task on a repo whose default branch is master\n2. …"
+  - type: input
+    id: version
+    attributes:
+      label: Shellie version
+      description: Settings › About
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS]

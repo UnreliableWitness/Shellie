@@ -1,0 +1,30 @@
+# Limits for the agent pollers. Spec: docs/superpowers/specs/2026-10-26-agentic-sdlc-design.md (6.1, 6.1a).
+# They run on the owner's Claude subscription: limits are turns and runs, never dollars.
+botLogin: shellie-agents[bot]
+maxOpenAgentPrs: 1
+maxImplementAttempts: 2
+maxFixRounds: 3
+maxTriagePerRun: 5
+autoMergeMaxLines: 400
+maxAgentRunsPerDay: 20 # all agents together
+pauseMinutes: 60 # after a usage limit
+needsInfoRemindDays: 14
+needsInfoCloseDays: 21
+models:
+  triage: claude-sonnet-5-5
+  implement: claude-opus-5-5
+  review: claude-opus-5-5
+  fix: claude-sonnet-5-5
+  health: claude-sonnet-5-5
+  garden: claude-sonnet-5-5
+maxTurns: # --max-turns per run
+  triage: 30
+  implement: 150
+  review: 40
+  fix: 60
+  health: 20
+  garden: 30
+maxIssuesPerDay:
+  health: 3
+maxIssuesPerWeek:
+  gardener: 2

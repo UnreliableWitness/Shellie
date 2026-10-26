@@ -1,0 +1,44 @@
+# Triage poller of the agentic SDLC (docs/superpowers/specs/2026-10-26-agentic-sdlc-design.md, docs/agents.md).
+# Runs on the owner's Claude subscription (CLAUDE_CODE_OAUTH_TOKEN). Never add an ANTHROPIC_API_KEY: the script refuses it.
+name: Agents · triage
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    # AGENTS_MODE unset or off: no runner, no Claude, nothing.
+    if: vars.AGENTS_MODE != '' && vars.AGENTS_MODE != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the agent reads history (git log, blame)
+          persist-credentials: false # no GitHub token left in the checkout for the agent
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm install -g @anthropic-ai/claude-code@2.1.310
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - name: Triage open issues
+        env:
+          AGENTS_MODE: ${{ vars.AGENTS_MODE }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # read by tools/agents/github.mjs for its own gh calls only; stripped from the agent's environment
+          AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node tools/agents/triage.mjs
