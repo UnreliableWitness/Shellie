@@ -7,7 +7,8 @@ Owner decisions (from the conversation of 2026-10-26):
 - **New feedback is picked up for fixing by itself**: replies to questions, review comments on a PR, "still broken" after a release.
 - **It runs on pollers**, as an automated process, with a few dedicated agents/skills that keep improving the software.
 - **Users get the fix in their Shellie when it is released.** Releases and auto-update already do this (every merge to `main` releases, open apps update within about 25 minutes, Home shows What's new, see CLAUDE.md, #126); this project feeds that pipeline, it does not rebuild it.
-- The owner asked for the setup with Claude's recommended defaults for the three open choices: **Anthropic API key** (not a subscription token), **trusted reporters: the owner (`UnreliableWitness`) and `maximedebraekeleer`**, and **auto-merge for low-risk bug fixes only** (features and risky changes wait for the owner's approval on the PR).
+- **No extra costs, very important.** The agents run on the owner's existing Claude subscription (an OAuth token from `claude setup-token`, used as `CLAUDE_CODE_OAUTH_TOKEN`), never an API key or pay-per-use billing. Every other piece must be free too: public-repo Actions minutes on standard runners, a free GitHub App, App Insights queries within the free allowance. The owner's account must have *extra usage* turned off, so hitting the plan's limits pauses the agents instead of charging.
+- The owner asked for the setup with Claude's recommended defaults for the other open choices: **trusted reporters: the owner (`UnreliableWitness`) and `maximedebraekeleer`**, and **auto-merge for low-risk bug fixes only** (features and risky changes wait for the owner's approval on the PR).
 
 Everything else marked *(our call)* was decided while writing this spec and has not been confirmed by the owner.
 
@@ -33,17 +34,18 @@ Shellie is used by colleagues for client work, and every merge reaches all of th
 - Replacing the owner's own sessions. Issues the owner works on by hand are left alone (see 3.3).
 - Testing on real Windows hardware or driving the app's UI. Agents rely on unit tests and the CI matrix, like the owner's sessions do today.
 - Big features and new sub-projects end to end. Triage sends those to the owner (`agent:needs-owner`); the owner can still hand an approved spec to the implementer.
-- Recording the agents' AI cost in Shellie's cost ledger or the cost server. The ledger reads local transcripts; runners are not local. Cost is shown per issue instead (section 8).
+- Recording the agents' AI cost in Shellie's cost ledger or the cost server. The ledger reads local transcripts; runners are not local. Usage is shown per issue instead (section 8).
 - A hosted service, a database or a dashboard. State lives on GitHub.
 - Telling users inside Shellie which of *their* reports was fixed. Shellie does not know their GitHub identity; the issue comment and What's new cover it.
 
 ## Anti-goals (a failure even if it works)
 
-- **Text from an issue steering an agent.** The repo is public, anyone can file an issue, and the agents run with an API key and push access. Untrusted text must never reach an agent with write power without the owner's say-so.
+- **Text from an issue steering an agent.** The repo is public, anyone can file an issue, and the agents run with the owner's subscription token and the scripts with push access. Untrusted text must never reach an agent with write power without the owner's say-so.
 - A change reaching users that no independent reviewer and no green macOS + Windows CI has seen.
 - Agents editing their own workflows, guardrails, the trusted list, release tooling or signing.
 - Two agents (or an agent and the owner) working on the same issue.
-- A runaway loop: the same issue attempted over and over, comment storms, spend without a ceiling.
+- A runaway loop: the same issue attempted over and over, comment storms.
+- **Any money spent beyond the owner's current subscription**, and the agents using up the owner's plan limits so the owner cannot work in their own sessions.
 - Agents merging while `main` is red (a red `main` blocks releases; see the auto-merge memory and #113/#118).
 - Asking the reporter vague or many questions. Questions must be few, concrete and answerable.
 
@@ -73,7 +75,7 @@ weekly Gardener  ── known gaps, flaky tests, deps ──► new issues ─�
 2. runs `claude -p` in a checkout with `persist-credentials: false` and no `GH_TOKEN`/`GITHUB_TOKEN` in the agent's environment, asking for JSON on stdout against a schema,
 3. validates that JSON, then labels, comments, commits and pushes itself, after its own checks (protected paths, size, tests).
 
-So an agent can at worst write bad code or a bad comment into a structured field, which the script and the reviewer still check. The one secret in the agent's environment is `ANTHROPIC_API_KEY` (see Risks).
+So an agent can at worst write bad code or a bad comment into a structured field, which the script and the reviewer still check. The one secret in the agent's environment is `CLAUDE_CODE_OAUTH_TOKEN` (see Risks).
 
 ### 1.2 Pieces in the repo
 
@@ -96,13 +98,13 @@ All on `schedule` cron (plus `workflow_dispatch` for a manual kick), each with i
 | Workflow | Cron | Runner | Does |
 |---|---|---|---|
 | `agents-triage.yml` | every 15 min | ubuntu-latest | triage new issues, re-triage answered `needs-info`, handle "still broken" on recently released issues; at most 5 issues per run |
-| `agents-implement.yml` | every 15 min | macos-latest | if fewer than `maxOpenAgentPrs` (2) agent PRs are open, take the oldest `agent:ready` issue (bugs before features) and implement it; one per run; timeout 90 min |
+| `agents-implement.yml` | every 15 min | macos-latest | if fewer than `maxOpenAgentPrs` (1) agent PRs are open, take the oldest `agent:ready` issue (bugs before features) and implement it; one per run; timeout 90 min |
 | `agents-pr.yml` | every 15 min | macos-latest | for each open `agent-pr`: review if the head SHA has no review, fix if there is something to fix, merge if it qualifies; at most one merge per run |
 | `agents-notify.yml` | every 30 min | ubuntu-latest | no LLM: comment on `agent:merged` issues whose fix is in a published release |
 | `agents-health.yml` | daily 06:00 UTC | ubuntu-latest | read App Insights, open issues for new or rising error patterns |
 | `agents-garden.yml` | Mondays 06:00 UTC | ubuntu-latest | open at most 2 improvement issues |
 
-macOS runners for code work because development is macOS-first and `npm ci` with node-pty is known to work there; public repos have free Actions minutes on standard runners. GitHub may delay cron runs by several minutes; the targets above allow for that.
+macOS runners for code work because development is macOS-first and `npm ci` with node-pty is known to work there. Public repos have free Actions minutes on standard runners (`ubuntu-latest`, `macos-latest`, `windows-latest`); larger or GPU runners are never used, since they are billed. If the repo ever becomes private, code work moves to `ubuntu-latest` or a self-hosted runner on the owner's Mac before anything else runs, because private-repo macOS minutes cost money *(our call)*. GitHub may delay cron runs by several minutes; the targets above allow for that.
 
 ### 2.1 Token for the scripts
 
@@ -134,11 +136,11 @@ The existing `bug`/`enhancement` labels stay for humans; triage does not need th
 
 ### 3.2 The status comment
 
-Each issue the agents touch gets one comment from the bot that it edits in place *(our call: one comment, not a stream)*: a human summary on top (state, the spec or the questions, links to the PR and runs, cost so far) and a hidden machine block:
+Each issue the agents touch gets one comment from the bot that it edits in place *(our call: one comment, not a stream)*: a human summary on top (state, the spec or the questions, links to the PR and runs, tokens used so far) and a hidden machine block:
 
 ```
 <!-- shellie-agent {"v":1,"state":"ready","lastSeenCommentId":123,"triageRounds":1,
-     "implementAttempts":0,"fixRounds":0,"costUsd":0.42,"spec":{...}} -->
+     "implementAttempts":0,"fixRounds":0,"tokens":184000,"spec":{...}} -->
 ```
 
 The orchestrator only trusts a block in a comment authored by its own bot login. Questions to the reporter are a separate, normal comment (so they get a notification); the status comment links to it.
@@ -156,7 +158,7 @@ An issue is skipped when it is assigned to a human, has `agent:stop`, or a branc
 
 ## 5. The agents
 
-Models *(our call)*: triage and health Sonnet 5.5 (`claude-sonnet-5-5`), implementer, reviewer, fixer and gardener Opus 5.5 (`claude-opus-5-5`). Each runs `claude -p --output-format json --max-budget-usd <cap>` with an explicit `--allowedTools` list and `--json-schema` style output instructions; the script rejects output that does not validate and records the run as failed.
+Models *(our call, to spare the subscription's limits)*: triage, health, gardener and fixer Sonnet 5.5 (`claude-sonnet-5-5`), implementer and reviewer Opus 5.5 (`claude-opus-5-5`). Each runs `claude -p --output-format json --max-turns <cap>` (turns, not dollars: the subscription has no per-run price) with an explicit `--allowedTools` list and `--json-schema` style output instructions; the script rejects output that does not validate and records the run as failed.
 
 ### 5.1 Triage (`sdlc-triage`)
 
@@ -219,23 +221,31 @@ Candidates the script gathers: the "known gaps" in CLAUDE.md, tests that failed 
 ### 6.1 `.github/agents/config.yml`
 
 ```yaml
-maxOpenAgentPrs: 2
+maxOpenAgentPrs: 1
 maxImplementAttempts: 2
 maxFixRounds: 3
 maxTriagePerRun: 5
 autoMergeMaxLines: 400
-budgetsUsd:      # --max-budget-usd per run
-  triage: 1
-  implement: 15
-  review: 3
-  fix: 5
-  health: 2
-  garden: 3
+maxTurns:        # --max-turns per run
+  triage: 30
+  implement: 150
+  review: 40
+  fix: 60
+  health: 20
+  garden: 30
+maxAgentRunsPerDay: 20   # all agents together
 maxIssuesPerDay: { health: 3 }
 maxIssuesPerWeek: { gardener: 2 }
 ```
 
-The hard ceiling on spend is an **Anthropic Console workspace `shellie-agents`** with its own API key and a monthly spend limit (owner setup; suggested €300 *(our call)*). When the limit is hit, calls fail, runs record the failure, and nothing loops: a failed run is retried on the next poll at most once per hour per item.
+### 6.1a Staying inside the subscription
+
+There is no money ceiling to set, because nothing is billed per use; the limits that matter are the plan's own usage windows, which the agents share with the owner's interactive sessions. So *(our call)*:
+- **Usage-limit pause.** When `claude -p` reports a usage or rate limit, the script records the reset time in the "Agent activity" issue's status block (section 8), and every poller checks it first and exits until then. No retry storms; the item is simply picked up again after the reset.
+- **One implementation at a time** (`maxOpenAgentPrs: 1`) and a daily cap on agent runs across all pollers (`maxAgentRunsPerDay`).
+- **Owner hours.** Optional repo variable `AGENTS_QUIET_HOURS` (e.g. `08-18 Europe/Brussels`, Mon-Fri) during which only triage and the no-LLM scripts (merge, notify) run, so implementation happens evenings and nights and leaves the plan's limits to the owner during the work day. Off by default; the owner turns it on if the agents get in the way.
+- **No paid fallback, ever.** The scripts refuse to start an agent when `ANTHROPIC_API_KEY` is set in the environment (Claude Code would prefer it over the subscription token and bill it), and the run fails with a clear message.
+- Failed runs are retried on the next poll at most once per hour per item.
 
 ### 6.2 Protected paths
 
@@ -251,11 +261,11 @@ The same lists are in `tools/agents/` with tests, and CODEOWNERS covers them so 
 - New telemetry event `feedback.opened` (`from`: `about` or `notice`; never the text), added to `docs/telemetry.md`.
 - Reporters not on the trusted list land in `agent:awaiting-approval` (section 4).
 
-## 8. Visibility and cost
+## 8. Visibility and usage
 
-- Every run writes a job summary: what it looked at, what it decided, the agent's cost (`total_cost_usd` from `claude -p`'s JSON), and links.
-- The status comment keeps the issue's running cost (triage + implement + review + fix runs) and shows it in its summary, in USD as Claude Code reports it *(our call: no EUR conversion here; it is our own spend, not a customer's)*.
-- A pinned issue "Agent activity" that the triage poller edits once a day *(our call)*: open items per state, PRs waiting for the owner, merges and releases this week, spend this month.
+- Every run writes a job summary: what it looked at, what it decided, the tokens used and turns taken (from `claude -p`'s JSON), and links. Claude Code's `total_cost_usd` is an API-equivalent estimate, not a charge on a subscription; it is shown labelled "list-price equivalent, not billed" so the owner can see which issues are heavy *(our call)*.
+- The status comment keeps the issue's running token total (triage + implement + review + fix runs).
+- A pinned issue "Agent activity" that the triage poller edits once a day *(our call)*: open items per state, PRs waiting for the owner, merges and releases this week, runs today against `maxAgentRunsPerDay`, and whether the agents are paused for a usage limit and until when. Its hidden status block holds the pause.
 
 ## 9. Rollout and kill switch
 
@@ -278,7 +288,7 @@ The owner moves `AGENTS_MODE` forward by hand after watching each stage.
 ## 10. Owner setup (one-time)
 
 1. Create the GitHub App `shellie-agents` (permissions in 2.1), install it on the repo, store `AGENTS_APP_ID` (variable) and `AGENTS_APP_PRIVATE_KEY` (secret).
-2. Anthropic Console: workspace `shellie-agents` with a monthly limit, its API key as secret `ANTHROPIC_API_KEY`.
+2. Run `claude setup-token` on the owner's Mac (signed in with the current subscription) and store the token as secret `CLAUDE_CODE_OAUTH_TOKEN`; it lasts a year, so set a reminder to renew it. In claude.ai settings, make sure **extra usage is off**. Never add an `ANTHROPIC_API_KEY` secret to the repo.
 3. Azure: a service principal with *Monitoring Reader* on `shellie-app`, a federated credential for this repo's `agents-health.yml`, variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
 4. Branch protection on `main`: require the `test` and `windows-installer` checks; allow the App to merge. (Workflow edits stay owner-only through CODEOWNERS.)
 5. Set `AGENTS_MODE=shadow`.
@@ -287,7 +297,9 @@ These steps go into `docs/agents.md`, together with how to read the labels and h
 
 ## Risks
 
-- **The API key is in the agent's environment.** A trusted-but-compromised issue or a malicious dependency during `npm ci` could exfiltrate it. Limits: trusted reporters only, a separate workspace with a spend limit, a key that can be rotated without touching anything else. GitHub write access is never in the agent's environment.
+- **The owner's subscription token is in the agent's environment.** A trusted-but-compromised issue or a malicious dependency during `npm ci` could exfiltrate it and use the owner's plan. Limits: trusted reporters only, extra usage off (so a stolen token cannot cost money, only use up limits), and the token can be revoked from claude.ai and replaced by running `claude setup-token` again. GitHub write access is never in the agent's environment.
+- **The agents compete with the owner for the plan's limits.** A heavy day of agent work can leave the owner rate-limited in their own sessions. Limits: one implementation at a time, the daily run cap, Sonnet where it is enough, the pause on a usage limit, and the optional quiet hours (6.1a).
+- **Plan terms.** Using a subscription token in GitHub Actions is the documented way to run Claude Code's GitHub integration on a Pro/Max plan; if Anthropic's terms for automated use change, the pollers are switched `off` until the owner decides.
 - **Auto-merge ships to every user in ~30 minutes.** Limits: bug/chore + low risk + size + independent review + CI on both OSes + green `main`; the owner can set `AGENTS_MODE=implement` to stop merges while keeping the rest. A bad release is fixed forward (there is no rollback in the updater today).
 - **Windows is only checked by CI.** Same as the owner's sessions today; the reviewer flags Windows-specific risk, which makes it `risk:high`.
 - **Agent conflicts in CLAUDE.md.** Every PR adds a Status line, so two open agent PRs often conflict; the fixer resolves them and merges go one at a time.
