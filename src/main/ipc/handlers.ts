@@ -133,6 +133,7 @@ import type { TimeStore } from '../time/TimeStore';
 import type { Command, Platform } from '../platform/Platform';
 import { OFFICIAL_RATES, OFFICIAL_RATES_AS_OF } from '../pricing/officialRates';
 import { AdoClient, AdoError } from '../services/AdoClient';
+import { readApmYmlTargets } from '../services/apmYml';
 import type { TrackerRegistry } from '../trackers/TrackerRegistry';
 import {
   TokenUnavailableError,
@@ -1479,6 +1480,24 @@ export function createHandlers(s: Services): Handlers {
   ];
 
   /**
+   * The tab targets narrowed to those the repo's apm.yml declares (#135): APM writes the packages' agent files
+   * unchanged, so a target the package was not written for can leave files its harness refuses to start with.
+   */
+  const apmTargetsInApmYml = async (repoPath: string, targets: string[]) => {
+    const declared = await readApmYmlTargets(repoPath);
+    if (!declared) return targets;
+    const kept = targets.filter((t) => declared.includes(t));
+    const dropped = targets.filter((t) => !declared.includes(t));
+    if (dropped.length > 0)
+      console.info(
+        kept.length > 0
+          ? `[apm] skipping ${dropped.join(', ')}: apm.yml targets [${declared.join(', ')}]`
+          : `[apm] apm.yml targets [${declared.join(', ')}] match no open tab`,
+      );
+    return kept;
+  };
+
+  /**
    * The tabs a reopened task gets back: those it had at Finish, or for tasks finished before that was kept, the
    * ones setup opens. A Claude tab without a session id continues the folder's latest session when there is one.
    */
@@ -1613,7 +1632,10 @@ export function createHandlers(s: Services): Handlers {
       cloneNodeModules:
         Boolean(s.platform.cloneDir) &&
         task.setup.commands.some((c) => c.trim() === 'npm ci'),
-      apmTargets: hasApm ? config.apm || apmTargetsFor(defs) : [],
+      apmTargets: hasApm
+        ? config.apm ||
+          (await apmTargetsInApmYml(repo.path, apmTargetsFor(defs)))
+        : [],
       taskMd: renderTaskMd(
         task,
         Object.fromEntries(

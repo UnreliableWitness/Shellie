@@ -100,7 +100,7 @@ flowchart LR
 - Claude Code, GitHub Copilot CLI, OpenCode and your shell, side by side
 - Claude Code gets the work item as context and keeps its session across relaunches
 - Clickable `path:line` and links, **Send to** a terminal, and copy and paste like VS Code
-- Agent packages installed per harness when the repo has an `apm.yml`
+- Agent packages installed per harness when the repo has an `apm.yml` (only for the harnesses its `targets:` lists, when it has one)
 
 </td>
 </tr>
