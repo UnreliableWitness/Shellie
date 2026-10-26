@@ -46,8 +46,10 @@ export function classifyIssue(issue, comments, ctx) {
 
   const fresh = trustedComments(comments, trustedLogin, ctx.botLogin, status.lastSeenCommentId);
   const base = { status, statusComment, newComments: fresh };
+  // the poller only sees open issues: a closed one that is open again was reopened by someone
+  if (status.state === 'closed') return { ...base, action: 'triage', reason: 'reopened' };
   if (status.state === 'needs-owner') {
-    if (has('agent:go')) return { ...base, action: 'go', reason: 'owner-go' };
+    if (has('agent:go') && !status.goHandled) return { ...base, action: 'go', reason: 'owner-go' };
     if (fresh.length) return { ...base, action: 'triage', reason: 'owner-replied' };
     return skip('waiting');
   }

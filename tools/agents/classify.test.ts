@@ -87,6 +87,9 @@ describe('classifyIssue: state', () => {
     const d = classifyIssue(issue(), [status({ state: 'needs-info', askedAt: daysAgo(1) }), comment(11, 'stranger')], ctx());
     expect(d.action).toBe('skip');
   });
+  it('triages again when a closed issue is reopened', () => {
+    expect(classifyIssue(issue(), [status({ state: 'closed' })], ctx()).reason).toBe('reopened');
+  });
   it('reminds after 14 days once, and closes after 21', () => {
     expect(classifyIssue(issue(), [status({ state: 'needs-info', askedAt: daysAgo(14) })], ctx()).action).toBe('remind');
     expect(classifyIssue(issue(), [status({ state: 'needs-info', askedAt: daysAgo(15), remindedAt: daysAgo(1) })], ctx()).action).toBe('skip');
@@ -95,6 +98,8 @@ describe('classifyIssue: state', () => {
   it('moves needs-owner to ready on agent:go, and re-triages on an owner comment', () => {
     expect(classifyIssue(issue({ labels: labels('agent:go') }), [status({ state: 'needs-owner' })], ctx()).action).toBe('go');
     expect(classifyIssue(issue(), [status({ state: 'needs-owner' }), comment(12, 'UnreliableWitness')], ctx()).action).toBe('triage');
+    // a go is used once; a later needs-owner with the label still on waits for a new owner comment
+    expect(classifyIssue(issue({ labels: labels('agent:go') }), [status({ state: 'needs-owner', goHandled: true })], ctx()).action).toBe('skip');
   });
 });
 
