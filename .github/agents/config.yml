@@ -7,7 +7,7 @@ maxImplementAttempts: 2
 maxFixRounds: 3
 maxTriagePerRun: 5
 autoMergeMaxLines: 400
-maxAgentRunsPerDay: 20 # all agents together
+maxAgentRunsPerDay: 30 # all agents together (20 until 2026-10-26)
 pauseMinutes: 60 # after a usage limit
 needsInfoRemindDays: 14
 needsInfoCloseDays: 21

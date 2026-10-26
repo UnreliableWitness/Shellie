@@ -101,7 +101,7 @@ If you merge an agent PR yourself, or close it, the agents notice: a merge goes 
 
 ## Limits
 
-`.github/agents/config.yml`: at most 5 issues triaged per run, one agent PR open at a time, one review per run, 20 agent runs a day across all agents (an implementation is one run, but a big one: Opus, up to 150 turns), `--max-turns` per agent. On a usage-limit error every agent pauses for an hour. Each poller keeps its own block on the Agent activity issue (triage in the body, the others in a comment each) and reads all of them for the cap and the pause.
+`.github/agents/config.yml`: at most 5 issues triaged per run, one agent PR open at a time, one review per run, 30 agent runs a day across all agents (an implementation is one run, but a big one: Opus, up to 150 turns), `--max-turns` per agent. On a usage-limit error every agent pauses for an hour. Each poller keeps its own block on the Agent activity issue (triage in the body, the others in a comment each) and reads all of them for the cap and the pause.
 
 The **Agent activity** issue (label `agent:activity`) is their bookkeeping: runs today, whether they are paused and until when, and open issues per label. Do not edit its hidden block by hand.
 
