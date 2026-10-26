@@ -199,7 +199,7 @@ An agent PR is merged (squash, branch deleted) when all hold:
 - the reviewer approved this exact SHA, no unresolved review threads,
 - branch is up to date with `main` (otherwise the fixer updates it first),
 - no `agent:hold-merge`, `agent:stop`; no protected path touched,
-- the latest `main` run is green (if red: no merges at all; the script opens or bumps an `agent:ready` `kind:bug` issue "main is red" at the top of the queue *(our call)*),
+- the latest `main` run is green (if red: no merges at all; *changed 2026-10-26: no "main is red" issue is opened, merges just stop and the PR says why*),
 - and either (`kind:bug` and `risk:low` and at most `autoMergeMaxLines` (400) changed lines, not counting `package-lock.json` and `CLAUDE.md`), or the owner has approved the PR (a GitHub review "Approve" by `UnreliableWitness`).
 
 PRs that need the owner get `agent:awaits-owner` and a short line in the PR body saying why. After a merge the issue gets `agent:merged`, loses `claude-working` and `agent:pr-open`. The next poll checks the `main` run and that the release job made a tag; if the release did not appear within an hour, the issue gets a comment and `needs-owner` (this is the check from the owner's auto-merge memory, now automated).
@@ -250,7 +250,7 @@ There is no money ceiling to set, because nothing is billed per use; the limits 
 ### 6.2 Protected paths
 
 - **Hard-denied** (an agent PR that touches them is never pushed; the script refuses and sets `needs-owner`): `.github/workflows/**`, `.github/agents/**`, `.github/CODEOWNERS`, `.claude/skills/sdlc-*/**`, `tools/agents/**`, `tools/release/**`, `tools/forge/macSigning.mjs`, `assets/entitlements.mac.plist`.
-- **Owner-only merge** (allowed, always `risk:high`): `forge.config.mts`, `src/main/autoUpdate.ts`, `src/main/secrets/**`, `src/main/costServer/**`, `src/main/ledger/**`, `src/main/migrate/**`, `package.json` dependency changes.
+- **Owner-only merge** (allowed, always `risk:high`): `forge.config.mts`, `src/main/autoUpdate.ts`, `src/main/secrets/**`, `src/main/costServer/**`, `src/main/ledger/**`, `src/main/migrate/**`, `package.json`, and (added 2026-10-26 with stage 3) `package-lock.json`, `.claude/**`, `scripts/**`, `.npmrc`, `.mcp.json`, `vite.*.config.mts`, `vitest.config.mts`, and `CLAUDE.md` unless the change only adds lines.
 
 The same lists are in `tools/agents/` with tests, and CODEOWNERS covers them so a human edit also needs the owner.
 

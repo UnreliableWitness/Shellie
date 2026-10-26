@@ -14,7 +14,7 @@ import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import { missingLabels, LABELS } from './labels.mjs';
-import { renderStatus } from './state.mjs';
+import { findStatusComment, parseStatus, renderStatus } from './state.mjs';
 import {
   buildTriagePrompt,
   planActions,
@@ -120,6 +120,42 @@ export async function runTriage({
     for (const x of items)
       if (x.decision.action === 'go' && !x.decision.status?.spec) {
         x.decision = { ...x.decision, action: 'triage', consumeGo: true };
+      }
+
+    // "still broken": a trusted comment on a released issue closed in the last 30 days reopens it once;
+    // the next poll triages it again with the comment
+    if (!shadow)
+      for (const closed of await gh.listRecentlyClosedByLabel(
+        'agent:released',
+        30,
+      )) {
+        const comments = await gh.listComments(closed.number);
+        const sc = findStatusComment(comments, bot);
+        const st = sc ? parseStatus(sc.body) : null;
+        if (st?.state !== 'released') continue;
+        const fresh = comments.filter(
+          (c) =>
+            c.id > (st.stillBrokenSeenId ?? st.lastSeenCommentId ?? 0) &&
+            c.user?.login !== bot &&
+            isTrusted(trusted, c.user?.login) &&
+            c.created_at > (st.releasedAt ?? ''),
+        );
+        if (!fresh.length) continue;
+        try {
+          // seen first: whatever fails below, the same comment never reopens the issue twice
+          await gh.editComment(
+            sc.id,
+            renderStatus(
+              { ...st, stillBrokenSeenId: Math.max(...fresh.map((c) => c.id)) },
+              '**Reopened:** a comment says it is still broken; it is triaged again.',
+            ),
+          );
+          await gh.reopen(closed.number);
+          await gh.removeLabel(closed.number, 'agent:released');
+          summary(`#${closed.number}: reopened (still broken)`);
+        } catch (e) {
+          summary(`#${closed.number}: could not reopen: ${e.message}`);
+        }
       }
 
     const { agent, script } = pickForTriage(items, config.maxTriagePerRun);

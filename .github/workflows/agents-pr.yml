@@ -1,5 +1,9 @@
 # PR poller of the agentic SDLC (docs/superpowers/specs/2026-10-26-agentic-sdlc-design.md, docs/agents.md).
-# Stage 2: reviews each new head commit of an agent PR, read-only. Runs on the owner's Claude subscription.
+#   review       read-only review of each new head commit of an agent PR (App token in a file, never in the environment)
+#   decide       no LLM: bookkeeping for merged/closed PRs, update-branch, merge (full mode only), or one fix task
+#   fix          the fix agent on the PR branch: Claude subscription token only, no GitHub token on the machine
+#   publish-fix  a fresh machine with the App token: checks the fix and fast-forwards the PR branch
+# Runs on the owner's Claude subscription (CLAUDE_CODE_OAUTH_TOKEN). Never add an ANTHROPIC_API_KEY.
 name: Agents · PR
 on:
   schedule:
@@ -44,3 +48,117 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
         run: node tools/agents/review.mjs
+
+  decide:
+    needs: review
+    # a failed review run must not stop merges and bookkeeping for other PRs
+    if: always() && (vars.AGENTS_MODE == 'implement' || vars.AGENTS_MODE == 'full')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pr: ${{ steps.decide.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - name: Hand the App token to the script in a file
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
+      - id: decide
+        name: Decide (merge, update, or a fix)
+        env:
+          AGENTS_MODE: ${{ vars.AGENTS_MODE }}
+          AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
+          AGENTS_WORK: ${{ runner.temp }}/agents
+        run: node tools/agents/pr.mjs decide
+      - if: steps.decide.outputs.pr != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-task
+          path: ${{ runner.temp }}/agents/fix-task.json
+          retention-days: 7
+
+  fix:
+    needs: decide
+    if: always() && needs.decide.outputs.pr != ''
+    runs-on: macos-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false # no GitHub token on this machine
+      # no npm cache here: untrusted code runs on this machine, and it must not write a cache other jobs restore
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code@2.1.310
+      - uses: actions/download-artifact@v4
+        with:
+          name: fix-task
+          path: ${{ runner.temp }}/agents
+      - name: Fix
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          AGENTS_WORK: ${{ runner.temp }}/agents
+        run: node tools/agents/pr.mjs run
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-result
+          path: |
+            ${{ runner.temp }}/agents/result.json
+            ${{ runner.temp }}/agents/branch.bundle
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish-fix:
+    needs: [decide, fix]
+    if: always() && needs.decide.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - name: Hand the App token to the script in a file
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
+      - uses: actions/download-artifact@v4
+        with:
+          name: fix-task
+          path: ${{ runner.temp }}/agents
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # missing when the fix job died
+        with:
+          name: fix-result
+          path: ${{ runner.temp }}/agents/result
+      - name: Check and publish the fix
+        env:
+          AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
+          AGENTS_WORK: ${{ runner.temp }}/agents
+        run: node tools/agents/pr.mjs publish

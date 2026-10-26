@@ -157,6 +157,11 @@ describe('classifyIssue: state', () => {
     );
     expect(d.action).toBe('skip');
   });
+  it('triages a released issue that someone reopened', () => {
+    expect(
+      classifyIssue(issue(), [status({ state: 'released' })], ctx()).reason,
+    ).toBe('reopened');
+  });
   it('triages again when a closed issue is reopened', () => {
     expect(
       classifyIssue(issue(), [status({ state: 'closed' })], ctx()).reason,

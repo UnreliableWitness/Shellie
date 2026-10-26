@@ -1,5 +1,6 @@
 // The reviewer's input and output (spec 5.3): a fresh-context review of an agent PR against triage's spec.
 // The App cannot approve its own PR, so the review is a COMMENT review and the verdict lives in the PR's status block.
+import { defang } from './state.mjs';
 
 const TAGS = /<(\/?)(issue|spec|pull-request|files)\b/gi;
 const data = (text) => String(text ?? '').replace(TAGS, '&lt;$1$2');
@@ -69,7 +70,7 @@ const label = {
   minor: '**Minor**',
 };
 const findingText = (f) =>
-  `${label[f.severity]}: ${f.problem}\n\n*When:* ${f.scenario}`;
+  defang(`${label[f.severity]}: ${f.problem}\n\n*When:* ${f.scenario}`);
 const head = (r) =>
   [
     `### Agent review: ${r.verdict === 'changes' ? 'Changes needed' : 'No blocking findings'}`,
