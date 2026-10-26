@@ -143,7 +143,7 @@ export function planActions(result, { issue, previous, lastCommentId, tokens, no
     }
     case 'needs-owner': {
       setState('needs-owner');
-      const s = { ...base, state: 'needs-owner', goHandled: false };
+      const s = { ...base, state: 'needs-owner' };
       status(s, `**Triage: needs the owner.** ${result.reason}${result.question ? `\n\n> ${result.question}` : ''}\n\nAdd \`agent:go\` to have it implemented as triaged, or comment to triage it again.`);
       break;
     }
