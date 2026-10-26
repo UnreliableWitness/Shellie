@@ -1,9 +1,12 @@
 name: CI
 on:
+  # main and v* tags only: a PR runs through pull_request, so a branch push no longer runs CI a second time
   push:
-    branches: ['**']
+    branches: [main]
     tags: ['v*']
   pull_request:
+  # a branch without a PR: Actions › CI › Run workflow
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,14 +20,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
+      # Real-time scanning of every file npm, git and the tests touch makes the Windows suite ~5x slower than macOS.
+      - name: Keep Windows Defender out of the build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP, "$env:LOCALAPPDATA\npm-cache" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionProcess node.exe, git.exe -ErrorAction SilentlyContinue
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
+      # the same on both systems, so once is enough
+      - if: runner.os == 'macOS'
+        run: npm run lint
+      - if: runner.os == 'macOS'
+        run: npm run typecheck
       - run: npm test
       # The packaged app must load node-pty and spawn a pty (Windows does this in the installer jobs).
       # Unsigned here (MAC_SIGN is set only in macos-release); make also checks the DMG and zip makers.
@@ -38,13 +52,19 @@ jobs:
 
   windows-installer:
     # Unsigned build for pull requests and non-release branches. Never signs.
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
-    needs: test
+    # Not waiting for the tests: it is an unsigned artifact only, and the release jobs below still need them.
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
       contents: read
     steps:
+      - name: Keep Windows Defender out of the build
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP, "$env:LOCALAPPDATA\npm-cache" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionProcess node.exe, git.exe -ErrorAction SilentlyContinue
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
