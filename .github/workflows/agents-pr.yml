@@ -72,6 +72,10 @@ jobs:
       !((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review') && github.event.sender.type == 'Bot')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # actions: write so decide can re-run a red CI's failed jobs once (the App may only read Actions)
+    permissions:
+      contents: read
+      actions: write
     outputs:
       pr: ${{ steps.decide.outputs.pr }}
     steps:
@@ -93,11 +97,16 @@ jobs:
         env:
           TOKEN: ${{ steps.app-token.outputs.token }}
         run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
+      - name: Hand the workflow's own token (for re-runs) to the script in a file
+        env:
+          TOKEN: ${{ github.token }}
+        run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-actions-token"
       - id: decide
         name: Decide (merge, update, or a fix)
         env:
           AGENTS_MODE: ${{ vars.AGENTS_MODE }}
           AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
+          AGENTS_ACTIONS_TOKEN_FILE: ${{ runner.temp }}/agents-actions-token
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/pr.mjs decide
       - if: steps.decide.outputs.pr != ''

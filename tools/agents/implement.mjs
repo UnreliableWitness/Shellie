@@ -296,6 +296,7 @@ export async function runPublish({
         `**Ready for implementation:** attempt ${attempts} made no PR; it is tried again in an hour.\n\n> ${reason}`,
       );
     }
+    return { opened: null };
   };
 
   if (result?.agent?.limited) {
@@ -319,7 +320,7 @@ export async function runPublish({
       '**Ready for implementation:** paused for a usage limit; it is tried again after the pause.',
     );
     summary(`#${n}: usage limit; agents paused`);
-    return;
+    return { opened: null };
   }
   if (!result)
     return fail('the implement job ended without a result (timeout or crash)');
@@ -329,6 +330,8 @@ export async function runPublish({
   if (!v.ok) return fail(`invalid answer: ${v.error}`);
   if (v.value.status === 'blocked')
     return fail(`the agent stopped: ${v.value.reason}`, { toOwner: true });
+  if (result.commits === 0)
+    return fail('the agent answered "done" but committed nothing');
 
   let bundle, paths, lines;
   try {
@@ -413,6 +416,7 @@ export async function runPublish({
     `**PR open:** #${pr.number} (${risk} risk). Nothing merges by itself in this stage.`,
   );
   summary(`#${n}: opened PR #${pr.number} (${risk} risk, ${lines} lines)`);
+  return { opened: pr.number };
 }
 
 /** git on the publish machine, against the bundle the implement job made. */
@@ -640,6 +644,17 @@ export async function runAgentJob({
     checks: Object.fromEntries(
       Object.entries(results).map(([k, r]) => [k, r.ok]),
     ),
+    // the agent's own commits (a merge of main counts as one): 0 means it changed nothing
+    commits: Number(
+      (
+        await git(
+          'rev-list',
+          '--count',
+          '--first-parent',
+          `${startSha}..HEAD`,
+        ).catch(() => ({ stdout: '' }))
+      ).stdout.trim() || 0,
+    ),
     checkOutput: Object.fromEntries(
       Object.entries(results)
         .filter(([, r]) => !r.ok)
@@ -710,7 +725,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   } else if (step === 'publish') {
     const task = readJson(join(workDir(), 'task.json'));
     const token = process.env.AGENTS_GH_TOKEN;
-    await runPublish({
+    const published = await runPublish({
       gh: createGitHub(repo, token),
       config,
       task,
@@ -719,6 +734,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       now: new Date(),
       summary,
     });
+    if (process.env.GITHUB_OUTPUT)
+      appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `opened=${published?.opened ?? ''}\n`,
+      );
   } else {
     console.error('usage: implement.mjs pick | run | publish');
     process.exit(2);

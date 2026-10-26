@@ -5,8 +5,12 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
-  # a branch without a PR: Actions › CI › Run workflow
+  # a branch without a PR: Actions › CI › Run workflow. On main it is "Release now" (the app changes so far).
   workflow_dispatch:
+  # Releases are bundled: twice a day the app changes merged since the last release become one version
+  # (12:00 and 17:00 Brussels in winter, 13:00 and 18:00 in summer). A push to main only runs the tests.
+  schedule:
+    - cron: '0 11,16 * * *'
 
 permissions:
   contents: read
@@ -98,7 +102,7 @@ jobs:
   # Whether main changed anything that goes into the app since the newest release (tools/release/needs-release.mjs):
   # a merge that only touches the agent pipeline, docs, art sources, tests or dev tools makes no new version.
   release-needed:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     # In the release queue: it runs after a release still being made has been tagged, so it compares with the
     # real newest release (otherwise two quick merges both saw the older tag and the second released again).
     concurrency:
@@ -123,14 +127,15 @@ jobs:
           else echo "Only non-app files (agents, docs, tests, tools) changed since the last release: **no new version**." >> "$GITHUB_STEP_SUMMARY"; fi
 
   windows-release:
-    # Push to main with app changes, or a v* tag. Runs in the "release" environment, which holds the OIDC trust
-    # for signing. Every push to main that changes the app (each such merged PR) publishes the next minor version,
-    # so it can be tested through auto-update; a v* tag pushed by hand publishes exactly that version, always.
+    # The scheduled (or "Release now") run on main with app changes since the last release, or a v* tag. Runs in the
+    # "release" environment, which holds the OIDC trust for signing. It publishes the next minor version with every
+    # app change merged since the last release; a v* tag pushed by hand publishes exactly that version, always.
     if: >-
-      always() && github.event_name == 'push' &&
+      always() &&
       needs.test.result == 'success' && needs.test-windows.result == 'success' &&
-      (startsWith(github.ref, 'refs/tags/v') ||
-      (github.ref == 'refs/heads/main' && needs.release-needed.outputs.app == 'true'))
+      ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && needs.release-needed.outputs.app == 'true'))
     needs: [test, test-windows, release-needed]
     # One release at a time, so two quick merges never pick the same version. A newer push replaces a
     # waiting one; its release then contains both.
@@ -279,7 +284,7 @@ jobs:
     # Adds the signed, notarized Apple Silicon build to the release windows-release just made. It runs
     # after that release and only reads its tag, so a failure here never blocks or changes the Windows
     # release. Without all Apple secrets the build is unsigned and stays a run artifact only.
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && needs.windows-release.outputs.tag != ''
+    if: needs.windows-release.outputs.tag != ''
     needs: windows-release
     concurrency:
       group: macos-release
