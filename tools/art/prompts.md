@@ -54,3 +54,36 @@ section. Each image is the line starting with its file name in bold. A subject e
 > shadow.
 
 **get-started.png** - The clam shell resting on the shelf slightly left of centre, its lit side towards the upper left, a soft shadow beneath it, the rest of the picture calm and empty. Landscape.
+
+## Agent avatar
+
+> A GitHub profile avatar for "shellie-agents", the bot that triages, fixes and ships a developer tool called
+> Shellie. Flat faceted low-poly style like the Shellie app icon: a clam shell made of a few crisp flat planes in four
+> blues, near-white (#f1f7ff) at the hinge through #a9d0f8 and #1f56a8 to a navy (#122f5c) rim, hinge up. Centred,
+> filling about two thirds of a square on a soft pale blue (#dbeafb) background, nothing else in the corners, since
+> GitHub crops it to a circle and shows it at 20 to 40 pixels: one bold, friendly silhouette, no fine detail. No text,
+> no letters, no numbers, no logos, no watermark, no frame, no border.
+
+**avatar-cursor-eye.png** - The clam shell slightly open, and in the dark gap between its two halves one glowing pale ice-blue terminal cursor bar, like a single calm eye, the only bright point in the picture.
+
+**avatar-antenna.png** - The clam shell closed, with one short thin antenna rising from the hinge ending in a small glowing ice-blue dot, a tiny friendly robot made of a seashell.
+
+**avatar-prompt.png** - The clam shell slightly open, a small glowing ice-blue terminal prompt chevron and underscore floating just inside the opening, as if the shell is about to type.
+
+## Agent avatar, robot
+
+> A GitHub profile avatar for "shellie-agents", a friendly robot that triages, fixes and ships a developer tool
+> called Shellie. Unmistakably a robot: glowing LED eyes, a visor or screen face, an antenna. Flat faceted low-poly
+> style like the Shellie app icon, crisp flat planes in four blues, near-white (#f1f7ff), #a9d0f8, #1f56a8 and navy
+> (#122f5c), with the eyes and glowing parts in bright ice-cyan (#7fe3ff). Centred, filling about two thirds of the
+> square. The soft pale blue (#dbeafb) background fills the whole square edge to edge: no tile, no rounded corners,
+> no dark corners, no border. GitHub crops it to a circle and shows it at 20 to 40 pixels, so one bold, cheerful
+> silhouette with big simple shapes and no fine detail. No text, no letters, no numbers, no logos, no watermark.
+
+**avatar-bot-face.png** - A faceted clam shell turned into a robot head: the shell's two halves form the head, the dark gap between them is a wide visor with two big round glowing ice-cyan eyes, and a short antenna with a glowing ball rises from the hinge on top. Cheerful and curious, facing the viewer.
+
+**avatar-bot-helmet.png** - A small chunky friendly robot seen from the front from the chest up, with a dark rounded screen for a face showing two big glowing ice-cyan eyes and a small smile, wearing a faceted clam shell as a helmet with the shell's fan rising over its head.
+
+**avatar-bot-hermit.png** - A tiny faceted robot hermit crab peeking out of a faceted clam shell, two glowing ice-cyan eyes on short stalks, one small claw raised in a wave, the shell bigger than the crab.
+
+**avatar-bot-crest.png** - A bold rounded robot head facing the viewer, two big round glowing ice-cyan eyes and a small grille mouth, with a faceted clam shell fanning up from the top of the head like a crest, and two small round ear bolts.
