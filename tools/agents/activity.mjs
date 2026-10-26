@@ -46,13 +46,14 @@ export function recordPause(a, now, minutes) {
  * @param {Date} now
  * @param {number} maxPerDay
  */
-export function renderActivity(a, counts, now, maxPerDay) {
-  const paused = a.pausedUntil && now.getTime() < Date.parse(a.pausedUntil);
+export function renderActivity(a, counts, now, maxPerDay, shown = a) {
+  const paused =
+    shown.pausedUntil && now.getTime() < Date.parse(shown.pausedUntil);
   const lines = [
     "This issue is the Shellie agents' own bookkeeping; they edit it. See `docs/agents.md`.",
     '',
-    `- Agent runs today: ${a.runsByDay[day(now)] ?? 0} of ${maxPerDay}`,
-    `- ${paused ? `**Paused for a usage limit until ${a.pausedUntil}**` : 'Not paused'}`,
+    `- Agent runs today: ${shown.runsByDay[day(now)] ?? 0} of ${maxPerDay}`,
+    `- ${paused ? `**Paused for a usage limit until ${shown.pausedUntil}**` : 'Not paused'}`,
     '',
     '| Label | Open issues |',
     '|---|---|',
@@ -61,4 +62,20 @@ export function renderActivity(a, counts, now, maxPerDay) {
     `<sub>Updated ${now.toISOString()}</sub>`,
   ];
   return renderStatus(a, lines.join('\n'));
+}
+
+/**
+ * All pollers' blocks as one, for the daily cap and the pause: run counts summed per day, the latest pause.
+ * @param {{ pausedUntil?: string, runsByDay: Record<string, number> }[]} blocks
+ */
+export function mergeActivity(blocks) {
+  const runsByDay = {};
+  let pausedUntil;
+  for (const b of blocks) {
+    for (const [d, n] of Object.entries(b.runsByDay ?? {}))
+      runsByDay[d] = (runsByDay[d] ?? 0) + n;
+    if (b.pausedUntil && (!pausedUntil || b.pausedUntil > pausedUntil))
+      pausedUntil = b.pausedUntil;
+  }
+  return { runsByDay, ...(pausedUntil ? { pausedUntil } : {}) };
 }

@@ -452,4 +452,43 @@ describe('runTriage', () => {
     await runTriage(d.opts);
     expect(d.prompts).toHaveLength(1);
   });
+
+  it("counts other pollers' runs and pauses, and never edits their blocks", async () => {
+    const gh = fakeGitHub([issue(1, 'maximedebraekeleer')]);
+    const activity = issue(3, bot, {
+      labels: [{ name: 'agent:activity' }],
+      body: renderStatus({ v: 1, runsByDay: {}, shadowSeen: {} }, 'x'),
+      comments: 1,
+    });
+    gh.issues.push(activity);
+    const implementBlock = renderStatus(
+      {
+        v: 1,
+        poller: 'implement',
+        runsByDay: { '2026-10-26': 20 },
+        shadowSeen: {},
+      },
+      'implement',
+    );
+    gh.comments[3] = [
+      { id: 50, user: { login: bot }, body: implementBlock, created_at: '' },
+    ];
+    const d = deps(gh, 'triage');
+    await runTriage(d.opts);
+    expect(d.prompts).toEqual([]);
+    expect(gh.comments[3][0].body).toBe(implementBlock);
+
+    gh.comments[3][0].body = renderStatus(
+      {
+        v: 1,
+        poller: 'implement',
+        runsByDay: {},
+        shadowSeen: {},
+        pausedUntil: '2026-10-26T13:00:00.000Z',
+      },
+      'implement',
+    );
+    await runTriage(d.opts);
+    expect(d.prompts).toEqual([]);
+  });
 });

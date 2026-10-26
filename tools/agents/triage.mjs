@@ -2,19 +2,19 @@
 // and applies its answer. Run by .github/workflows/agents-triage.yml; `--dry-run <n>` runs one issue locally and writes nothing.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { canRunAgent, recordPause, recordRun } from './activity.mjs';
 import {
-  canRunAgent,
-  emptyActivity,
-  recordPause,
-  recordRun,
-  renderActivity,
-} from './activity.mjs';
+  ACTIVITY_LABEL,
+  combined,
+  loadActivity,
+  saveActivity,
+} from './activityStore.mjs';
 import { classifyIssue, pickForTriage } from './classify.mjs';
 import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub } from './github.mjs';
 import { missingLabels, LABELS } from './labels.mjs';
-import { parseStatus, renderStatus } from './state.mjs';
+import { renderStatus } from './state.mjs';
 import {
   buildTriagePrompt,
   planActions,
@@ -22,7 +22,6 @@ import {
 } from './triage-io.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const ACTIVITY_LABEL = 'agent:activity';
 /** Read-only. No `git grep`: its -O option starts a program; the Grep tool does the same job. */
 export const TRIAGE_ALLOWED_TOOLS = [
   'Read',
@@ -65,17 +64,14 @@ export async function runTriage({
   for (const label of missingLabels(await gh.listLabels()))
     await gh.createLabel(label);
 
-  let activityIssue = await gh.findIssueByLabel(ACTIVITY_LABEL);
-  activityIssue ??= await gh.createIssue(
-    'Agent activity',
-    renderActivity(emptyActivity(), {}, now, config.maxAgentRunsPerDay),
-    [ACTIVITY_LABEL],
-  );
-  let activity = {
-    ...emptyActivity(),
-    failedAt: {},
-    ...parseStatus(activityIssue.body ?? ''),
-  };
+  const store = await loadActivity(gh, {
+    botLogin: bot,
+    poller: 'triage',
+    now,
+    maxPerDay: config.maxAgentRunsPerDay,
+  });
+  const activityIssue = { number: store.issueNumber };
+  let activity = store.own;
   let issues = [];
 
   // whatever happens below, the run counts, the pause and the failures are saved
@@ -169,10 +165,11 @@ export async function runTriage({
 
     let candidates;
     for (const { issue, comments, decision } of agent) {
-      const can = canRunAgent(activity, now, config.maxAgentRunsPerDay);
+      const all = combined(store, activity);
+      const can = canRunAgent(all, now, config.maxAgentRunsPerDay);
       if (!can.ok) {
         summary(
-          `No more agent runs this poll: ${can.reason === 'paused' ? `paused until ${activity.pausedUntil}` : 'daily cap reached'}.`,
+          `No more agent runs this poll: ${can.reason === 'paused' ? `paused until ${all.pausedUntil}` : 'daily cap reached'}.`,
         );
         break;
       }
@@ -276,10 +273,11 @@ export async function runTriage({
         issues.filter((i) => i.labels.some((x) => x.name === l.name)).length,
       ]),
     );
-    await gh.editIssueBody(
-      activityIssue.number,
-      renderActivity(activity, counts, now, config.maxAgentRunsPerDay),
-    );
+    await saveActivity(gh, store, activity, {
+      counts,
+      now,
+      maxPerDay: config.maxAgentRunsPerDay,
+    });
   }
 }
 
