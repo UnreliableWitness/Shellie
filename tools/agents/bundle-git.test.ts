@@ -21,7 +21,7 @@ function repoWithAgentBranch() {
   git('checkout', '-qb', 'agent/issues/1-x');
   mkdirSync(join(dir, '.github/workflows'), { recursive: true });
   writeFileSync(join(dir, '.github/workflows/é.yml'), 'on: push\n');
-  writeFileSync(join(dir, 'a "quoted" name.ts'), 'x\ny\n');
+  writeFileSync(join(dir, 'naïve café.ts'), 'x\ny\n');
   git('add', '.');
   git('commit', '-qm', 'agent');
   git(
@@ -45,7 +45,7 @@ describe('bundleGit', () => {
     expect(await g.commitCount(base, 'agent/issues/1-x')).toBe(1);
     const files = await g.changedFiles(base, 'agent/issues/1-x');
     expect(files).toEqual(
-      expect.arrayContaining(['.github/workflows/é.yml', 'a "quoted" name.ts']),
+      expect.arrayContaining(['.github/workflows/é.yml', 'naïve café.ts']),
     );
     expect(classifyPaths(files).denied).toEqual(['.github/workflows/é.yml']);
     expect(countChangedLines(await g.numstat(base, 'agent/issues/1-x'))).toBe(
