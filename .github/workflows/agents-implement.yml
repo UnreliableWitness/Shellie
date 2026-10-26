@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+# The jobs' own files (task, result, bundle) live in $RUNNER_TEMP/agents (AGENTS_WORK), outside the checkout,
+# so they are never linted, tested or committed.
+
 concurrency:
   group: agents-implement
   cancel-in-progress: false
@@ -41,12 +44,13 @@ jobs:
         env:
           AGENTS_MODE: ${{ vars.AGENTS_MODE }}
           AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/implement.mjs pick
       - if: steps.pick.outputs.issue != ''
         uses: actions/upload-artifact@v4
         with:
           name: task
-          path: task.json
+          path: ${{ runner.temp }}/agents/task.json
           retention-days: 7
 
   implement:
@@ -68,17 +72,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: task
+          path: ${{ runner.temp }}/agents
       - name: Implement
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/implement.mjs run
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: result
           path: |
-            result.json
-            branch.bundle
+            ${{ runner.temp }}/agents/result.json
+            ${{ runner.temp }}/agents/branch.bundle
           if-no-files-found: ignore
           retention-days: 7
 
@@ -106,12 +112,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: task
+          path: ${{ runner.temp }}/agents
       - uses: actions/download-artifact@v4
         continue-on-error: true # missing when the implement job died
         with:
           name: result
-          path: result
+          path: ${{ runner.temp }}/agents/result
       - name: Check and publish
         env:
           AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/implement.mjs publish

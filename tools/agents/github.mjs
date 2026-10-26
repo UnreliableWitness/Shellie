@@ -100,6 +100,72 @@ export function createGitHub(repo, token) {
       (await list(`${r}/pulls/${n}/files?per_page=100`)).map((f) => f.filename),
     createReview: (n, payload) =>
       api(`${r}/pulls/${n}/reviews`, { method: 'POST', body: payload }),
+    getPull: (n) => api(`${r}/pulls/${n}`),
+    listCheckRuns: async (sha) =>
+      (await api(`${r}/commits/${sha}/check-runs?per_page=100`)).check_runs,
+    // newest first; push runs only (a dispatch or a re-run of an old commit says nothing about main now)
+    listMainCiRuns: async () =>
+      (
+        await api(
+          `${r}/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=5`,
+        )
+      ).workflow_runs,
+    deleteBranch: (ref) =>
+      api(
+        `${r}/git/refs/heads/${ref.split('/').map(encodeURIComponent).join('/')}`,
+        { method: 'DELETE' },
+      ),
+    listReviews: (n) => list(`${r}/pulls/${n}/reviews?per_page=100`),
+    // the PR's conversation and its line comments, one list
+    listPrComments: async (n) => [
+      ...(await list(`${r}/issues/${n}/comments?per_page=100`)),
+      ...(await list(`${r}/pulls/${n}/comments?per_page=100`)),
+    ],
+    listPullFileStats: (n) => list(`${r}/pulls/${n}/files?per_page=100`),
+    updateBranch: (n, sha) =>
+      api(`${r}/pulls/${n}/update-branch`, {
+        method: 'PUT',
+        body: { expected_head_sha: sha },
+      }),
+    // sha: GitHub refuses the merge if the head moved since it was checked
+    mergePull: (n, sha) =>
+      api(`${r}/pulls/${n}/merge`, {
+        method: 'PUT',
+        body: { sha, merge_method: 'squash' },
+      }),
+    jobLogTail: async (id) => {
+      const text = await new Promise((resolve, reject) =>
+        execFile(
+          'gh',
+          ['api', `${r}/actions/jobs/${id}/logs`],
+          { env, maxBuffer: 64 * 1024 * 1024 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout)),
+        ),
+      );
+      return String(text)
+        .split('\n')
+        .map((l) => l.replace(/^\S+Z /, ''))
+        .slice(-150)
+        .join('\n')
+        .slice(-8000);
+    },
+    listIssuesByLabel: async (label) =>
+      noPulls(
+        await list(
+          `${r}/issues?state=all&labels=${encodeURIComponent(label)}&per_page=100`,
+        ),
+      ),
+    listRecentlyClosedByLabel: async (label, days) =>
+      noPulls(
+        await list(
+          `${r}/issues?state=closed&labels=${encodeURIComponent(label)}&per_page=100&since=${new Date(Date.now() - days * 86400000).toISOString()}`,
+        ),
+      ),
+    reopen: (n) =>
+      api(`${r}/issues/${n}`, { method: 'PATCH', body: { state: 'open' } }),
+    listReleases: () => api(`${r}/releases?per_page=20`),
+    compare: (base, head) =>
+      api(`${r}/compare/${base}...${encodeURIComponent(head)}`),
     mainSha: async () => (await api(`${r}/git/ref/heads/main`)).object.sha,
     createPull: ({ title, body, head }) =>
       api(`${r}/pulls`, {

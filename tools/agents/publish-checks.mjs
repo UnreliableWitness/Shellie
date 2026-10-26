@@ -1,5 +1,6 @@
 // Checks the publish job makes on what the implement job handed over, before anything is pushed (spec 5.2, 6.2).
 // The implement job ran an agent that executes code, so its bundle and result are untrusted input here.
+import { defang } from './state.mjs';
 
 /** Paths an agent PR may never touch: the agents' own rules, workflows, release and signing. */
 const DENIED = [
@@ -21,6 +22,14 @@ const OWNER_ONLY = [
   'src/main/ledger/**',
   'src/main/migrate/**',
   'package.json',
+  // stage 3, before anything merges by itself: config that runs code or steers agents
+  '.claude/**',
+  'scripts/**',
+  '.npmrc',
+  '.mcp.json',
+  'vite.*.config.mts',
+  'vitest.config.mts',
+  'package-lock.json',
 ];
 const UNCOUNTED = new Set(['package-lock.json', 'CLAUDE.md']);
 
@@ -37,11 +46,26 @@ const DENIED_RE = DENIED.map(globToRegExp);
 const OWNER_RE = OWNER_ONLY.map(globToRegExp);
 
 /** @param {string[]} files @returns {{ denied: string[], ownerOnly: string[] }} */
-export function classifyPaths(files) {
+export function classifyPaths(files, { claudeMdAddsOnly = true } = {}) {
   return {
     denied: files.filter((f) => DENIED_RE.some((r) => r.test(f))),
-    ownerOnly: files.filter((f) => OWNER_RE.some((r) => r.test(f))),
+    // CLAUDE.md steers every later agent: adding a Status line is fine, changing what is there is the owner's call
+    ownerOnly: files.filter(
+      (f) =>
+        !DENIED_RE.some((r) => r.test(f)) &&
+        (OWNER_RE.some((r) => r.test(f)) ||
+          (f === 'CLAUDE.md' && !claudeMdAddsOnly)),
+    ),
   };
+}
+
+/** @param {string} numstat `git diff -z --numstat` @returns {boolean} CLAUDE.md is unchanged or only gains lines */
+export function claudeMdAddsOnly(numstat) {
+  for (const line of numstat.split(/\0|\n/)) {
+    const [, del, ...rest] = line.split('\t');
+    if (rest.join('\t') === 'CLAUDE.md') return del === '0';
+  }
+  return true;
 }
 
 /**
@@ -111,20 +135,37 @@ export function prTitle(title, n) {
 }
 
 /** @param {string} body @param {number} n @param {string[]} notes what the publish job found */
-export function prBody(body, n, notes) {
+const ATTRIBUTION =
+  '🤖 Generated with [Claude Code](https://claude.com/claude-code)';
+const fence = (text) => '```\n' + text.replace(/```/g, "'''") + '\n```';
+
+/**
+ * @param {string} body the agent's text
+ * @param {number} n
+ * @param {string[]} notes what the publish job found
+ * @param {Record<string, string>} [checkOutput] the tail of each failing check's output, shown folded
+ */
+export function prBody(body, n, notes, checkOutput = {}) {
+  const outputs = Object.entries(checkOutput)
+    .filter(([, text]) => text)
+    .map(
+      ([name, text]) =>
+        `<details><summary>${name === 'test' ? 'npm test' : `npm run ${name}`} output</summary>\n\n${fence(text.length > 1500 ? `${text.slice(0, 1500)}\n…` : text)}\n\n</details>`,
+    );
   return [
-    // only the script's own "Fixes #n" may close an issue
-    body
+    // only the script's own "Fixes #n" may close an issue, and the attribution line is added once, below
+    defang(body)
+      .replaceAll(ATTRIBUTION, '')
       .trim()
       .replace(
         /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)/gi,
         'refs #$1',
       ),
     notes.length
-      ? `### Agent checks\n\n${notes.map((x) => `- ${x}`).join('\n')}`
+      ? `### Agent checks\n\n${notes.map((x) => `- ${x}`).join('\n')}${outputs.length ? `\n\n${outputs.join('\n\n')}` : ''}`
       : '',
     `Fixes #${n}`,
-    '🤖 Generated with [Claude Code](https://claude.com/claude-code)',
+    ATTRIBUTION,
   ]
     .filter(Boolean)
     .join('\n\n');

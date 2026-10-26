@@ -58,7 +58,7 @@ export function classifyIssue(issue, comments, ctx) {
   );
   const base = { status, statusComment, newComments: fresh };
   // the poller only sees open issues: a closed one that is open again was reopened by someone
-  if (status.state === 'closed')
+  if (status.state === 'closed' || status.state === 'released')
     return { ...base, action: 'triage', reason: 'reopened' };
   if (status.state === 'needs-owner') {
     if (has('agent:go')) return { ...base, action: 'go', reason: 'owner-go' };

@@ -7,6 +7,7 @@ import {
   prTitle,
   validateImplementResult,
   verifyBundle,
+  claudeMdAddsOnly,
 } from './publish-checks.mjs';
 
 describe('branchName', () => {
@@ -180,5 +181,71 @@ describe('prTitle and prBody', () => {
       expect(b).toContain('refs #42');
       expect(b).toContain('Fixes #132');
     });
+  });
+});
+
+describe('stage 3 path rules', () => {
+  it('makes config, scripts and the lock file owner-only', () => {
+    const r = classifyPaths(
+      [
+        '.claude/settings.json',
+        'scripts/fix-node-pty-perms.mjs',
+        '.npmrc',
+        '.mcp.json',
+        'vite.main.config.mts',
+        'vitest.config.mts',
+        'package-lock.json',
+        'src/x.ts',
+      ],
+      { claudeMdAddsOnly: true },
+    );
+    expect(r.ownerOnly).toEqual([
+      '.claude/settings.json',
+      'scripts/fix-node-pty-perms.mjs',
+      '.npmrc',
+      '.mcp.json',
+      'vite.main.config.mts',
+      'vitest.config.mts',
+      'package-lock.json',
+    ]);
+  });
+  it('lets CLAUDE.md through only when lines are only added', () => {
+    expect(
+      classifyPaths(['CLAUDE.md'], { claudeMdAddsOnly: true }).ownerOnly,
+    ).toEqual([]);
+    expect(
+      classifyPaths(['CLAUDE.md'], { claudeMdAddsOnly: false }).ownerOnly,
+    ).toEqual(['CLAUDE.md']);
+    expect(
+      classifyPaths(['.claude/skills/sdlc-x/SKILL.md'], {
+        claudeMdAddsOnly: true,
+      }).denied,
+    ).toEqual(['.claude/skills/sdlc-x/SKILL.md']);
+  });
+  it('reads whether CLAUDE.md only gains lines from numstat', () => {
+    expect(claudeMdAddsOnly('3\t0\tCLAUDE.md\0' + '1\t2\tsrc/a.ts\0')).toBe(
+      true,
+    );
+    expect(claudeMdAddsOnly('3\t1\tCLAUDE.md\0')).toBe(false);
+    expect(claudeMdAddsOnly('1\t1\tsrc/a.ts\0')).toBe(true);
+  });
+});
+
+describe('prBody: attribution once, check output', () => {
+  it('drops an attribution line the agent already wrote', () => {
+    const b = prBody(
+      'Text\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)',
+      1,
+      [],
+    );
+    expect(b.match(/Generated with \[Claude Code\]/g)).toHaveLength(1);
+  });
+  it('shows failing check output folded, limited in size', () => {
+    const b = prBody('Text', 1, ['`npm test` failed'], {
+      test: 'FAIL src/x.test.ts\n' + 'x'.repeat(9000),
+    });
+    expect(b).toContain('<details><summary>npm test output</summary>');
+    expect(b).toContain('FAIL src/x.test.ts');
+    expect(b.length).toBeLessThan(6000);
   });
 });

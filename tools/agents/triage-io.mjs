@@ -1,5 +1,5 @@
 // The triage agent's input (a prompt with the issue as data) and what the script does with its answer (spec 5.1).
-import { renderStatus } from './state.mjs';
+import { defang, renderStatus } from './state.mjs';
 
 const TAGS = /<(\/?)(issue|comment|possible-duplicates|previous-triage)\b/gi;
 /** Text from GitHub with our own tag names defused, so it cannot close a data block. */
@@ -156,7 +156,9 @@ export function planActions(
     case 'ask': {
       actions.push({
         type: 'comment',
-        body: `${reporter}thanks for the report. A few questions so this can be fixed:\n\n${result.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
+        body: defang(
+          `${reporter}thanks for the report. A few questions so this can be fixed:\n\n${result.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
+        ),
       });
       setState('needs-info');
       const s = {
@@ -214,9 +216,11 @@ export function planActions(
       const dup = result.decision === 'duplicate';
       actions.push({
         type: 'comment',
-        body: dup
-          ? `Duplicate of #${result.of}. ${result.explanation ?? ''}`.trim()
-          : `${reporter}${result.explanation}\n\nIf this still looks wrong to you, say so here: the owner sees it, and a reopened issue is triaged again.`,
+        body: defang(
+          dup
+            ? `Duplicate of #${result.of}. ${result.explanation ?? ''}`.trim()
+            : `${reporter}${result.explanation}\n\nIf this still looks wrong to you, say so here: the owner sees it, and a reopened issue is triaged again.`,
+        ),
       });
       actions.push({ type: 'removeLabels', labels: STATE_LABELS });
       const s = {

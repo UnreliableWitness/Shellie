@@ -33,6 +33,10 @@ function fakeGitHub(issues: Issue[], comments: Record<number, Comment[]> = {}) {
     issues: all,
     comments,
     labels: ['bug'],
+    async listRecentlyClosedByLabel() {
+      return [] as Issue[];
+    },
+    async reopen() {},
     async listOpenIssues() {
       return all.filter((i) => !(i as any).closed);
     },
@@ -528,5 +532,52 @@ describe('runTriage', () => {
     expect(readTokenFile(file)).toBe('ghs_secret');
     expect(existsSync(file)).toBe(false);
     expect(readTokenFile(undefined)).toBeUndefined();
+  });
+
+  it('reopens a released issue when a trusted person says it is still broken', async () => {
+    const released = renderStatus(
+      {
+        v: 1,
+        state: 'released',
+        release: 'v1.53.0',
+        releasedAt: '2026-10-25T12:00:00Z',
+        lastSeenCommentId: 5,
+        triageRounds: 1,
+        tokens: 0,
+      },
+      'x',
+    );
+    const closed = issue(8, 'maximedebraekeleer', {
+      comments: 2,
+      labels: [{ name: 'agent:released' }],
+    });
+    const gh = fakeGitHub([issue(1, 'UnreliableWitness')], {
+      8: [
+        {
+          id: 5,
+          user: { login: bot },
+          body: released,
+          created_at: '2026-10-25T12:00:00Z',
+        },
+        {
+          id: 6,
+          user: { login: 'maximedebraekeleer' },
+          body: 'still broken on Windows',
+          created_at: '2026-10-26T09:00:00Z',
+        },
+      ],
+    });
+    const reopened: number[] = [];
+    Object.assign(gh, {
+      listRecentlyClosedByLabel: async () => [closed],
+      reopen: async (n: number) => {
+        reopened.push(n);
+      },
+    });
+    await runTriage(deps(gh, 'triage').opts);
+    expect(reopened).toEqual([8]);
+    // the same comment never reopens it twice
+    await runTriage(deps(gh, 'triage').opts);
+    expect(reopened).toEqual([8]);
   });
 });

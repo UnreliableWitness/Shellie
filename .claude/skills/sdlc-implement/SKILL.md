@@ -30,11 +30,11 @@ The prompt holds the issue in `<issue>`, trusted comments in `<comment>`, and tr
 ## Never
 
 - Never touch these paths (the PR is refused if you do): `.github/workflows/`, `.github/agents/`, `.github/CODEOWNERS`, `.claude/skills/sdlc-*`, `tools/agents/`, `tools/release/`, `tools/forge/macSigning.mjs`, `assets/entitlements.mac.plist`.
-- Avoid unless the spec needs it (they make the PR owner-only): `package.json` dependencies, `forge.config.mts`, `src/main/autoUpdate.ts`, `src/main/secrets/`, `src/main/costServer/`, `src/main/ledger/`, `src/main/migrate/`.
+- Avoid unless the spec needs it (they make the PR owner-only): `package.json` and `package-lock.json`, `forge.config.mts`, `src/main/autoUpdate.ts`, `src/main/secrets/`, `src/main/costServer/`, `src/main/ledger/`, `src/main/migrate/`, `.claude/`, `scripts/`, `.npmrc`, `.mcp.json`, the vite and vitest configs, and changing or removing existing lines of `CLAUDE.md` (adding your Status entry is fine).
 - No unrelated refactors, renames or formatting of files you did not change.
 - You cannot run the app or test on Windows; say what is unverified.
 
 ## Your answer
 
-- `done`: the fix is committed. `prTitle` (one line, plain description), `prBody` (markdown: `## What changed`, `## Why`, `## How it was tested`, `## Not verified`), `risk` (the spec's risk, raised to `high` if the change turned out to touch risky ground: storage formats, auth, cost or time numbers, deleting user data, release/update).
+- `done`: the fix is committed. `prTitle`: one line, written for Shellie's users, because it becomes the line they read in the app's What's new card and on the GitHub release page after the merge. Say what changed for them ("Release notes link on Home opens again"), not how ("Allow github.com in allowedExternal"); no file or function names. `prBody` (markdown: `## What changed`, `## Why`, `## How it was tested`, `## Not verified`), `risk` (the spec's risk, raised to `high` if the change turned out to touch risky ground: storage formats, auth, cost or time numbers, deleting user data, release/update).
 - `blocked`: you could not do it well (the spec is wrong in a way that needs a decision, the fix needs a forbidden path, the tests cannot be made green). Give the `reason` and what the owner would need to decide. Commit nothing half-done in that case.
