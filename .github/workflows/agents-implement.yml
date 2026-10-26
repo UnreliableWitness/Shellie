@@ -1,0 +1,117 @@
+# Implement poller of the agentic SDLC (docs/superpowers/specs/2026-10-26-agentic-sdlc-design.md, docs/agents.md).
+# Three jobs so the agent, which runs code, never shares a machine with the GitHub App token:
+#   pick (App token) -> implement (Claude subscription token only) -> publish (App token, a fresh machine).
+# Runs on the owner's Claude subscription (CLAUDE_CODE_OAUTH_TOKEN). Never add an ANTHROPIC_API_KEY.
+name: Agents · implement
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-implement
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    if: vars.AGENTS_MODE == 'implement' || vars.AGENTS_MODE == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      issue: ${{ steps.pick.outputs.issue }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - id: pick
+        name: Pick an issue
+        env:
+          AGENTS_MODE: ${{ vars.AGENTS_MODE }}
+          AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node tools/agents/implement.mjs pick
+      - if: steps.pick.outputs.issue != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: task
+          path: task.json
+          retention-days: 7
+
+  implement:
+    needs: pick
+    if: needs.pick.outputs.issue != ''
+    runs-on: macos-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false # no GitHub token on this machine
+      # no npm cache here: untrusted code runs on this machine, and it must not write a cache other jobs restore
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code@2.1.310
+      - uses: actions/download-artifact@v4
+        with:
+          name: task
+      - name: Implement
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: node tools/agents/implement.mjs run
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result
+          path: |
+            result.json
+            branch.bundle
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: [pick, implement]
+    # also after a failed or cancelled implement job: publish releases the lock
+    if: always() && needs.pick.outputs.issue != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: task
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # missing when the implement job died
+        with:
+          name: result
+          path: result
+      - name: Check and publish
+        env:
+          AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node tools/agents/implement.mjs publish

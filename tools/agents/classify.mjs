@@ -8,7 +8,7 @@ const DAY = 86400000;
  * @typedef {{ number: number, user: { login: string } | null, labels: { name: string }[], assignees?: { login: string }[],
  *   pull_request?: unknown, created_at: string, updated_at: string, title: string, body: string | null }} Issue
  * @typedef {{ id: number, user: { login: string } | null, body: string, created_at: string }} Comment
- * @typedef {{ action: 'skip' | 'await-approval' | 'triage' | 'go' | 'remind' | 'close-stale', reason: string,
+ * @typedef {{ action: 'skip' | 'await-approval' | 'approve' | 'triage' | 'go' | 'remind' | 'close-stale', reason: string,
  *   newComments?: Comment[], status?: any, statusComment?: Comment | null }} Decision
  */
 
@@ -25,22 +25,18 @@ export function classifyIssue(issue, comments, ctx) {
   const has = (name) => issue.labels.some((l) => l.name === name);
   const skip = (reason) => ({ action: /** @type {const} */ ('skip'), reason });
 
-  if (issue.pull_request) return skip('pull-request');
-  if (has('agent:stop')) return skip('stopped');
-  if ((issue.assignees ?? []).some((a) => a.login !== ctx.botLogin))
-    return skip('assigned');
-  if (
-    ctx.humanBranches.some((b) => b.startsWith(`issues/${n}-`)) ||
-    ctx.humanPrTitles.some((t) => new RegExp(`#${n}(?!\\d)`).test(t))
-  )
-    return skip('owner-working');
+  const ownerSkip = ownerSkipReason(issue, ctx);
+  if (ownerSkip) return skip(ownerSkip);
 
   const trustedLogin = (login) =>
     login === ctx.botLogin || isTrusted(ctx.trusted, login);
-  if (!trustedLogin(issue.user?.login) && !has('agent:go'))
+  // the owner approves an untrusted reporter with agent:go once; the script turns it into agent:approved
+  if (!trustedLogin(issue.user?.login) && !has('agent:approved')) {
+    if (has('agent:go')) return { action: 'approve', reason: 'owner-approved' };
     return has('agent:awaiting-approval')
       ? skip('awaiting-approval')
       : { action: 'await-approval', reason: 'untrusted' };
+  }
 
   if (ctx.mode === 'shadow' && ctx.shadowSeen[n] === issue.updated_at)
     return skip('shadow-seen');
@@ -65,8 +61,7 @@ export function classifyIssue(issue, comments, ctx) {
   if (status.state === 'closed')
     return { ...base, action: 'triage', reason: 'reopened' };
   if (status.state === 'needs-owner') {
-    if (has('agent:go') && !status.goHandled)
-      return { ...base, action: 'go', reason: 'owner-go' };
+    if (has('agent:go')) return { ...base, action: 'go', reason: 'owner-go' };
     if (fresh.length)
       return { ...base, action: 'triage', reason: 'owner-replied' };
     return skip('waiting');
@@ -80,6 +75,27 @@ export function classifyIssue(issue, comments, ctx) {
       return { ...base, action: 'remind', reason: 'no-answer' };
   }
   return skip('waiting');
+}
+
+/**
+ * Why the agents must leave an issue alone (spec 3.3), or null: a pull request, `agent:stop`, assigned to
+ * someone, or the owner working on it (an `issues/<n>-` branch or a trusted person's PR naming `#n`).
+ * @param {Issue} issue
+ * @param {{ botLogin: string, humanBranches: string[], humanPrTitles: string[] }} ctx
+ * @returns {string | null}
+ */
+export function ownerSkipReason(issue, ctx) {
+  const n = issue.number;
+  if (issue.pull_request) return 'pull-request';
+  if (issue.labels.some((l) => l.name === 'agent:stop')) return 'stopped';
+  if ((issue.assignees ?? []).some((a) => a.login !== ctx.botLogin))
+    return 'assigned';
+  if (
+    ctx.humanBranches.some((b) => b.startsWith(`issues/${n}-`)) ||
+    ctx.humanPrTitles.some((t) => new RegExp(`#${n}(?!\\d)`).test(t))
+  )
+    return 'owner-working';
+  return null;
 }
 
 /** Comments after `afterId` by trusted people other than the bot. */

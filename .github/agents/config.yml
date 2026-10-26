@@ -1,6 +1,7 @@
 # Limits for the agent pollers. Spec: docs/superpowers/specs/2026-10-26-agentic-sdlc-design.md (6.1, 6.1a).
 # They run on the owner's Claude subscription: limits are turns and runs, never dollars.
 botLogin: shellie-agents[bot]
+botUserId: 348169834 # the bot user's id, for its git commit email
 maxOpenAgentPrs: 1
 maxImplementAttempts: 2
 maxFixRounds: 3

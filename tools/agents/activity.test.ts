@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as activityModule from './activity.mjs';
 import {
   canRunAgent,
   emptyActivity,
@@ -45,5 +46,29 @@ describe('activity', () => {
     expect(body).toContain('Agent runs today: 1 of 20');
     expect(body).toContain('agent:ready');
     expect(parseStatus(body)).toEqual(a);
+  });
+});
+
+describe('mergeActivity', () => {
+  it('sums run counts per day and keeps the latest pause', () => {
+    const { mergeActivity } = activityModule;
+    const m = mergeActivity([
+      {
+        v: 1,
+        runsByDay: { '2026-10-26': 3, '2026-10-25': 1 },
+        shadowSeen: {},
+        pausedUntil: '2026-10-26T10:00:00.000Z',
+      },
+      {
+        v: 1,
+        poller: 'implement',
+        runsByDay: { '2026-10-26': 2 },
+        shadowSeen: {},
+        pausedUntil: '2026-10-26T12:00:00.000Z',
+      },
+      { v: 1, poller: 'review', runsByDay: {}, shadowSeen: {} },
+    ]);
+    expect(m.runsByDay).toEqual({ '2026-10-26': 5, '2026-10-25': 1 });
+    expect(m.pausedUntil).toBe('2026-10-26T12:00:00.000Z');
   });
 });

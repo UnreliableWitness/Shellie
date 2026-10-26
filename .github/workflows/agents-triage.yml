@@ -35,10 +35,14 @@ jobs:
         with:
           app-id: ${{ vars.AGENTS_APP_ID }}
           private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - name: Hand the App token to the script in a file
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
       - name: Triage open issues
         env:
           AGENTS_MODE: ${{ vars.AGENTS_MODE }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # read by tools/agents/github.mjs for its own gh calls only; stripped from the agent's environment
-          AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # the App token is in a file the script reads and deletes at start: never in an environment the agent could see
+          AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
         run: node tools/agents/triage.mjs

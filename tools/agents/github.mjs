@@ -1,6 +1,19 @@
 // A thin `gh api` wrapper for the agent scripts. The token is passed to gh's own environment only,
 // never put in process.env, so an agent started from the same process cannot inherit it.
 import { execFile } from 'node:child_process';
+import { readFileSync, rmSync } from 'node:fs';
+
+/**
+ * The App token, handed over in a file the script reads and deletes at once, so it is never in an
+ * environment an agent started by this process could see.
+ * @param {string | undefined} path
+ */
+export function readTokenFile(path) {
+  if (!path) return undefined;
+  const token = readFileSync(path, 'utf8').trim();
+  rmSync(path, { force: true });
+  return token;
+}
 
 /**
  * @param {string} repo owner/name
@@ -83,5 +96,15 @@ export function createGitHub(repo, token) {
     editIssueBody: (n, body) =>
       api(`${r}/issues/${n}`, { method: 'PATCH', body: { body } }),
     getIssue: (n) => api(`${r}/issues/${n}`),
+    listPullFiles: async (n) =>
+      (await list(`${r}/pulls/${n}/files?per_page=100`)).map((f) => f.filename),
+    createReview: (n, payload) =>
+      api(`${r}/pulls/${n}/reviews`, { method: 'POST', body: payload }),
+    mainSha: async () => (await api(`${r}/git/ref/heads/main`)).object.sha,
+    createPull: ({ title, body, head }) =>
+      api(`${r}/pulls`, {
+        method: 'POST',
+        body: { title, body, head, base: 'main', maintainer_can_modify: true },
+      }),
   };
 }
