@@ -3,10 +3,23 @@
   "description": "The implementer's answer. done: the fix is committed on the branch. blocked: you could not do it.",
   "properties": {
     "status": { "type": "string", "enum": ["done", "blocked"] },
-    "prTitle": { "type": "string", "description": "done: one line, at most 120 characters, in the repo's style (a plain description, no prefix like 'fix:')" },
-    "prBody": { "type": "string", "description": "done: markdown with ## What changed, ## Why, ## How it was tested, ## Not verified (e.g. Windows only through CI)" },
-    "risk": { "type": "string", "enum": ["low", "high"], "description": "done: the triage risk, raised to high if the change turned out riskier" },
-    "reason": { "type": "string", "description": "blocked: why, and what the owner would need to decide" }
+    "prTitle": {
+      "type": "string",
+      "description": "done: one line, at most 120 characters, in the repo's style (a plain description, no prefix like 'fix:')"
+    },
+    "prBody": {
+      "type": "string",
+      "description": "done: markdown with ## What changed, ## Why, ## How it was tested, ## Not verified (e.g. Windows only through CI)"
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "high"],
+      "description": "done: the triage risk, raised to high if the change turned out riskier"
+    },
+    "reason": {
+      "type": "string",
+      "description": "blocked: why, and what the owner would need to decide"
+    }
   },
   "required": ["status"]
 }

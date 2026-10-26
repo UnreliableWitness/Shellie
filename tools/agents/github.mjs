@@ -83,6 +83,10 @@ export function createGitHub(repo, token) {
     editIssueBody: (n, body) =>
       api(`${r}/issues/${n}`, { method: 'PATCH', body: { body } }),
     getIssue: (n) => api(`${r}/issues/${n}`),
+    listPullFiles: async (n) =>
+      (await list(`${r}/pulls/${n}/files?per_page=100`)).map((f) => f.filename),
+    createReview: (n, payload) =>
+      api(`${r}/pulls/${n}/reviews`, { method: 'POST', body: payload }),
     mainSha: async () => (await api(`${r}/git/ref/heads/main`)).object.sha,
     createPull: ({ title, body, head }) =>
       api(`${r}/pulls`, {
