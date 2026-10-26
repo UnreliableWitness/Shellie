@@ -262,7 +262,11 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
         pr.number,
         `**Ready for the owner** (\`${sha.slice(0, 7)}\`): ${d.reasons.join('; ')}.\n\nMerge it, approve it (the agents then merge it in full mode when nothing else stands in the way), or comment with what to change.`,
       );
-      prState = { ...prState, awaitsOwnerSha: sha };
+      prState = {
+        ...prState,
+        awaitsOwnerSha: sha,
+        awaitsOwnerReasons: d.reasons.join('; '),
+      };
       await savePr(
         `**Agent PR status:** waiting for the owner (${d.reasons.join('; ')}).`,
       );
