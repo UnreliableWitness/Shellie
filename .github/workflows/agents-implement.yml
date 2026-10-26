@@ -4,9 +4,17 @@
 # Runs on the owner's Claude subscription (CLAUDE_CODE_OAUTH_TOKEN). Never add an ANTHROPIC_API_KEY.
 name: Agents · implement
 on:
+  # the polls are a safety net; it also starts when triage finished (maybe a new agent:ready issue) and when a
+  # PR closed (merged or not: the one agent PR slot may be free). Not on the PR poller finishing: the PR
+  # poller starts on CI, which the implementer's PR starts, and the two must not start each other in a loop.
   schedule:
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Agents · triage']
+    types: [completed]
+  pull_request_target:
+    types: [closed]
 
 permissions:
   contents: read
@@ -28,6 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -61,6 +70,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0
           persist-credentials: false # no GitHub token on this machine
       # no npm cache here: untrusted code runs on this machine, and it must not write a cache other jobs restore
@@ -97,6 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
