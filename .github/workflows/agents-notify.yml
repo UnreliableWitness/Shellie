@@ -1,0 +1,43 @@
+# Notifier of the agentic SDLC (docs/superpowers/specs/2026-10-26-agentic-sdlc-design.md, docs/agents.md).
+# No LLM: tells reporters which release has their fix, and the owner when a merged fix is not released.
+name: Agents · notify
+on:
+  schedule:
+    - cron: '11,41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    if: vars.AGENTS_MODE == 'implement' || vars.AGENTS_MODE == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - name: Hand the App token to the script in a file
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
+      - name: Tell reporters about releases
+        env:
+          AGENTS_MODE: ${{ vars.AGENTS_MODE }}
+          AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
+        run: node tools/agents/notify.mjs

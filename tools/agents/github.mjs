@@ -143,6 +143,23 @@ export function createGitHub(repo, token) {
         .join('\n')
         .slice(-8000);
     },
+    listIssuesByLabel: async (label) =>
+      noPulls(
+        await list(
+          `${r}/issues?state=all&labels=${encodeURIComponent(label)}&per_page=100`,
+        ),
+      ),
+    listRecentlyClosedByLabel: async (label, days) =>
+      noPulls(
+        await list(
+          `${r}/issues?state=closed&labels=${encodeURIComponent(label)}&per_page=100&since=${new Date(Date.now() - days * 86400000).toISOString()}`,
+        ),
+      ),
+    reopen: (n) =>
+      api(`${r}/issues/${n}`, { method: 'PATCH', body: { state: 'open' } }),
+    listReleases: () => api(`${r}/releases?per_page=20`),
+    compare: (base, head) =>
+      api(`${r}/compare/${base}...${encodeURIComponent(head)}`),
     mainSha: async () => (await api(`${r}/git/ref/heads/main`)).object.sha,
     createPull: ({ title, body, head }) =>
       api(`${r}/pulls`, {
