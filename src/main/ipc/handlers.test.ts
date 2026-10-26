@@ -788,6 +788,53 @@ describe('handlers: create task', () => {
     await terminals.killAllForTask(task.id);
   });
 
+  it('installs apm packages only for the tab harnesses apm.yml targets', async () => {
+    const { h, terminals, setupDone, input, repo } = await harness();
+    commitFile(repo, 'apm.yml', 'name: webshop\ntargets: [claude]\n');
+    const finished = setupDone();
+    const task = await h['tasks:create'](
+      input({ startClaude: true, openOpencode: true, openShell: false }),
+    );
+    expect((await finished).ok).toBe(true);
+    const state = await h['tasks:setupState'](task.id);
+    expect(state?.steps.find((s) => s.def.kind === 'apm')).toMatchObject({
+      def: { detail: 'apm install --target claude' },
+    });
+    await terminals.killAllForTask(task.id);
+  });
+
+  it('has no apm step when apm.yml targets no open tab, and apm: in .shellie.yml still wins', async () => {
+    const { h, terminals, setupDone, input, repo } = await harness();
+    commitFile(repo, 'apm.yml', 'name: webshop\ntargets: [claude]\n');
+    const first = setupDone();
+    const a = await h['tasks:create'](
+      input({ startClaude: false, openOpencode: true, openShell: false }),
+    );
+    expect((await first).ok).toBe(true);
+    expect(
+      (await h['tasks:setupState'](a.id))?.steps.map((s) => s.def.kind),
+    ).not.toContain('apm');
+    await terminals.killAllForTask(a.id);
+    writeFileSync(path.join(repo, '.shellie.yml'), 'apm: [opencode]\n');
+    const second = setupDone();
+    const b = await h['tasks:create'](
+      input({
+        startClaude: false,
+        openOpencode: true,
+        openShell: false,
+        workItem: { id: '2', type: 'Bug', title: 'other', url: null },
+        branch: 'bug/2-other',
+      }),
+    );
+    await second;
+    expect(
+      (await h['tasks:setupState'](b.id))?.steps.find(
+        (s) => s.def.kind === 'apm',
+      ),
+    ).toMatchObject({ def: { detail: 'apm install --target opencode' } });
+    await terminals.killAllForTask(b.id);
+  });
+
   it('has no apm step without apm.yml or with apm: false', async () => {
     const { h, terminals, setupDone, input, repo } = await harness();
     const first = setupDone();
