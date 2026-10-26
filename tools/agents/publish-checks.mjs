@@ -44,11 +44,15 @@ export function classifyPaths(files) {
   };
 }
 
-/** @param {string} numstat `git diff --numstat` output @returns {number} added + deleted lines that count */
+/**
+ * @param {string} numstat `git diff --numstat` output, NUL- (`-z`) or newline-separated
+ * @returns {number} added + deleted lines that count
+ */
 export function countChangedLines(numstat) {
   let total = 0;
-  for (const line of numstat.split('\n')) {
-    const [add, del, file] = line.split('\t');
+  for (const line of numstat.split(/\0|\n/)) {
+    const [add, del, ...rest] = line.split('\t');
+    const file = rest.join('\t');
     if (!file || UNCOUNTED.has(file) || add === '-') continue;
     total += Number(add) + Number(del);
   }
@@ -109,7 +113,13 @@ export function prTitle(title, n) {
 /** @param {string} body @param {number} n @param {string[]} notes what the publish job found */
 export function prBody(body, n, notes) {
   return [
-    body.trim(),
+    // only the script's own "Fixes #n" may close an issue
+    body
+      .trim()
+      .replace(
+        /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)/gi,
+        'refs #$1',
+      ),
     notes.length
       ? `### Agent checks\n\n${notes.map((x) => `- ${x}`).join('\n')}`
       : '',

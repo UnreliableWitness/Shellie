@@ -41,7 +41,8 @@ Run a poller by hand: Actions › Agents · triage (or · implement, · PR) › 
 | Label | Meaning |
 |---|---|
 | `agent:awaiting-approval` | Reporter is not in `.github/agents/trusted.yml`; nothing happens until you add `agent:go`. |
-| `agent:go` | Your go-ahead: for an untrusted reporter's issue, or to implement a `needs-owner` issue as triaged. Used once per issue; to go again, comment. |
+| `agent:go` | Your go-ahead, used once: the agents remove it as they act on it. On an untrusted reporter's issue it approves the reporter (it becomes `agent:approved`). On a `needs-owner` issue it sends it to implementation as triaged, with a fresh count of attempts. Add it again whenever you want another go. |
+| `agent:approved` | Set by the agents from your `agent:go`: this untrusted reporter's issue may be worked on. Their later comments are still not read. |
 | `agent:needs-info` | Questions asked; triaged again when the reporter answers. Reminder after 14 days, closed after 21. |
 | `agent:ready` | A fix spec is in the status comment. |
 | `agent:needs-owner` | The agent needs your decision; the status comment says what. Comment to have it triaged again. |
@@ -74,7 +75,7 @@ The **Agent activity** issue (label `agent:activity`) is their bookkeeping: runs
 
 ## Trust
 
-Only text from people in `.github/agents/trusted.yml` (and from the app) reaches an agent; comments from anyone else are left out and counted. Issue text is treated as data, never as instructions. The agent's environment holds the Claude token but no GitHub token: the script reads the agent's answer and does the writing.
+Only text from people in `.github/agents/trusted.yml` (and from the app) reaches an agent; comments from anyone else are left out and counted. The App token reaches the triage and review scripts in a file they read and delete at start, never through the environment, so an agent they start cannot find it. Issue text is treated as data, never as instructions. The agent's environment holds the Claude token but no GitHub token: the script reads the agent's answer and does the writing.
 
 ## Trying it locally
 

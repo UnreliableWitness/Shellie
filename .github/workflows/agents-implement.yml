@@ -59,10 +59,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false # no GitHub token on this machine
+      # no npm cache here: untrusted code runs on this machine, and it must not write a cache other jobs restore
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code@2.1.310
       - uses: actions/download-artifact@v4

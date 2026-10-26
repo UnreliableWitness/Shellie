@@ -257,4 +257,70 @@ describe('runReview', () => {
     await runReview(d.o as never);
     expect(d.prompts).toEqual([]);
   });
+
+  it('records a failed post and does not run again within the hour', async () => {
+    const gh = fake();
+    gh.createReview = async () => {
+      throw new Error(
+        'gh POST repos/o/r/pulls/9/reviews: HTTP 403 Resource not accessible',
+      );
+    };
+    const d = opts(gh, [answer(), answer()]);
+    await runReview(d.o as never);
+    await runReview(d.o as never);
+    expect(d.prompts).toHaveLength(1);
+  });
+
+  it('gives up on a head commit after two failed reviews', async () => {
+    const gh = fake();
+    const bad = {
+      ok: true,
+      tokens: 1,
+      limited: false,
+      output: { nonsense: true },
+    };
+    const d = opts(gh, [bad, bad, bad]);
+    await runReview(d.o as never);
+    await runReview({
+      ...d.o,
+      now: new Date(now.getTime() + 2 * 3600000),
+    } as never);
+    await runReview({
+      ...d.o,
+      now: new Date(now.getTime() + 4 * 3600000),
+    } as never);
+    expect(d.prompts).toHaveLength(2);
+    expect(prStatus(gh).reviews.sha1.verdict).toBe('error');
+  });
+
+  it("finds the issue from the PR's status block, else the last Fixes line", async () => {
+    const gh = fake();
+    gh.pr.body = 'The agent wrote Fixes #42 in its text\n\nFixes #4';
+    const d = opts(gh, [answer()]);
+    await runReview(d.o as never);
+    expect(d.prompts[0]).toMatch(/fix issue #4\b/);
+  });
+
+  it('treats only HTTP 422 as a refused line', async () => {
+    const gh = fake();
+    gh.pr.number = 4220;
+    let calls = 0;
+    gh.createReview = async () => {
+      calls++;
+      throw new Error('gh POST repos/o/r/pulls/4220/reviews: HTTP 500');
+    };
+    const d = opts(gh, [
+      answer([
+        {
+          file: 'src/a.ts',
+          line: 2,
+          severity: 'minor',
+          problem: 'x',
+          scenario: 'y',
+        },
+      ]),
+    ]);
+    await runReview(d.o as never);
+    expect(calls).toBe(1);
+  });
 });

@@ -12,7 +12,7 @@ import {
 import { classifyIssue, pickForTriage } from './classify.mjs';
 import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
-import { createGitHub } from './github.mjs';
+import { createGitHub, readTokenFile } from './github.mjs';
 import { missingLabels, LABELS } from './labels.mjs';
 import { renderStatus } from './state.mjs';
 import {
@@ -115,14 +115,11 @@ export async function runTriage({
       items.push({ issue, comments, decision });
     }
 
-    // go with a spec needs no agent; go without one is triaged again, as the owner's answer
+    // go with a spec needs no agent; go without one is triaged again, as the owner's answer.
+    // agent:go is used once: it comes off the issue as it is acted on.
     for (const x of items)
       if (x.decision.action === 'go' && !x.decision.status?.spec) {
-        x.decision = {
-          ...x.decision,
-          action: 'triage',
-          status: { ...x.decision.status, goHandled: true },
-        };
+        x.decision = { ...x.decision, action: 'triage', consumeGo: true };
       }
 
     const { agent, script } = pickForTriage(items, config.maxTriagePerRun);
@@ -182,7 +179,7 @@ export async function runTriage({
         .filter(
           (i) =>
             trustedLogin(i.user?.login) ||
-            i.labels.some((l) => l.name === 'agent:go'),
+            i.labels.some((l) => l.name === 'agent:approved'),
         )
         .map((i) => ({ number: i.number, title: i.title, state: i.state }));
       const fromTrusted = (c) =>
@@ -202,6 +199,8 @@ export async function runTriage({
           )
           .slice(0, 150),
       });
+      if (decision.consumeGo && !shadow)
+        await gh.removeLabel(issue.number, 'agent:go');
       activity = recordRun(activity, now);
       const failed = (why) => {
         summary(`#${issue.number}: ${why}`);
@@ -298,15 +297,26 @@ function scriptActions(issue, decision, now) {
         },
         { type: 'addLabels', labels: ['agent:awaiting-approval'] },
       ];
-    case 'go':
+    case 'approve':
+      return [
+        { type: 'addLabels', labels: ['agent:approved'] },
+        {
+          type: 'removeLabels',
+          labels: ['agent:go', 'agent:awaiting-approval'],
+        },
+      ];
+    case 'go': {
+      // a fresh start for the implementer: earlier failed attempts no longer count
+      const { implementFailedAt: _, ...rest } = s;
       return [
         { type: 'addLabels', labels: ['agent:ready'] },
-        { type: 'removeLabels', labels: ['agent:needs-owner'] },
+        { type: 'removeLabels', labels: ['agent:needs-owner', 'agent:go'] },
         status(
-          { ...s, state: 'ready', goHandled: true },
+          { ...rest, state: 'ready', implementAttempts: 0 },
           `**Ready for implementation:** the owner said go (${s.kind ?? 'unknown kind'}, ${s.risk ?? 'unknown'} risk).`,
         ),
       ];
+    }
     case 'remind':
       return [
         {
@@ -421,7 +431,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   } else {
     const out = process.env.GITHUB_STEP_SUMMARY;
     await runTriage({
-      gh: createGitHub(repo, process.env.AGENTS_GH_TOKEN),
+      gh: createGitHub(repo, readTokenFile(process.env.AGENTS_GH_TOKEN_FILE)),
       runAgent: triageAgent(config),
       config,
       trusted,

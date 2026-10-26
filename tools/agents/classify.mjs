@@ -8,7 +8,7 @@ const DAY = 86400000;
  * @typedef {{ number: number, user: { login: string } | null, labels: { name: string }[], assignees?: { login: string }[],
  *   pull_request?: unknown, created_at: string, updated_at: string, title: string, body: string | null }} Issue
  * @typedef {{ id: number, user: { login: string } | null, body: string, created_at: string }} Comment
- * @typedef {{ action: 'skip' | 'await-approval' | 'triage' | 'go' | 'remind' | 'close-stale', reason: string,
+ * @typedef {{ action: 'skip' | 'await-approval' | 'approve' | 'triage' | 'go' | 'remind' | 'close-stale', reason: string,
  *   newComments?: Comment[], status?: any, statusComment?: Comment | null }} Decision
  */
 
@@ -30,10 +30,13 @@ export function classifyIssue(issue, comments, ctx) {
 
   const trustedLogin = (login) =>
     login === ctx.botLogin || isTrusted(ctx.trusted, login);
-  if (!trustedLogin(issue.user?.login) && !has('agent:go'))
+  // the owner approves an untrusted reporter with agent:go once; the script turns it into agent:approved
+  if (!trustedLogin(issue.user?.login) && !has('agent:approved')) {
+    if (has('agent:go')) return { action: 'approve', reason: 'owner-approved' };
     return has('agent:awaiting-approval')
       ? skip('awaiting-approval')
       : { action: 'await-approval', reason: 'untrusted' };
+  }
 
   if (ctx.mode === 'shadow' && ctx.shadowSeen[n] === issue.updated_at)
     return skip('shadow-seen');
@@ -58,8 +61,7 @@ export function classifyIssue(issue, comments, ctx) {
   if (status.state === 'closed')
     return { ...base, action: 'triage', reason: 'reopened' };
   if (status.state === 'needs-owner') {
-    if (has('agent:go') && !status.goHandled)
-      return { ...base, action: 'go', reason: 'owner-go' };
+    if (has('agent:go')) return { ...base, action: 'go', reason: 'owner-go' };
     if (fresh.length)
       return { ...base, action: 'triage', reason: 'owner-replied' };
     return skip('waiting');

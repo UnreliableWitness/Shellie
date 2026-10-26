@@ -101,10 +101,17 @@ describe('classifyIssue: trust', () => {
       ).action,
     ).toBe('skip');
   });
-  it("triages an untrusted reporter's issue after agent:go", () => {
+  it("turns the owner's agent:go on an untrusted reporter's issue into a lasting approval", () => {
     const i = issue({
       user: { login: 'stranger' },
       labels: labels('agent:awaiting-approval', 'agent:go'),
+    });
+    expect(classifyIssue(i, [], ctx()).action).toBe('approve');
+  });
+  it("triages an approved untrusted reporter's issue", () => {
+    const i = issue({
+      user: { login: 'stranger' },
+      labels: labels('agent:approved'),
     });
     expect(classifyIssue(i, [], ctx()).action).toBe('triage');
   });
@@ -205,13 +212,8 @@ describe('classifyIssue: state', () => {
         ctx(),
       ).action,
     ).toBe('triage');
-    // a go is used once; a later needs-owner with the label still on waits for a new owner comment
     expect(
-      classifyIssue(
-        issue({ labels: labels('agent:go') }),
-        [status({ state: 'needs-owner', goHandled: true })],
-        ctx(),
-      ).action,
+      classifyIssue(issue(), [status({ state: 'needs-owner' })], ctx()).action,
     ).toBe('skip');
   });
 });

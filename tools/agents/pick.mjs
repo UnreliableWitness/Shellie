@@ -35,7 +35,7 @@ export function pickForImplement(candidates, ctx) {
     return (
       author === ctx.botLogin ||
       isTrusted(ctx.trusted, author) ||
-      has(issue, 'agent:go')
+      has(issue, 'agent:approved')
     );
   });
   const rank = ({ status }) => {

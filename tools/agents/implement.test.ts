@@ -242,6 +242,40 @@ describe('runPick', () => {
   });
 });
 
+describe('runPick: stale locks', () => {
+  it('hands a stale lock at the last attempt to the owner', async () => {
+    const stale = readyIssue(
+      3,
+      { labels: [{ name: 'agent:ready' }, { name: 'claude-working' }] },
+      {
+        state: 'implementing',
+        implementAttempts: 2,
+        implementStartedAt: '2026-10-26T08:00:00Z',
+      },
+    );
+    const gh = fakeGitHub([stale]);
+    await runPick(pickOpts(gh) as never);
+    expect(statusOf(gh, 3).state).toBe('needs-owner');
+    expect(gh.issues[0].labels.map((l) => l.name)).toContain(
+      'agent:needs-owner',
+    );
+  });
+  it('releases a stale implementing status even without the label', async () => {
+    const stale = readyIssue(
+      3,
+      {},
+      {
+        state: 'implementing',
+        implementAttempts: 1,
+        implementStartedAt: '2026-10-26T08:00:00Z',
+      },
+    );
+    const gh = fakeGitHub([stale]);
+    await runPick(pickOpts(gh) as never);
+    expect(statusOf(gh, 3).state).not.toBe('implementing');
+  });
+});
+
 describe('buildImplementPrompt', () => {
   it('carries the spec and marks the issue text as data', () => {
     const p = buildImplementPrompt({
@@ -481,5 +515,63 @@ describe('runPublish', () => {
       'claude-working',
     );
     expect(statusOf(gh, 4).state).toBe('ready');
+  });
+
+  it('hands a change to a denied path to the owner at once', async () => {
+    const { gh, task } = await locked({ implementAttempts: 1 });
+    const { git } = fakeGit({
+      changedFiles: async () => ['tools/agents/x.mjs'],
+    });
+    await runPublish(publishOpts(gh, task, done, git) as never);
+    expect(statusOf(gh, 4).state).toBe('needs-owner');
+  });
+
+  it('gives an attempt back for a usage limit at most twice', async () => {
+    const { gh, task } = await locked({
+      implementAttempts: 1,
+      limitRefunds: 2,
+    });
+    const { git } = fakeGit();
+    await runPublish(
+      publishOpts(
+        gh,
+        task,
+        {
+          agent: { ok: false, tokens: 0, limited: true, error: 'usage limit' },
+        },
+        git,
+      ) as never,
+    );
+    expect(statusOf(gh, 4)).toMatchObject({
+      state: 'ready',
+      implementAttempts: 1,
+      limitRefunds: 2,
+    });
+  });
+
+  it('releases the lock when the push fails', async () => {
+    const { gh, task } = await locked();
+    const { git } = fakeGit({
+      push: async () => {
+        throw new Error('push refused');
+      },
+    });
+    await runPublish(publishOpts(gh, task, done, git) as never);
+    expect(gh.pulls).toEqual([]);
+    expect(gh.issues[0].labels.map((l) => l.name)).not.toContain(
+      'claude-working',
+    );
+    expect(statusOf(gh, 4).state).toBe('ready');
+  });
+
+  it("writes the PR's status block with its issue", async () => {
+    const { gh, task } = await locked();
+    const { git } = fakeGit();
+    await runPublish(publishOpts(gh, task, done, git) as never);
+    expect(parseStatus(gh.comments[500][0].body)).toMatchObject({
+      kind: 'pr',
+      issue: 4,
+      reviews: {},
+    });
   });
 });

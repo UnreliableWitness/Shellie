@@ -140,7 +140,7 @@ describe('pickForImplement', () => {
       ]),
     ).toBe(1);
   });
-  it("needs a trusted author, the bot, or the owner's agent:go", () => {
+  it("needs a trusted author, the bot, or the owner's approval", () => {
     const stranger = { login: 'stranger' };
     expect(
       pickNumber([{ issue: issue(1, { user: stranger }), status: status() }]),
@@ -150,7 +150,7 @@ describe('pickForImplement', () => {
         {
           issue: issue(1, {
             user: stranger,
-            labels: labels('agent:ready', 'agent:go'),
+            labels: labels('agent:ready', 'agent:approved'),
           }),
           status: status(),
         },

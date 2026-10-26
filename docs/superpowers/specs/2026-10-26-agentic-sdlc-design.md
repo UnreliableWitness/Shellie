@@ -99,7 +99,7 @@ All on `schedule` cron (plus `workflow_dispatch` for a manual kick), each with i
 |---|---|---|---|
 | `agents-triage.yml` | every 15 min | ubuntu-latest | triage new issues, re-triage answered `needs-info`, handle "still broken" on recently released issues; at most 5 issues per run |
 | `agents-implement.yml` | every 15 min | macos-latest | if fewer than `maxOpenAgentPrs` (1) agent PRs are open, take the oldest `agent:ready` issue (bugs before features) and implement it; one per run; timeout 90 min |
-| `agents-pr.yml` | every 15 min | macos-latest | for each open `agent-pr`: review if the head SHA has no review, fix if there is something to fix, merge if it qualifies; at most one merge per run |
+| `agents-pr.yml` | every 15 min | ubuntu-latest (the reviewer only reads; changed 2026-10-26) | for each open `agent-pr`: review if the head SHA has no review, fix if there is something to fix, merge if it qualifies; at most one merge per run |
 | `agents-notify.yml` | every 30 min | ubuntu-latest | no LLM: comment on `agent:merged` issues whose fix is in a published release |
 | `agents-health.yml` | daily 06:00 UTC | ubuntu-latest | read App Insights, open issues for new or rising error patterns |
 | `agents-garden.yml` | Mondays 06:00 UTC | ubuntu-latest | open at most 2 improvement issues |

@@ -6,6 +6,12 @@ export const LABELS = [
     description: 'From outside the trusted list: agents wait for agent:go',
   },
   {
+    name: 'agent:approved',
+    color: 'c2e0c6',
+    description:
+      'The owner approved this reporter for the agents (from agent:go)',
+  },
+  {
     name: 'agent:go',
     color: '0e8a16',
     description: "Owner's go-ahead for the agents",

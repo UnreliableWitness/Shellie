@@ -45,7 +45,6 @@ export const IMPLEMENT_ALLOWED_TOOLS = [
   'Bash(npm test:*)',
   'Bash(npm run typecheck:*)',
   'Bash(npm run lint:*)',
-  'Bash(npm run lint\\:fix:*)',
   'Bash(npx vitest:*)',
   'Bash(npx oxfmt:*)',
   'Bash(npx oxlint:*)',
@@ -55,6 +54,8 @@ export const IMPLEMENT_ALLOWED_TOOLS = [
   'Bash(git show:*)',
   'Bash(git add:*)',
   'Bash(git commit:*)',
+  'Bash(git rm:*)',
+  'Bash(git mv:*)',
 ];
 
 /** The issue's status comment and block. */
@@ -111,9 +112,8 @@ export async function runPick({ gh, config, trusted, mode, now, summary }) {
     (i) => has(i, 'agent:ready') || has(i, 'claude-working'),
   )) {
     const { comment, status } = await loadStatus(gh, issue.number, bot);
-    // a lock nobody released (the workflow died before publish): give the issue back
+    // a lock nobody released (the workflow died before publish): give the issue back, or to the owner
     if (
-      has(issue, 'claude-working') &&
       !has(issue, 'agent:pr-open') &&
       status?.state === 'implementing' &&
       now.getTime() - Date.parse(status.implementStartedAt ?? '') >
@@ -121,17 +121,22 @@ export async function runPick({ gh, config, trusted, mode, now, summary }) {
     ) {
       await gh.removeLabel(issue.number, 'claude-working');
       issue.labels = issue.labels.filter((l) => l.name !== 'claude-working');
-      const next = {
-        ...status,
-        state: 'ready',
-        implementFailedAt: now.toISOString(),
-      };
+      const last =
+        (status.implementAttempts ?? 0) >= config.maxImplementAttempts;
+      if (last) {
+        await gh.addLabels(issue.number, ['agent:needs-owner']);
+        await gh.removeLabel(issue.number, 'agent:ready');
+      }
       await writeStatus(
         gh,
         issue.number,
         comment,
-        next,
-        '**Ready for implementation** (an earlier attempt never finished).',
+        last
+          ? { ...status, state: 'needs-owner' }
+          : { ...status, state: 'ready', implementFailedAt: now.toISOString() },
+        last
+          ? '**Needs the owner:** the last implement attempt never finished. Add `agent:go` to try again as triaged.'
+          : '**Ready for implementation** (an earlier attempt never finished).',
       );
       summary(`#${issue.number}: released a stale lock`);
       continue;
@@ -244,7 +249,6 @@ export async function runPublish({
 }) {
   const n = task.issue;
   const bot = config.botLogin;
-  const issue = (await gh.listOpenIssues()).find((i) => i.number === n);
   const { comment, status } = await loadStatus(gh, n, bot);
   const tokens = (status?.tokens ?? 0) + (result?.agent?.tokens ?? 0);
   const store = await loadActivity(gh, {
@@ -255,9 +259,9 @@ export async function runPublish({
   });
   const save = (own) =>
     saveActivity(gh, store, own, { now, maxPerDay: config.maxAgentRunsPerDay });
-  const labels = () => issue?.labels.map((l) => l.name) ?? [];
+  // always asked of GitHub (the issue may be closed meanwhile); a missing label is ignored
   const removeLabels = async (...names) => {
-    for (const l of names) if (labels().includes(l)) await gh.removeLabel(n, l);
+    for (const l of names) await gh.removeLabel(n, l);
   };
 
   /** No PR: release the lock; after the last attempt (or when the agent itself gave up) the owner decides. */
@@ -294,6 +298,9 @@ export async function runPublish({
   if (result?.agent?.limited) {
     await save(recordPause(store.own, now, config.pauseMinutes));
     await removeLabels('claude-working');
+    // result.json comes from the agent's machine: an attempt is given back for a limit at most twice
+    const refunds = status?.limitRefunds ?? 0;
+    const refund = refunds < 2;
     await writeStatus(
       gh,
       n,
@@ -301,7 +308,10 @@ export async function runPublish({
       {
         ...status,
         state: 'ready',
-        implementAttempts: Math.max(0, (status?.implementAttempts ?? 1) - 1),
+        implementAttempts: refund
+          ? Math.max(0, (status?.implementAttempts ?? 1) - 1)
+          : (status?.implementAttempts ?? 1),
+        limitRefunds: refund ? refunds + 1 : refunds,
       },
       '**Ready for implementation:** paused for a usage limit; it is tried again after the pause.',
     );
@@ -336,6 +346,7 @@ export async function runPublish({
   if (paths.denied.length)
     return fail(
       `it changes files agents may not touch: ${paths.denied.join(', ')}`,
+      { toOwner: true },
     );
 
   const notes = [];
@@ -360,7 +371,11 @@ export async function runPublish({
       ? 'high'
       : 'low';
 
-  await git.push(task.branch);
+  try {
+    await git.push(task.branch);
+  } catch (e) {
+    return fail(`the push failed: ${e.message}`);
+  }
   const existing = (await gh.listOpenPulls()).find(
     (p) => p.head?.ref === task.branch,
   );
@@ -376,6 +391,14 @@ export async function runPublish({
     `kind:${task.kind}`,
     `risk:${risk}`,
   ]);
+  if (!existing)
+    await gh.comment(
+      pr.number,
+      renderStatus(
+        { v: 1, kind: 'pr', issue: n, reviews: {} },
+        `**Agent PR status:** fixes #${n}; waiting for the agent review.`,
+      ),
+    );
   await gh.addLabels(n, ['agent:pr-open']);
   await removeLabels('agent:ready');
   await writeStatus(
@@ -389,9 +412,11 @@ export async function runPublish({
 }
 
 /** git on the publish machine, against the bundle the implement job made. */
-function bundleGit(bundlePath, repo, token) {
+export function bundleGit(bundlePath, repo, token, cwd = ROOT) {
   const git = (...args) =>
-    execFile('git', args, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
+    execFile('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
+  // -z: paths exactly as stored; without it git quotes unusual names, which the path checks would miss
+  const nulList = (out) => out.split('\0').filter(Boolean);
   const ref = (branch) => `refs/agent/${branch}`;
   let fetched;
   const fetch = (branch) =>
@@ -423,21 +448,44 @@ function bundleGit(bundlePath, repo, token) {
       );
     },
     changedFiles: async (base, branch) =>
-      (
-        await git('diff', '--name-only', '--no-renames', base, ref(branch))
-      ).stdout
-        .split('\n')
-        .filter(Boolean),
+      nulList(
+        (
+          await git(
+            'diff',
+            '-z',
+            '--name-only',
+            '--no-renames',
+            base,
+            ref(branch),
+          )
+        ).stdout,
+      ),
     numstat: async (base, branch) =>
-      (await git('diff', '--numstat', '--no-renames', base, ref(branch)))
+      (await git('diff', '-z', '--numstat', '--no-renames', base, ref(branch)))
         .stdout,
+    // the token goes in an extra header through git's environment, never on the command line
     push: async (branch) => {
-      await git(
-        'push',
-        '--force',
-        `https://x-access-token:${token}@github.com/${repo}.git`,
-        `${ref(branch)}:refs/heads/${branch}`,
-      );
+      const header = `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+      await execFile(
+        'git',
+        [
+          'push',
+          '--force',
+          `https://github.com/${repo}.git`,
+          `${ref(branch)}:refs/heads/${branch}`,
+        ],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+            GIT_CONFIG_VALUE_0: header,
+          },
+        },
+      ).catch((e) => {
+        throw new Error(`git push exited with ${e.code ?? 'an error'}`);
+      });
     },
   };
 }
@@ -481,7 +529,7 @@ async function runJob(task, config) {
     systemPromptFile: fileURLToPath(
       new URL('../../.claude/skills/sdlc-implement/SKILL.md', import.meta.url),
     ),
-    timeoutMs: 70 * 60000,
+    timeoutMs: 60 * 60000,
   });
   // whatever the agent left uncommitted is committed, so the bundle holds all of it
   if ((await git('status', '--porcelain')).stdout.trim()) {
@@ -492,7 +540,7 @@ async function runJob(task, config) {
       `Agent changes for #${task.issue}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`,
     );
   }
-  const ten = { timeout: 10 * 60000 };
+  const ten = { timeout: 8 * 60000 };
   const checks = {
     test: await sh('npm', ['test'], ten),
     typecheck: await sh('npm', ['run', 'typecheck'], ten),

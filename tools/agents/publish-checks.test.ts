@@ -170,4 +170,15 @@ describe('prTitle and prBody', () => {
     ).toBe(true);
     expect(prBody('x', 1, [])).not.toContain('Agent checks');
   });
+
+  describe('closing keywords in agent text', () => {
+    it('cannot make the PR close another issue', () => {
+      const b = prBody('This fixes #42 and Closes: #43; resolves #44', 132, []);
+      expect(b).not.toMatch(
+        /\b(fix(es|ed)?|close[sd]?|resolve[sd]?):?\s+#4[234]\b/i,
+      );
+      expect(b).toContain('refs #42');
+      expect(b).toContain('Fixes #132');
+    });
+  });
 });

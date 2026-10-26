@@ -1,6 +1,19 @@
 // A thin `gh api` wrapper for the agent scripts. The token is passed to gh's own environment only,
 // never put in process.env, so an agent started from the same process cannot inherit it.
 import { execFile } from 'node:child_process';
+import { readFileSync, rmSync } from 'node:fs';
+
+/**
+ * The App token, handed over in a file the script reads and deletes at once, so it is never in an
+ * environment an agent started by this process could see.
+ * @param {string | undefined} path
+ */
+export function readTokenFile(path) {
+  if (!path) return undefined;
+  const token = readFileSync(path, 'utf8').trim();
+  rmSync(path, { force: true });
+  return token;
+}
 
 /**
  * @param {string} repo owner/name

@@ -10,7 +10,7 @@ import { canRunAgent, recordPause, recordRun } from './activity.mjs';
 import { combined, loadActivity, saveActivity } from './activityStore.mjs';
 import { runClaude } from './claude.mjs';
 import { parseConfig, parseTrusted } from './config.mjs';
-import { createGitHub } from './github.mjs';
+import { createGitHub, readTokenFile } from './github.mjs';
 import {
   buildReviewPrompt,
   reviewBodyOnly,
@@ -72,7 +72,10 @@ export async function runReview({
         await gh.listComments(pr.number),
         bot,
       );
-      const issueNumber = Number(/Fixes #(\d+)/.exec(pr.body ?? '')?.[1]);
+      // publish writes the issue into the PR's status block; else the script's own Fixes line, which is last
+      const issueNumber = Number(
+        [...(pr.body ?? '').matchAll(/Fixes #(\d+)/g)].at(-1)?.[1],
+      );
       const prState = (prComment && parseStatus(prComment.body)) ?? {
         v: 1,
         kind: 'pr',
@@ -113,12 +116,36 @@ export async function runReview({
 
       own = recordRun(own, now);
       reviewed++;
-      const failed = (why) => {
+      const writePrState = async (state, line) => {
+        const body = renderStatus(state, line);
+        if (prComment) await gh.editComment(prComment.id, body);
+        else await gh.comment(pr.number, body);
+      };
+      /** A failed review is tried again after an hour, and given up on for this commit after two failures. */
+      const failed = async (why) => {
         summary(`PR #${pr.number}: ${why}`);
+        const key = `${pr.number}:${sha}`;
+        const count = (own.reviewFailures?.[key] ?? 0) + 1;
         own = {
           ...own,
           failedAt: { ...own.failedAt, [pr.number]: now.toISOString() },
+          reviewFailures: { ...own.reviewFailures, [key]: count },
         };
+        if (count >= 2)
+          await writePrState(
+            {
+              ...prState,
+              reviews: {
+                ...prState.reviews,
+                [sha]: {
+                  verdict: 'error',
+                  at: now.toISOString(),
+                  reason: why.slice(0, 300),
+                },
+              },
+            },
+            `**Agent PR status:** the review of \`${sha.slice(0, 7)}\` failed twice and is not tried again for this commit.`,
+          ).catch(() => {});
       };
       const path = await git.worktree(pr.number, sha);
       let r;
@@ -135,20 +162,26 @@ export async function runReview({
         break;
       }
       if (!r.ok) {
-        failed(`review failed: ${r.error}`);
+        await failed(`review failed: ${r.error}`);
         continue;
       }
       const v = validateReview(r.output);
       if (!v.ok) {
-        failed(`invalid review (${v.error})`);
+        await failed(`invalid review (${v.error})`);
         continue;
       }
       const review = v.value;
       try {
-        await gh.createReview(pr.number, reviewPayload(review, sha));
+        try {
+          await gh.createReview(pr.number, reviewPayload(review, sha));
+        } catch (e) {
+          // GitHub refuses a comment on a line outside the diff with 422
+          if (!/HTTP 422/.test(e.message)) throw e;
+          await gh.createReview(pr.number, reviewBodyOnly(review, sha));
+        }
       } catch (e) {
-        if (!/422/.test(e.message)) throw e;
-        await gh.createReview(pr.number, reviewBodyOnly(review, sha));
+        await failed(`posting the review failed: ${e.message}`);
+        continue;
       }
       const next = {
         ...prState,
@@ -162,12 +195,10 @@ export async function runReview({
           },
         },
       };
-      const body = renderStatus(
+      await writePrState(
         next,
         `**Agent PR status:** last review of \`${sha.slice(0, 7)}\`: ${review.verdict === 'changes' ? 'changes needed' : 'no blocking findings'}.`,
       );
-      if (prComment) await gh.editComment(prComment.id, body);
-      else await gh.comment(pr.number, body);
       if (review.risk === 'high')
         for (const n of [pr.number, prState.issue]) {
           const labels = n === pr.number ? pr.labels : issue.labels;
@@ -224,7 +255,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   );
   const out = process.env.GITHUB_STEP_SUMMARY;
   await runReview({
-    gh: createGitHub(repo, process.env.AGENTS_GH_TOKEN),
+    gh: createGitHub(repo, readTokenFile(process.env.AGENTS_GH_TOKEN_FILE)),
     git: worktreeGit(),
     runAgent: (prompt, cwd) =>
       runClaude({
