@@ -37,7 +37,7 @@ A desktop app for running development tasks as isolated workspaces, with AI cost
 
 ## Status
 
-Shellie ships from `main`: every merge that changes the app releases the next minor version for Windows and macOS (Apple Silicon); merges that only touch the agent pipeline, docs, art sources, tests or dev tools make no version (`tools/release/needs-release.mjs`). Installed apps update themselves (`src/main/autoUpdate.ts`, `docs/macos-release.md`). Issues are triaged, implemented, reviewed, fixed and merged by agents on GitHub Actions (`docs/agents.md`).
+Shellie ships from `main` twice a day: at 12:00 and 17:00 Brussels time the app changes merged since the last release become the next minor version for Windows and macOS (Apple Silicon), and "Release now" (Actions › CI › Run workflow on `main`) or a `vX.Y.Z` tag releases at once; merges that only touch the agent pipeline, docs, art sources, tests or dev tools make no version (`tools/release/needs-release.mjs`). Installed apps update themselves (`src/main/autoUpdate.ts`, `docs/macos-release.md`). Issues are triaged, implemented, reviewed, fixed and merged by agents on GitHub Actions (`docs/agents.md`).
 
 **What changed and why lives in `docs/changes/`, one file per change** (`YYYY-MM-DD-[issue-]topic.md`): the spec it followed, how it works, what was verified and its known gaps. Read the notes for the area you touch. Each change adds its own new file there; never add change notes to this file (every PR editing the same lines here conflicted with every other).
 

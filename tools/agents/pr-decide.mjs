@@ -6,7 +6,7 @@
  *   paths: { denied: string[], ownerOnly: string[] }, lines: number, behindMain: boolean,
  *   ownerChangesRequested: boolean, now: Date }} o
  *   behindMain: main has commits the PR lacks (GitHub reports `behind` only under strict branch protection)
- * @returns {{ action: 'wait' | 'fix' | 'give-up' | 'update-branch' | 'merge' | 'awaits-owner', reason?: string,
+ * @returns {{ action: 'wait' | 'rerun' | 'fix' | 'give-up' | 'update-branch' | 'merge' | 'awaits-owner', reason?: string,
  *   reasons?: string[], fixInput?: { ciFailures: string[], findings: any[], comments: any[], conflict: boolean } }}
  */
 export function decidePr({
@@ -45,6 +45,14 @@ export function decidePr({
   const ciFailures = checks.state === 'red' ? checks.failed : [];
   const findings = review?.verdict === 'changes' ? (review.items ?? []) : [];
   if (conflict || ciFailures.length || findings.length || fresh.length) {
+    // only red CI: re-run the failed jobs once for this commit before spending a fix round (flaky tests)
+    if (
+      !conflict &&
+      !findings.length &&
+      !fresh.length &&
+      prState.ciRerunSha !== sha
+    )
+      return { action: 'rerun', reason: 'ci-red' };
     // a fix that changed nothing (same head) is tried again after an hour, not on the next poll
     if (
       prState.lastFixSha === sha &&
@@ -71,7 +79,7 @@ export function decidePr({
   if (has('agent:hold-merge')) reasons.push('agent:hold-merge');
   if (paths.denied.length) reasons.push(`touches ${paths.denied.join(', ')}`);
   const ownerOnly = [];
-  if (!['bug', 'chore'].includes(label('kind:'))) ownerOnly.push('a feature');
+  // features merge like bugs and chores when low risk (the owner's call, 2026-10-26)
   if (label('risk:') !== 'low') ownerOnly.push('high risk');
   if (lines > config.autoMergeMaxLines)
     ownerOnly.push(`${lines} changed lines`);

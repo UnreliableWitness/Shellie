@@ -67,7 +67,7 @@ They leave alone any issue that is assigned to someone, or that has a branch `is
 
 ## How an issue becomes a PR
 
-1. **Pick** (a small Linux job with the app's token): the oldest `agent:ready` issue, bugs before chores before features, when no other agent PR is open. It adds `claude-working` (the lock) and notes the attempt in the status comment.
+1. **Pick** (a small Linux job with the app's token): the oldest `agent:ready` issue, bugs before chores before features, while fewer than 3 agent PRs are open (`maxOpenAgentPrs`). After publishing a PR it starts the next implementation at once, so up to 3 issues are worked on side by side. It adds `claude-working` (the lock) and notes the attempt in the status comment.
 2. **Implement** (a macOS job with only your Claude token, no GitHub token): Claude Code (Opus) writes a failing test, the fix, a change note in `docs/changes/`, runs `npm test`, typecheck and lint, and commits on `agent/issues/<n>-<slug>`. The job packs the branch into a git bundle.
 3. **Publish** (a fresh Linux job with the app's token): checks the bundle itself: one branch, starting from the `main` commit pick saw, at most 50 commits, no change to the agents' own files, workflows, release or signing. Then it pushes and opens the PR (`Fixes #n`, labels `agent-pr`, `kind:*`, `risk:*`). Touching owner-only files (dependencies, the updater, secrets, cost, migrations), more than 400 changed lines, or failing checks make it `risk:high` and are listed in the PR under "Agent checks".
 
@@ -84,10 +84,11 @@ If no PR comes out, the lock is released and the issue is tried again after an h
 Every 15 minutes, after the review, the PR poller looks at each agent PR and does one of these:
 
 - **Waits** while CI runs or the review of the newest commit is not in yet.
+- **Re-runs** a red CI's failed jobs once per commit before anything else (no Claude, so a flaky test costs no fix round). The decide job uses the workflow's own token for this.
 - **Fixes**: when CI is red, the review found something critical or important, you commented on the PR (you or another trusted person), or the PR conflicts with `main`. A fix runs like the implementer: a macOS job with only the Claude token (Sonnet) gets the review findings, the end of the failing CI log and your comments, commits on the PR branch, and a fresh job checks the commits (they must build on the PR head: no history rewrite, no protected paths) and pushes them. Then CI and the reviewer run again. After 3 fix rounds it stops: `agent:hold-merge` on the PR, `agent:needs-owner` on the issue.
 - **Updates the branch** with `main` when `main` has moved on and the PR could otherwise merge (GitHub's update-branch, no agent; CI and the review then run again on the new commit).
-- **Merges** (only in `full` mode), squash, when all of these hold for the newest commit: the three CI checks are green (`test (macos-latest)`, `test (windows-latest)`, `windows-installer`), the agent review found nothing blocking, `main`'s last CI run is green, no `agent:hold-merge` or `agent:stop`, and either it is a low-risk bug fix or chore of at most 400 changed lines touching no owner-only file, or **you approved it** (an Approve review on that commit). One merge per poll.
-- **Asks you** otherwise (`agent:awaits-owner` and one comment per commit and set of reasons saying why: a feature, high risk, size, an owner-only file, your Request changes, or `implement` mode). While `main`'s CI is red or still running, a PR that could merge just waits.
+- **Merges** (only in `full` mode), squash, when all of these hold for the newest commit: the three CI checks are green (`test (macos-latest)`, `test (windows-latest)`, `windows-installer`), the agent review found nothing blocking, `main`'s last CI run is green, no `agent:hold-merge` or `agent:stop`, and either it is a low-risk change (bug, chore or feature, since 2026-10-26) of at most 400 changed lines touching no owner-only file, or **you approved it** (an Approve review on that commit). One merge per poll.
+- **Asks you** otherwise (`agent:awaits-owner` and one comment per commit and set of reasons saying why: high risk, size, an owner-only file, your Request changes, or `implement` mode). While `main`'s CI is red or still running, a PR that could merge just waits.
 
 **What you can do on an agent PR:** comment (the fixer acts on it), **Request changes** (the text goes to the fixer, and nothing merges until your latest review is an Approve), **Approve** (lets the agents merge in `full` mode what only you may merge; never past a red `main` or `agent:hold-merge`), push commits yourself, or close it. When the fixer has given up (`agent:hold-merge`), taking that label off lets it start over with 3 new rounds. A fix that changed nothing is retried after an hour, not on the next poll.
 
@@ -95,7 +96,9 @@ Owner-only files, which never merge without your approval: dependencies (`packag
 
 If you merge an agent PR yourself, or close it, the agents notice: a merge goes on to the release notice, a close hands the issue back to you (`agent:needs-owner`; `agent:go` has it implemented again).
 
-**Release notice:** when a published release contains the merge, the notifier comments on the issue ("Fixed in **vX.Y.Z** … Shellie updates itself within about half an hour"), labels it `agent:released` and closes it. If no release has it 90 minutes after the merge (usually a red `main`), it tells you once with `agent:needs-owner`.
+**Releases are bundled:** a merge only runs the tests; at 12:00 and 17:00 Brussels time (13:00 and 18:00 in summer) the app changes merged since the last release become one version (Actions › CI › Run workflow on `main` releases right away). At the merge the reporter reads that the fix ships with the next release.
+
+**Release notice:** when a published release contains the merge, the notifier comments on the issue ("Fixed in **vX.Y.Z** … Shellie updates itself within about half an hour"), labels it `agent:released` and closes it. If no release has it 26 hours after the merge (a scheduled release was missed: it failed, or `main` was red), it tells you once with `agent:needs-owner`. A merge that changes no app files (tests, docs, tooling) is closed at once: there is no version for it.
 
 **Still broken:** a comment from a trusted person on a released issue (closed in the last 30 days) reopens it, and triage looks at it again.
 

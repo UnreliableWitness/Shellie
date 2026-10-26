@@ -2,7 +2,7 @@
 # They run on the owner's Claude subscription: limits are turns and runs, never dollars.
 botLogin: shellie-agents[bot]
 botUserId: 348169834 # the bot user's id, for its git commit email
-maxOpenAgentPrs: 1
+maxOpenAgentPrs: 3 # agent PRs open at once (1 until 2026-10-26)
 maxImplementAttempts: 2
 maxFixRounds: 3
 maxTriagePerRun: 5

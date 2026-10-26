@@ -17,6 +17,7 @@ import { combined, loadActivity, saveActivity } from './activityStore.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import { bundleGit, runAgentJob, workDir } from './implement.mjs';
+import { needsRelease } from '../release/needs-release.mjs';
 import { decidePr, mainCiGreen, prBookkeeping } from './pr-decide.mjs';
 import { classifyPaths, countChangedLines } from './publish-checks.mjs';
 import {
@@ -83,13 +84,37 @@ async function markMerged(gh, n, bot, { mergeSha, mergedAt, pr }) {
     { ...status, state: 'merged', mergeSha, mergedAt },
     `**Merged** in #${pr}. The reporter is told here when a release has it.`,
   );
+  // releases are bundled (twice a day): say when to expect it, unless the change has no app files at all,
+  // which the notifier closes at once
+  let files = null;
+  try {
+    files = await gh.commitFiles(mergeSha);
+  } catch {
+    // unknown: assume it goes into the app
+  }
+  if (!files || needsRelease(files))
+    await gh.comment(
+      n,
+      `Merged in #${pr}. It ships with the next release of Shellie (12:00 or 17:00 Brussels time); you get a note here when it is out.`,
+    );
 }
 
 /**
+ * @param {{ gh: any, config: any, trusted: any, mode: string, now: Date, summary: (l: string) => void,
+ *   rerun?: (runId: number) => Promise<void> }} o
+ *   rerun: re-runs a workflow run's failed jobs (the workflow's own token; the App may only read Actions)
  * @returns {Promise<null | { pr: number, issue: number, branch: string, headSha: string, spec: any, findings: any[],
  *   ciFailures: { job: string, logTail: string }[], comments: { author: string, body: string }[], conflict: boolean, round: number }>}
  */
-export async function runDecide({ gh, config, trusted, mode, now, summary }) {
+export async function runDecide({
+  gh,
+  config,
+  trusted,
+  mode,
+  now,
+  summary,
+  rerun = async () => {},
+}) {
   if (!LIVE_MODES.includes(mode)) {
     summary(`PR poller is off (AGENTS_MODE=${mode || 'unset'}).`);
     return null;
@@ -237,7 +262,25 @@ export async function runDecide({ gh, config, trusted, mode, now, summary }) {
       `PR #${pr.number}: ${d.action}${d.reason ? ` (${d.reason})` : ''}${d.reasons ? `: ${d.reasons.join('; ')}` : ''}`,
     );
 
-    if (d.action === 'update-branch') await gh.updateBranch(pr.number, sha);
+    if (d.action === 'rerun') {
+      // a flaky test should not cost a fix round: the failed jobs run once more for this commit
+      const runIds = new Set(
+        checks.runs
+          .filter((r) => checks.failed.includes(r.name))
+          .map((r) =>
+            Number(
+              /\/runs\/(\d+)/.exec(r.html_url ?? r.details_url ?? '')?.[1],
+            ),
+          )
+          .filter(Number.isInteger),
+      );
+      for (const id of runIds) await rerun(id);
+      prState = { ...prState, ciRerunSha: sha };
+      await savePr(
+        `**Agent PR status:** CI failed on \`${sha.slice(0, 7)}\` (${checks.failed.join(', ')}); its failed jobs run once more before a fix round.`,
+      );
+    } else if (d.action === 'update-branch')
+      await gh.updateBranch(pr.number, sha);
     else if (d.action === 'merge' && !merged) {
       // one merge per poll: each merge moves main, and the next PR is checked against the new main next time
       await gh.mergePull(pr.number, sha);
@@ -467,6 +510,11 @@ export async function runPublishFix({
     return toOwner(`the agent is blocked: ${out.reason.slice(0, 2000)}`);
   if (out?.status !== 'done' || typeof out.summary !== 'string')
     return noChange('invalid answer');
+  // the fixer looked and changed nothing: another round would do the same, so the owner decides
+  if (result.commits === 0)
+    return toOwner(
+      `the fixer found nothing to change.${task.ciFailures.length ? ` The failing CI (${task.ciFailures.map((c) => c.job).join(', ')}) already ran twice, so it may not come from this PR.` : ''} Its note: ${out.summary.slice(0, 1500)}`,
+    );
 
   let files;
   try {
@@ -530,8 +578,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
   mkdirSync(workDir(), { recursive: true });
   if (step === 'decide') {
+    const actions = createGitHub(
+      repo,
+      readTokenFile(process.env.AGENTS_ACTIONS_TOKEN_FILE),
+    );
     const task = await runDecide({
       gh: createGitHub(repo, readTokenFile(process.env.AGENTS_GH_TOKEN_FILE)),
+      rerun: (id) => actions.rerunFailedJobs(id),
       config,
       trusted,
       mode: process.env.AGENTS_MODE ?? 'off',

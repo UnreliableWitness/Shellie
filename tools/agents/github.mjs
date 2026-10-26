@@ -165,6 +165,8 @@ export function createGitHub(repo, token) {
       api(`${r}/issues/${n}`, { method: 'PATCH', body: { state: 'open' } }),
     commitFiles: async (sha) =>
       (await api(`${r}/commits/${sha}`)).files.map((f) => f.filename),
+    rerunFailedJobs: (runId) =>
+      api(`${r}/actions/runs/${runId}/rerun-failed-jobs`, { method: 'POST' }),
     listReleases: () => api(`${r}/releases?per_page=20`),
     compare: (base, head) =>
       api(`${r}/compare/${base}...${encodeURIComponent(head)}`),

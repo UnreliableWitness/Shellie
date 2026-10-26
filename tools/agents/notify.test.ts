@@ -157,11 +157,11 @@ describe('runNotify', () => {
     expect(gh.writes).not.toContain('close #4');
   });
 
-  it('waits for a release, and hands over to the owner once after 90 minutes', async () => {
-    const gh = fake({ mergedAt: '2026-10-26T11:00:00Z' });
+  it('waits for the next bundled release, and hands over to the owner once a release was missed (26 h)', async () => {
+    const gh = fake({ mergedAt: '2026-10-25T13:00:00Z' });
     await runNotify(opts(gh) as never);
     expect(gh.writes).toEqual([]);
-    const late = fake({ mergedAt: '2026-10-26T10:00:00Z' });
+    const late = fake({ mergedAt: '2026-10-25T09:00:00Z' });
     await runNotify(opts(late) as never);
     await runNotify(opts(late) as never);
     expect(

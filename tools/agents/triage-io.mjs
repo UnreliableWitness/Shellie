@@ -188,7 +188,7 @@ export function planActions(
       status(
         s,
         [
-          `**Triage: ready for implementation** (${kind}, ${risk} risk)${kind === 'feature' || risk === 'high' ? ' · merges only after the owner approves the PR' : ''}`,
+          `**Triage: ready for implementation** (${kind}, ${risk} risk)${risk === 'high' ? ' · merges only after the owner approves the PR' : ''}`,
           result.summary ?? '',
           `### Problem\n${spec.problem}`,
           `### Cause\n${spec.cause}`,
