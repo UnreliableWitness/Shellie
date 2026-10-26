@@ -163,6 +163,8 @@ export function createGitHub(repo, token) {
       ),
     reopen: (n) =>
       api(`${r}/issues/${n}`, { method: 'PATCH', body: { state: 'open' } }),
+    commitFiles: async (sha) =>
+      (await api(`${r}/commits/${sha}`)).files.map((f) => f.filename),
     listReleases: () => api(`${r}/releases?per_page=20`),
     compare: (base, head) =>
       api(`${r}/compare/${base}...${encodeURIComponent(head)}`),
