@@ -37,6 +37,7 @@ import type {
   SetupState,
   Sprint,
   SprintItem,
+  SprintIteration,
   Task,
   TaskView,
   TerminalDef,
@@ -186,8 +187,19 @@ export type Channels = {
     args: [connectionId: string, search: WorkItemSearch];
     result: WorkItemSummary[];
   };
-  /** The current sprint in backlog order, or `iteration: null` when the project has none. */
-  'workItems:sprint': { args: [connectionId: string]; result: Sprint };
+  /**
+   * A sprint in backlog order: the chosen iteration, else the current one. `iteration: null` when the project has no
+   * current sprint or the chosen one is gone.
+   */
+  'workItems:sprint': {
+    args: [connectionId: string, iterationId?: string];
+    result: Sprint;
+  };
+  /** Every sprint of the project's default team, past, current and future. */
+  'workItems:iterations': {
+    args: [connectionId: string];
+    result: SprintIteration[];
+  };
   /** The project's work item types with icons as data URLs and state colors; cached in main for the session. */
   'workItems:types': {
     args: [connectionId: string];

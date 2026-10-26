@@ -8,6 +8,7 @@ export interface Tracker {
   probe: AdoClient['verify'];
   currentIteration: AdoClient['currentIteration'];
   iteration: AdoClient['sprint'];
+  iterations: AdoClient['iterations'];
   items: AdoClient['workItems'];
   searchItems: AdoClient['searchWorkItems'];
   itemTypes: AdoClient['workItemTypes'];

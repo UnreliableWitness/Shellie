@@ -216,6 +216,22 @@ export class AdoClient {
     project: string,
     team?: string,
   ): Promise<SprintIteration | null> {
+    return (
+      (await this.teamIterations(project, team, '$timeframe=current&'))[0] ??
+      null
+    );
+  }
+
+  /** Every iteration of the team (the project's default team without one), in ADO's order. */
+  async iterations(project: string, team?: string): Promise<SprintIteration[]> {
+    return this.teamIterations(project, team, '');
+  }
+
+  private async teamIterations(
+    project: string,
+    team: string | undefined,
+    filter: string,
+  ): Promise<SprintIteration[]> {
     const scope = team
       ? `${encodeURIComponent(project)}/${encodeURIComponent(team)}`
       : encodeURIComponent(project);
@@ -224,21 +240,28 @@ export class AdoClient {
         id: string;
         name: string;
         path: string;
-        attributes?: { startDate?: string | null; finishDate?: string | null };
+        attributes?: {
+          startDate?: string | null;
+          finishDate?: string | null;
+          timeFrame?: unknown;
+        };
       }[];
-    }>(
-      `/${scope}/_apis/work/teamsettings/iterations?$timeframe=current&${API}`,
-    );
-    const first = (data.value ?? [])[0];
-    return first
-      ? {
-          id: first.id,
-          path: first.path,
-          name: first.name,
-          startDate: first.attributes?.startDate ?? null,
-          finishDate: first.attributes?.finishDate ?? null,
-        }
-      : null;
+    }>(`/${scope}/_apis/work/teamsettings/iterations?${filter}${API}`);
+    return (data.value ?? []).map((i) => {
+      const timeframe = i.attributes?.timeFrame;
+      return {
+        id: i.id,
+        path: i.path,
+        name: i.name,
+        startDate: i.attributes?.startDate ?? null,
+        finishDate: i.attributes?.finishDate ?? null,
+        ...(timeframe === 'past' ||
+        timeframe === 'current' ||
+        timeframe === 'future'
+          ? { timeframe }
+          : {}),
+      };
+    });
   }
 
   /** The id of the user the token belongs to. */
@@ -327,9 +350,15 @@ export class AdoClient {
     );
   }
 
-  /** The current sprint as grid rows, or no iteration when the project has no current sprint. */
-  async sprint(project: string): Promise<Sprint> {
-    const iteration = await this.currentIteration(project);
+  /**
+   * A sprint as grid rows: the one with `iterationId`, else the current one. No iteration when the project has no
+   * current sprint or the chosen one is gone.
+   */
+  async sprint(project: string, iterationId?: string): Promise<Sprint> {
+    const iteration = iterationId
+      ? ((await this.iterations(project)).find((i) => i.id === iterationId) ??
+        null)
+      : await this.currentIteration(project);
     if (!iteration) return { iteration: null, rows: [] };
     const relations = await this.iterationWorkItems(project, iteration.id);
     const ids = [...new Set(relations.map((r) => r.target.id))];

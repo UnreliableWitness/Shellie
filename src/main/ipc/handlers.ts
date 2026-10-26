@@ -3685,10 +3685,16 @@ export function createHandlers(s: Services): Handlers {
         });
       });
     },
-    'workItems:sprint': async (connectionId) => {
+    'workItems:sprint': async (connectionId, iterationId) => {
       const c = s.connections.get(connectionId);
       return withConnection(connectionId, () =>
-        s.trackers.tracker(connectionId).iteration(c.project),
+        s.trackers.tracker(connectionId).iteration(c.project, iterationId),
+      );
+    },
+    'workItems:iterations': async (connectionId) => {
+      const c = s.connections.get(connectionId);
+      return withConnection(connectionId, () =>
+        s.trackers.tracker(connectionId).iterations(c.project),
       );
     },
     'workItems:types': async (connectionId) => {

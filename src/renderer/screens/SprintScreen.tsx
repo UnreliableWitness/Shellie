@@ -375,6 +375,9 @@ function SprintPage({ connection }: { connection: Connection }) {
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
+  /** The sprint picked in the dropdown; null follows the current sprint. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [iterations, setIterations] = useState<SprintIteration[]>([]);
   const lastLoad = useRef(0);
   const seq = useRef(0);
   const [local, setLocal] = useState(NO_TIME);
@@ -415,9 +418,16 @@ function SprintPage({ connection }: { connection: Connection }) {
     setBusy(true);
     try {
       const [sprint] = await Promise.all([
-        api().invoke('workItems:sprint', connection.id),
+        selectedId
+          ? api().invoke('workItems:sprint', connection.id, selectedId)
+          : api().invoke('workItems:sprint', connection.id),
         loadTime(),
       ]);
+      // The picked sprint is gone: go back to the current one.
+      if (selectedId && !sprint.iteration) {
+        if (mine === seq.current) setSelectedId(null);
+        return;
+      }
       const assigned = sprint.iteration
         ? []
         : (
@@ -454,7 +464,22 @@ function SprintPage({ connection }: { connection: Connection }) {
     } finally {
       if (mine === seq.current) setBusy(false);
     }
-  }, [connection.id, setSprintName, loadTime]);
+  }, [connection.id, selectedId, setSprintName, loadTime]);
+
+  useEffect(() => {
+    let live = true;
+    api()
+      .invoke('workItems:iterations', connection.id)
+      .then((list) => {
+        if (live) setIterations(list);
+      })
+      .catch(() => {
+        // Without the list there is no dropdown; the current sprint still shows.
+      });
+    return () => {
+      live = false;
+    };
+  }, [connection.id]);
 
   useEffect(() => {
     setSprintName(null);
@@ -495,6 +520,23 @@ function SprintPage({ connection }: { connection: Connection }) {
         inline
         commands={
           <>
+            {iterations.length > 1 && (
+              <select
+                className="field"
+                aria-label="Sprint"
+                value={selectedId ?? iteration?.id ?? ''}
+                onChange={(e) => setSelectedId(e.target.value || null)}
+              >
+                {!selectedId && !iteration && (
+                  <option value="">No current sprint</option>
+                )}
+                {iterations.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.timeframe === 'current' ? `${i.name} (current)` : i.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <label className="sprint-search">
               <Search16Regular aria-hidden="true" />
               <input
