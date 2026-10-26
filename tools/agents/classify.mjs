@@ -25,15 +25,8 @@ export function classifyIssue(issue, comments, ctx) {
   const has = (name) => issue.labels.some((l) => l.name === name);
   const skip = (reason) => ({ action: /** @type {const} */ ('skip'), reason });
 
-  if (issue.pull_request) return skip('pull-request');
-  if (has('agent:stop')) return skip('stopped');
-  if ((issue.assignees ?? []).some((a) => a.login !== ctx.botLogin))
-    return skip('assigned');
-  if (
-    ctx.humanBranches.some((b) => b.startsWith(`issues/${n}-`)) ||
-    ctx.humanPrTitles.some((t) => new RegExp(`#${n}(?!\\d)`).test(t))
-  )
-    return skip('owner-working');
+  const ownerSkip = ownerSkipReason(issue, ctx);
+  if (ownerSkip) return skip(ownerSkip);
 
   const trustedLogin = (login) =>
     login === ctx.botLogin || isTrusted(ctx.trusted, login);
@@ -80,6 +73,27 @@ export function classifyIssue(issue, comments, ctx) {
       return { ...base, action: 'remind', reason: 'no-answer' };
   }
   return skip('waiting');
+}
+
+/**
+ * Why the agents must leave an issue alone (spec 3.3), or null: a pull request, `agent:stop`, assigned to
+ * someone, or the owner working on it (an `issues/<n>-` branch or a trusted person's PR naming `#n`).
+ * @param {Issue} issue
+ * @param {{ botLogin: string, humanBranches: string[], humanPrTitles: string[] }} ctx
+ * @returns {string | null}
+ */
+export function ownerSkipReason(issue, ctx) {
+  const n = issue.number;
+  if (issue.pull_request) return 'pull-request';
+  if (issue.labels.some((l) => l.name === 'agent:stop')) return 'stopped';
+  if ((issue.assignees ?? []).some((a) => a.login !== ctx.botLogin))
+    return 'assigned';
+  if (
+    ctx.humanBranches.some((b) => b.startsWith(`issues/${n}-`)) ||
+    ctx.humanPrTitles.some((t) => new RegExp(`#${n}(?!\\d)`).test(t))
+  )
+    return 'owner-working';
+  return null;
 }
 
 /** Comments after `afterId` by trusted people other than the bot. */
