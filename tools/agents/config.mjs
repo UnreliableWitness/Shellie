@@ -4,6 +4,7 @@ import { parse } from 'yaml';
 
 const DEFAULTS = {
   botLogin: 'shellie-agents[bot]',
+  botUserId: 348169834,
   maxOpenAgentPrs: 1,
   maxImplementAttempts: 2,
   maxFixRounds: 3,

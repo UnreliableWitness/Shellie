@@ -83,5 +83,11 @@ export function createGitHub(repo, token) {
     editIssueBody: (n, body) =>
       api(`${r}/issues/${n}`, { method: 'PATCH', body: { body } }),
     getIssue: (n) => api(`${r}/issues/${n}`),
+    mainSha: async () => (await api(`${r}/git/ref/heads/main`)).object.sha,
+    createPull: ({ title, body, head }) =>
+      api(`${r}/pulls`, {
+        method: 'POST',
+        body: { title, body, head, base: 'main', maintainer_can_modify: true },
+      }),
   };
 }
