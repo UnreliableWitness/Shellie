@@ -35,7 +35,18 @@ Later stages add an Azure login for the health agent and branch protection on `m
 | `implement` | Triage, implementer, reviewer, fixer and notifier. **Nothing merges by itself**: a PR that is green and reviewed gets `agent:awaits-owner` and a comment, and you merge it. |
 | `full` | Everything, and the agents merge a PR themselves when it meets the merge rule below. |
 
-Run a poller by hand: Actions › Agents · triage (or · implement, · PR) › Run workflow.
+Run a poller by hand: Actions › Agents · triage (or · implement, · PR, · notify) › Run workflow.
+
+**When they run.** The 15-minute schedules are only a safety net: GitHub starts scheduled runs late, or not at all, under load (20-40 minutes apart was seen). Each poller also starts as soon as something happens:
+
+| Poller | Starts on |
+|---|---|
+| Triage | an issue opened, reopened or labelled, a comment on an issue (not the agents' own) |
+| Implement | triage finished; a PR closed (the one agent PR slot may be free) |
+| PR | CI finished on any branch (a new or fixed agent PR, or `main`); a review or comment on a PR (not the agents' own) |
+| Notify | CI finished on `main` |
+
+The scripts ignore whatever does not concern them, so an extra start costs a minute of free runner time and no Claude usage. Every agent job checks out `main`, whatever the event, so a PR's own code never runs with the App token.
 
 ## Labels
 
