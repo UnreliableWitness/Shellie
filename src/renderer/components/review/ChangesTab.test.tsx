@@ -189,6 +189,30 @@ describe('ChangesTab', () => {
     ).toBe('3');
   });
 
+  it('shows a new file inline over the full width, and a modified one side by side', async () => {
+    mount();
+    await waitFor(() =>
+      expect(screen.getByTestId('after').textContent).toBe('new src/a.ts'),
+    );
+    expect(screen.getByTestId('diff').getAttribute('data-side-by-side')).toBe(
+      'true',
+    );
+    fireEvent.click(screen.getByText('b.ts'));
+    await waitFor(() =>
+      expect(screen.getByTestId('after').textContent).toBe('new src/b.ts'),
+    );
+    expect(screen.getByTestId('diff').getAttribute('data-side-by-side')).toBe(
+      'false',
+    );
+    // The stored preference stays as it was.
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    expect(
+      screen
+        .getByRole('menuitemcheckbox', { name: /Side by side/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
   it('marks a file viewed, and shows it changed since when its hash moves', async () => {
     const api = mount();
     fireEvent.click(
