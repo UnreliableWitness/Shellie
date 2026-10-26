@@ -32,6 +32,8 @@ const BATCH_SSH = 'ssh -o BatchMode=yes';
 
 class GitTimeoutError extends Error {}
 
+class WorktreeStepTimeout extends Error {}
+
 export class GitError extends Error {
   constructor(
     public readonly args: string[],
@@ -363,7 +365,7 @@ export class GitClient {
       return await this.run(cwd, args, { timeoutMs: this.worktreeTimeoutMs });
     } catch (e) {
       if (e instanceof GitTimeoutError)
-        throw new Error(
+        throw new WorktreeStepTimeout(
           `${step} timed out after ${this.worktreeTimeoutMs / 1000} s`,
         );
       throw e;
@@ -374,22 +376,28 @@ export class GitClient {
     cwd: string,
     o: { branch: string; path: string; baseRef: string },
   ): Promise<string> {
-    await this.runWorktreeStep(
-      cwd,
-      [
-        '-c',
-        'core.longpaths=true',
-        'worktree',
-        'add',
-        // Without this, a branch made from origin/main tracks origin/main and looks "not pushed" forever.
-        '--no-track',
-        '-b',
-        o.branch,
-        o.path,
-        o.baseRef,
-      ],
-      'git worktree add',
-    );
+    try {
+      await this.runWorktreeStep(
+        cwd,
+        [
+          '-c',
+          'core.longpaths=true',
+          'worktree',
+          'add',
+          // Without this, a branch made from origin/main tracks origin/main and looks "not pushed" forever.
+          '--no-track',
+          '-b',
+          o.branch,
+          o.path,
+          o.baseRef,
+        ],
+        'git worktree add',
+      );
+    } catch (e) {
+      if (e instanceof WorktreeStepTimeout)
+        await this.discardPartial(cwd, o, true);
+      throw e;
+    }
     return (
       await this.runWorktreeStep(o.path, ['rev-parse', 'HEAD'], 'git rev-parse')
     ).trim();
@@ -400,11 +408,33 @@ export class GitClient {
     cwd: string,
     o: { branch: string; path: string },
   ): Promise<void> {
-    await this.runWorktreeStep(
-      cwd,
-      ['-c', 'core.longpaths=true', 'worktree', 'add', o.path, o.branch],
-      'git worktree add',
-    );
+    try {
+      await this.runWorktreeStep(
+        cwd,
+        ['-c', 'core.longpaths=true', 'worktree', 'add', o.path, o.branch],
+        'git worktree add',
+      );
+    } catch (e) {
+      if (e instanceof WorktreeStepTimeout)
+        await this.discardPartial(cwd, o, false);
+      throw e;
+    }
+  }
+
+  /**
+   * A killed `git worktree add` leaves its folder and (for `-b`) its new branch behind, and a retry would
+   * reuse that half-made checkout. Best effort: the timeout error is what the caller needs to see.
+   */
+  private async discardPartial(
+    cwd: string,
+    o: { branch: string; path: string },
+    createdBranch: boolean,
+  ): Promise<void> {
+    await this.worktreeRemove(cwd, o.path, true).catch(() => undefined);
+    await removeTree(o.path, this.wait).catch(() => undefined);
+    await this.worktreePrune(cwd).catch(() => undefined);
+    if (createdBranch)
+      await this.deleteBranch(cwd, o.branch).catch(() => undefined);
   }
 
   async worktreeRemove(
