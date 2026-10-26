@@ -44,6 +44,7 @@ describe('planActions', () => {
     expect(a).toContainEqual({ type: 'addLabels', labels: ['agent:ready', 'kind:bug', 'risk:low'] });
     expect(a).toContainEqual({ type: 'removeLabels', labels: ['agent:needs-info', 'agent:needs-owner'] });
     expect(a.find((x) => x.type === 'status')!.body).toContain('src/a.ts:1');
+    expect(planActions({ ...ready, summary: 'Could not view the screenshot.' }, ctx).find((x) => x.type === 'status')!.body).toContain('Could not view the screenshot.');
     expect(statusOf(a)).toMatchObject({ state: 'ready', kind: 'bug', risk: 'low', spec });
   });
   it('adds to the previous rounds and tokens', () => {

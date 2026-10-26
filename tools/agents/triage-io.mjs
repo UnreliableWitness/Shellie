@@ -129,6 +129,7 @@ export function planActions(result, { issue, previous, lastCommentId, tokens, no
         s,
         [
           `**Triage: ready for implementation** (${kind}, ${risk} risk)${kind === 'feature' || risk === 'high' ? ' · merges only after the owner approves the PR' : ''}`,
+          result.summary ?? '',
           `### Problem\n${spec.problem}`,
           `### Cause\n${spec.cause}`,
           `### Planned change\n${spec.change}`,
