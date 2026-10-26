@@ -5,7 +5,7 @@ import type { SetupEvent, SetupStepDef } from '../../shared/types';
 import { pathExists } from '../fsRetry';
 import { isInside } from '../paths';
 import type { Command, Platform } from '../platform/Platform';
-import { GitAuthError, type GitClient } from './GitClient';
+import { GitAuthError, killTree, type GitClient } from './GitClient';
 import { nodeModulesMatch } from './nodeModules';
 import { errorMessage } from '../../shared/errors';
 import { strippableKind, stripKeys } from '../secrets/inject';
@@ -175,6 +175,11 @@ const homeCommands = (plan: SetupPlan): string[] =>
 
 const NPM_CI = 'npm ci';
 
+/** A version check that takes longer than this is treated as apm not being usable. */
+const APM_VERSION_TIMEOUT_MS = 30_000;
+/** How long output may still arrive after a command exits before its pipes are closed (#148). */
+const EXIT_DRAIN_MS = 2_000;
+
 function terminalsDetail(label: string | null, commands: string[]): string {
   return [label, commands.length > 0 ? `Setup (${commands.join(', ')})` : null]
     .filter(Boolean)
@@ -250,6 +255,8 @@ export class SetupRunner {
     private readonly platform: Platform,
     /** The secret names stored for a repo (its own and All, any environment), kept out of copied env files. */
     private readonly strippedNames: (repoId: string) => string[] = () => [],
+    /** `commandTimeoutMs`: a deadline for every command setup runs; none by default, since `npm ci` can run long. */
+    private readonly opts: { commandTimeoutMs?: number } = {},
   ) {}
 
   async run(
@@ -566,6 +573,7 @@ export class SetupRunner {
         plan.worktreePath,
         () => {},
         'apm --version',
+        APM_VERSION_TIMEOUT_MS,
       );
     } catch {
       const detail = 'apm is not installed, skipped';
@@ -636,11 +644,16 @@ export class SetupRunner {
     }
   }
 
+  /**
+   * Runs a command, logging its output. With `timeoutMs` (or the runner's `commandTimeoutMs`) a command still
+   * running then is killed with everything it started and fails with `<cmd> timed out after <s> s`.
+   */
   private spawnLogged(
     { command, args, env }: Command,
     cwd: string,
     log: (l: string) => void,
     cmd: string,
+    timeoutMs = this.opts.commandTimeoutMs,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
@@ -649,6 +662,28 @@ export class SetupRunner {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
+      let settled = false;
+      let timedOut = false;
+      let timer: NodeJS.Timeout | undefined;
+      let drain: NodeJS.Timeout | undefined;
+      const settle = (err: Error | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(drain);
+        if (err) reject(err);
+        else resolve();
+      };
+      const stopReading = () => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      };
+      const outcome = (code: number | null, signal: NodeJS.Signals | null) =>
+        code === 0
+          ? null
+          : code === null
+            ? new Error(`${cmd} was killed by signal ${signal}`)
+            : new Error(`${cmd} exited with code ${code}`);
       const pipe = (stream: NodeJS.ReadableStream) => {
         let buf = '';
         stream.on('data', (chunk: Buffer | string) => {
@@ -666,13 +701,29 @@ export class SetupRunner {
       };
       pipe(child.stdout);
       pipe(child.stderr);
-      child.on('error', reject);
+      child.on('error', settle);
       child.on('close', (code, signal) => {
-        if (code === 0) resolve();
-        else if (code === null)
-          reject(new Error(`${cmd} was killed by signal ${signal}`));
-        else reject(new Error(`${cmd} exited with code ${code}`));
+        if (!timedOut) settle(outcome(code, signal));
       });
+      // 'close' also waits for the pipes, which a helper the command left running (on Windows) can hold open.
+      child.on('exit', (code, signal) => {
+        if (timedOut) return;
+        drain = setTimeout(() => {
+          stopReading();
+          settle(outcome(code, signal));
+        }, EXIT_DRAIN_MS);
+      });
+      if (timeoutMs !== undefined)
+        timer = setTimeout(() => {
+          timedOut = true;
+          stopReading();
+          killTree(
+            child.pid,
+            () => child.kill(),
+            () =>
+              settle(new Error(`${cmd} timed out after ${timeoutMs / 1000} s`)),
+          );
+        }, timeoutMs);
     });
   }
 }
