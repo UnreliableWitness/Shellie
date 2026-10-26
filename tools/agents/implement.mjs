@@ -470,14 +470,42 @@ export function bundleGit(bundlePath, repo, token, cwd = ROOT) {
     numstat: async (base, branch) =>
       (await git('diff', '-z', '--numstat', '--no-renames', base, ref(branch)))
         .stdout,
-    // the token goes in an extra header through git's environment, never on the command line
-    push: async (branch) => {
+    // the whole PR's files and line counts, against where it branched from main (a merged main drops out)
+    prFiles: async (branch) => {
+      await fetch(branch);
+      return nulList(
+        (
+          await git(
+            'diff',
+            '-z',
+            '--name-only',
+            '--no-renames',
+            `origin/main...${ref(branch)}`,
+          )
+        ).stdout,
+      );
+    },
+    prNumstat: async (branch) => {
+      await fetch(branch);
+      return (
+        await git(
+          'diff',
+          '-z',
+          '--numstat',
+          '--no-renames',
+          `origin/main...${ref(branch)}`,
+        )
+      ).stdout;
+    },
+    // the token goes in an extra header through git's environment, never on the command line;
+    // force only for a new agent branch, never for a fix on top of a PR
+    push: async (branch, { force = true } = {}) => {
       const header = `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
       await execFile(
         'git',
         [
           'push',
-          '--force',
+          ...(force ? ['--force'] : []),
           `https://github.com/${repo}.git`,
           `${ref(branch)}:refs/heads/${branch}`,
         ],

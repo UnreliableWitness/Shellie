@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "description": "done: your fixes are committed on the branch. blocked: you could not fix it well.",
+  "properties": {
+    "status": { "type": "string", "enum": ["done", "blocked"] },
+    "summary": {
+      "type": "string",
+      "description": "done: what you changed for each finding, failure and comment, in a few plain sentences"
+    },
+    "reason": {
+      "type": "string",
+      "description": "blocked: why, and what the owner would need to decide"
+    }
+  },
+  "required": ["status"]
+}

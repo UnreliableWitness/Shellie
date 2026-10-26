@@ -52,4 +52,18 @@ describe('bundleGit', () => {
       3,
     );
   });
+
+  it("lists the whole PR's files against origin/main", async () => {
+    const { dir, base } = repoWithAgentBranch();
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/main', base], {
+      cwd: dir,
+    });
+    const g = bundleGit(join(dir, 'branch.bundle'), 'o/r', 'token', dir);
+    await g.bundleHeads();
+    expect(await g.isAncestor(base, 'agent/issues/1-x')).toBe(true);
+    expect(await g.prFiles('agent/issues/1-x')).toEqual(
+      expect.arrayContaining(['.github/workflows/é.yml', 'naïve café.ts']),
+    );
+    expect(countChangedLines(await g.prNumstat('agent/issues/1-x'))).toBe(3);
+  });
 });
