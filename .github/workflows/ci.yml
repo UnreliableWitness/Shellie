@@ -95,12 +95,38 @@ jobs:
           path: out/make/squirrel.windows/**/Shellie-Setup.exe
           if-no-files-found: error
 
+  # Whether main changed anything that goes into the app since the newest release (tools/release/needs-release.mjs):
+  # a merge that only touches the agent pipeline, docs, art sources, tests or dev tools makes no new version.
+  release-needed:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.check.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the tags, to compare with the newest release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: check
+        run: |
+          app=$(node tools/release/needs-release.mjs)
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          if [ "$app" = true ]; then echo "App files changed since the last release: releasing." >> "$GITHUB_STEP_SUMMARY"
+          else echo "Only non-app files (agents, docs, tests, tools) changed since the last release: **no new version**." >> "$GITHUB_STEP_SUMMARY"; fi
+
   windows-release:
-    # Push to main or a v* tag. Runs in the "release" environment, which holds the OIDC trust for signing.
-    # Every push to main (each merged PR) publishes the next minor version, so it can be tested through
-    # auto-update; a v* tag pushed by hand publishes exactly that version.
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [test, test-windows]
+    # Push to main with app changes, or a v* tag. Runs in the "release" environment, which holds the OIDC trust
+    # for signing. Every push to main that changes the app (each such merged PR) publishes the next minor version,
+    # so it can be tested through auto-update; a v* tag pushed by hand publishes exactly that version, always.
+    if: >-
+      always() && github.event_name == 'push' &&
+      needs.test.result == 'success' && needs.test-windows.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' && needs.release-needed.outputs.app == 'true'))
+    needs: [test, test-windows, release-needed]
     # One release at a time, so two quick merges never pick the same version. A newer push replaces a
     # waiting one; its release then contains both.
     concurrency:

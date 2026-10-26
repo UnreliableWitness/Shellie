@@ -4,6 +4,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { parseConfig } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
+import { needsRelease } from '../release/needs-release.mjs';
 import { findStatusComment, parseStatus, renderStatus } from './state.mjs';
 
 const LIVE_MODES = ['implement', 'full'];
@@ -27,6 +28,27 @@ export async function runNotify({ gh, config, mode, now, summary }) {
     releases ??= (await gh.listReleases())
       .filter((r) => !r.draft && r.published_at)
       .sort((a, b) => a.published_at.localeCompare(b.published_at));
+    // a fix that changes no app files makes no release (tools/release/needs-release.mjs): nothing to wait for
+    if (!needsRelease(await gh.commitFiles(status.mergeSha))) {
+      await gh.comment(
+        issue.number,
+        `Fixed on \`main\` in ${status.mergeSha.slice(0, 7)}. The change touches no app files (tests, docs or tooling), so there is no new version of Shellie for it.`,
+      );
+      await gh.addLabels(issue.number, ['agent:released']);
+      await gh.removeLabel(issue.number, 'agent:merged');
+      if (issue.state === 'open') await gh.close(issue.number, 'completed');
+      await write(
+        {
+          ...status,
+          state: 'released',
+          release: null,
+          releasedAt: now.toISOString(),
+        },
+        '**Fixed on main** (no app change, so no release).',
+      );
+      summary(`#${issue.number}: fixed without an app change; closed`);
+      continue;
+    }
     let found = null;
     for (const r of releases.filter(
       (x) => x.published_at >= (status.mergedAt ?? ''),
