@@ -21,7 +21,7 @@ The prompt holds the issue in `<issue>`, triage's spec in `<spec>`, the PR's tit
 3. **Correctness:** edge cases the change meets (empty, missing, Windows paths and `\r\n`, a second run, a failure halfway), error handling, async ordering, state that survives a relaunch.
 4. **The test:** does it fail without the fix and pass with it? Does it assert behaviour, not a mock? Is the case from the spec covered?
 5. **Scope:** changes the spec did not ask for, unrelated refactors or formatting.
-6. **Conventions** (CLAUDE.md): shell, path and spawn logic behind the `Platform` interface; telemetry events in `docs/telemetry.md`; no colour literals outside `src/renderer/styles/tokens.css`; a CLAUDE.md Status entry in the house style.
+6. **Conventions** (CLAUDE.md): shell, path and spawn logic behind the `Platform` interface; telemetry events in `docs/telemetry.md`; no colour literals outside `src/renderer/styles/tokens.css`; a change note in `docs/changes/` in the house style, and no edit to `CLAUDE.md`.
 7. **Risk:** `high` when the change touches storage formats or migrations, authentication or tokens, secrets, cost or time numbers, release or update code, deleting user data or worktrees, dependencies, or is large. Otherwise `low`.
 
 ## Findings

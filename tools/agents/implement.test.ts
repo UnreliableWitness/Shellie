@@ -307,10 +307,10 @@ function fakeGit(over: Record<string, unknown> = {}) {
       changedFiles: async () => [
         'src/main/a.ts',
         'src/main/a.test.ts',
-        'CLAUDE.md',
+        'docs/changes/2026-10-26-4-issue-4.md',
       ],
       numstat: async () =>
-        '10\t2\tsrc/main/a.ts\n20\t0\tsrc/main/a.test.ts\n1\t0\tCLAUDE.md',
+        '10\t2\tsrc/main/a.ts\n20\t0\tsrc/main/a.test.ts\n1\t0\tdocs/changes/2026-10-26-4-issue-4.md',
       push: async (branch: string) => {
         pushed.push(branch);
       },
@@ -593,7 +593,7 @@ describe('runPublish', () => {
     expect(gh.pulls[0].body).toContain('FAIL src/x.test.ts > times out');
   });
 
-  it('makes a PR that removes CLAUDE.md lines owner-only', async () => {
+  it('makes a PR that touches CLAUDE.md owner-only', async () => {
     const { gh, task } = await locked();
     const { git } = fakeGit({
       changedFiles: async () => ['CLAUDE.md', 'src/a.ts'],

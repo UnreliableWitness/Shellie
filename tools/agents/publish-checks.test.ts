@@ -7,7 +7,6 @@ import {
   prTitle,
   validateImplementResult,
   verifyBundle,
-  claudeMdAddsOnly,
 } from './publish-checks.mjs';
 
 describe('branchName', () => {
@@ -186,19 +185,16 @@ describe('prTitle and prBody', () => {
 
 describe('stage 3 path rules', () => {
   it('makes config, scripts and the lock file owner-only', () => {
-    const r = classifyPaths(
-      [
-        '.claude/settings.json',
-        'scripts/fix-node-pty-perms.mjs',
-        '.npmrc',
-        '.mcp.json',
-        'vite.main.config.mts',
-        'vitest.config.mts',
-        'package-lock.json',
-        'src/x.ts',
-      ],
-      { claudeMdAddsOnly: true },
-    );
+    const r = classifyPaths([
+      '.claude/settings.json',
+      'scripts/fix-node-pty-perms.mjs',
+      '.npmrc',
+      '.mcp.json',
+      'vite.main.config.mts',
+      'vitest.config.mts',
+      'package-lock.json',
+      'src/x.ts',
+    ]);
     expect(r.ownerOnly).toEqual([
       '.claude/settings.json',
       'scripts/fix-node-pty-perms.mjs',
@@ -209,25 +205,21 @@ describe('stage 3 path rules', () => {
       'package-lock.json',
     ]);
   });
-  it('lets CLAUDE.md through only when lines are only added', () => {
+  it('makes any CLAUDE.md change owner-only: change notes go to docs/changes/', () => {
+    expect(classifyPaths(['CLAUDE.md']).ownerOnly).toEqual(['CLAUDE.md']);
     expect(
-      classifyPaths(['CLAUDE.md'], { claudeMdAddsOnly: true }).ownerOnly,
+      classifyPaths(['docs/changes/2026-10-26-135-apm-targets.md']).ownerOnly,
     ).toEqual([]);
-    expect(
-      classifyPaths(['CLAUDE.md'], { claudeMdAddsOnly: false }).ownerOnly,
-    ).toEqual(['CLAUDE.md']);
-    expect(
-      classifyPaths(['.claude/skills/sdlc-x/SKILL.md'], {
-        claudeMdAddsOnly: true,
-      }).denied,
-    ).toEqual(['.claude/skills/sdlc-x/SKILL.md']);
+    expect(classifyPaths(['.claude/skills/sdlc-x/SKILL.md']).denied).toEqual([
+      '.claude/skills/sdlc-x/SKILL.md',
+    ]);
   });
-  it('reads whether CLAUDE.md only gains lines from numstat', () => {
-    expect(claudeMdAddsOnly('3\t0\tCLAUDE.md\0' + '1\t2\tsrc/a.ts\0')).toBe(
-      true,
-    );
-    expect(claudeMdAddsOnly('3\t1\tCLAUDE.md\0')).toBe(false);
-    expect(claudeMdAddsOnly('1\t1\tsrc/a.ts\0')).toBe(true);
+  it('does not count docs/changes/ notes toward the size limit', () => {
+    expect(
+      countChangedLines(
+        '3\t0\tdocs/changes/2026-10-26-x.md\0' + '2\t1\tsrc/a.ts\0',
+      ),
+    ).toBe(3);
   });
 });
 

@@ -34,7 +34,7 @@
         },
         "docs": {
           "type": "string",
-          "description": "CLAUDE.md Status line, docs/telemetry.md if events change, or 'none'"
+          "description": "the change note to add in docs/changes/, and docs/telemetry.md if events change"
         },
         "outOfScope": { "type": "string" }
       },

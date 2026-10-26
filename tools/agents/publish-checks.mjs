@@ -30,8 +30,12 @@ const OWNER_ONLY = [
   'vite.*.config.mts',
   'vitest.config.mts',
   'package-lock.json',
+  // project memory every later agent reads; change notes go to docs/changes/ instead
+  'CLAUDE.md',
 ];
 const UNCOUNTED = new Set(['package-lock.json', 'CLAUDE.md']);
+/** Change notes (one file per change, docs/changes/) are not code. */
+const UNCOUNTED_DIR = 'docs/changes/';
 
 const globToRegExp = (glob) =>
   new RegExp(
@@ -46,26 +50,14 @@ const DENIED_RE = DENIED.map(globToRegExp);
 const OWNER_RE = OWNER_ONLY.map(globToRegExp);
 
 /** @param {string[]} files @returns {{ denied: string[], ownerOnly: string[] }} */
-export function classifyPaths(files, { claudeMdAddsOnly = true } = {}) {
+export function classifyPaths(files) {
   return {
     denied: files.filter((f) => DENIED_RE.some((r) => r.test(f))),
-    // CLAUDE.md steers every later agent: adding a Status line is fine, changing what is there is the owner's call
     ownerOnly: files.filter(
       (f) =>
-        !DENIED_RE.some((r) => r.test(f)) &&
-        (OWNER_RE.some((r) => r.test(f)) ||
-          (f === 'CLAUDE.md' && !claudeMdAddsOnly)),
+        !DENIED_RE.some((r) => r.test(f)) && OWNER_RE.some((r) => r.test(f)),
     ),
   };
-}
-
-/** @param {string} numstat `git diff -z --numstat` @returns {boolean} CLAUDE.md is unchanged or only gains lines */
-export function claudeMdAddsOnly(numstat) {
-  for (const line of numstat.split(/\0|\n/)) {
-    const [, del, ...rest] = line.split('\t');
-    if (rest.join('\t') === 'CLAUDE.md') return del === '0';
-  }
-  return true;
 }
 
 /**
@@ -77,7 +69,13 @@ export function countChangedLines(numstat) {
   for (const line of numstat.split(/\0|\n/)) {
     const [add, del, ...rest] = line.split('\t');
     const file = rest.join('\t');
-    if (!file || UNCOUNTED.has(file) || add === '-') continue;
+    if (
+      !file ||
+      UNCOUNTED.has(file) ||
+      file.startsWith(UNCOUNTED_DIR) ||
+      add === '-'
+    )
+      continue;
     total += Number(add) + Number(del);
   }
   return total;
