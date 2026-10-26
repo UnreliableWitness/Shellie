@@ -28,6 +28,8 @@ export default defineConfig({
           environment: 'jsdom',
           include: ['src/renderer/**/*.test.{ts,tsx}'],
           setupFiles: ['src/renderer/test-setup.ts'],
+          // waitFor allows 5 s per check (test-setup.ts), so a test with a few checks needs more than the default 5 s
+          testTimeout: 20000,
         },
       },
     ],
