@@ -21,7 +21,14 @@ const DEFAULTS = {
     health: 'claude-sonnet-5-5',
     garden: 'claude-sonnet-5-5',
   },
-  maxTurns: { triage: 30, implement: 150, review: 40, fix: 60, health: 20, garden: 30 },
+  maxTurns: {
+    triage: 30,
+    implement: 150,
+    review: 40,
+    fix: 60,
+    health: 20,
+    garden: 30,
+  },
   maxIssuesPerDay: { health: 3 },
   maxIssuesPerWeek: { gardener: 2 },
 };
@@ -49,7 +56,9 @@ export function parseConfig(text) {
 export function parseTrusted(text) {
   const file = parse(text) ?? {};
   const owner = String(file.owner ?? '').toLowerCase();
-  const logins = new Set((file.logins ?? []).map((l) => String(l).toLowerCase()));
+  const logins = new Set(
+    (file.logins ?? []).map((l) => String(l).toLowerCase()),
+  );
   if (owner) logins.add(owner);
   return { owner, logins };
 }

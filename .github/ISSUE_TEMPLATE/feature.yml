@@ -1,0 +1,19 @@
+name: Idea or wish
+description: Something Shellie should do, or do differently
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What gets in your way today? A real moment helps more than a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who runs into it, and how often
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help

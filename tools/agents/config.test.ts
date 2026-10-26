@@ -27,7 +27,9 @@ describe('parseConfig', () => {
 
 describe('parseTrusted', () => {
   it('lowercases logins and always includes the owner', () => {
-    const t = parseTrusted('owner: UnreliableWitness\nlogins: [MaximeDeBraekeleer]\n');
+    const t = parseTrusted(
+      'owner: UnreliableWitness\nlogins: [MaximeDeBraekeleer]\n',
+    );
     expect(t.owner).toBe('unreliablewitness');
     expect(isTrusted(t, 'UnreliableWitness')).toBe(true);
     expect(isTrusted(t, 'maximedebraekeleer')).toBe(true);
@@ -38,7 +40,9 @@ describe('parseTrusted', () => {
 
 describe('labels', () => {
   it('lists only the labels that do not exist yet', () => {
-    const missing = missingLabels(['claude-working', 'agent:ready']).map((l) => l.name);
+    const missing = missingLabels(['claude-working', 'agent:ready']).map(
+      (l) => l.name,
+    );
     expect(missing).not.toContain('claude-working');
     expect(missing).not.toContain('agent:ready');
     expect(missing).toContain('agent:needs-info');

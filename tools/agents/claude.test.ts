@@ -10,12 +10,19 @@ const success = JSON.stringify({
   num_turns: 2,
   result: '{"decision":"ask"}',
   structured_output: { decision: 'ask', questions: ['Which repo?'] },
-  usage: { input_tokens: 2, cache_creation_input_tokens: 76373, cache_read_input_tokens: 10, output_tokens: 278 },
+  usage: {
+    input_tokens: 2,
+    cache_creation_input_tokens: 76373,
+    cache_read_input_tokens: 10,
+    output_tokens: 278,
+  },
 });
 
 describe('agentEnv', () => {
   it('refuses to run when an API key is set (subscription only)', () => {
-    expect(() => agentEnv({ ANTHROPIC_API_KEY: 'sk-x', CLAUDE_CODE_OAUTH_TOKEN: 't' })).toThrow(/subscription only/);
+    expect(() =>
+      agentEnv({ ANTHROPIC_API_KEY: 'sk-x', CLAUDE_CODE_OAUTH_TOKEN: 't' }),
+    ).toThrow(/subscription only/);
   });
   it('removes GitHub and Actions tokens and keeps the subscription token', () => {
     const env = agentEnv({
@@ -61,14 +68,32 @@ describe('parseClaudeResult', () => {
     });
   });
   it('flags a usage limit by status or by text', () => {
-    const r = parseClaudeResult(JSON.stringify({ is_error: true, api_error_status: 429, result: 'Too many requests' }));
+    const r = parseClaudeResult(
+      JSON.stringify({
+        is_error: true,
+        api_error_status: 429,
+        result: 'Too many requests',
+      }),
+    );
     expect(r).toMatchObject({ ok: false, limited: true });
-    const t = parseClaudeResult(JSON.stringify({ is_error: true, result: 'Claude AI usage limit reached|1792998000' }));
+    const t = parseClaudeResult(
+      JSON.stringify({
+        is_error: true,
+        result: 'Claude AI usage limit reached|1792998000',
+      }),
+    );
     expect(t.limited).toBe(true);
   });
   it('is not ok for other errors, missing output or broken JSON', () => {
-    expect(parseClaudeResult(JSON.stringify({ is_error: true, result: 'boom' }))).toMatchObject({ ok: false, limited: false, error: 'boom' });
-    expect(parseClaudeResult(JSON.stringify({ is_error: false, result: 'text' })).ok).toBe(false);
-    expect(parseClaudeResult('not json')).toMatchObject({ ok: false, limited: false });
+    expect(
+      parseClaudeResult(JSON.stringify({ is_error: true, result: 'boom' })),
+    ).toMatchObject({ ok: false, limited: false, error: 'boom' });
+    expect(
+      parseClaudeResult(JSON.stringify({ is_error: false, result: 'text' })).ok,
+    ).toBe(false);
+    expect(parseClaudeResult('not json')).toMatchObject({
+      ok: false,
+      limited: false,
+    });
   });
 });

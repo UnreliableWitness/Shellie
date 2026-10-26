@@ -15,21 +15,29 @@ export function emptyActivity() {
  * @returns {{ ok: boolean, reason?: 'paused' | 'daily-cap' }}
  */
 export function canRunAgent(a, now, maxPerDay) {
-  if (a.pausedUntil && now.getTime() < Date.parse(a.pausedUntil)) return { ok: false, reason: 'paused' };
-  if ((a.runsByDay[day(now)] ?? 0) >= maxPerDay) return { ok: false, reason: 'daily-cap' };
+  if (a.pausedUntil && now.getTime() < Date.parse(a.pausedUntil))
+    return { ok: false, reason: 'paused' };
+  if ((a.runsByDay[day(now)] ?? 0) >= maxPerDay)
+    return { ok: false, reason: 'daily-cap' };
   return { ok: true };
 }
 
 /** Counts one agent run today and forgets days older than a week. */
 export function recordRun(a, now) {
-  const runsByDay = { ...a.runsByDay, [day(now)]: (a.runsByDay[day(now)] ?? 0) + 1 };
+  const runsByDay = {
+    ...a.runsByDay,
+    [day(now)]: (a.runsByDay[day(now)] ?? 0) + 1,
+  };
   const oldest = day(new Date(now.getTime() - 6 * 86400000));
   for (const d of Object.keys(runsByDay)) if (d < oldest) delete runsByDay[d];
   return { ...a, runsByDay };
 }
 
 export function recordPause(a, now, minutes) {
-  return { ...a, pausedUntil: new Date(now.getTime() + minutes * 60000).toISOString() };
+  return {
+    ...a,
+    pausedUntil: new Date(now.getTime() + minutes * 60000).toISOString(),
+  };
 }
 
 /**

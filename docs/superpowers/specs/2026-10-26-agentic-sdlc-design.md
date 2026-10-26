@@ -256,7 +256,7 @@ The same lists are in `tools/agents/` with tests, and CODEOWNERS covers them so 
 
 ## 7. Reporting from inside Shellie
 
-- Issue forms: `bug.yml` (what happened, what you expected, steps, Shellie version, OS) and `feature.yml` (the problem, who has it, what would help). Field ids allow prefilling from a URL. `config.yml` turns blank issues off *(our call)*.
+- Issue forms: `bug.yml` (what happened, what you expected, steps, Shellie version, OS) and `feature.yml` (the problem, who has it, what would help). Field ids allow prefilling from a URL. `config.yml` keeps blank issues on *(our call, changed 2026-10-26 while building stage 1: the owner files quick issues such as #132 without a form)*.
 - Shellie gets a **Report a problem** button in Settings › About and a "Report" link on error notices. It opens the browser on `https://github.com/UnreliableWitness/Shellie/issues/new?template=bug.yml&labels=source:app` with the version, OS and architecture prefilled, and for a notice its text run through the telemetry scrubber (`src/main/telemetry/scrub.ts`). The app holds no GitHub token; the user sees and can edit everything before submitting, and needs a GitHub account.
 - New telemetry event `feedback.opened` (`from`: `about` or `notice`; never the text), added to `docs/telemetry.md`.
 - Reporters not on the trusted list land in `agent:awaiting-approval` (section 4).

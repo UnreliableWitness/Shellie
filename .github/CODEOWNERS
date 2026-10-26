@@ -1,0 +1,7 @@
+# The agents' own rules, workflows, release and signing need the owner (spec 6.2).
+/.github/ @UnreliableWitness
+/.claude/skills/sdlc-*/ @UnreliableWitness
+/tools/agents/ @UnreliableWitness
+/tools/release/ @UnreliableWitness
+/tools/forge/macSigning.mjs @UnreliableWitness
+/assets/entitlements.mac.plist @UnreliableWitness

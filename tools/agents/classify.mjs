@@ -27,44 +27,69 @@ export function classifyIssue(issue, comments, ctx) {
 
   if (issue.pull_request) return skip('pull-request');
   if (has('agent:stop')) return skip('stopped');
-  if ((issue.assignees ?? []).some((a) => a.login !== ctx.botLogin)) return skip('assigned');
+  if ((issue.assignees ?? []).some((a) => a.login !== ctx.botLogin))
+    return skip('assigned');
   if (
     ctx.humanBranches.some((b) => b.startsWith(`issues/${n}-`)) ||
     ctx.humanPrTitles.some((t) => new RegExp(`#${n}(?!\\d)`).test(t))
   )
     return skip('owner-working');
 
-  const trustedLogin = (login) => login === ctx.botLogin || isTrusted(ctx.trusted, login);
+  const trustedLogin = (login) =>
+    login === ctx.botLogin || isTrusted(ctx.trusted, login);
   if (!trustedLogin(issue.user?.login) && !has('agent:go'))
-    return has('agent:awaiting-approval') ? skip('awaiting-approval') : { action: 'await-approval', reason: 'untrusted' };
+    return has('agent:awaiting-approval')
+      ? skip('awaiting-approval')
+      : { action: 'await-approval', reason: 'untrusted' };
 
-  if (ctx.mode === 'shadow' && ctx.shadowSeen[n] === issue.updated_at) return skip('shadow-seen');
+  if (ctx.mode === 'shadow' && ctx.shadowSeen[n] === issue.updated_at)
+    return skip('shadow-seen');
 
   const statusComment = findStatusComment(comments, ctx.botLogin);
   const status = statusComment ? parseStatus(statusComment.body) : null;
-  if (!status) return { action: 'triage', reason: 'new', newComments: trustedComments(comments, trustedLogin, ctx.botLogin, 0) };
+  if (!status)
+    return {
+      action: 'triage',
+      reason: 'new',
+      newComments: trustedComments(comments, trustedLogin, ctx.botLogin, 0),
+    };
 
-  const fresh = trustedComments(comments, trustedLogin, ctx.botLogin, status.lastSeenCommentId);
+  const fresh = trustedComments(
+    comments,
+    trustedLogin,
+    ctx.botLogin,
+    status.lastSeenCommentId,
+  );
   const base = { status, statusComment, newComments: fresh };
   // the poller only sees open issues: a closed one that is open again was reopened by someone
-  if (status.state === 'closed') return { ...base, action: 'triage', reason: 'reopened' };
+  if (status.state === 'closed')
+    return { ...base, action: 'triage', reason: 'reopened' };
   if (status.state === 'needs-owner') {
-    if (has('agent:go') && !status.goHandled) return { ...base, action: 'go', reason: 'owner-go' };
-    if (fresh.length) return { ...base, action: 'triage', reason: 'owner-replied' };
+    if (has('agent:go') && !status.goHandled)
+      return { ...base, action: 'go', reason: 'owner-go' };
+    if (fresh.length)
+      return { ...base, action: 'triage', reason: 'owner-replied' };
     return skip('waiting');
   }
   if (status.state === 'needs-info') {
     if (fresh.length) return { ...base, action: 'triage', reason: 'answered' };
     const days = (ctx.now.getTime() - Date.parse(status.askedAt)) / DAY;
-    if (days >= ctx.config.needsInfoCloseDays) return { ...base, action: 'close-stale', reason: 'no-answer' };
-    if (days >= ctx.config.needsInfoRemindDays && !status.remindedAt) return { ...base, action: 'remind', reason: 'no-answer' };
+    if (days >= ctx.config.needsInfoCloseDays)
+      return { ...base, action: 'close-stale', reason: 'no-answer' };
+    if (days >= ctx.config.needsInfoRemindDays && !status.remindedAt)
+      return { ...base, action: 'remind', reason: 'no-answer' };
   }
   return skip('waiting');
 }
 
 /** Comments after `afterId` by trusted people other than the bot. */
 function trustedComments(comments, trustedLogin, botLogin, afterId) {
-  return comments.filter((c) => c.id > afterId && c.user?.login !== botLogin && trustedLogin(c.user?.login));
+  return comments.filter(
+    (c) =>
+      c.id > afterId &&
+      c.user?.login !== botLogin &&
+      trustedLogin(c.user?.login),
+  );
 }
 
 /**
@@ -77,6 +102,8 @@ export function pickForTriage(items, max) {
   const byAge = [...items].sort((a, b) => a.issue.number - b.issue.number);
   return {
     agent: byAge.filter((x) => x.decision.action === 'triage').slice(0, max),
-    script: byAge.filter((x) => !['triage', 'skip'].includes(x.decision.action)),
+    script: byAge.filter(
+      (x) => !['triage', 'skip'].includes(x.decision.action),
+    ),
   };
 }

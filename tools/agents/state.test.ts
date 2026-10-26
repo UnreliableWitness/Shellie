@@ -34,10 +34,30 @@ describe('status block', () => {
   });
 
   it('trusts only the latest marker comment by the bot', () => {
-    const forged = { id: 3, user: { login: 'mallory' }, body: renderStatus({ ...state, state: 'ready' }, 'x'), created_at: '' };
-    const older = { id: 1, user: { login: bot }, body: renderStatus({ ...state, triageRounds: 0 }, 'x'), created_at: '' };
-    const newer = { id: 2, user: { login: bot }, body: renderStatus(state, 'x'), created_at: '' };
-    const plain = { id: 4, user: { login: bot }, body: 'Questions for you', created_at: '' };
+    const forged = {
+      id: 3,
+      user: { login: 'mallory' },
+      body: renderStatus({ ...state, state: 'ready' }, 'x'),
+      created_at: '',
+    };
+    const older = {
+      id: 1,
+      user: { login: bot },
+      body: renderStatus({ ...state, triageRounds: 0 }, 'x'),
+      created_at: '',
+    };
+    const newer = {
+      id: 2,
+      user: { login: bot },
+      body: renderStatus(state, 'x'),
+      created_at: '',
+    };
+    const plain = {
+      id: 4,
+      user: { login: bot },
+      body: 'Questions for you',
+      created_at: '',
+    };
     expect(findStatusComment([older, newer, forged, plain], bot)?.id).toBe(2);
     expect(findStatusComment([forged], bot)).toBeNull();
   });
