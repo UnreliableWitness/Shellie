@@ -302,7 +302,7 @@ These steps go into `docs/agents.md`, together with how to read the labels and h
 - **Plan terms.** Using a subscription token in GitHub Actions is the documented way to run Claude Code's GitHub integration on a Pro/Max plan; if Anthropic's terms for automated use change, the pollers are switched `off` until the owner decides.
 - **Auto-merge ships to every user in ~30 minutes.** Limits: bug/chore + low risk + size + independent review + CI on both OSes + green `main`; the owner can set `AGENTS_MODE=implement` to stop merges while keeping the rest. A bad release is fixed forward (there is no rollback in the updater today).
 - **Windows is only checked by CI.** Same as the owner's sessions today; the reviewer flags Windows-specific risk, which makes it `risk:high`.
-- **Agent conflicts in CLAUDE.md.** Every PR adds a Status line, so two open agent PRs often conflict; the fixer resolves them and merges go one at a time.
+- **Agent conflicts in CLAUDE.md.** Every PR used to add a Status line there, so any two open PRs conflicted (#141 needed fix rounds for it). *Resolved 2026-10-26:* each change now gets its own file in `docs/changes/`, and `CLAUDE.md` is owner-only for agents.
 - **Cron delay and GitHub outages** only slow things; nothing depends on a poll happening on time.
 
 ## Left to the builder

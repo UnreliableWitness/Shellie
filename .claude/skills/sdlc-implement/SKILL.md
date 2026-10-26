@@ -21,7 +21,7 @@ The prompt holds the issue in `<issue>`, trusted comments in `<comment>`, and tr
 3. Make the **smallest change** that fixes the cause. Match the surrounding code: naming, comment density, idiom. Shell, path and spawn logic goes behind the `Platform` interface. No colour literals outside `src/renderer/styles/tokens.css`.
 4. Run the test again until it passes, then the whole project: `npm test`, `npm run typecheck`, `npm run lint` (fix formatting with `npm run lint:fix`). All green before you finish.
 5. Docs:
-   - Add one entry to the Status section of `CLAUDE.md`, in the existing style: what changed, the issue number, the branch name, what is not verified.
+   - Add one change note: a new file `docs/changes/YYYY-MM-DD-<issue>-<topic>.md` (today's date, the issue number, a few words), in the style of the other files there: what changed and why, the issue number, the branch name, what is not verified. Never edit `CLAUDE.md` (it is owner-only; every PR writing there conflicted with every other).
    - Update `docs/telemetry.md` when telemetry events change.
 6. Commit with `git add` and `git commit`. Message: a short plain summary line (the repo uses no `fix:` prefixes), a blank line, the why, and as the last line:
    `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
@@ -30,7 +30,7 @@ The prompt holds the issue in `<issue>`, trusted comments in `<comment>`, and tr
 ## Never
 
 - Never touch these paths (the PR is refused if you do): `.github/workflows/`, `.github/agents/`, `.github/CODEOWNERS`, `.claude/skills/sdlc-*`, `tools/agents/`, `tools/release/`, `tools/forge/macSigning.mjs`, `assets/entitlements.mac.plist`.
-- Avoid unless the spec needs it (they make the PR owner-only): `package.json` and `package-lock.json`, `forge.config.mts`, `src/main/autoUpdate.ts`, `src/main/secrets/`, `src/main/costServer/`, `src/main/ledger/`, `src/main/migrate/`, `.claude/`, `scripts/`, `.npmrc`, `.mcp.json`, the vite and vitest configs, and changing or removing existing lines of `CLAUDE.md` (adding your Status entry is fine).
+- Avoid unless the spec needs it (they make the PR owner-only): `package.json` and `package-lock.json`, `forge.config.mts`, `src/main/autoUpdate.ts`, `src/main/secrets/`, `src/main/costServer/`, `src/main/ledger/`, `src/main/migrate/`, `.claude/`, `scripts/`, `.npmrc`, `.mcp.json`, the vite and vitest configs, and `CLAUDE.md`.
 - No unrelated refactors, renames or formatting of files you did not change.
 - You cannot run the app or test on Windows; say what is unverified.
 

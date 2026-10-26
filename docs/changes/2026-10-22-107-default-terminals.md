@@ -1,0 +1,3 @@
+# Default terminals
+
+Default terminals (#107, 2026-10-22, `fix/default-terminals`): Settings → Agents and terminals (the old placeholder) chooses the tabs a new task opens (Claude Code, Copilot CLI, OpenCode, a shell; setting `defaultTerminals`, default Claude Code + shell), for developers without a Claude licence. Start on the Sprint page and Home opens exactly those (`startTask.ts` reads the setting), New task pre-ticks them and has a "Start OpenCode with the task" box (`TaskSetup.openOpencode`), and the apm targets follow the tabs as before, so an OpenCode-only setup gets `apm install --target opencode` and no `claude`. Reopen is untouched (it restores the tabs a task had).
