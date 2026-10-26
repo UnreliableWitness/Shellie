@@ -92,6 +92,7 @@ import {
   type WorkspaceView,
   parseDocsTarget,
 } from '../../shared/workspaces';
+import { UPDATE_REPO } from '../autoUpdate';
 import { pathExists } from '../fsRetry';
 import { worktreeRoot } from '../paths';
 import type { BudgetService } from '../budget/BudgetService';
@@ -624,16 +625,22 @@ export function createHandlers(s: Services): Handlers {
     return verified;
   };
 
+  // Azure DevOps links, and Shellie's own GitHub release pages for the What's new card (#132); not all of GitHub.
+  const releasesPath = `/${UPDATE_REPO}/releases`.toLowerCase();
   const allowedExternal = (url: string): boolean => {
     try {
       const u = new URL(url);
+      // new URL() has already resolved any '..' segments in the path.
+      const path = u.pathname.toLowerCase();
       return (
         u.protocol === 'https:' &&
         !u.username &&
         !u.password &&
         u.port === '' &&
         (u.hostname === 'dev.azure.com' ||
-          u.hostname.endsWith('.visualstudio.com'))
+          u.hostname.endsWith('.visualstudio.com') ||
+          (u.hostname === 'github.com' &&
+            (path === releasesPath || path.startsWith(`${releasesPath}/`))))
       );
     } catch {
       return false;

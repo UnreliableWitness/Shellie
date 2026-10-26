@@ -3390,6 +3390,32 @@ describe('handlers: shell', () => {
       await expect(h['shell:openExternal'](bad)).rejects.toThrow(/not allowed/);
     expect(opened).toHaveLength(2);
   });
+
+  it("opens Shellie's GitHub release pages and no other GitHub url (#132)", async () => {
+    const { h, opened } = await harness();
+    await h['shell:openExternal'](
+      'https://github.com/UnreliableWitness/Shellie/releases',
+    );
+    await h['shell:openExternal'](
+      'https://github.com/UnreliableWitness/Shellie/releases/tag/v1.2.3',
+    );
+    for (const bad of [
+      'https://github.com/other/repo/releases',
+      'https://github.com/UnreliableWitness/Shellie-evil/releases',
+      'https://github.com/UnreliableWitness/Shellie/releases-evil',
+      'https://github.com/UnreliableWitness/Shellie/releases/../../../other/repo',
+      'https://github.com/UnreliableWitness/Shellie',
+      'http://github.com/UnreliableWitness/Shellie/releases',
+      'https://github.com.evil.example/UnreliableWitness/Shellie/releases',
+      'https://evil@github.com/UnreliableWitness/Shellie/releases',
+      'https://github.com:8443/UnreliableWitness/Shellie/releases',
+    ])
+      await expect(h['shell:openExternal'](bad)).rejects.toThrow(/not allowed/);
+    expect(opened).toEqual([
+      'https://github.com/UnreliableWitness/Shellie/releases',
+      'https://github.com/UnreliableWitness/Shellie/releases/tag/v1.2.3',
+    ]);
+  });
 });
 
 describe('handlers: usage', () => {
