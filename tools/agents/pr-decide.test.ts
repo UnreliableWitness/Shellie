@@ -179,7 +179,6 @@ describe('decidePr: merging', () => {
     expect(
       reasons({ paths: { denied: [], ownerOnly: ['package.json'] } }),
     ).toContain('touches package.json');
-    expect(reasons({ mainGreen: false })).toContain('main is red');
     expect(
       reasons(
         {},
@@ -203,12 +202,19 @@ describe('decidePr: merging', () => {
       decidePr(
         input({ ownerApproved: true, mainGreen: false }, feature) as never,
       ).action,
-    ).toBe('awaits-owner');
+    ).toBe('wait');
   });
   it('tells the owner only once per head commit', () => {
     expect(
       decidePr(
-        input({ mode: 'implement' }, {}, { awaitsOwnerSha: sha }) as never,
+        input(
+          { mode: 'implement' },
+          {},
+          {
+            awaitsOwnerSha: sha,
+            awaitsOwnerReasons: 'implement mode: nothing merges by itself',
+          },
+        ) as never,
       ).action,
     ).toBe('wait');
   });
@@ -319,5 +325,48 @@ describe('mainCiGreen', () => {
     ).toBe(true);
     expect(mainCiGreen([run('completed', 'failure')])).toBe(false);
     expect(mainCiGreen([])).toBe(false);
+  });
+});
+
+describe('decidePr: main not green and the owner-told mark', () => {
+  it('waits while main is not green instead of asking the owner', () => {
+    expect(decidePr(input({ mainGreen: false }) as never)).toMatchObject({
+      action: 'wait',
+      reason: 'main-not-green',
+    });
+    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:low') };
+    expect(
+      decidePr(input({ mainGreen: false }, feature) as never),
+    ).toMatchObject({ action: 'awaits-owner', reasons: ['a feature'] });
+  });
+  it('merges once the reasons are gone, even after the owner was told about this commit', () => {
+    expect(
+      decidePr(
+        input(
+          {},
+          {},
+          { awaitsOwnerSha: sha, awaitsOwnerReasons: 'main is red' },
+        ) as never,
+      ).action,
+    ).toBe('merge');
+  });
+  it('tells the owner again when the reasons change', () => {
+    const feature = { labels: labels('agent-pr', 'kind:feature', 'risk:low') };
+    expect(
+      decidePr(
+        input({}, feature, {
+          awaitsOwnerSha: sha,
+          awaitsOwnerReasons: 'a feature',
+        }) as never,
+      ).action,
+    ).toBe('wait');
+    expect(
+      decidePr(
+        input({ lines: 500 }, feature, {
+          awaitsOwnerSha: sha,
+          awaitsOwnerReasons: 'a feature',
+        }) as never,
+      ).action,
+    ).toBe('awaits-owner');
   });
 });

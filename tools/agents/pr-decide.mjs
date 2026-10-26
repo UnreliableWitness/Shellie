@@ -69,7 +69,6 @@ export function decidePr({
   if (ownerChangesRequested) reasons.push('the owner requested changes');
   if (review?.verdict === 'error') reasons.push('the agent review failed');
   if (has('agent:hold-merge')) reasons.push('agent:hold-merge');
-  if (!mainGreen) reasons.push('main is red');
   if (paths.denied.length) reasons.push(`touches ${paths.denied.join(', ')}`);
   const ownerOnly = [];
   if (!['bug', 'chore'].includes(label('kind:'))) ownerOnly.push('a feature');
@@ -85,12 +84,18 @@ export function decidePr({
   // brought up to date only when it could merge: an update re-runs CI and the review
   if (!reasons.length && (behindMain || pr.mergeable_state === 'behind'))
     return { action: 'update-branch', reason: 'behind main' };
+  // main red or its CI still running is not the owner's call: wait for it
+  if (!reasons.length && !mainGreen) return wait('main-not-green');
   if (!reasons.length)
     return {
       action: 'merge',
       reason: ownerApproved ? 'owner approved' : 'meets the merge rule',
     };
-  if (prState.awaitsOwnerSha === sha) return wait('owner-told');
+  if (
+    prState.awaitsOwnerSha === sha &&
+    prState.awaitsOwnerReasons === reasons.join('; ')
+  )
+    return wait('owner-told');
   return { action: 'awaits-owner', reasons };
 }
 
