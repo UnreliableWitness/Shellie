@@ -5,7 +5,7 @@
     "status": { "type": "string", "enum": ["done", "blocked"] },
     "prTitle": {
       "type": "string",
-      "description": "done: one line, at most 120 characters, in the repo's style (a plain description, no prefix like 'fix:')"
+      "description": "done: one line, at most 120 characters, written for Shellie's users: it is shown in the app's What's new card and the release notes. What changed for them, no file or function names, no prefix like 'fix:'"
     },
     "prBody": {
       "type": "string",

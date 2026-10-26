@@ -36,5 +36,5 @@ The prompt holds the issue in `<issue>`, trusted comments in `<comment>`, and tr
 
 ## Your answer
 
-- `done`: the fix is committed. `prTitle` (one line, plain description), `prBody` (markdown: `## What changed`, `## Why`, `## How it was tested`, `## Not verified`), `risk` (the spec's risk, raised to `high` if the change turned out to touch risky ground: storage formats, auth, cost or time numbers, deleting user data, release/update).
+- `done`: the fix is committed. `prTitle`: one line, written for Shellie's users, because it becomes the line they read in the app's What's new card and on the GitHub release page after the merge. Say what changed for them ("Release notes link on Home opens again"), not how ("Allow github.com in allowedExternal"); no file or function names. `prBody` (markdown: `## What changed`, `## Why`, `## How it was tested`, `## Not verified`), `risk` (the spec's risk, raised to `high` if the change turned out to touch risky ground: storage formats, auth, cost or time numbers, deleting user data, release/update).
 - `blocked`: you could not do it well (the spec is wrong in a way that needs a decision, the fix needs a forbidden path, the tests cannot be made green). Give the `reason` and what the owner would need to decide. Commit nothing half-done in that case.
