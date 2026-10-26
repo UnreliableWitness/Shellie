@@ -24,6 +24,9 @@ const execFileAsync = promisify(execFile);
 /** Long enough for an interactive Git Credential Manager sign-in, short enough that Finish never hangs. */
 const PUSH_TIMEOUT_MS = 120_000;
 
+/** Generous for a large checkout and its hooks (git-lfs on a slow disk), but a hung `worktree add` still fails (#148). */
+const WORKTREE_TIMEOUT_MS = 300_000;
+
 /** Fails ssh instead of waiting on a passphrase or host-key question no one can see. Agent keys still work. */
 const BATCH_SSH = 'ssh -o BatchMode=yes';
 
@@ -94,13 +97,19 @@ export function splitRemoteRef(
 /** Thin wrapper over the git CLI. Every method takes the directory to run in. */
 export class GitClient {
   readonly pushTimeoutMs: number;
+  readonly worktreeTimeoutMs: number;
   private readonly auth: GitAuth | undefined;
 
   constructor(
     private readonly wait: Wait = realWait,
-    opts: { pushTimeoutMs?: number; auth?: GitAuth } = {},
+    opts: {
+      pushTimeoutMs?: number;
+      worktreeTimeoutMs?: number;
+      auth?: GitAuth;
+    } = {},
   ) {
     this.pushTimeoutMs = opts.pushTimeoutMs ?? PUSH_TIMEOUT_MS;
+    this.worktreeTimeoutMs = opts.worktreeTimeoutMs ?? WORKTREE_TIMEOUT_MS;
     this.auth = opts.auth;
   }
 
@@ -344,23 +353,46 @@ export class GitClient {
     }
   }
 
+  /** Runs a worktree step with `worktreeTimeoutMs`; a hang fails with `<step> timed out after <s> s`. */
+  private async runWorktreeStep(
+    cwd: string,
+    args: string[],
+    step: string,
+  ): Promise<string> {
+    try {
+      return await this.run(cwd, args, { timeoutMs: this.worktreeTimeoutMs });
+    } catch (e) {
+      if (e instanceof GitTimeoutError)
+        throw new Error(
+          `${step} timed out after ${this.worktreeTimeoutMs / 1000} s`,
+        );
+      throw e;
+    }
+  }
+
   async worktreeAdd(
     cwd: string,
     o: { branch: string; path: string; baseRef: string },
   ): Promise<string> {
-    await this.run(cwd, [
-      '-c',
-      'core.longpaths=true',
-      'worktree',
-      'add',
-      // Without this, a branch made from origin/main tracks origin/main and looks "not pushed" forever.
-      '--no-track',
-      '-b',
-      o.branch,
-      o.path,
-      o.baseRef,
-    ]);
-    return (await this.run(o.path, ['rev-parse', 'HEAD'])).trim();
+    await this.runWorktreeStep(
+      cwd,
+      [
+        '-c',
+        'core.longpaths=true',
+        'worktree',
+        'add',
+        // Without this, a branch made from origin/main tracks origin/main and looks "not pushed" forever.
+        '--no-track',
+        '-b',
+        o.branch,
+        o.path,
+        o.baseRef,
+      ],
+      'git worktree add',
+    );
+    return (
+      await this.runWorktreeStep(o.path, ['rev-parse', 'HEAD'], 'git rev-parse')
+    ).trim();
   }
 
   /** A worktree for a branch that already exists (reopening a finished task). */
@@ -368,14 +400,11 @@ export class GitClient {
     cwd: string,
     o: { branch: string; path: string },
   ): Promise<void> {
-    await this.run(cwd, [
-      '-c',
-      'core.longpaths=true',
-      'worktree',
-      'add',
-      o.path,
-      o.branch,
-    ]);
+    await this.runWorktreeStep(
+      cwd,
+      ['-c', 'core.longpaths=true', 'worktree', 'add', o.path, o.branch],
+      'git worktree add',
+    );
   }
 
   async worktreeRemove(
@@ -829,7 +858,7 @@ function execWithTimeout(
  * prompt, ssh, a hook's shell) running, and they keep the worktree locked, so taskkill /T takes the whole
  * tree; `done` runs once it has finished. Elsewhere `kill` is enough: open folders do not block removal.
  */
-function killTree(
+export function killTree(
   pid: number | undefined,
   kill: () => void,
   done: () => void,

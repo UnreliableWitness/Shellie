@@ -19,6 +19,7 @@ import {
 } from '../test-helpers/gitRepo';
 import {
   normaliseEol,
+  sleepCmd,
   testPlatform,
   writeLineCmd,
 } from '../test-helpers/shell';
@@ -32,8 +33,11 @@ import {
 
 afterAll(cleanupTempRepos);
 
-const git = new GitClient();
-const runner = new SetupRunner(git, testPlatform());
+// A step that hangs on the Windows runner fails within these deadlines, naming itself, before the test's 60 s (#148).
+const git = new GitClient(undefined, { worktreeTimeoutMs: 30_000 });
+const runner = new SetupRunner(git, testPlatform(), undefined, {
+  commandTimeoutMs: 30_000,
+});
 
 function plan(repo: string, over: Partial<SetupPlan> = {}): SetupPlan {
   return {
@@ -952,6 +956,50 @@ describe('SetupRunner: reopen with more repos', () => {
     );
     expect(existsSync(path.join(p.worktreePath, 'built.txt'))).toBe(false);
     expect(await git.branchExists(api, 'feature/x')).toBe(true);
+  });
+
+  it('fails a setup command that outlives its deadline, naming it (#148)', async () => {
+    const home = makeRepo();
+    const api = makeRepo('api');
+    const cmd = sleepCmd(30);
+    const { events, onEvent } = collect();
+    const started = Date.now();
+    const result = await new SetupRunner(git, testPlatform(), undefined, {
+      commandTimeoutMs: 500,
+    }).run(
+      plan(home, {
+        restore: { from: 'main' },
+        skipHome: true,
+        extraRestores: [
+          {
+            workspaceId: 'w2',
+            repoName: 'api',
+            repoPath: api,
+            worktreePath: path.join(path.dirname(api), 'api-wt'),
+            branch: 'feature/x',
+            from: 'main',
+            copy: [],
+            commands: [cmd],
+          },
+        ],
+      }),
+      { onEvent, startTerminals: async () => {} },
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(result).toEqual({ ok: false, failedStep: 1 });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'step',
+        index: 1,
+        status: 'failed',
+        detail: `${cmd} timed out after 0.5 s`,
+      }),
+    );
+    expect(events).toContainEqual({
+      taskId: 'task1',
+      type: 'log',
+      line: `${cmd} timed out after 0.5 s`,
+    });
   });
 
   it('fails at the extra worktree step and a retry resumes there', async () => {

@@ -704,6 +704,31 @@ describe('GitClient worktree helpers', () => {
     expect(existsSync(path.join(repo, 'README.md'))).toBe(true);
   });
 
+  it('gives up on a worktree add that hangs, naming the step (#148)', async () => {
+    const repo = makeRepo();
+    // Hooks run through git's own sh, on Windows too.
+    const hook = path.join(repo, '.git', 'hooks', 'post-checkout');
+    writeFileSync(hook, '#!/bin/sh\nsleep 10\n');
+    chmodSync(hook, 0o755);
+    const c = new GitClient(undefined, { worktreeTimeoutMs: 300 });
+    const started = Date.now();
+    const err = await c
+      .worktreeAdd(repo, {
+        branch: 'hang',
+        path: path.join(path.dirname(repo), 'wt-hang'),
+        baseRef: 'main',
+      })
+      .catch((e: unknown) => e);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect((err as Error).message).toBe(
+      'git worktree add timed out after 0.3 s',
+    );
+  });
+
+  it('waits 5 min for a worktree add by default', () => {
+    expect(new GitClient().worktreeTimeoutMs).toBe(300_000);
+  });
+
   it.runIf(process.platform === 'win32')(
     'worktreeRemove deletes a worktree with a nul file in it (#87)',
     async () => {
