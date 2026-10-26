@@ -168,7 +168,7 @@ export function planActions(
       delete s.remindedAt;
       status(
         s,
-        `**Triage: waiting for the reporter.** Questions are in the comment above; this is picked up again when they answer.\n\n${result.summary}`,
+        `**Triage: waiting for the reporter.** Questions are in the comment above; this is picked up again when they answer.\n\n${result.summary ?? ''}`,
       );
       break;
     }
@@ -202,7 +202,14 @@ export function planActions(
     }
     case 'needs-owner': {
       setState('needs-owner');
-      const s = { ...base, state: 'needs-owner' };
+      // an agent:go already on the issue was the owner's approval of the reporter, not an answer to this
+      const s = {
+        ...base,
+        state: 'needs-owner',
+        ...(issue.labels?.some((l) => l.name === 'agent:go')
+          ? { goHandled: true }
+          : {}),
+      };
       status(
         s,
         `**Triage: needs the owner.** ${result.reason}${result.question ? `\n\n> ${result.question}` : ''}\n\nAdd \`agent:go\` to have it implemented as triaged, or comment to triage it again.`,

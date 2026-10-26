@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentEnv, claudeArgs, parseClaudeResult } from './claude.mjs';
+import { TRIAGE_ALLOWED_TOOLS } from './triage.mjs';
 
 // shape captured from Claude Code 2.1.310 (`claude -p --output-format json --json-schema ...`), trimmed
 const success = JSON.stringify({
@@ -53,6 +54,7 @@ describe('claudeArgs', () => {
     expect(args.join(' ')).toContain('--max-turns 30');
     expect(args.join(' ')).toContain('--model claude-sonnet-5-5');
     expect(args).toContain('--strict-mcp-config');
+    expect(args).toContain('--restricted');
     expect(args[args.indexOf('--json-schema') + 1]).toBe('{"type":"object"}');
     expect(args[args.indexOf('--tools') + 1]).toBe('Read,Grep');
   });
@@ -95,5 +97,14 @@ describe('parseClaudeResult', () => {
       ok: false,
       limited: false,
     });
+  });
+});
+
+describe('triage tools', () => {
+  it('allows only read-only git commands that cannot start a program', () => {
+    expect(
+      TRIAGE_ALLOWED_TOOLS.some((t: string) => t.includes('git grep')),
+    ).toBe(false);
+    expect(TRIAGE_ALLOWED_TOOLS).toContain('Grep');
   });
 });

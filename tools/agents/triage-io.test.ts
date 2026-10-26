@@ -134,6 +134,17 @@ describe('planActions', () => {
       tokens: 600,
     });
   });
+  it("needs-owner while agent:go is already on (the owner's approval of an untrusted reporter) does not count as a go", () => {
+    const a = planActions(
+      { decision: 'needs-owner', reason: 'big' },
+      { ...ctx, issue: { ...issue, labels: [{ name: 'agent:go' }] } },
+    );
+    expect(statusOf(a).goHandled).toBe(true);
+  });
+  it('an ask without a summary shows no "undefined"', () => {
+    const a = planActions({ decision: 'ask', questions: ['Which OS?'] }, ctx);
+    expect(a.find((x) => x.type === 'status')!.body).not.toContain('undefined');
+  });
   it('duplicate: comments and closes as not planned', () => {
     const a = planActions(
       { decision: 'duplicate', of: 3, explanation: 'same' },

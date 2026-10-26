@@ -53,6 +53,8 @@ export function claudeArgs({
     schema,
     '--append-system-prompt-file',
     systemPromptFile,
+    // file tools stay in the checkout; no project settings or hooks from the repo
+    '--restricted',
     '--strict-mcp-config',
     '--no-session-persistence',
   ];

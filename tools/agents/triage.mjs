@@ -23,11 +23,24 @@ import {
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const ACTIVITY_LABEL = 'agent:activity';
+/** Read-only. No `git grep`: its -O option starts a program; the Grep tool does the same job. */
+export const TRIAGE_ALLOWED_TOOLS = [
+  'Read',
+  'Grep',
+  'Glob',
+  'Bash(git log:*)',
+  'Bash(git show:*)',
+  'Bash(git blame:*)',
+];
+/** A failed issue is tried again at most once an hour (spec 6.1a). */
+const RETRY_MS = 60 * 60000;
 
 /**
  * @param {{ gh: ReturnType<typeof createGitHub>, runAgent: (prompt: string) => Promise<{ ok: boolean, output?: unknown,
  *   tokens: number, limited: boolean, error?: string }>, config: ReturnType<typeof parseConfig>,
- *   trusted: ReturnType<typeof parseTrusted>, mode: string, now: Date, summary: (line: string) => void }} o
+ *   trusted: ReturnType<typeof parseTrusted>, mode: string, now: Date, summary: (line: string) => void,
+ *   clock?: () => number, timeBudgetMs?: number }} o
+ *   `timeBudgetMs`: no agent run starts after this much time, so the job's timeout never cuts a run off
  */
 export async function runTriage({
   gh,
@@ -37,13 +50,17 @@ export async function runTriage({
   mode,
   now,
   summary,
+  clock = Date.now,
+  timeBudgetMs = 25 * 60000,
 }) {
   if (!['shadow', 'triage', 'implement', 'full'].includes(mode)) {
     summary(`Agents are off (AGENTS_MODE=${mode || 'unset'}).`);
     return;
   }
+  const started = clock();
   const shadow = mode === 'shadow';
   const bot = config.botLogin;
+  const trustedLogin = (login) => login === bot || isTrusted(trusted, login);
 
   for (const label of missingLabels(await gh.listLabels()))
     await gh.createLabel(label);
@@ -56,170 +73,214 @@ export async function runTriage({
   );
   let activity = {
     ...emptyActivity(),
+    failedAt: {},
     ...parseStatus(activityIssue.body ?? ''),
   };
+  let issues = [];
 
-  const issues = (await gh.listOpenIssues()).filter(
-    (i) => i.number !== activityIssue.number,
-  );
-  const humanBranches = (await gh.listBranches()).filter((b) =>
-    b.startsWith('issues/'),
-  );
-  const humanPrTitles = (await gh.listOpenPulls())
-    .filter((p) => p.user?.login !== bot)
-    .map((p) => p.title);
-  const ctx = {
-    trusted,
-    botLogin: bot,
-    now,
-    humanBranches,
-    humanPrTitles,
-    shadowSeen: activity.shadowSeen,
-    mode,
-    config,
-  };
-
-  const items = [];
-  for (const issue of issues) {
-    const comments =
-      issue.comments > 0 ? await gh.listComments(issue.number) : [];
-    const decision = classifyIssue(issue, comments, ctx);
-    if (decision.action === 'skip')
-      summary(`#${issue.number}: skip (${decision.reason})`);
-    items.push({ issue, comments, decision });
-  }
-
-  // go with a spec needs no agent; go without one is triaged again, as the owner's answer
-  for (const x of items)
-    if (x.decision.action === 'go' && !x.decision.status?.spec) {
-      x.decision = {
-        ...x.decision,
-        action: 'triage',
-        status: { ...x.decision.status, goHandled: true },
-      };
-    }
-
-  const { agent, script } = pickForTriage(items, config.maxTriagePerRun);
-  const apply = async (issue, statusComment, actions) => {
-    if (shadow) {
-      summary(`#${issue.number} (shadow): ${actions.map(describe).join('; ')}`);
-      return;
-    }
-    let status = statusComment;
-    for (const a of actions) {
-      if (a.type === 'comment') await gh.comment(issue.number, a.body);
-      else if (a.type === 'status')
-        status = status
-          ? (await gh.editComment(status.id, a.body), status)
-          : await gh.comment(issue.number, a.body);
-      else if (a.type === 'addLabels')
-        await gh.addLabels(issue.number, a.labels);
-      else if (a.type === 'removeLabels')
-        for (const l of a.labels)
-          if (issue.labels.some((x) => x.name === l))
-            await gh.removeLabel(issue.number, l);
-          else if (a.type === 'close') await gh.close(issue.number, a.reason);
-    }
-  };
-
-  for (const { issue, decision } of script) {
-    summary(`#${issue.number}: ${decision.action} (${decision.reason})`);
-    await apply(
-      issue,
-      decision.statusComment,
-      scriptActions(issue, decision, now),
+  // whatever happens below, the run counts, the pause and the failures are saved
+  try {
+    issues = (await gh.listOpenIssues()).filter(
+      (i) => i.number !== activityIssue.number,
     );
-  }
-
-  let candidates;
-  for (const { issue, comments, decision } of agent) {
-    const can = canRunAgent(activity, now, config.maxAgentRunsPerDay);
-    if (!can.ok) {
-      summary(
-        `No more agent runs this poll: ${can.reason === 'paused' ? `paused until ${activity.pausedUntil}` : 'daily cap reached'}.`,
-      );
-      break;
-    }
-    candidates ??= (await gh.listRecentIssues(90)).map((i) => ({
-      number: i.number,
-      title: i.title,
-      state: i.state,
-    }));
-    const fromTrusted = (c) =>
-      c.user?.login !== bot && isTrusted(trusted, c.user?.login);
-    const prompt = buildTriagePrompt({
-      issue,
-      comments: comments.filter(fromTrusted),
-      newCommentIds: (decision.newComments ?? []).map((c) => c.id),
-      droppedCount: comments.filter(
-        (c) => c.user?.login !== bot && !fromTrusted(c),
-      ).length,
-      previous: decision.status ?? null,
-      candidates: candidates
-        .filter(
-          (c) => c.number !== issue.number && c.number !== activityIssue.number,
-        )
-        .slice(0, 150),
-    });
-    activity = recordRun(activity, now);
-    const r = await runAgent(prompt);
-    if (r.limited) {
-      activity = recordPause(activity, now, config.pauseMinutes);
-      summary(
-        `#${issue.number}: usage limit reached; agents paused until ${activity.pausedUntil}.`,
-      );
-      break;
-    }
-    if (!r.ok) {
-      summary(`#${issue.number}: agent failed: ${r.error}`);
-      continue;
-    }
-    const v = validateTriage(r.output);
-    if (!v.ok) {
-      summary(`#${issue.number}: invalid answer (${v.error}), nothing written`);
-      continue;
-    }
-    const lastCommentId = Math.max(0, ...comments.map((c) => c.id));
-    const actions = planActions(v.value, {
-      issue,
-      previous: decision.status ?? null,
-      lastCommentId,
-      tokens: r.tokens,
+    const humanBranches = (await gh.listBranches()).filter((b) =>
+      b.startsWith('issues/'),
+    );
+    // only trusted people's PRs keep the agents off an issue; anyone can open a PR on a public repo
+    const humanPrTitles = (await gh.listOpenPulls())
+      .filter((p) => p.user?.login !== bot && trustedLogin(p.user?.login))
+      .map((p) => p.title);
+    const ctx = {
+      trusted,
+      botLogin: bot,
       now,
-    });
-    summary(
-      `#${issue.number}: ${v.value.decision} (${r.tokens.toLocaleString('en')} tokens)`,
-    );
-    await apply(issue, decision.statusComment, actions);
-    if (shadow)
+      humanBranches,
+      humanPrTitles,
+      shadowSeen: activity.shadowSeen,
+      mode,
+      config,
+    };
+
+    const items = [];
+    for (const issue of issues) {
+      const comments =
+        issue.comments > 0 ? await gh.listComments(issue.number) : [];
+      const decision = classifyIssue(issue, comments, ctx);
+      if (decision.action === 'skip')
+        summary(`#${issue.number}: skip (${decision.reason})`);
+      else if (
+        decision.action === 'triage' &&
+        now.getTime() - Date.parse(activity.failedAt[issue.number] ?? '') <
+          RETRY_MS
+      ) {
+        summary(`#${issue.number}: skip (failed less than an hour ago)`);
+        continue;
+      }
+      items.push({ issue, comments, decision });
+    }
+
+    // go with a spec needs no agent; go without one is triaged again, as the owner's answer
+    for (const x of items)
+      if (x.decision.action === 'go' && !x.decision.status?.spec) {
+        x.decision = {
+          ...x.decision,
+          action: 'triage',
+          status: { ...x.decision.status, goHandled: true },
+        };
+      }
+
+    const { agent, script } = pickForTriage(items, config.maxTriagePerRun);
+    const apply = async (issue, statusComment, actions) => {
+      if (shadow) {
+        summary(
+          `#${issue.number} (shadow): ${actions.map(describe).join('; ')}`,
+        );
+        return;
+      }
+      let status = statusComment;
+      for (const a of actions) {
+        if (a.type === 'comment') await gh.comment(issue.number, a.body);
+        else if (a.type === 'status')
+          status = status
+            ? (await gh.editComment(status.id, a.body), status)
+            : await gh.comment(issue.number, a.body);
+        else if (a.type === 'addLabels')
+          await gh.addLabels(issue.number, a.labels);
+        else if (a.type === 'removeLabels') {
+          for (const l of a.labels)
+            if (issue.labels.some((x) => x.name === l))
+              await gh.removeLabel(issue.number, l);
+        } else if (a.type === 'close') await gh.close(issue.number, a.reason);
+      }
+    };
+
+    for (const { issue, decision } of script) {
+      summary(`#${issue.number}: ${decision.action} (${decision.reason})`);
+      try {
+        await apply(
+          issue,
+          decision.statusComment,
+          scriptActions(issue, decision, now),
+        );
+      } catch (e) {
+        summary(`#${issue.number}: GitHub failed: ${e.message}`);
+      }
+    }
+
+    let candidates;
+    for (const { issue, comments, decision } of agent) {
+      const can = canRunAgent(activity, now, config.maxAgentRunsPerDay);
+      if (!can.ok) {
+        summary(
+          `No more agent runs this poll: ${can.reason === 'paused' ? `paused until ${activity.pausedUntil}` : 'daily cap reached'}.`,
+        );
+        break;
+      }
+      if (clock() - started >= timeBudgetMs) {
+        summary('No more agent runs this poll: time budget used.');
+        break;
+      }
+      // titles of issues nobody trusted has vouched for never reach the agent
+      candidates ??= (await gh.listRecentIssues(90))
+        .filter(
+          (i) =>
+            trustedLogin(i.user?.login) ||
+            i.labels.some((l) => l.name === 'agent:go'),
+        )
+        .map((i) => ({ number: i.number, title: i.title, state: i.state }));
+      const fromTrusted = (c) =>
+        c.user?.login !== bot && isTrusted(trusted, c.user?.login);
+      const prompt = buildTriagePrompt({
+        issue,
+        comments: comments.filter(fromTrusted),
+        newCommentIds: (decision.newComments ?? []).map((c) => c.id),
+        droppedCount: comments.filter(
+          (c) => c.user?.login !== bot && !fromTrusted(c),
+        ).length,
+        previous: decision.status ?? null,
+        candidates: candidates
+          .filter(
+            (c) =>
+              c.number !== issue.number && c.number !== activityIssue.number,
+          )
+          .slice(0, 150),
+      });
+      activity = recordRun(activity, now);
+      const failed = (why) => {
+        summary(`#${issue.number}: ${why}`);
+        activity = {
+          ...activity,
+          failedAt: { ...activity.failedAt, [issue.number]: now.toISOString() },
+        };
+      };
+      const r = await runAgent(prompt);
+      if (r.limited) {
+        activity = recordPause(activity, now, config.pauseMinutes);
+        summary(
+          `#${issue.number}: usage limit reached; agents paused until ${activity.pausedUntil}.`,
+        );
+        break;
+      }
+      if (!r.ok) {
+        failed(`agent failed: ${r.error}`);
+        continue;
+      }
+      const v = validateTriage(r.output);
+      if (!v.ok) {
+        failed(`invalid answer (${v.error}), nothing written`);
+        continue;
+      }
+      const lastCommentId = Math.max(0, ...comments.map((c) => c.id));
+      const actions = planActions(v.value, {
+        issue,
+        previous: decision.status ?? null,
+        lastCommentId,
+        tokens: r.tokens,
+        now,
+      });
+      summary(
+        `#${issue.number}: ${v.value.decision} (${r.tokens.toLocaleString('en')} tokens)`,
+      );
+      try {
+        await apply(issue, decision.statusComment, actions);
+      } catch (e) {
+        failed(`GitHub failed: ${e.message}`);
+        continue;
+      }
+      const { [issue.number]: _, ...failedAt } = activity.failedAt;
+      activity = { ...activity, failedAt };
+      if (shadow)
+        activity = {
+          ...activity,
+          shadowSeen: {
+            ...activity.shadowSeen,
+            [issue.number]: issue.updated_at,
+          },
+        };
+    }
+  } finally {
+    const open = new Set(issues.map((i) => String(i.number)));
+    const keepOpen = (o) =>
+      Object.fromEntries(Object.entries(o).filter(([n]) => open.has(n)));
+    if (issues.length)
       activity = {
         ...activity,
-        shadowSeen: {
-          ...activity.shadowSeen,
-          [issue.number]: issue.updated_at,
-        },
+        shadowSeen: keepOpen(activity.shadowSeen),
+        failedAt: keepOpen(activity.failedAt),
       };
+    const counts = Object.fromEntries(
+      LABELS.filter(
+        (l) => l.name.startsWith('agent:') && l.name !== ACTIVITY_LABEL,
+      ).map((l) => [
+        l.name,
+        issues.filter((i) => i.labels.some((x) => x.name === l.name)).length,
+      ]),
+    );
+    await gh.editIssueBody(
+      activityIssue.number,
+      renderActivity(activity, counts, now, config.maxAgentRunsPerDay),
+    );
   }
-
-  const open = new Set(issues.map((i) => String(i.number)));
-  activity = {
-    ...activity,
-    shadowSeen: Object.fromEntries(
-      Object.entries(activity.shadowSeen).filter(([n]) => open.has(n)),
-    ),
-  };
-  const counts = Object.fromEntries(
-    LABELS.filter(
-      (l) => l.name.startsWith('agent:') && l.name !== ACTIVITY_LABEL,
-    ).map((l) => [
-      l.name,
-      issues.filter((i) => i.labels.some((x) => x.name === l.name)).length,
-    ]),
-  );
-  await gh.editIssueBody(
-    activityIssue.number,
-    renderActivity(activity, counts, now, config.maxAgentRunsPerDay),
-  );
 }
 
 /** The actions for decisions the script makes without an agent. */
@@ -294,15 +355,8 @@ function triageAgent(config) {
       model: config.models.triage,
       maxTurns: config.maxTurns.triage,
       tools: ['Read', 'Grep', 'Glob', 'Bash'],
-      allowedTools: [
-        'Read',
-        'Grep',
-        'Glob',
-        'Bash(git log:*)',
-        'Bash(git show:*)',
-        'Bash(git grep:*)',
-        'Bash(git blame:*)',
-      ],
+      allowedTools: TRIAGE_ALLOWED_TOOLS,
+      timeoutMs: 15 * 60000,
       schema: readFileSync(
         new URL('./schemas/triage.json', import.meta.url),
         'utf8',
