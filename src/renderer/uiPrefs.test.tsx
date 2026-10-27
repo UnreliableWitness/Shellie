@@ -4,9 +4,11 @@ import {
   readNavWidth,
   readPrChoice,
   readPrefs,
+  readSprintChoice,
   writeNavWidth,
   writePrChoice,
   writePref,
+  writeSprintChoice,
 } from './uiPrefs';
 
 beforeEach(() => localStorage.clear());
@@ -92,5 +94,49 @@ describe('nav width (#160)', () => {
     } as unknown as Storage;
     expect(readNavWidth(broken)).toBe(240);
     expect(() => writeNavWidth(300, broken)).not.toThrow();
+  });
+});
+
+describe('sprint choice (#165)', () => {
+  it('is null until written and is kept per connection', () => {
+    expect(readSprintChoice('c1')).toBeNull();
+    writeSprintChoice('c1', { id: 'it-2', team: 'Team B' });
+    writeSprintChoice('c2', { id: 'it-3' });
+    expect(localStorage.getItem('shellie.ui.sprint.c1')).toBe(
+      '{"id":"it-2","team":"Team B"}',
+    );
+    expect(readSprintChoice('c1')).toEqual({ id: 'it-2', team: 'Team B' });
+    expect(readSprintChoice('c2')).toEqual({ id: 'it-3' });
+    writeSprintChoice('c1', null);
+    expect(localStorage.getItem('shellie.ui.sprint.c1')).toBeNull();
+    expect(readSprintChoice('c1')).toBeNull();
+  });
+  it('treats bad values as no choice', () => {
+    for (const bad of [
+      '{',
+      '"it-2"',
+      'null',
+      '{"id":5}',
+      '{"id":"a","team":1}',
+    ]) {
+      localStorage.setItem('shellie.ui.sprint.c1', bad);
+      expect(readSprintChoice('c1')).toBeNull();
+    }
+  });
+  it('survives a storage that throws', () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('denied');
+      },
+      setItem: () => {
+        throw new Error('denied');
+      },
+      removeItem: () => {
+        throw new Error('denied');
+      },
+    } as unknown as Storage;
+    expect(readSprintChoice('c1', broken)).toBeNull();
+    expect(() => writeSprintChoice('c1', { id: 'x' }, broken)).not.toThrow();
+    expect(() => writeSprintChoice('c1', null, broken)).not.toThrow();
   });
 });

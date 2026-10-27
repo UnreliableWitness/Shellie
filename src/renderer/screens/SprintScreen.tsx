@@ -28,6 +28,11 @@ import { useTaskUsage } from '../hooks/useTaskUsage';
 import { startTaskFor } from '../startTask';
 import { activeConnection, useStore } from '../store';
 import { taskStatusOf } from '../taskStatus';
+import {
+  readSprintChoice,
+  type SprintChoice,
+  writeSprintChoice,
+} from '../uiPrefs';
 import { errorMessage } from '../../shared/errors';
 import { taskConnectionId } from '../../shared/workspaces';
 
@@ -400,11 +405,10 @@ function SprintPage({ connection }: { connection: Connection }) {
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
-  /** The sprint picked in the dropdown, with its team's name when it has one; null follows the current sprint. */
-  const [selected, setSelected] = useState<{
-    id: string;
-    team?: string;
-  } | null>(null);
+  /** The sprint picked in the dropdown, with its team's name when it has one; null follows the current sprint. Remembered per connection (#165). */
+  const [selected, setSelected] = useState<SprintChoice | null>(() =>
+    readSprintChoice(connection.id),
+  );
   const [iterations, setIterations] = useState<SprintIteration[]>([]);
   const lastLoad = useRef(0);
   const seq = useRef(0);
@@ -460,7 +464,10 @@ function SprintPage({ connection }: { connection: Connection }) {
       ]);
       // The picked sprint is gone: go back to the current one.
       if (selected && !sprint.iteration) {
-        if (mine === seq.current) setSelected(null);
+        if (mine === seq.current) {
+          writeSprintChoice(connection.id, null);
+          setSelected(null);
+        }
         return;
       }
       const assigned = sprint.iteration
@@ -575,11 +582,11 @@ function SprintPage({ connection }: { connection: Connection }) {
                   const i = iterations.find(
                     (i) => iterationKey(i) === e.target.value,
                   );
-                  setSelected(
-                    i
-                      ? { id: i.id, ...(i.team && { team: i.team.name }) }
-                      : null,
-                  );
+                  const choice = i
+                    ? { id: i.id, ...(i.team && { team: i.team.name }) }
+                    : null;
+                  writeSprintChoice(connection.id, choice);
+                  setSelected(choice);
                 }}
               >
                 {!pickedKey && (
