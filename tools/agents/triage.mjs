@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { canRunAgent, recordPause, recordRun } from './activity.mjs';
 import {
   ACTIVITY_LABEL,
-  combined,
+  budgetFor,
   loadActivity,
   saveActivity,
 } from './activityStore.mjs';
@@ -200,8 +200,8 @@ export async function runTriage({
 
     let candidates;
     for (const { issue, comments, decision } of agent) {
-      const all = combined(store, activity);
-      const can = canRunAgent(all, now, config.maxAgentRunsPerDay);
+      const all = budgetFor(store, activity);
+      const can = canRunAgent(all, now, config.triageRunsPerDay);
       if (!can.ok) {
         summary(
           `No more agent runs this poll: ${can.reason === 'paused' ? `paused until ${all.pausedUntil}` : 'daily cap reached'}.`,

@@ -49,6 +49,27 @@ export async function loadActivity(gh, { botLogin, poller, now, maxPerDay }) {
 export const combined = (store, own) => mergeActivity([own, ...store.others]);
 
 /**
+ * What counts against a poller's daily budget: triage has its own (config `triageRunsPerDay`), so expensive
+ * implement, review and fix runs can never starve the first reaction to a new issue; those three share
+ * `maxAgentRunsPerDay` without triage's runs. A usage-limit pause stops everyone.
+ * @param {{ poller: string, others: any[] }} store
+ * @param {any} own
+ */
+export function budgetFor(store, own) {
+  const all = mergeActivity([own, ...store.others]);
+  // triage keeps its block in the issue body, without a poller name
+  const isTriage = (b) => !b.poller || b.poller === 'triage';
+  const counted =
+    store.poller === 'triage'
+      ? [own]
+      : [own, ...store.others].filter((b) => !isTriage(b));
+  return {
+    runsByDay: mergeActivity(counted).runsByDay,
+    ...(all.pausedUntil ? { pausedUntil: all.pausedUntil } : {}),
+  };
+}
+
+/**
  * @param {any} gh
  * @param {Awaited<ReturnType<typeof loadActivity>>} store
  * @param {any} own the poller's block to save

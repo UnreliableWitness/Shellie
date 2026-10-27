@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { canRunAgent, recordPause, recordRun } from './activity.mjs';
-import { combined, loadActivity, saveActivity } from './activityStore.mjs';
+import { budgetFor, loadActivity, saveActivity } from './activityStore.mjs';
 import { runClaude } from './claude.mjs';
 import { parseConfig, parseTrusted } from './config.mjs';
 import { carriedReview } from './carry.mjs';
@@ -116,7 +116,7 @@ export async function runReview({
         summary(`PR #${pr.number}: skip (review failed less than an hour ago)`);
         continue;
       }
-      const all = combined(store, own);
+      const all = budgetFor(store, own);
       const can = canRunAgent(all, now, config.maxAgentRunsPerDay);
       if (!can.ok) {
         summary(`No review run: ${can.reason}.`);

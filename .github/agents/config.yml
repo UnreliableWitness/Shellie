@@ -7,7 +7,8 @@ maxImplementAttempts: 2
 maxFixRounds: 3
 maxTriagePerRun: 5
 autoMergeMaxLines: 400
-maxAgentRunsPerDay: 30 # all agents together (20 until 2026-10-26)
+maxAgentRunsPerDay: 30 # implement, review and fix together (20 until 2026-10-26)
+triageRunsPerDay: 10 # triage's own budget, so a new issue always gets a first reaction (since 2026-10-27)
 pauseMinutes: 60 # after a usage limit
 needsInfoRemindDays: 14
 needsInfoCloseDays: 21

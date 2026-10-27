@@ -1,0 +1,3 @@
+# Triage has its own daily budget
+
+On 2026-10-27 the shared cap of 30 agent runs was used up by 14:50 (13 reviews, 8 implementations, 7 triage, 2 fixes), and issue #170, filed at 14:52, got no triage for the rest of the day (`UnreliableWitness/agents-triage-reserve`). Triage is the cheap first reaction (Sonnet) and was starved by the expensive Opus runs. Now triage has its own budget, `triageRunsPerDay: 10` in `.github/agents/config.yml`, that the others cannot use; implement, review and fix share `maxAgentRunsPerDay` (30) without counting triage's runs (`budgetFor` in `tools/agents/activityStore.mjs`). A usage-limit pause still stops every agent.
