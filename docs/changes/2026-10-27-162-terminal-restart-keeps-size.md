@@ -1,0 +1,3 @@
+# A restarted terminal fills its view
+
+A restarted terminal fills its view (#162) on `agent/issues/162-opening-claude-code-or-other-terminal-do`: a restarted Claude Code, OpenCode or other tab starts at the size of its view, not 120x30 until the window is resized. `TerminalManager` remembers the last size the view gave each terminal (kept over a kill, so the Claude/OpenCode respawn path gets it too; dropped when the task's terminals are all killed) and spawns at it. `TerminalView` also re-sends its size right after a restart, which covers a restart after an app relaunch, when main has no size yet. Known gaps: the 120x30 default for a terminal that never had a view is unchanged; Windows (ConPTY) only checked by CI; not checked in the running app.

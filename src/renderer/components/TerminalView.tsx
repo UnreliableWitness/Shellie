@@ -208,6 +208,8 @@ export function TerminalView({
       await (options
         ? api().invoke('terminals:restart', terminalId, options)
         : api().invoke('terminals:restart', terminalId));
+      // The box did not change size, so the ResizeObserver stays quiet: tell the new process its size (#162).
+      sendSize.current();
       return true;
     }, notify);
     if (!ok) {

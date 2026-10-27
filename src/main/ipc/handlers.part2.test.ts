@@ -353,6 +353,36 @@ describe('handlers: agent tabs that fail to start (#109)', () => {
     await hx.terminals.killAllForTask(t.id);
   });
 
+  it('restarts OpenCode at the size its view last gave (#162)', async () => {
+    const base = testPlatform();
+    const platform = {
+      ...base,
+      opencodeCommand: () =>
+        base.runCommand(
+          process.platform === 'win32'
+            ? 'Write-Output "size:$($Host.UI.RawUI.WindowSize.Width)x$($Host.UI.RawUI.WindowSize.Height)"; Start-Sleep 5'
+            : 'set -- $(stty size); echo "size:$2x$1"; sleep 5',
+        ),
+    };
+    const hx = await harness(fakeCrypto(), { platform });
+    const done = hx.setupDone();
+    const t = await hx.h['tasks:create'](
+      hx.input({ openShell: false, openOpencode: true }),
+    );
+    await done;
+    const def = hx.store.state.tasks[0].terminals.find(
+      (x) => x.kind === 'opencode',
+    )!;
+    await hx.h['terminals:resize'](def.id, 200, 50);
+    await hx.h['terminals:restart'](def.id);
+    await vi.waitFor(
+      async () =>
+        expect(await hx.h['terminals:buffer'](def.id)).toContain('size:200x50'),
+      { timeout: 10000 },
+    );
+    await hx.terminals.killAllForTask(t.id);
+  });
+
   it('records a tab whose program cannot be spawned', async () => {
     const f = failures();
     const hx = await harness(fakeCrypto(), { terminalFailures: f.service });

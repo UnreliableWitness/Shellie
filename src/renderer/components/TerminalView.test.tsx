@@ -69,6 +69,35 @@ describe('TerminalView after an app relaunch', () => {
     expect(screen.queryByText('Process ended')).not.toBeInTheDocument();
   });
 
+  it('sizes the restarted process to the view (#162)', async () => {
+    const { calls } = relaunched();
+    const width = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(800);
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(600);
+    try {
+      render(<TerminalView terminalId="t1" taskId="a" active />);
+      const resizes = () =>
+        calls
+          .filter((c) => c.channel === 'terminals:resize')
+          .map((c) => c.args);
+      // Let the sizing on open and on being shown settle (main did not know the terminal then).
+      await screen.findByRole('button', { name: 'Restart' });
+      await new Promise((r) => setTimeout(r, 50));
+      const before = resizes().length;
+      screen.getByRole('button', { name: 'Restart' }).click();
+      await waitFor(() => expect(restarts(calls)).toBe(1));
+      await waitFor(() =>
+        expect(resizes().slice(before)).toEqual([['t1', 80, 24]]),
+      );
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
   it('leaves other terminals for the user to restart', async () => {
     const { calls } = relaunched();
     render(<TerminalView terminalId="t1" taskId="a" active />);

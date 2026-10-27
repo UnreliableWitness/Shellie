@@ -164,6 +164,21 @@ describe('TerminalManager', () => {
     expect(m.buffer('r').split('run').length - 1).toBe(1);
   });
 
+  it('restarts at the size the view last gave, not the default (#162)', async () => {
+    const m = create();
+    const sizeCmd = isWindows
+      ? 'Write-Output "size:$($Host.UI.RawUI.WindowSize.Width)x$($Host.UI.RawUI.WindowSize.Height)"'
+      : 'set -- $(stty size); echo "size:$2x$1"';
+    const first = waitFor(m, 'sz');
+    m.spawn({ id: 'sz', taskId: 'task', cwd: os.tmpdir(), ...sh(sizeCmd) });
+    await first;
+    m.resize('sz', 200, 50);
+    const second = waitFor(m, 'sz');
+    m.restart('sz');
+    await second;
+    expect(m.buffer('sz')).toContain('size:200x50');
+  });
+
   it('refuses a duplicate id', () => {
     const m = create();
     m.spawn({
