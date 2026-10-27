@@ -14,6 +14,7 @@ const table: [keyof Tracker, keyof AdoClient, unknown[]][] = [
   ['iconDataUrl', 'iconDataUrl', ['https://i']],
   ['typeStates', 'typeStates', ['P', 'Bug']],
   ['itemForStart', 'workItemForStart', [7]],
+  ['itemDetails', 'workItemDetails', [7]],
   ['updateItem', 'updateWorkItem', [7, { state: 'Active' }]],
   ['itemEstimate', 'workItemEstimate', [7]],
   ['updateItemFields', 'updateWorkItemFields', [7, { f: 1 }]],

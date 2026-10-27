@@ -18,6 +18,8 @@ export class AzureDevOpsTracker implements Tracker {
   typeStates: Tracker['typeStates'] = (...a) => this.client.typeStates(...a);
   itemForStart: Tracker['itemForStart'] = (...a) =>
     this.client.workItemForStart(...a);
+  itemDetails: Tracker['itemDetails'] = (...a) =>
+    this.client.workItemDetails(...a);
   updateItem: Tracker['updateItem'] = (...a) =>
     this.client.updateWorkItem(...a);
   itemEstimate: Tracker['itemEstimate'] = (...a) =>

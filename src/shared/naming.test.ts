@@ -7,7 +7,7 @@ import {
   slugify,
   taskSlug,
 } from './naming';
-import type { Task } from './types';
+import type { Task, WorkItemDetails } from './types';
 
 const story = {
   id: '48231',
@@ -149,6 +149,113 @@ describe('renderTaskMd', () => {
     expect(
       renderTaskMd({ ...task, workItem: null, name: 'Spike new search' }),
     ).toContain('# Task: Spike new search');
+  });
+
+  const details = (over: Partial<WorkItemDetails> = {}): WorkItemDetails => ({
+    fields: {
+      'System.Title': 'Show estimated delivery date on product page',
+      'System.WorkItemType': 'User Story',
+      'System.State': 'Active',
+      'System.AssignedTo': { displayName: 'Ann Smith', uniqueName: 'a@b.c' },
+      'System.AreaPath': 'Shop',
+      'System.IterationPath': 'Shop\\Sprint 4',
+      'System.Tags': 'checkout; ux',
+      'System.Description':
+        '<div>Show the <b>date</b> &amp; time.</div><ul><li>One</li><li>Two</li></ul>',
+      'Microsoft.VSTS.Common.AcceptanceCriteria': '<p>Date is shown</p>',
+      'Custom.Customer': 'Contoso',
+      'System.CreatedBy': { displayName: 'Bob Jones' },
+      'System.Watermark': 99,
+      'System.Rev': 7,
+      'System.AuthorizedAs': { displayName: 'Ann Smith' },
+      'Custom.Empty': '',
+    },
+    url: 'https://dev.azure.com/o/p/_workitems/edit/48231',
+    links: [{ name: 'Parent', id: '48000' }],
+    comments: [
+      {
+        author: 'Bob Jones',
+        createdDate: '2026-10-01T10:00:00Z',
+        text: '<p>First &lt;comment&gt;</p>',
+        html: true,
+      },
+      {
+        author: 'Ann Smith',
+        createdDate: '2026-10-02T10:00:00Z',
+        text: 'Second, in **markdown**',
+        html: false,
+      },
+    ],
+    ...over,
+  });
+
+  it('renders exactly as before without details', () => {
+    expect(renderTaskMd(task, {}, undefined)).toBe(renderTaskMd(task));
+    expect(renderTaskMd(task)).not.toContain('## Work item');
+  });
+
+  it('adds the work item fields, description and comments in order', () => {
+    const md = renderTaskMd(task, {}, details());
+    const order = [
+      renderTaskMd(task).trimEnd(),
+      '## Work item',
+      '- Title: Show estimated delivery date on product page',
+      '- Type: User Story',
+      '- State: Active',
+      '- Assigned to: Ann Smith',
+      '- Area: Shop',
+      '- Iteration: Shop\\Sprint 4',
+      '- Tags: checkout; ux',
+      '- URL: https://dev.azure.com/o/p/_workitems/edit/48231',
+      '- Parent: 48000',
+      '### Description',
+      'Show the date & time.\n\n- One\n- Two',
+      '### Acceptance criteria',
+      'Date is shown',
+      '### Other fields',
+      '- Custom.Customer: Contoso',
+      '- System.CreatedBy: Bob Jones',
+      '## Comments',
+      '### Bob Jones, 2026-10-01T10:00:00Z',
+      'First <comment>',
+      '### Ann Smith, 2026-10-02T10:00:00Z',
+      'Second, in **markdown**',
+    ];
+    let at = 0;
+    for (const part of order) {
+      const i = md.indexOf(part, at);
+      expect(i, part).toBeGreaterThanOrEqual(at);
+      at = i + part.length;
+    }
+    expect(md).not.toMatch(/<\/?(div|b|p|ul|li)>/);
+    expect(md).toContain('- System.CreatedBy: Bob Jones\n\n## Comments');
+    expect(md).not.toContain('Watermark');
+    expect(md).not.toContain('System.Rev');
+    expect(md).not.toContain('AuthorizedAs');
+    expect(md).not.toContain('Custom.Empty');
+  });
+
+  it('uses repro steps when there are no acceptance criteria', () => {
+    const d = details();
+    delete d.fields['Microsoft.VSTS.Common.AcceptanceCriteria'];
+    d.fields['Microsoft.VSTS.TCM.ReproSteps'] = '<p>Click buy</p>';
+    const md = renderTaskMd(task, {}, d);
+    expect(md).toContain('### Repro steps\n\nClick buy');
+    expect(md).not.toContain('Microsoft.VSTS.TCM.ReproSteps');
+  });
+
+  it('keeps the newest comments when the work item is too big', () => {
+    const comments = Array.from({ length: 300 }, (_, i) => ({
+      author: 'Ann',
+      createdDate: `c${i}`,
+      text: 'x'.repeat(1000),
+      html: false,
+    }));
+    const md = renderTaskMd(task, {}, details({ comments }));
+    expect(md.length).toBeLessThan(210_000);
+    expect(md).toContain('### Ann, c299');
+    expect(md).not.toContain('### Ann, c0\n');
+    expect(md).toMatch(/\d+ older comments left out/);
   });
 });
 

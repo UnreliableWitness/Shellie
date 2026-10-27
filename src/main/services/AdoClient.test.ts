@@ -1003,6 +1003,92 @@ describe('work item state and pull request calls', () => {
       '/unreliablewitness/_apis/wit/workitems/7?fields=System.WorkItemType,System.State,System.AssignedTo&api-version=7.1',
     );
   });
+  it('reads every field, the links and the comments of a work item', async () => {
+    server.route('GET', '/unreliablewitness/_apis/wit/workitems/7', {
+      body: {
+        id: 7,
+        fields: {
+          'System.TeamProject': 'Shellie',
+          'System.Title': 'Seven',
+          'Custom.Customer': 'Contoso',
+        },
+        relations: [
+          {
+            rel: 'System.LinkTypes.Hierarchy-Reverse',
+            url: 'https://dev.azure.com/unreliablewitness/_apis/wit/workItems/3',
+            attributes: { name: 'Parent' },
+          },
+          { rel: 'Hyperlink', url: 'https://example.com', attributes: {} },
+        ],
+        _links: { html: { href: 'https://dev.azure.com/x/_workitems/7' } },
+      },
+    });
+    server.route('GET', `${P}/wit/workItems/7/comments`, {
+      body: {
+        comments: [
+          {
+            text: 'Newer',
+            format: 'markdown',
+            createdBy: { displayName: 'Ann' },
+            createdDate: '2026-10-02T00:00:00Z',
+          },
+          {
+            text: '<p>Older</p>',
+            format: 'html',
+            createdBy: { displayName: 'Bob' },
+            createdDate: '2026-10-01T00:00:00Z',
+          },
+        ],
+      },
+    });
+    expect(await client.workItemDetails(7)).toEqual({
+      fields: {
+        'System.TeamProject': 'Shellie',
+        'System.Title': 'Seven',
+        'Custom.Customer': 'Contoso',
+      },
+      url: 'https://dev.azure.com/x/_workitems/7',
+      links: [{ name: 'Parent', id: '3' }],
+      comments: [
+        {
+          author: 'Bob',
+          createdDate: '2026-10-01T00:00:00Z',
+          text: '<p>Older</p>',
+          html: true,
+        },
+        {
+          author: 'Ann',
+          createdDate: '2026-10-02T00:00:00Z',
+          text: 'Newer',
+          html: false,
+        },
+      ],
+    });
+    expect(server.requests.map((r) => r.path)).toEqual([
+      '/unreliablewitness/_apis/wit/workitems/7?$expand=all&api-version=7.1',
+      `${P}/wit/workItems/7/comments?format=markdown&order=desc&$top=200&api-version=7.1-preview.4`,
+    ]);
+  });
+  it('returns no comments when the comments call fails', async () => {
+    server.route('GET', '/unreliablewitness/_apis/wit/workitems/7', {
+      body: { fields: { 'System.TeamProject': 'Shellie' } },
+    });
+    server.route('GET', `${P}/wit/workItems/7/comments`, {
+      status: 500,
+      body: {},
+    });
+    const d = await client.workItemDetails(7);
+    expect(d.comments).toEqual([]);
+    expect(d.fields).toEqual({ 'System.TeamProject': 'Shellie' });
+    expect(d.url).toBeNull();
+  });
+  it('fails when the work item cannot be read', async () => {
+    server.route('GET', '/unreliablewitness/_apis/wit/workitems/7', {
+      status: 401,
+      body: {},
+    });
+    await expect(client.workItemDetails(7)).rejects.toBeInstanceOf(AdoError);
+  });
   it('reads the type and the estimate fields of one work item', async () => {
     server.route('GET', '/unreliablewitness/_apis/wit/workitems/7', {
       body: {
