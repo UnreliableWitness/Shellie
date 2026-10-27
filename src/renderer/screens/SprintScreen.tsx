@@ -25,7 +25,7 @@ import { sprintTime, type SprintTimeCell } from '../../shared/sprintTime';
 import { formatDuration, type LocalItemTime } from '../../shared/time';
 import { eur, sprintDates } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
-import { startTaskFor } from '../startTask';
+import { reposForConnection, startTaskFor } from '../startTask';
 import { activeConnection, useStore } from '../store';
 import { taskStatusOf } from '../taskStatus';
 import { errorMessage } from '../../shared/errors';
@@ -182,6 +182,7 @@ function Row({
   connectionId,
   task,
   repoId,
+  chooseRepo,
   collapsed,
   onToggle,
   timeCell,
@@ -193,6 +194,8 @@ function Row({
   connectionId: string;
   task: TaskView | null;
   repoId: string | null;
+  /** Several repos share the project: Start opens New task to pick one. */
+  chooseRepo: boolean;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -280,12 +283,15 @@ function Row({
             onClick={async (e) => {
               e.stopPropagation();
               if (!repoId || starting) return;
+              const workItem = {
+                id: w.id,
+                type: w.type,
+                title: w.title,
+                url: w.url,
+              };
+              if (chooseRepo) return go({ kind: 'new-task', workItem, repoId });
               setStarting(true);
-              const created = await startTaskFor(
-                repoId,
-                { id: w.id, type: w.type, title: w.title, url: w.url },
-                notify,
-              );
+              const created = await startTaskFor(repoId, workItem, notify);
               setStarting(false);
               if (created) {
                 select(created.id);
@@ -320,9 +326,8 @@ function SprintGrid({
 }) {
   const tasks = useStore((s) => s.tasks);
   const repos = useStore((s) => s.repos);
-  const repoId =
-    repos.find((r) => r.connectionId === connectionId && !r.discovered)?.id ??
-    null;
+  const linked = reposForConnection(repos, connectionId);
+  const repoId = linked[0]?.id ?? null;
   // Totals cover the whole sprint, so a filter never changes a parent's roll-up.
   const times = useMemo(() => sprintTime(allRows, local), [allRows, local]);
   return (
@@ -346,6 +351,7 @@ function SprintGrid({
             connectionId={connectionId}
             task={taskFor(r.item.id, connectionId, tasks, repos)}
             repoId={repoId}
+            chooseRepo={linked.length > 1}
             collapsed={collapsed.has(r.item.id)}
             onToggle={() => onToggle(r.item.id)}
             timeCell={times.get(r.item.id)}

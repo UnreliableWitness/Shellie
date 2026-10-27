@@ -6,7 +6,7 @@ import { eur, formatDuration } from '../../format';
 import { useTaskTime } from '../../hooks/useTaskTime';
 import { useTaskUsage } from '../../hooks/useTaskUsage';
 import { upNext } from '../../homeView';
-import { startTaskFor } from '../../startTask';
+import { reposForConnection, startTaskFor } from '../../startTask';
 import { useStore } from '../../store';
 import { taskStatusOf } from '../../taskStatus';
 import { track } from '../../telemetry';
@@ -76,9 +76,8 @@ function UpNextRow({
   const select = useStore((s) => s.select);
   const go = useStore((s) => s.go);
   const [starting, setStarting] = useState(false);
-  const repoId =
-    repos.find((r) => r.connectionId === connectionId && !r.discovered)?.id ??
-    null;
+  const linked = reposForConnection(repos, connectionId);
+  const repoId = linked[0]?.id ?? null;
   const label = `${item.type} ${item.id} ${item.title}`;
   return (
     <div className="home-upnext-row">
@@ -96,12 +95,17 @@ function UpNextRow({
         onClick={async () => {
           if (!repoId || starting) return;
           track('home.clicked', { band: 'up-next' });
+          const workItem = {
+            id: item.id,
+            type: item.type,
+            title: item.title,
+            url: item.url,
+          };
+          // Several repos share the project: New task asks which one.
+          if (linked.length > 1)
+            return go({ kind: 'new-task', workItem, repoId });
           setStarting(true);
-          const created = await startTaskFor(
-            repoId,
-            { id: item.id, type: item.type, title: item.title, url: item.url },
-            notify,
-          );
+          const created = await startTaskFor(repoId, workItem, notify);
           setStarting(false);
           if (created) {
             select(created.id);
