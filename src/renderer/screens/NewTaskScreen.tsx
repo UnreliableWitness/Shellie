@@ -110,8 +110,8 @@ export function NewTaskScreen({
     const connectionChanged = lastConnection.current !== connectionId;
     lastConnection.current = connectionId;
     if (repoChanged) modeChosen.current = false;
-    // A pick belongs to one connection; drop it when the repo or its connection changes.
-    if (repoChanged || connectionChanged) setPicked(null);
+    // A pick belongs to one connection; drop it when that changes, keep it for another repo on the same one.
+    if (connectionChanged) setPicked(null);
     setMode((m) =>
       connectionId
         ? repoChanged || !modeChosen.current

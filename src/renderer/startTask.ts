@@ -1,8 +1,16 @@
 import { renderBranch } from '../shared/naming';
 import { isGuarded } from '../shared/secrets';
 import { setupTabsFrom } from '../shared/terminals';
-import type { Task, WorkItemRef } from '../shared/types';
+import type { Repo, Task, WorkItemRef } from '../shared/types';
 import { api, tryInvoke } from './api';
+
+/** The repos a Start for this connection can go to: linked ones, never discovered ones. */
+export function reposForConnection(
+  repos: Repo[],
+  connectionId: string,
+): Repo[] {
+  return repos.filter((r) => r.connectionId === connectionId && !r.discovered);
+}
 
 /**
  * Creates a task for a work item with the repo's .shellie.yml defaults, the tabs chosen in Settings and the repo's
