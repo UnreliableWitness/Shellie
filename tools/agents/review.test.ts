@@ -112,6 +112,18 @@ function fake() {
       return { number: 900, body: '' };
     },
     async editIssueBody() {},
+    commits: {} as Record<string, unknown>,
+    async getCommit(sha: string) {
+      return (
+        gh.commits[sha] ?? {
+          parents: [{ sha: 'p' }],
+          commit: {
+            message: 'work',
+            committer: { name: 'shellie-agents[bot]' },
+          },
+        }
+      );
+    },
     async listPullFiles() {
       return ['src/a.ts'];
     },
@@ -331,5 +343,26 @@ describe('runReview', () => {
     ]);
     await runReview(d.o as never);
     expect(calls).toBe(1);
+  });
+
+  it('carries the last review over a merge of main instead of reviewing again', async () => {
+    const gh = fake();
+    const d = opts(gh, [answer()]);
+    await runReview(d.o as never);
+    expect(d.prompts).toHaveLength(1);
+    gh.pr.head.sha = 'sha2';
+    gh.commits.sha2 = {
+      parents: [{ sha: 'sha1' }, { sha: 'main9' }],
+      commit: {
+        message: "Merge branch 'main' into agent/issues/4-breaks",
+        committer: { name: 'GitHub' },
+      },
+    };
+    await runReview(d.o as never);
+    expect(d.prompts).toHaveLength(1);
+    expect(prStatus(gh).reviews.sha2).toMatchObject({
+      verdict: 'approve',
+      carriedFrom: 'sha1',
+    });
   });
 });

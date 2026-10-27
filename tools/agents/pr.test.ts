@@ -744,3 +744,55 @@ describe('runDecide: a red main', () => {
     expect(issues[0].closed).toBe(true);
   });
 });
+
+describe('runDecide: a review carries over a merge of main', () => {
+  const mergeOfMain = (first: string) => ({
+    parents: [{ sha: first }, { sha: 'main9' }],
+    commit: {
+      message: "Merge branch 'main' into agent/issues/4-breaks",
+      committer: { name: 'GitHub' },
+    },
+  });
+  it('reuses the approval of the last reviewed commit when only merges of main came after it', async () => {
+    const gh = fake({ conclusion: 'success' });
+    gh.pr.head.sha = 'h3';
+    const s = parseStatus(gh.comments[9][0].body);
+    gh.comments[9][0].body = renderStatus(
+      { ...s, reviews: { h1: { verdict: 'approve', items: [] } } },
+      'x',
+    );
+    const commits: Record<string, unknown> = {
+      h3: mergeOfMain('h2'),
+      h2: mergeOfMain('h1'),
+    };
+    Object.assign(gh, { getCommit: async (sha: string) => commits[sha] });
+    await runDecide(opts(gh) as never);
+    expect(gh.writes).toContain('merge #9 h3');
+    expect(statusOf(gh, 9).reviews.h3).toMatchObject({
+      verdict: 'approve',
+      carriedFrom: 'h1',
+    });
+  });
+  it('does not carry it over a commit that changed the PR itself', async () => {
+    const gh = fake({ conclusion: 'success' });
+    gh.pr.head.sha = 'h3';
+    const s = parseStatus(gh.comments[9][0].body);
+    gh.comments[9][0].body = renderStatus(
+      { ...s, reviews: { h1: { verdict: 'approve', items: [] } } },
+      'x',
+    );
+    const own = {
+      parents: [{ sha: 'h1' }],
+      commit: {
+        message: 'Handle the empty list',
+        committer: { name: 'shellie-agents[bot]' },
+      },
+    };
+    Object.assign(gh, {
+      getCommit: async (sha: string) => (sha === 'h3' ? own : undefined),
+    });
+    await runDecide(opts(gh) as never);
+    expect(gh.writes.filter((w) => w.startsWith('merge'))).toEqual([]);
+    expect(statusOf(gh, 9).reviews.h3).toBeUndefined();
+  });
+});

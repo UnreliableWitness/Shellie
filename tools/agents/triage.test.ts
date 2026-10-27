@@ -580,4 +580,42 @@ describe('runTriage', () => {
     await runTriage(deps(gh, 'triage').opts);
     expect(reopened).toEqual([8]);
   });
+
+  it("shows the agent the screenshots from the issue and trusted comments, not strangers'", async () => {
+    const shot =
+      'https://github.com/user-attachments/assets/aaaaaaaa-0000-0000-0000-000000000001';
+    const strangers =
+      'https://github.com/user-attachments/assets/bbbbbbbb-0000-0000-0000-000000000002';
+    const gh = fakeGitHub(
+      [
+        issue(1, 'maximedebraekeleer', {
+          body: `broken <img src="${shot}" />`,
+          comments: 1,
+        }),
+      ],
+      {
+        1: [
+          {
+            id: 3,
+            user: { login: 'stranger' },
+            body: `![x](${strangers})`,
+            created_at: '',
+          },
+        ],
+      },
+    );
+    const asked: string[][] = [];
+    const d = deps(gh, 'triage', [ask], {
+      images: async (urls: string[], n: number) => {
+        asked.push(urls);
+        return urls.map((url, i) => ({
+          url,
+          file: `.agent-images/${n}/${i + 1}.png`,
+        }));
+      },
+    });
+    await runTriage(d.opts);
+    expect(asked).toEqual([[shot]]);
+    expect(d.prompts[0]).toContain('.agent-images/1/1.png');
+  });
 });

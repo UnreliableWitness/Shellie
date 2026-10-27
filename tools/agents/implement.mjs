@@ -20,6 +20,7 @@ import { combined, loadActivity, saveActivity } from './activityStore.mjs';
 import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub } from './github.mjs';
+import { downloadImages, imageLines, imageUrls } from './images.mjs';
 import { pickForImplement } from './pick.mjs';
 import {
   branchName,
@@ -200,6 +201,8 @@ export async function runPick({ gh, config, trusted, mode, now, summary }) {
     branch: branchName(issue.number, issue.title),
     baseSha,
     comments,
+    // downloaded by the implement job, which has no GitHub token (public image hosts only)
+    imageUrls: imageUrls([issue.body, ...comments.map((c) => c.body)]),
   };
 }
 
@@ -223,6 +226,7 @@ export function buildImplementPrompt(task) {
       data(c.body),
       '</comment>',
     ]),
+    ...imageLines(task.images ?? []),
     '<spec>',
     `Kind: ${task.kind}, risk: ${task.risk}`,
     `Problem: ${data(s.problem)}`,
@@ -603,6 +607,8 @@ export async function runAgentJob({
       'utf8',
     ),
   );
+  // screenshots downloaded for the agent never end up in a commit, whatever the branch's .gitignore says
+  appendFileSync(join(ROOT, '.git', 'info', 'exclude'), '\n.agent-images/\n');
   await git('checkout', '-B', branch, startSha);
   if (mergeMain) await git('merge', '--no-edit', 'origin/main').catch(() => {});
 
@@ -704,6 +710,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       appendFileSync(process.env.GITHUB_OUTPUT, `issue=${task?.issue ?? ''}\n`);
   } else if (step === 'run') {
     const task = readJson(join(workDir(), 'task.json'));
+    task.images = await downloadImages(
+      task.imageUrls ?? [],
+      join(ROOT, '.agent-images', String(task.issue)),
+      {
+        prefix: `.agent-images/${task.issue}`,
+      },
+    );
     const result = await runAgentJob({
       config,
       branch: task.branch,
