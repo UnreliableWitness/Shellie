@@ -75,6 +75,48 @@ export function writeNavWidth(
   }
 }
 
+export type SprintChoice = { id: string; team?: string };
+const sprintKey = (connectionId: string) => `shellie.ui.sprint.${connectionId}`;
+
+/** The sprint last picked on the Sprint page of this connection (#165); null when absent or unreadable. */
+export function readSprintChoice(
+  connectionId: string,
+  storage: Storage | undefined = local(),
+): SprintChoice | null {
+  try {
+    const raw = storage?.getItem(sprintKey(connectionId));
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    if (typeof v !== 'object' || v === null) return null;
+    const { id, team } = v as Record<string, unknown>;
+    if (typeof id !== 'string') return null;
+    if (team === undefined) return { id };
+    return typeof team === 'string' ? { id, team } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stores the picked sprint; null forgets it so the page follows the current sprint. */
+export function writeSprintChoice(
+  connectionId: string,
+  choice: SprintChoice | null,
+  storage: Storage | undefined = local(),
+): void {
+  try {
+    if (choice)
+      storage?.setItem(
+        sprintKey(connectionId),
+        JSON.stringify({
+          id: choice.id,
+          ...(choice.team && { team: choice.team }),
+        }),
+      );
+    else storage?.removeItem(sprintKey(connectionId));
+  } catch {
+    /* preferences are best effort */
+  }
+}
+
 const prKey = (repoId: string) => `shellie.ui.pr.${repoId}`;
 const pushKey = (repoId: string) => `shellie.ui.push.${repoId}`;
 

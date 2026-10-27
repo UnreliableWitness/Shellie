@@ -140,7 +140,8 @@ const task = (over: Partial<TaskView>): TaskView => ({
   ...over,
 });
 
-beforeEach(() =>
+beforeEach(() => {
+  localStorage.clear();
   useStore.setState({
     repos: [repo],
     tasks: [],
@@ -151,8 +152,8 @@ beforeEach(() =>
     previous: null,
     sprintName: null,
     screen: { kind: 'sprint' },
-  }),
-);
+  });
+});
 
 const fake = (over: FakeHandlers = {}) =>
   installFakeApi({
@@ -666,6 +667,58 @@ describe('Sprint page', () => {
     expect(
       calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
     ).toEqual(['c1', 'it-1', 'Team B']);
+  });
+
+  it('remembers the picked sprint when the page is opened again (#165)', async () => {
+    const teamB = { id: 'tb', name: 'Team B' };
+    const other: Sprint = {
+      iteration: {
+        id: 'it-2',
+        name: 'Sprint 2',
+        path: 'Shellie\\B\\Sprint 2',
+        startDate: null,
+        finishDate: null,
+      },
+      rows: [row(item(9, 'Issue', 'Team B work'))],
+    };
+    const { calls } = fake({
+      'workItems:iterations': () => [
+        { ...sprint.iteration!, timeframe: 'current' },
+        { ...other.iteration!, team: teamB },
+      ],
+      'workItems:sprint': (_c, id) => (id === 'it-2' ? other : sprint),
+    });
+    const first = render(<Shell />);
+    await grid();
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: 'Sprint' }),
+      'tb|it-2',
+    );
+    expect(await screen.findByText('Team B work')).toBeInTheDocument();
+    first.unmount();
+    calls.length = 0;
+    render(<Shell />);
+    expect(await screen.findByText('Team B work')).toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.channel === 'workItems:sprint')[0]?.args,
+    ).toEqual(['c1', 'it-2', 'Team B']);
+    expect(await screen.findByRole('combobox', { name: 'Sprint' })).toHaveValue(
+      'tb|it-2',
+    );
+  });
+
+  it('falls back to the current sprint and forgets a stored sprint that is gone (#165)', async () => {
+    localStorage.setItem('shellie.ui.sprint.c1', '{"id":"it-gone"}');
+    const { calls } = fake({
+      'workItems:sprint': (_c, id) =>
+        id === 'it-gone' ? { iteration: null, rows: [] } : sprint,
+    });
+    render(<Shell />);
+    await grid();
+    expect(
+      calls.filter((c) => c.channel === 'workItems:sprint').map((c) => c.args),
+    ).toEqual([['c1', 'it-gone'], ['c1']]);
+    expect(localStorage.getItem('shellie.ui.sprint.c1')).toBeNull();
   });
 
   it('hides the sprint dropdown when the team has one sprint', async () => {
