@@ -11,6 +11,7 @@ const DEFAULTS = {
   maxTriagePerRun: 5,
   autoMergeMaxLines: 400,
   maxAgentRunsPerDay: 20,
+  triageRunsPerDay: 10,
   pauseMinutes: 60,
   needsInfoRemindDays: 14,
   needsInfoCloseDays: 21,

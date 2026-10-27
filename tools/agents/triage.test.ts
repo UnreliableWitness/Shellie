@@ -463,7 +463,7 @@ describe('runTriage', () => {
     expect(d.prompts).toHaveLength(1);
   });
 
-  it("counts other pollers' runs and pauses, and never edits their blocks", async () => {
+  it("has its own daily budget: other pollers' runs do not stop it, a pause does, and it never edits their blocks", async () => {
     const gh = fakeGitHub([issue(1, 'maximedebraekeleer')]);
     const activity = issue(3, bot, {
       labels: [{ name: 'agent:activity' }],
@@ -475,7 +475,7 @@ describe('runTriage', () => {
       {
         v: 1,
         poller: 'implement',
-        runsByDay: { '2026-10-26': 20 },
+        runsByDay: { '2026-10-26': 30 },
         shadowSeen: {},
       },
       'implement',
@@ -485,8 +485,11 @@ describe('runTriage', () => {
     ];
     const d = deps(gh, 'triage');
     await runTriage(d.opts);
-    expect(d.prompts).toEqual([]);
+    // the other agents used the whole shared cap (30), triage still runs on its own budget
+    expect(d.prompts).toHaveLength(1);
     expect(gh.comments[3][0].body).toBe(implementBlock);
+    d.prompts.length = 0;
+    gh.issues.push(issue(2, 'maximedebraekeleer'));
 
     gh.comments[3][0].body = renderStatus(
       {
@@ -617,5 +620,21 @@ describe('runTriage', () => {
     await runTriage(d.opts);
     expect(asked).toEqual([[shot]]);
     expect(d.prompts[0]).toContain('.agent-images/1/1.png');
+  });
+
+  it('stops at its own budget of triage runs a day', async () => {
+    const gh = fakeGitHub([issue(1, 'maximedebraekeleer')]);
+    gh.issues.push(
+      issue(3, bot, {
+        labels: [{ name: 'agent:activity' }],
+        body: renderStatus(
+          { v: 1, runsByDay: { '2026-10-26': 10 }, shadowSeen: {} },
+          'x',
+        ),
+      }),
+    );
+    const d = deps(gh, 'triage');
+    await runTriage(d.opts);
+    expect(d.prompts).toEqual([]);
   });
 });
