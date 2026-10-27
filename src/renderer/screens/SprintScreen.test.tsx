@@ -627,7 +627,14 @@ describe('Sprint page', () => {
         .getAllByRole('option')
         .map((o) => o.textContent),
     ).toEqual(['Team B: Sprint 1 (current)']);
-    expect(select).toHaveValue('ta|it-1');
+    // Two teams share it-1 and the default team is unknown: none is highlighted.
+    expect(select).toHaveValue('');
+    await userEvent.selectOptions(select, 'ta|it-1');
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
+      ).toEqual(['c1', 'it-1', 'Team A']),
+    );
     await userEvent.selectOptions(select, 'tb|it-1');
     expect(await screen.findByText('Team B work')).toBeInTheDocument();
     expect(select).toHaveValue('tb|it-1');

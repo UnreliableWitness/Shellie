@@ -547,7 +547,12 @@ function SprintPage({ connection }: { connection: Connection }) {
     ? iterations.find(
         (i) => i.id === selected.id && i.team?.name === selected.team,
       )
-    : iterations.find((i) => i.id === iteration?.id);
+    : // The default team's sprint is not known here: with several teams on
+      // that iteration, none is highlighted so each stays choosable.
+      (() => {
+        const same = iterations.filter((i) => i.id === iteration?.id);
+        return same.length === 1 ? same[0] : undefined;
+      })();
   const pickedKey = picked ? iterationKey(picked) : '';
 
   return (
