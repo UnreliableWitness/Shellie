@@ -276,7 +276,33 @@ describe('runPick: stale locks', () => {
   });
 });
 
+describe('runPick: screenshots', () => {
+  it("hands the issue's screenshots to the implement job", async () => {
+    const shot =
+      'https://github.com/user-attachments/assets/aaaaaaaa-0000-0000-0000-000000000001';
+    const gh = fakeGitHub([readyIssue(4, { body: `It breaks ![s](${shot})` })]);
+    const task = await runPick(pickOpts(gh) as never);
+    expect(task!.imageUrls).toEqual([shot]);
+  });
+});
+
 describe('buildImplementPrompt', () => {
+  it('points the agent at downloaded screenshots', () => {
+    const p = buildImplementPrompt({
+      issue: 4,
+      title: 'T',
+      body: 'B',
+      author: 'm',
+      spec,
+      kind: 'bug',
+      risk: 'low',
+      branch: 'b',
+      baseSha: 'b',
+      comments: [],
+      images: [{ url: 'u', file: '.agent-images/4/1.png' }],
+    } as never);
+    expect(p).toContain('.agent-images/4/1.png');
+  });
   it('carries the spec and marks the issue text as data', () => {
     const p = buildImplementPrompt({
       issue: 4,

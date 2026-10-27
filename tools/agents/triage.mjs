@@ -13,6 +13,7 @@ import { classifyIssue, pickForTriage } from './classify.mjs';
 import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
+import { downloadImages, imageUrls } from './images.mjs';
 import { missingLabels, LABELS } from './labels.mjs';
 import { findStatusComment, parseStatus, renderStatus } from './state.mjs';
 import {
@@ -51,6 +52,7 @@ export async function runTriage({
   summary,
   clock = Date.now,
   timeBudgetMs = 25 * 60000,
+  images = async () => [],
 }) {
   if (!['shadow', 'triage', 'implement', 'full'].includes(mode)) {
     summary(`Agents are off (AGENTS_MODE=${mode || 'unset'}).`);
@@ -220,7 +222,14 @@ export async function runTriage({
         .map((i) => ({ number: i.number, title: i.title, state: i.state }));
       const fromTrusted = (c) =>
         c.user?.login !== bot && isTrusted(trusted, c.user?.login);
+      // screenshots from the issue and trusted comments, downloaded where the agent can open them
+      const urls = imageUrls([
+        issue.body,
+        ...comments.filter(fromTrusted).map((c) => c.body),
+      ]);
+      const shots = urls.length ? await images(urls, issue.number) : [];
       const prompt = buildTriagePrompt({
+        images: shots,
         issue,
         comments: comments.filter(fromTrusted),
         newCommentIds: (decision.newComments ?? []).map((c) => c.id),
@@ -467,6 +476,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   } else {
     const out = process.env.GITHUB_STEP_SUMMARY;
     await runTriage({
+      images: (urls, n) =>
+        downloadImages(urls, `${ROOT}.agent-images/${n}`, {
+          prefix: `.agent-images/${n}`,
+        }),
       gh: createGitHub(repo, readTokenFile(process.env.AGENTS_GH_TOKEN_FILE)),
       runAgent: triageAgent(config),
       config,
