@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from './config.mjs';
-import { decidePr, mainCiGreen, prBookkeeping } from './pr-decide.mjs';
+import { decidePr, mainState, prBookkeeping } from './pr-decide.mjs';
 
 const sha = 'h1';
 const finding = {
@@ -318,21 +318,55 @@ describe('decidePr: review fixes', () => {
   });
 });
 
-describe('mainCiGreen', () => {
-  it('reads the newest finished run that was not cancelled, and waits while one runs', () => {
-    const run = (status: string, conclusion: string | null) => ({
-      status,
-      conclusion,
+describe('mainState', () => {
+  const head = 'm1';
+  const run = (o: Record<string, unknown>) => ({
+    id: 1,
+    head_sha: head,
+    status: 'completed',
+    conclusion: 'success',
+    run_attempt: 1,
+    ...o,
+  });
+  it('is green when any CI run on the current main commit passed, whatever started it', () => {
+    expect(
+      mainState(
+        [
+          run({ id: 3, conclusion: 'failure' }),
+          run({ id: 2, event: 'schedule' }),
+        ],
+        head,
+      ),
+    ).toEqual({ green: true });
+  });
+  it('ignores runs on older commits', () => {
+    expect(mainState([run({ head_sha: 'old' })], head)).toEqual({
+      green: false,
     });
-    expect(mainCiGreen([run('completed', 'success')])).toBe(true);
+  });
+  it('waits while a run on the commit is still going', () => {
     expect(
-      mainCiGreen([run('in_progress', null), run('completed', 'success')]),
-    ).toBe(false);
+      mainState(
+        [
+          run({ status: 'in_progress', conclusion: null }),
+          run({ conclusion: 'failure', id: 2 }),
+        ],
+        head,
+      ),
+    ).toEqual({ green: false });
+  });
+  it('re-runs a failed run once, then calls it stuck', () => {
+    expect(mainState([run({ id: 7, conclusion: 'failure' })], head)).toEqual({
+      green: false,
+      rerun: 7,
+    });
     expect(
-      mainCiGreen([run('completed', 'cancelled'), run('completed', 'success')]),
-    ).toBe(true);
-    expect(mainCiGreen([run('completed', 'failure')])).toBe(false);
-    expect(mainCiGreen([])).toBe(false);
+      mainState([run({ id: 7, conclusion: 'failure', run_attempt: 2 })], head),
+    ).toEqual({ green: false, stuck: true });
+    expect(mainState([run({ id: 7, conclusion: 'cancelled' })], head)).toEqual({
+      green: false,
+      rerun: 7,
+    });
   });
 });
 
