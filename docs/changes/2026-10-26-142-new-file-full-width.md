@@ -1,0 +1,3 @@
+# New files over the full width in Changes
+
+New files over the full width in Changes (#142) on `agent/issues/142-changes-don-t-show-diff-against-empty-fi`: a file with status `A` always opens in Monaco's inline view, so the new file fills the whole diff instead of sharing it with an empty left pane (`ChangesTab.tsx` passes `sideBySide` off for it). The stored Side by side preference is untouched; the next modified file is side by side again. Known gaps: deleted files (empty right pane) still show two panes; the Side by side toggle stays enabled while a new file is shown; not checked in the running app.

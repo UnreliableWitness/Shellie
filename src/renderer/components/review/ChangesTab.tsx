@@ -615,7 +615,8 @@ export function ChangesTab({ task }: { task: TaskView }) {
         uriKey={`${current.repo.workspaceId}/${current.file.path}`}
         before={content.before ?? ''}
         after={content.after ?? ''}
-        sideBySide={prefs.sideBySide}
+        // A new file has nothing on the left: inline shows it over the full width.
+        sideBySide={prefs.sideBySide && current.file.status !== 'A'}
         ignoreWhitespace={prefs.ignoreWhitespace}
         hideUnchanged={prefs.hideUnchanged}
         onKey={onKey}
