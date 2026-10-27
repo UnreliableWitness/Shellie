@@ -15,6 +15,7 @@ export interface Tracker {
   iconDataUrl: AdoClient['iconDataUrl'];
   typeStates: AdoClient['typeStates'];
   itemForStart: AdoClient['workItemForStart'];
+  itemDetails: AdoClient['workItemDetails'];
   updateItem: AdoClient['updateWorkItem'];
   itemEstimate: AdoClient['workItemEstimate'];
   updateItemFields: AdoClient['updateWorkItemFields'];

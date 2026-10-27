@@ -1,8 +1,9 @@
 // handlers tests, part 3 of 6 (split so CI can run them on several machines at once).
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { renderTaskMd } from '../../shared/naming';
 import type { CreateTaskInput, Task } from '../../shared/types';
 import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { type AdoServer } from '../test-helpers/adoServer';
@@ -1182,5 +1183,49 @@ describe('handlers: work item on start', () => {
     const { state } = await createAndWait(hx);
     expect(state?.steps.map((s) => s.def.kind)).not.toContain('work-item');
     expect(update).not.toHaveBeenCalled();
+  });
+
+  const taskMdOf = (t: Task) =>
+    readFileSync(path.join(t.worktreePath, '.shellie', 'task.md'), 'utf8');
+
+  it('writes the whole work item and its comments into task.md', async () => {
+    const hx = await harness();
+    const { client } = await connected(hx);
+    const details = vi.spyOn(client, 'workItemDetails').mockResolvedValue({
+      fields: {
+        'System.Title': 'Show estimated delivery date',
+        'System.Description': '<p>Customers want a <b>date</b>.</p>',
+      },
+      url: null,
+      links: [],
+      comments: [
+        {
+          author: 'Ann',
+          createdDate: '2026-10-01T10:00:00Z',
+          text: 'Use the carrier API',
+          html: false,
+        },
+      ],
+    });
+    const { t, finished } = await createAndWait(hx);
+    expect(finished.ok).toBe(true);
+    expect(details).toHaveBeenCalledWith(48231);
+    const md = taskMdOf(t);
+    expect(md).toContain('### Description\n\nCustomers want a date.');
+    expect(md).toContain(
+      '### Ann, 2026-10-01T10:00:00Z\n\nUse the carrier API',
+    );
+  });
+
+  it('keeps the old task.md when the work item cannot be read', async () => {
+    const hx = await harness();
+    const { client } = await connected(hx);
+    vi.spyOn(client, 'workItemDetails').mockRejectedValue(new Error('offline'));
+    const { t, finished } = await createAndWait(hx);
+    expect(finished.ok).toBe(true);
+    const task = hx.store.state.tasks.find((x) => x.id === t.id)!;
+    expect(taskMdOf(t)).toBe(
+      renderTaskMd(task, { [hx.added.id]: hx.added.path }),
+    );
   });
 });

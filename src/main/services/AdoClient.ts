@@ -3,6 +3,7 @@ import type {
   Sprint,
   SprintItem,
   SprintIteration,
+  WorkItemDetails,
   WorkItemStateMeta,
   WorkItemSummary,
   WorkItemTypeMeta,
@@ -597,6 +598,64 @@ export class AdoClient {
       { write: true },
     );
     return { id: data.id };
+  }
+
+  /**
+   * Every field, the linked work items and the newest 200 comments (oldest first) of a work item, for task.md.
+   * A failing comments call leaves the comments out rather than failing the whole read.
+   */
+  async workItemDetails(id: number): Promise<WorkItemDetails> {
+    const data = await this.request<{
+      fields?: Json;
+      relations?: { url?: string; attributes?: { name?: unknown } }[];
+      _links?: { html?: { href?: unknown } };
+    }>(`/_apis/wit/workitems/${id}?$expand=all&${API}`);
+    const fields = data.fields ?? {};
+    const href = data._links?.html?.href;
+    const links = (data.relations ?? []).flatMap((r) => {
+      const linked = /\/workItems\/(\d+)$/i.exec(r.url ?? '');
+      const name = r.attributes?.name;
+      return linked && typeof name === 'string'
+        ? [{ name, id: linked[1] }]
+        : [];
+    });
+    const project = fields['System.TeamProject'];
+    let comments: WorkItemDetails['comments'] = [];
+    if (typeof project === 'string' && project)
+      try {
+        const c = await this.request<{
+          comments?: {
+            text?: unknown;
+            format?: unknown;
+            createdBy?: { displayName?: unknown };
+            createdDate?: unknown;
+          }[];
+        }>(
+          `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments?format=markdown&order=desc&$top=200&api-version=7.1-preview.4`,
+        );
+        comments = (c.comments ?? [])
+          .flatMap((x) =>
+            typeof x.text === 'string'
+              ? [
+                  {
+                    author: String(x.createdBy?.displayName ?? 'Someone'),
+                    createdDate: String(x.createdDate ?? ''),
+                    text: x.text,
+                    html: x.format !== 'markdown',
+                  },
+                ]
+              : [],
+          )
+          .reverse();
+      } catch {
+        comments = [];
+      }
+    return {
+      fields,
+      url: typeof href === 'string' ? href : null,
+      links,
+      comments,
+    };
   }
 
   /** Type and estimate fields (hours, null when unset) of a work item. */

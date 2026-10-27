@@ -17,6 +17,22 @@ export const WorkItemRefSchema = z.object({
 });
 export type WorkItemRef = z.infer<typeof WorkItemRefSchema>;
 
+/** Everything Azure DevOps knows about a work item, written into task.md at setup. */
+export type WorkItemDetails = {
+  /** Every field by reference name, as the API returns it. */
+  fields: Record<string, unknown>;
+  url: string | null;
+  /** Linked work items: the link's name (Parent, Child, Related) and the item's id. */
+  links: { name: string; id: string }[];
+  /** Oldest first; `html` when the comment is HTML rather than markdown. */
+  comments: {
+    author: string;
+    createdDate: string;
+    text: string;
+    html: boolean;
+  }[];
+};
+
 export const TerminalDefSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(['claude', 'shell', 'run', 'copilot', 'opencode']),

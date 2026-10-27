@@ -1,4 +1,4 @@
-import type { Task, WorkItemRef } from './types';
+import type { Task, WorkItemDetails, WorkItemRef } from './types';
 import { taskWorkspaces } from './workspaces';
 
 export function slugify(text: string, max = 40): string {
@@ -41,9 +41,162 @@ export function taskTitle(task: Pick<Task, 'workItem' | 'name'>): string {
     : `Task: ${task.name}`;
 }
 
+/** Fields task.md shows by name, in this order. */
+const HEADLINE_FIELDS: [string, string][] = [
+  ['Title', 'System.Title'],
+  ['Type', 'System.WorkItemType'],
+  ['State', 'System.State'],
+  ['Assigned to', 'System.AssignedTo'],
+  ['Area', 'System.AreaPath'],
+  ['Iteration', 'System.IterationPath'],
+  ['Tags', 'System.Tags'],
+];
+
+/** Long text fields, each under its own heading. */
+const TEXT_FIELDS: [string, string][] = [
+  ['Description', 'System.Description'],
+  ['Acceptance criteria', 'Microsoft.VSTS.Common.AcceptanceCriteria'],
+  ['Repro steps', 'Microsoft.VSTS.TCM.ReproSteps'],
+];
+
+/** Bookkeeping fields that tell an agent nothing about the work; System.History repeats the last comment. */
+const NOISE_FIELDS = new Set([
+  'System.Id',
+  'System.Rev',
+  'System.Watermark',
+  'System.AuthorizedAs',
+  'System.AuthorizedDate',
+  'System.RevisedDate',
+  'System.PersonId',
+  'System.AreaId',
+  'System.IterationId',
+  'System.NodeName',
+  'System.History',
+  'System.CommentCount',
+  'System.AttachedFileCount',
+  'System.ExternalLinkCount',
+  'System.HyperLinkCount',
+  'System.RelatedLinkCount',
+  'System.RemoteLinkCount',
+]);
+const isNoise = (name: string) =>
+  NOISE_FIELDS.has(name) ||
+  /^System\.(Area|Iteration)Level\d+$/.test(name) ||
+  name.startsWith('WEF_');
+
+/** The work item part of task.md is cut to about this many characters, dropping the oldest comments first. */
+export const WORK_ITEM_MAX_CHARS = 200_000;
+
+const ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
+/** Azure DevOps HTML (descriptions, HTML comments) as plain text: line breaks and list items kept, other tags dropped. */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n- ')
+    .replace(/<\/(p|div|ul|ol|h[1-6]|tr|table|pre|blockquote)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+      const lower = e.toLowerCase();
+      if (lower.startsWith('#x'))
+        return String.fromCodePoint(parseInt(lower.slice(2), 16));
+      if (lower.startsWith('#'))
+        return String.fromCodePoint(Number(e.slice(1)));
+      return ENTITIES[lower] ?? m;
+    })
+    .split('\n')
+    .map((l) => l.replace(/[ \t ]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+const looksLikeHtml = (s: string) => /<\/?[a-z][^>]*>/i.test(s);
+
+/** A field value as one line of text: identities by display name, HTML stripped; empty when there is nothing. */
+function fieldText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string')
+    return looksLikeHtml(value) ? htmlToText(value) : value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean')
+    return String(value);
+  if (typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    if (typeof v.displayName === 'string') return v.displayName;
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function workItemSection(
+  details: WorkItemDetails,
+  fallbackUrl: string | null,
+): string {
+  const f = details.fields;
+  const url = details.url ?? fallbackUrl;
+  const head = [
+    '## Work item',
+    '',
+    ...HEADLINE_FIELDS.flatMap(([label, name]) => {
+      const v = fieldText(f[name]);
+      return v ? [`- ${label}: ${v}`] : [];
+    }),
+    ...(url ? [`- URL: ${url}`] : []),
+    ...details.links.map((l) => `- ${l.name}: ${l.id}`),
+    '',
+    ...TEXT_FIELDS.flatMap(([label, name]) => {
+      const v = fieldText(f[name]);
+      return v ? [`### ${label}`, '', v, ''] : [];
+    }),
+  ];
+  const shown = new Set([...HEADLINE_FIELDS, ...TEXT_FIELDS].map((p) => p[1]));
+  const other = Object.keys(f)
+    .filter((name) => !shown.has(name) && !isNoise(name))
+    .sort()
+    .flatMap((name) => {
+      const v = fieldText(f[name]);
+      return v ? [`- ${name}: ${v.replace(/\n+/g, ' ')}`] : [];
+    });
+  if (other.length > 0) head.push('### Other fields', '', ...other, '');
+  let out = head.join('\n');
+  if (out.length > WORK_ITEM_MAX_CHARS)
+    return `${out.slice(0, WORK_ITEM_MAX_CHARS)}\n\n(The work item was cut here: it is too long for this file.)\n`;
+  if (details.comments.length === 0) return out;
+  // Newest first until the cap, then shown oldest first.
+  const kept: string[] = [];
+  let size = out.length;
+  for (const c of [...details.comments].reverse()) {
+    const text = c.html ? htmlToText(c.text) : c.text.trim();
+    const block = `### ${c.author}, ${c.createdDate}\n\n${text}\n`;
+    if (size + block.length > WORK_ITEM_MAX_CHARS) break;
+    kept.push(block);
+    size += block.length + 1;
+  }
+  const left = details.comments.length - kept.length;
+  out += [
+    '',
+    '## Comments',
+    '',
+    ...(left > 0
+      ? [`(${left} older comments left out: this file is capped in size.)`, '']
+      : []),
+    kept.reverse().join('\n'),
+  ].join('\n');
+  return out;
+}
+
+/** The task file; `details`, when Azure DevOps answered at setup, adds the whole work item and its comments. */
 export function renderTaskMd(
   task: Task,
   repoPaths: Record<string, string> = {},
+  details?: WorkItemDetails,
 ): string {
   const lines = [
     `# ${taskTitle(task)}`,
@@ -69,7 +222,10 @@ export function renderTaskMd(
     'This file is written by Shellie and excluded from git. Put notes for the task here.',
     '',
   ];
-  return lines.join('\n');
+  const base = lines.join('\n');
+  return details
+    ? `${base}\n${workItemSection(details, task.workItem?.url ?? null)}`
+    : base;
 }
 
 /** How Claude joins another repo to the task: a worktree on the task's branch, which Shellie detects. */

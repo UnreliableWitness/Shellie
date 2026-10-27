@@ -69,6 +69,7 @@ import type {
   ShellieConfig,
   PendingCleanup,
   PullRequestRef,
+  Repo,
   SetupEvent,
   SetupState,
   Task,
@@ -76,6 +77,7 @@ import type {
   TaskSummary,
   TaskView,
   TerminalDef,
+  WorkItemDetails,
   WorkItemTypeMeta,
   WorkspaceAction,
   WorkspaceCheck,
@@ -1611,9 +1613,39 @@ export function createHandlers(s: Services): Handlers {
     );
   };
 
+  /** The work item for task.md; undefined when there is none or Azure DevOps does not answer in time, so setup goes on. */
+  const WORK_ITEM_DETAILS_TIMEOUT_MS = 8_000;
+  const workItemDetails = async (
+    task: Task,
+    repo: Repo,
+  ): Promise<WorkItemDetails | undefined> => {
+    const connectionId = taskConnectionId(task, [repo]);
+    if (!task.workItem || !connectionId) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        s.trackers
+          .tracker(s.connections.get(connectionId).id)
+          .itemDetails(Number(task.workItem.id))
+          .then((d) => (Object.keys(d.fields).length > 0 ? d : undefined)),
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(
+            () => resolve(undefined),
+            WORK_ITEM_DETAILS_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const buildPlan = async (task: Task): Promise<SetupPlan> => {
     const repo = s.repos.get(task.repoId);
     const config = await s.loadConfig(repo.path);
+    const details = await workItemDetails(task, repo);
     const reopening = isReopening(task);
     const defs = reopening ? restoredTerminals(task) : initialTerminals(task);
     const hasApm =
@@ -1647,6 +1679,7 @@ export function createHandlers(s: Services): Handlers {
             }
           }),
         ),
+        details,
       ),
       startTerminalsLabel:
         defs.length > 0 ? defs.map((d) => d.label).join(', ') : null,
