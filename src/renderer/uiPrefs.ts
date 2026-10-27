@@ -45,6 +45,36 @@ export function writePref<K extends keyof UiPrefs>(
   writeFlag(KEY[key], value, storage);
 }
 
+const NAV_WIDTH_KEY = 'shellie.ui.navWidth';
+export const NAV_WIDTH = { min: 160, max: 480, default: 240 };
+
+/** A whole pixel width inside the nav's range; the default for anything not a number. */
+export const clampNavWidth = (px: number): number =>
+  Number.isFinite(px)
+    ? Math.min(NAV_WIDTH.max, Math.max(NAV_WIDTH.min, Math.round(px)))
+    : NAV_WIDTH.default;
+
+/** The left nav's stored width (#160); 240 when absent or unreadable. */
+export function readNavWidth(storage: Storage | undefined = local()): number {
+  try {
+    const raw = storage?.getItem(NAV_WIDTH_KEY);
+    return raw ? clampNavWidth(Number(raw)) : NAV_WIDTH.default;
+  } catch {
+    return NAV_WIDTH.default;
+  }
+}
+
+export function writeNavWidth(
+  px: number,
+  storage: Storage | undefined = local(),
+): void {
+  try {
+    storage?.setItem(NAV_WIDTH_KEY, String(clampNavWidth(px)));
+  } catch {
+    /* preferences are best effort */
+  }
+}
+
 const prKey = (repoId: string) => `shellie.ui.pr.${repoId}`;
 const pushKey = (repoId: string) => `shellie.ui.push.${repoId}`;
 
