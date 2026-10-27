@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -266,5 +268,17 @@ describe('Home page', () => {
     expect(useStore.getState().screen.kind).toBe('home');
     await userEvent.click(screen.getByRole('button', { name: 'Sprint' }));
     expect(useStore.getState().screen.kind).toBe('sprint');
+  });
+});
+
+describe('Home page scrolling (#167)', () => {
+  it('scrolls the bands inside the content area, so the nav and header stay put', () => {
+    const css = readFileSync(
+      path.join(__dirname, '..', 'styles', 'home.css'),
+      'utf8',
+    );
+    const rule = /\.home-bands \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toContain('overflow: auto;');
+    expect(rule).toContain('min-height: 0;');
   });
 });

@@ -1,4 +1,8 @@
+/* Home scrolls here, like .page-body, so the nav and page header stay put (issue 167). */
 .home-bands {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
