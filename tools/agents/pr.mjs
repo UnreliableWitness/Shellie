@@ -18,6 +18,7 @@ import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import { bundleGit, runAgentJob, workDir } from './implement.mjs';
 import { needsRelease } from '../release/needs-release.mjs';
+import { carriedReview } from './carry.mjs';
 import { downloadImages, imageLines, imageUrls } from './images.mjs';
 import { decidePr, mainState, prBookkeeping } from './pr-decide.mjs';
 import { classifyPaths, countChangedLines } from './publish-checks.mjs';
@@ -226,6 +227,22 @@ export async function runDecide({
       );
     }
 
+    // only GitHub's merges of main since the last review: that review still holds (no new Opus run)
+    if (!prState.reviews?.[sha]) {
+      const carried = await carriedReview(gh, sha, prState.reviews ?? {});
+      if (carried) {
+        prState = {
+          ...prState,
+          reviews: {
+            ...prState.reviews,
+            [sha]: { ...carried.review, carriedFrom: carried.sha },
+          },
+        };
+        await savePr(
+          `**Agent PR status:** the review of \`${carried.sha.slice(0, 7)}\` carries over \`${sha.slice(0, 7)}\` (only merges of main since).`,
+        );
+      }
+    }
     const checks = summarizeChecks(await gh.listCheckRuns(sha));
     const stats = await gh.listPullFileStats(pr.number);
     const numstat = stats
