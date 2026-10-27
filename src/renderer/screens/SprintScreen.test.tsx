@@ -593,6 +593,49 @@ describe('Sprint page', () => {
     ).toEqual(['c1', 'it-2']);
   });
 
+  it("groups the sprints of my teams and loads a sprint from its team's scope", async () => {
+    const teamA = { id: 'ta', name: 'Team A' };
+    const teamB = { id: 'tb', name: 'Team B' };
+    const other: Sprint = {
+      iteration: {
+        id: 'it-1',
+        name: 'Sprint 1',
+        path: 'Shellie\\B\\Sprint 1',
+        startDate: null,
+        finishDate: null,
+      },
+      rows: [row(item(9, 'Issue', 'Team B work'))],
+    };
+    const { calls } = fake({
+      'workItems:iterations': () => [
+        { ...sprint.iteration!, timeframe: 'current', team: teamA },
+        { ...sprint.iteration!, timeframe: 'current', team: teamB },
+      ],
+      'workItems:sprint': (_c, _id, team) =>
+        team === 'Team B' ? other : sprint,
+    });
+    render(<Shell />);
+    await grid();
+    const select = await screen.findByRole('combobox', { name: 'Sprint' });
+    const groups = within(select).getAllByRole('group');
+    expect(groups.map((g) => g.getAttribute('label'))).toEqual([
+      'Team A',
+      'Team B',
+    ]);
+    expect(
+      within(groups[1])
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Team B: Sprint 1 (current)']);
+    expect(select).toHaveValue('ta|it-1');
+    await userEvent.selectOptions(select, 'tb|it-1');
+    expect(await screen.findByText('Team B work')).toBeInTheDocument();
+    expect(select).toHaveValue('tb|it-1');
+    expect(
+      calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
+    ).toEqual(['c1', 'it-1', 'Team B']);
+  });
+
   it('hides the sprint dropdown when the team has one sprint', async () => {
     const { calls } = fake({
       'workItems:iterations': () => [sprint.iteration!],

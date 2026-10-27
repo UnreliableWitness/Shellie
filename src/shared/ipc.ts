@@ -188,14 +188,17 @@ export type Channels = {
     result: WorkItemSummary[];
   };
   /**
-   * A sprint in backlog order: the chosen iteration, else the current one. `iteration: null` when the project has no
-   * current sprint or the chosen one is gone.
+   * A sprint in backlog order: the chosen iteration of `team` (a name; the default team without one), else the
+   * current one. `iteration: null` when the project has no current sprint or the chosen one is gone.
    */
   'workItems:sprint': {
-    args: [connectionId: string, iterationId?: string];
+    args: [connectionId: string, iterationId?: string, team?: string];
     result: Sprint;
   };
-  /** Every sprint of the project's default team, past, current and future. */
+  /**
+   * Every sprint, past, current and future, of each of my teams in the project, tagged with the team; with fewer than
+   * two teams, the default team's sprints untagged.
+   */
   'workItems:iterations': {
     args: [connectionId: string];
     result: SprintIteration[];
