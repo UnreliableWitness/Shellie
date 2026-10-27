@@ -188,11 +188,18 @@ function fake(
         html_url: `https://github.com/o/r/actions/runs/777/job/${100 + i}`,
       }));
     },
+    mainRunAttempt: 1,
+    async mainSha() {
+      return 'mainhead';
+    },
     async listMainCiRuns() {
       return [
         {
+          id: 555,
+          head_sha: 'mainhead',
           status: 'completed',
           conclusion: gh.mainGreen ? 'success' : 'failure',
+          run_attempt: gh.mainRunAttempt,
         },
       ];
     },
@@ -225,8 +232,8 @@ function fake(
     async jobLogTail(id: number) {
       return `log of job ${id}\nFAIL src/a.test.ts`;
     },
-    async findIssueByLabel() {
-      return { number: 900, body: '' };
+    async findIssueByLabel(label: string) {
+      return label === 'agent:activity' ? { number: 900, body: '' } : null;
     },
     async createIssue() {
       return { number: 900, body: '' };
@@ -687,5 +694,53 @@ describe('runPublishFix: nothing to change', () => {
       ]),
     );
     expect(gh.comments[9].at(-1)!.body).toContain('found nothing to change');
+  });
+});
+
+describe('runDecide: a red main', () => {
+  it('re-runs a red main once, and merges nothing meanwhile', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    gh.mainGreen = false;
+    const reruns: number[] = [];
+    await runDecide({
+      ...opts(gh),
+      rerun: async (id: number) => {
+        reruns.push(id);
+      },
+    } as never);
+    expect(reruns).toEqual([555]);
+    expect(gh.writes.filter((w) => w.startsWith('merge'))).toEqual([]);
+  });
+  it('opens one issue for the owner when main stays red after the re-run, and closes it once green', async () => {
+    const gh = fake({ verdict: 'approve', conclusion: 'success' });
+    gh.mainGreen = false;
+    gh.mainRunAttempt = 2;
+    const issues: {
+      number: number;
+      title: string;
+      labels: string[];
+      closed?: boolean;
+    }[] = [];
+    Object.assign(gh, {
+      findIssueByLabel: async (l: string) =>
+        l === 'agent:main-red'
+          ? (issues.find((i) => !i.closed && i.labels.includes(l)) ?? null)
+          : { number: 900, body: '' },
+      createIssue: async (title: string, _b: string, labels: string[]) => {
+        const i = { number: 901, title, labels };
+        issues.push(i);
+        return i;
+      },
+      close: async (n: number) => {
+        issues.find((i) => i.number === n)!.closed = true;
+      },
+    });
+    await runDecide(opts(gh) as never);
+    await runDecide(opts(gh) as never);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].title).toMatch(/main is red/);
+    gh.mainGreen = true;
+    await runDecide(opts(gh) as never);
+    expect(issues[0].closed).toBe(true);
   });
 });
