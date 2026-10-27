@@ -72,6 +72,11 @@ export const LABELS = [
     description: 'A pull request the agents own',
   },
   {
+    name: 'agent:main-red',
+    color: 'b60205',
+    description: "main's CI is red after a re-run: the agents merge nothing",
+  },
+  {
     name: 'agent:activity',
     color: 'ededed',
     description: "The agents' own bookkeeping issue",
