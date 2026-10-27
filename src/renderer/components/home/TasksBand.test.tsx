@@ -139,6 +139,23 @@ describe('TasksBand', () => {
     });
   });
 
+  it('Up next opens New task to choose the repo when several repos share the project', async () => {
+    const { calls } = installFakeApi();
+    useStore.setState({ repos: [repo, { ...repo, id: 'r2', name: 'api' }] });
+    render(<TasksBand snapshot={snapshot} />);
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'Start a task for Issue 7 Reset mail',
+      }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'new-task',
+      workItem: { id: '7', type: 'Issue', title: 'Reset mail', url: 'u' },
+      repoId: 'r1',
+    });
+    expect(calls.some((c) => c.channel === 'tasks:create')).toBe(false);
+  });
+
   it('Up next without a linked repo explains why it cannot start', async () => {
     installFakeApi();
     useStore.setState({ repos: [] });

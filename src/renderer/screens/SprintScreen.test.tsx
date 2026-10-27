@@ -409,6 +409,31 @@ describe('Sprint page', () => {
     expect(created?.args[0]).toMatchObject({ repoId: 'r1' });
   });
 
+  it('Start opens New task to choose the repo when several repos share the project', async () => {
+    const { calls } = fake();
+    useStore.setState({
+      repos: [repo, { ...repo, id: 'r2', name: 'api' }],
+    });
+    render(<Shell />);
+    const table = await grid();
+    await userEvent.click(
+      within(table).getByRole('button', {
+        name: 'Start a task for Task 5 Store the address',
+      }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'new-task',
+      workItem: {
+        id: '5',
+        type: 'Task',
+        title: 'Store the address',
+        url: 'https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/5',
+      },
+      repoId: 'r1',
+    });
+    expect(calls.some((c) => c.channel === 'tasks:create')).toBe(false);
+  });
+
   it('disables Start when only a discovered repo is linked', async () => {
     fake();
     useStore.setState({ repos: [{ ...repo, discovered: true }] });

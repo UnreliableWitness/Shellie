@@ -547,6 +547,39 @@ describe('NewTaskScreen', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('keeps the work item when switching to another repo on the same connection', async () => {
+    const { calls } = installFakeApi({
+      ...pickerApi,
+      'tasks:create': () => ({ id: 't9' }) as never,
+    });
+    useStore.setState({
+      repos: [
+        { ...webshop, connectionId: 'c1' },
+        { ...webshop, id: 'r2', name: 'api', connectionId: 'c1' },
+      ],
+      connections: [conn],
+    });
+    const workItem = {
+      id: '12',
+      type: 'Bug',
+      title: 'Broken checkout',
+      url: 'u',
+    };
+    render(<NewTaskScreen initial={{ workItem, repoId: 'r1' }} />);
+    await userEvent.selectOptions(screen.getByLabelText('Repo'), 'api');
+    await waitFor(() =>
+      expect(screen.getByLabelText('Branch')).toHaveValue(
+        'bugfix/12-broken-checkout',
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'tasks:create')?.args[0],
+      ).toMatchObject({ repoId: 'r2', workItem }),
+    );
+  });
+
   it('clears the picked item when the repo switches to another connection', async () => {
     installFakeApi({
       ...pickerApi,
