@@ -10,6 +10,7 @@ import { canRunAgent, recordPause, recordRun } from './activity.mjs';
 import { combined, loadActivity, saveActivity } from './activityStore.mjs';
 import { runClaude } from './claude.mjs';
 import { parseConfig, parseTrusted } from './config.mjs';
+import { carriedReview } from './carry.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import {
   buildReviewPrompt,
@@ -83,6 +84,27 @@ export async function runReview({
         reviews: {},
       };
       if (prState.reviews[sha]) continue;
+      // only GitHub's merges of main since the last review: record that review for this commit, no new run
+      const carried = await carriedReview(gh, sha, prState.reviews);
+      if (carried) {
+        const next = {
+          ...prState,
+          reviews: {
+            ...prState.reviews,
+            [sha]: { ...carried.review, carriedFrom: carried.sha },
+          },
+        };
+        const body = renderStatus(
+          next,
+          `**Agent PR status:** the review of \`${carried.sha.slice(0, 7)}\` carries over \`${sha.slice(0, 7)}\` (only merges of main since).`,
+        );
+        if (prComment) await gh.editComment(prComment.id, body);
+        else await gh.comment(pr.number, body);
+        summary(
+          `PR #${pr.number}: review carried over from ${carried.sha.slice(0, 7)}`,
+        );
+        continue;
+      }
       if (!Number.isInteger(prState.issue)) {
         summary(`PR #${pr.number}: skip (no "Fixes #n" to find its issue)`);
         continue;

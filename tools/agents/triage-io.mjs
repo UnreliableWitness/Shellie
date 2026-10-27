@@ -1,4 +1,5 @@
 // The triage agent's input (a prompt with the issue as data) and what the script does with its answer (spec 5.1).
+import { imageLines } from './images.mjs';
 import { defang, renderStatus } from './state.mjs';
 
 const TAGS = /<(\/?)(issue|comment|possible-duplicates|previous-triage)\b/gi;
@@ -17,6 +18,7 @@ export function buildTriagePrompt({
   droppedCount,
   previous,
   candidates,
+  images = [],
 }) {
   const parts = [
     `Triage GitHub issue #${issue.number} of UnreliableWitness/Shellie, following your sdlc-triage instructions.`,
@@ -56,6 +58,7 @@ export function buildTriagePrompt({
     '<possible-duplicates>',
     ...candidates.map((c) => `#${c.number} (${c.state}) ${data(c.title)}`),
     '</possible-duplicates>',
+    ...imageLines(images),
   );
   return parts.join('\n');
 }

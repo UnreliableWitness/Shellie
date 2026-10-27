@@ -154,3 +154,6 @@ tools/art/incoming/*
 # OS files
 .DS_Store
 Thumbs.db
+
+# screenshots the agent scripts download for the agents (tools/agents/images.mjs)
+.agent-images/

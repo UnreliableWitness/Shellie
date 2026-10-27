@@ -160,6 +160,7 @@ export function createGitHub(repo, token) {
       ),
     reopen: (n) =>
       api(`${r}/issues/${n}`, { method: 'PATCH', body: { state: 'open' } }),
+    getCommit: (sha) => api(`${r}/commits/${sha}`),
     commitFiles: async (sha) =>
       (await api(`${r}/commits/${sha}`)).files.map((f) => f.filename),
     rerunFailedJobs: (runId) =>
