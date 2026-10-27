@@ -464,11 +464,15 @@ export type ConnectionInput = {
 };
 
 export type Iteration = { path: string; name: string };
-/** The current sprint as the sprint page needs it; ADO leaves the dates null until someone sets them. */
+/**
+ * A sprint as the sprint page needs it; ADO leaves the dates null until someone sets them.
+ * `timeframe` is set when ADO says where the sprint falls relative to today.
+ */
 export type SprintIteration = Iteration & {
   id: string;
   startDate: string | null;
   finishDate: string | null;
+  timeframe?: 'past' | 'current' | 'future';
 };
 
 export type WorkItemSummary = {

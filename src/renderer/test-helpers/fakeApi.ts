@@ -182,6 +182,7 @@ const defaults: FakeHandlers = {
     proposal: 'base: main\n',
   }),
   'workItems:types': () => [],
+  'workItems:iterations': () => [],
   'connections:list': () => [],
   'secrets:list': () => [],
   'secrets:forget': () => undefined,

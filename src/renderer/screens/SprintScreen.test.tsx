@@ -541,6 +541,73 @@ describe('Sprint page', () => {
       await screen.findByText('No work items in this sprint.'),
     ).toBeInTheDocument();
   });
+
+  it('switches to another sprint from the dropdown', async () => {
+    const next: Sprint = {
+      iteration: {
+        id: 'it-2',
+        name: 'Sprint 2',
+        path: 'Shellie\\Sprint 2',
+        startDate: null,
+        finishDate: null,
+        timeframe: 'future',
+      },
+      rows: [row(item(8, 'Issue', 'Pay by invoice'))],
+    };
+    const { calls } = fake({
+      'workItems:iterations': () => [
+        { ...sprint.iteration!, timeframe: 'current' },
+        next.iteration!,
+      ],
+      'workItems:sprint': (_c, id) => (id === 'it-2' ? next : sprint),
+    });
+    render(<Shell />);
+    await grid();
+    const select = await screen.findByRole('combobox', { name: 'Sprint' });
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Sprint 1 (current)', 'Sprint 2']);
+    expect(select).toHaveValue('it-1');
+    await userEvent.selectOptions(select, 'it-2');
+    const table = await screen.findByRole('table', {
+      name: 'Sprint 2 backlog',
+    });
+    expect(within(table).getByText('Pay by invoice')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Sprint 2' }),
+    ).toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
+    ).toEqual(['c1', 'it-2']);
+    // Refresh stays on the chosen sprint.
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.channel === 'workItems:sprint').length).toBe(
+        3,
+      ),
+    );
+    expect(
+      calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
+    ).toEqual(['c1', 'it-2']);
+  });
+
+  it('hides the sprint dropdown when the team has one sprint', async () => {
+    const { calls } = fake({
+      'workItems:iterations': () => [sprint.iteration!],
+    });
+    render(<Shell />);
+    await grid();
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'workItems:iterations')).toBe(
+        true,
+      ),
+    );
+    expect(
+      screen.queryByRole('combobox', { name: 'Sprint' }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('visibleRows', () => {

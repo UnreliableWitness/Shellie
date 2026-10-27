@@ -245,6 +245,7 @@ describe('AdoClient reads', () => {
       name: 'Sprint 1',
       startDate: '2026-10-15T00:00:00Z',
       finishDate: '2026-10-28T00:00:00Z',
+      timeframe: 'current',
     });
     expect(server.requests.at(-1)?.path).toContain('$timeframe=current');
     server.route(
@@ -561,6 +562,87 @@ describe('AdoClient sprint', () => {
       rows: [],
     });
     expect(server.requests).toHaveLength(1);
+  });
+  it('lists every iteration of the team, with its timeframe', async () => {
+    server.route('GET', `${ITERATIONS}?`, {
+      body: {
+        value: [
+          {
+            id: 'it-1',
+            name: 'Sprint 1',
+            path: 'Shellie\\Sprint 1',
+            attributes: {
+              startDate: '2026-10-01T00:00:00Z',
+              timeFrame: 'past',
+            },
+          },
+          {
+            id: 'it-2',
+            name: 'Sprint 2',
+            path: 'Shellie\\Sprint 2',
+            attributes: { timeFrame: 'current' },
+          },
+          { id: 'it-3', name: 'Sprint 3', path: 'Shellie\\Sprint 3' },
+        ],
+      },
+    });
+    expect(await client.iterations('Shellie')).toEqual([
+      {
+        id: 'it-1',
+        name: 'Sprint 1',
+        path: 'Shellie\\Sprint 1',
+        startDate: '2026-10-01T00:00:00Z',
+        finishDate: null,
+        timeframe: 'past',
+      },
+      {
+        id: 'it-2',
+        name: 'Sprint 2',
+        path: 'Shellie\\Sprint 2',
+        startDate: null,
+        finishDate: null,
+        timeframe: 'current',
+      },
+      {
+        id: 'it-3',
+        name: 'Sprint 3',
+        path: 'Shellie\\Sprint 3',
+        startDate: null,
+        finishDate: null,
+      },
+    ]);
+    expect(server.requests.at(-1)?.path).toBe(`${ITERATIONS}?api-version=7.1`);
+  });
+  it('loads the work items of a chosen iteration', async () => {
+    server.route('GET', `${ITERATIONS}?`, {
+      body: {
+        value: [
+          { id: 'it-1', name: 'Sprint 1', path: 'Shellie\\Sprint 1' },
+          { id: 'it-2', name: 'Sprint 2', path: 'Shellie\\Sprint 2' },
+        ],
+      },
+    });
+    server.route('GET', `${ITERATIONS}/it-2/workitems`, {
+      body: {
+        workItemRelations: [{ rel: null, source: null, target: { id: 7 } }],
+      },
+    });
+    server.route('GET', '/unreliablewitness/_apis/wit/workitems', {
+      body: { value: [wi(7)] },
+    });
+    const sprint = await client.sprint('Shellie', 'it-2');
+    expect(sprint.iteration?.name).toBe('Sprint 2');
+    expect(sprint.rows.map((r) => r.item.id)).toEqual(['7']);
+    expect(
+      server.requests.some((r) => r.path.includes('$timeframe=current')),
+    ).toBe(false);
+  });
+  it('returns no iteration when the chosen one is gone', async () => {
+    server.route('GET', `${ITERATIONS}?`, { body: { value: [] } });
+    expect(await client.sprint('Shellie', 'it-9')).toEqual({
+      iteration: null,
+      rows: [],
+    });
   });
   it('skips the batch call for an empty sprint', async () => {
     current();

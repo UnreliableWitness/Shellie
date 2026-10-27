@@ -9,6 +9,7 @@ export class AzureDevOpsTracker implements Tracker {
   currentIteration: Tracker['currentIteration'] = (...a) =>
     this.client.currentIteration(...a);
   iteration: Tracker['iteration'] = (...a) => this.client.sprint(...a);
+  iterations: Tracker['iterations'] = (...a) => this.client.iterations(...a);
   items: Tracker['items'] = (...a) => this.client.workItems(...a);
   searchItems: Tracker['searchItems'] = (...a) =>
     this.client.searchWorkItems(...a);

@@ -516,6 +516,7 @@ describe('handlers: work items', () => {
       name: 'Sprint 1',
       startDate: null,
       finishDate: null,
+      timeframe: 'current',
     });
     const items = await h['workItems:search'](c.id, {
       scope: 'sprint',
@@ -567,6 +568,50 @@ describe('handlers: sprint, types and live work items', () => {
     expect(sprint.rows.map((r) => [r.item.id, r.item.title, r.depth])).toEqual([
       ['5', 'Five', 0],
     ]);
+  });
+  it('lists the iterations and returns the rows of a chosen one', async () => {
+    const hx = await harness();
+    const c = await save(hx);
+    hx.server.route(
+      'GET',
+      '/unreliablewitness/Shellie/_apis/work/teamsettings/iterations',
+      {
+        body: {
+          value: [
+            {
+              id: 'it-1',
+              name: 'Sprint 1',
+              path: 'Shellie\\Sprint 1',
+              attributes: { timeFrame: 'current' },
+            },
+            {
+              id: 'it-2',
+              name: 'Sprint 2',
+              path: 'Shellie\\Sprint 2',
+              attributes: { timeFrame: 'future' },
+            },
+          ],
+        },
+      },
+    );
+    hx.server.route(
+      'GET',
+      '/unreliablewitness/Shellie/_apis/work/teamsettings/iterations/it-2/workitems',
+      {
+        body: {
+          workItemRelations: [{ rel: null, source: null, target: { id: 5 } }],
+        },
+      },
+    );
+    const list = await hx.h['workItems:iterations'](c.id);
+    expect(list.map((i) => [i.id, i.timeframe])).toEqual([
+      ['it-1', 'current'],
+      ['it-2', 'future'],
+    ]);
+    expect(hx.server.requests.at(-1)?.path).not.toContain('$timeframe');
+    const sprint = await hx.h['workItems:sprint'](c.id, 'it-2');
+    expect(sprint.iteration?.name).toBe('Sprint 2');
+    expect(sprint.rows.map((r) => r.item.id)).toEqual(['5']);
   });
   it('a 401 on the sprint marks the connection unauthorized', async () => {
     const hx = await harness();
