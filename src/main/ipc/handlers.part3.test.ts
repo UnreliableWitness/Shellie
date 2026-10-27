@@ -614,6 +614,39 @@ describe('handlers: sprint, types and live work items', () => {
     expect(sprint.iteration?.name).toBe('Sprint 2');
     expect(sprint.rows.map((r) => r.item.id)).toEqual(['5']);
   });
+  it("lists the sprints of all my teams and loads one from that team's scope", async () => {
+    const hx = await harness();
+    const c = await save(hx);
+    const team = (name: string) =>
+      `/unreliablewitness/Shellie/${name}/_apis/work/teamsettings/iterations`;
+    hx.server.route('GET', '/unreliablewitness/_apis/projects/Shellie/teams', {
+      body: {
+        value: [
+          { id: 'ta', name: 'Team A' },
+          { id: 'tb', name: 'Team B' },
+        ],
+      },
+    });
+    hx.server.route('GET', team('Team%20A'), {
+      body: { value: [{ id: 'it-1', name: 'A 1', path: 'Shellie\\A 1' }] },
+    });
+    hx.server.route('GET', team('Team%20B'), {
+      body: { value: [{ id: 'it-2', name: 'B 2', path: 'Shellie\\B 2' }] },
+    });
+    hx.server.route('GET', `${team('Team%20B')}/it-2/workitems`, {
+      body: {
+        workItemRelations: [{ rel: null, source: null, target: { id: 5 } }],
+      },
+    });
+    const list = await hx.h['workItems:iterations'](c.id);
+    expect(list.map((i) => [i.team?.name, i.id])).toEqual([
+      ['Team A', 'it-1'],
+      ['Team B', 'it-2'],
+    ]);
+    const sprint = await hx.h['workItems:sprint'](c.id, 'it-2', 'Team B');
+    expect(sprint.iteration?.name).toBe('B 2');
+    expect(sprint.rows.map((r) => r.item.id)).toEqual(['5']);
+  });
   it('a 401 on the sprint marks the connection unauthorized', async () => {
     const hx = await harness();
     const c = await save(hx);

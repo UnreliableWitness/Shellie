@@ -489,6 +489,8 @@ export type SprintIteration = Iteration & {
   startDate: string | null;
   finishDate: string | null;
   timeframe?: 'past' | 'current' | 'future';
+  /** The team the sprint belongs to, set when the list spans several of my teams. */
+  team?: { id: string; name: string };
 };
 
 export type WorkItemSummary = {

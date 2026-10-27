@@ -644,6 +644,30 @@ describe('AdoClient sprint', () => {
       rows: [],
     });
   });
+  it("loads a chosen iteration from another team's scope", async () => {
+    const team = '/unreliablewitness/Shellie/Team%20B/_apis/work/teamsettings';
+    server.route('GET', `${team}/iterations?`, {
+      body: {
+        value: [{ id: 'it-7', name: 'B 7', path: 'Shellie\\B\\Sprint 7' }],
+      },
+    });
+    server.route('GET', `${team}/iterations/it-7/workitems`, {
+      body: {
+        workItemRelations: [{ rel: null, source: null, target: { id: 7 } }],
+      },
+    });
+    server.route('GET', '/unreliablewitness/_apis/wit/workitems', {
+      body: { value: [wi(7)] },
+    });
+    const sprint = await client.sprint('Shellie', 'it-7', 'Team B');
+    expect(sprint.iteration?.name).toBe('B 7');
+    expect(sprint.rows.map((r) => r.item.id)).toEqual(['7']);
+    expect(
+      server.requests.some(
+        (r) => r.path === `${team}/iterations/it-7/workitems?api-version=7.1`,
+      ),
+    ).toBe(true);
+  });
   it('skips the batch call for an empty sprint', async () => {
     current();
     server.route('GET', `${ITERATIONS}/it-1/workitems`, {
@@ -653,6 +677,81 @@ describe('AdoClient sprint', () => {
     expect(
       server.requests.some((r) => r.path.includes('/_apis/wit/workitems?')),
     ).toBe(false);
+  });
+});
+
+describe('AdoClient.allIterations', () => {
+  const TEAMS = '/unreliablewitness/_apis/projects/Shellie/teams';
+  const teamIterations = (team: string, value: unknown[], status?: number) =>
+    server.route(
+      'GET',
+      `/unreliablewitness/Shellie/${team}/_apis/work/teamsettings/iterations?`,
+      status ? { status, body: { message: 'no' } } : { body: { value } },
+    );
+  const it1 = {
+    id: 'it-1',
+    name: 'Sprint 1',
+    path: 'Shellie\\A\\Sprint 1',
+    attributes: { startDate: '2026-10-01T00:00:00Z' },
+  };
+  const it2 = {
+    id: 'it-2',
+    name: 'Sprint 2',
+    path: 'Shellie\\B\\Sprint 2',
+    attributes: { startDate: '2026-09-01T00:00:00Z' },
+  };
+  const two = () =>
+    server.route('GET', TEAMS, {
+      body: {
+        value: [
+          { id: 'ta', name: 'Team A' },
+          { id: 'tb', name: 'Team B' },
+        ],
+      },
+    });
+
+  it("lists every one of my teams' sprints, tagged with the team, by start date", async () => {
+    two();
+    teamIterations('Team%20A', [it1, it2]);
+    teamIterations('Team%20B', [it2]);
+    const list = await client.allIterations('Shellie');
+    expect(list.map((i) => [i.team?.name, i.id])).toEqual([
+      ['Team A', 'it-2'],
+      ['Team B', 'it-2'],
+      ['Team A', 'it-1'],
+    ]);
+    expect(list[0].team).toEqual({ id: 'ta', name: 'Team A' });
+  });
+  it("returns the default team's plain list with one team", async () => {
+    server.route('GET', TEAMS, {
+      body: { value: [{ id: 'ta', name: 'Team A' }] },
+    });
+    server.route('GET', `${ITERATIONS}?`, { body: { value: [it1] } });
+    const list = await client.allIterations('Shellie');
+    expect(list.map((i) => i.id)).toEqual(['it-1']);
+    expect(list[0].team).toBeUndefined();
+  });
+  it('returns the default list when my teams cannot be read', async () => {
+    server.route('GET', TEAMS, { status: 403, body: { message: 'no' } });
+    server.route('GET', `${ITERATIONS}?`, { body: { value: [it1] } });
+    expect((await client.allIterations('Shellie')).map((i) => i.id)).toEqual([
+      'it-1',
+    ]);
+  });
+  it('skips a team whose sprints fail to load', async () => {
+    two();
+    teamIterations('Team%20A', [it1]);
+    teamIterations('Team%20B', [], 500);
+    const list = await client.allIterations('Shellie');
+    expect(list.map((i) => [i.team?.name, i.id])).toEqual([['Team A', 'it-1']]);
+  });
+  it('throws when every team fails', async () => {
+    two();
+    teamIterations('Team%20A', [], 500);
+    teamIterations('Team%20B', [], 500);
+    await expect(client.allIterations('Shellie')).rejects.toBeInstanceOf(
+      AdoError,
+    );
   });
 });
 
