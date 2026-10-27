@@ -101,6 +101,11 @@ export class TerminalManager extends EventEmitter<{
   exit: [id: string, exitCode: number];
 }> {
   private readonly entries = new Map<string, Entry>();
+  /** The last size the view gave each terminal, kept over kill so a respawn starts at it, not 120x30 (#162). */
+  private readonly sizes = new Map<
+    string,
+    { taskId: string; cols: number; rows: number }
+  >();
   private readonly killWaitMs: number;
   private readonly now: () => number;
   private readonly flushMs: number;
@@ -135,10 +140,11 @@ export class TerminalManager extends EventEmitter<{
     env.SHELLIE_TASK_ID = options.taskId;
     env.MIAC_TASK_ID = options.taskId; // for scripts written before the rename
     env.SHELLIE_TERMINAL_ID = options.id;
+    const size = this.sizes.get(options.id);
     const proc = pty.spawn(options.command, options.args, {
       name: 'xterm-256color',
-      cols: options.cols ?? 120,
-      rows: options.rows ?? 30,
+      cols: size?.cols ?? options.cols ?? 120,
+      rows: size?.rows ?? options.rows ?? 30,
       cwd: options.cwd,
       env,
       // Windows: the bundled conpty.dll. The default (system ConPTY) kill path forks a helper with
@@ -235,11 +241,13 @@ export class TerminalManager extends EventEmitter<{
 
   resize(id: string, cols: number, rows: number): void {
     const e = this.get(id);
-    if (!e.exited)
-      e.proc.resize(
-        Math.max(2, Math.floor(cols)),
-        Math.max(1, Math.floor(rows)),
-      );
+    const size = {
+      taskId: e.options.taskId,
+      cols: Math.max(2, Math.floor(cols)),
+      rows: Math.max(1, Math.floor(rows)),
+    };
+    this.sizes.set(id, size);
+    if (!e.exited) e.proc.resize(size.cols, size.rows);
   }
 
   /**
@@ -283,6 +291,8 @@ export class TerminalManager extends EventEmitter<{
     const ids = [...this.entries]
       .filter(([, e]) => e.options.taskId === taskId)
       .map(([id]) => id);
+    for (const [id, size] of this.sizes)
+      if (size.taskId === taskId) this.sizes.delete(id);
     await Promise.all(ids.map((id) => this.kill(id)));
   }
 
