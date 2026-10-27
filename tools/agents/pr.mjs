@@ -18,7 +18,7 @@ import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import { bundleGit, runAgentJob, workDir } from './implement.mjs';
 import { needsRelease } from '../release/needs-release.mjs';
-import { decidePr, mainCiGreen, prBookkeeping } from './pr-decide.mjs';
+import { decidePr, mainState, prBookkeeping } from './pr-decide.mjs';
 import { classifyPaths, countChangedLines } from './publish-checks.mjs';
 import {
   defang,
@@ -152,7 +152,29 @@ export async function runDecide({
     }
   }
 
-  const mainGreen = mainCiGreen(await gh.listMainCiRuns());
+  const main = mainState(await gh.listMainCiRuns(), await gh.mainSha());
+  const mainGreen = main.green;
+  if (main.rerun) {
+    // a red main stops every merge: re-run its failed jobs once, as for a PR (flaky tests)
+    await rerun(main.rerun);
+    summary(`main is red: re-running CI run ${main.rerun} once`);
+  }
+  // still red after the re-run: one issue for the owner, closed again once main is green
+  const redIssue = await gh.findIssueByLabel('agent:main-red');
+  if (main.stuck && !redIssue) {
+    await gh.createIssue(
+      'main is red: the agents have stopped merging',
+      "CI on `main`'s current commit failed, also after one re-run, so no agent PR merges and no release is made until it is green. Look at the latest CI run on `main` (Actions › CI); fix it or re-run it. This issue closes itself once `main` is green.",
+      ['agent:main-red', 'agent:needs-owner'],
+    );
+    summary('main is still red after a re-run: opened an issue for the owner');
+  } else if (main.green && redIssue) {
+    await gh.comment(
+      redIssue.number,
+      '`main` is green again; the agents merge again.',
+    );
+    await gh.close(redIssue.number, 'completed');
+  }
   const pulls = (await gh.listOpenPulls())
     .filter(
       (p) =>

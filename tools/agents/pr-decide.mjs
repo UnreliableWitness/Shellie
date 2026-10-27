@@ -120,11 +120,20 @@ export function prBookkeeping(pr) {
 }
 
 /**
- * Whether main's CI is green: the newest run that was not cancelled (a cancelled run was replaced by a newer
- * one); false while that run is still going, so nothing merges onto a main whose CI is not known yet.
- * @param {{ status: string, conclusion: string | null }[]} runs newest first
+ * Whether main is green, judged on its current commit by every CI run on it (push, the scheduled release runs,
+ * a manual run): a flaky push run must not block merges when another run on the same code passed.
+ * @param {{ id: number, head_sha: string, status: string, conclusion: string | null, run_attempt?: number }[]} runs
+ *   CI runs on main, newest first
+ * @param {string} headSha main's current commit
+ * @returns {{ green: boolean, rerun?: number, stuck?: boolean }} rerun: re-run that run's failed jobs once;
+ *   stuck: still red after that, the owner has to look
  */
-export function mainCiGreen(runs) {
-  const run = runs.find((r) => r.conclusion !== 'cancelled');
-  return run?.status === 'completed' && run.conclusion === 'success';
+export function mainState(runs, headSha) {
+  const forHead = runs.filter((r) => r.head_sha === headSha);
+  if (forHead.some((r) => r.conclusion === 'success')) return { green: true };
+  if (!forHead.length || forHead.some((r) => r.status !== 'completed'))
+    return { green: false };
+  const newest = forHead[0];
+  if ((newest.run_attempt ?? 1) < 2) return { green: false, rerun: newest.id };
+  return { green: false, stuck: true };
 }
