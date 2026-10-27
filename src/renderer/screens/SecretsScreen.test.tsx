@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   act,
   fireEvent,
@@ -443,4 +445,19 @@ describe('Secrets page', () => {
       }),
     );
   });
+});
+
+describe('Secrets pages scrolling (#167)', () => {
+  it.each(['secrets', 'import'])(
+    'scrolls .%s inside the content area, so the nav and header stay put',
+    (name) => {
+      const css = readFileSync(
+        path.join(__dirname, '..', 'styles', 'secrets.css'),
+        'utf8',
+      );
+      const rule = new RegExp(`\\.${name} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      expect(rule).toContain('overflow: auto;');
+      expect(rule).toContain('min-height: 0;');
+    },
+  );
 });
