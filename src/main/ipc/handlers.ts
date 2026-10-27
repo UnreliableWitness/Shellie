@@ -3718,16 +3718,18 @@ export function createHandlers(s: Services): Handlers {
         });
       });
     },
-    'workItems:sprint': async (connectionId, iterationId) => {
+    'workItems:sprint': async (connectionId, iterationId, team) => {
       const c = s.connections.get(connectionId);
       return withConnection(connectionId, () =>
-        s.trackers.tracker(connectionId).iteration(c.project, iterationId),
+        s.trackers
+          .tracker(connectionId)
+          .iteration(c.project, iterationId, team),
       );
     },
     'workItems:iterations': async (connectionId) => {
       const c = s.connections.get(connectionId);
       return withConnection(connectionId, () =>
-        s.trackers.tracker(connectionId).iterations(c.project),
+        s.trackers.tracker(connectionId).allIterations(c.project),
       );
     },
     'workItems:types': async (connectionId) => {

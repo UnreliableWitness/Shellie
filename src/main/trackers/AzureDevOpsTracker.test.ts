@@ -6,8 +6,9 @@ import type { Tracker } from './Tracker';
 const table: [keyof Tracker, keyof AdoClient, unknown[]][] = [
   ['probe', 'verify', ['P']],
   ['currentIteration', 'currentIteration', ['P', 'Team']],
-  ['iteration', 'sprint', ['P', 'it-2']],
+  ['iteration', 'sprint', ['P', 'it-2', 'Team']],
   ['iterations', 'iterations', ['P']],
+  ['allIterations', 'allIterations', ['P']],
   ['items', 'workItems', ['P', [1, 2]]],
   ['searchItems', 'searchWorkItems', [{ project: 'P', text: 'x' }]],
   ['itemTypes', 'workItemTypes', ['P']],

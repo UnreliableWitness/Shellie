@@ -228,6 +228,39 @@ export class AdoClient {
     return this.teamIterations(project, team, '');
   }
 
+  /**
+   * The sprints of every team of the project I am a member of, each tagged with its team, by start date. With fewer
+   * than two teams, or when my teams cannot be read, the default team's list without team tags. A team whose sprints
+   * fail to load is left out; when all fail, the first error is thrown.
+   */
+  async allIterations(project: string): Promise<SprintIteration[]> {
+    const teams = await this.myTeams(project).catch(() => []);
+    if (teams.length < 2) return this.iterations(project);
+    const results = await Promise.allSettled(
+      teams.map((t) => this.iterations(project, t.name)),
+    );
+    if (results.every((r) => r.status === 'rejected'))
+      throw (results[0] as PromiseRejectedResult).reason;
+    const seen = new Set<string>();
+    const list = results.flatMap((r, n) => {
+      if (r.status === 'rejected') return [];
+      const team = teams[n];
+      return r.value.flatMap((i) => {
+        const key = `${team.id}|${i.id}`;
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [{ ...i, team }];
+      });
+    });
+    return list.sort(
+      (a, b) =>
+        Number(a.startDate === null) - Number(b.startDate === null) ||
+        (a.startDate ?? '').localeCompare(b.startDate ?? '') ||
+        a.name.localeCompare(b.name) ||
+        a.team.name.localeCompare(b.team.name),
+    );
+  }
+
   private async teamIterations(
     project: string,
     team: string | undefined,
@@ -335,16 +368,20 @@ export class AdoClient {
   }
 
   /**
-   * The sprint backlog of the project's default team, in backlog order: top-level entries have no source, children
+   * The sprint backlog of the team (the project's default team without one), in backlog order: top-level entries have no source, children
    * name their parent. Verified live (2026-10-15): after reordering through `iterations/{id}/workitemsorder`, this
    * API returns items by their new StackRank, not by id, so no client-side sort is needed.
    */
   async iterationWorkItems(
     project: string,
     iterationId: string,
+    team?: string,
   ): Promise<SprintRelation[]> {
+    const scope = team
+      ? `${encodeURIComponent(project)}/${encodeURIComponent(team)}`
+      : encodeURIComponent(project);
     const data = await this.request<{ workItemRelations?: SprintRelation[] }>(
-      `/${encodeURIComponent(project)}/_apis/work/teamsettings/iterations/${encodeURIComponent(iterationId)}/workitems?${API}`,
+      `/${scope}/_apis/work/teamsettings/iterations/${encodeURIComponent(iterationId)}/workitems?${API}`,
     );
     return (data.workItemRelations ?? []).filter(
       (r) => typeof r?.target?.id === 'number',
@@ -352,16 +389,26 @@ export class AdoClient {
   }
 
   /**
-   * A sprint as grid rows: the one with `iterationId`, else the current one. No iteration when the project has no
-   * current sprint or the chosen one is gone.
+   * A sprint as grid rows: the one with `iterationId` among the team's sprints (the default team's without one), else
+   * the default team's current one. No iteration when the project has no current sprint or the chosen one is gone.
    */
-  async sprint(project: string, iterationId?: string): Promise<Sprint> {
+  async sprint(
+    project: string,
+    iterationId?: string,
+    team?: string,
+  ): Promise<Sprint> {
+    const scope = iterationId ? team : undefined;
     const iteration = iterationId
-      ? ((await this.iterations(project)).find((i) => i.id === iterationId) ??
-        null)
+      ? ((await this.iterations(project, scope)).find(
+          (i) => i.id === iterationId,
+        ) ?? null)
       : await this.currentIteration(project);
     if (!iteration) return { iteration: null, rows: [] };
-    const relations = await this.iterationWorkItems(project, iteration.id);
+    const relations = await this.iterationWorkItems(
+      project,
+      iteration.id,
+      scope,
+    );
     const ids = [...new Set(relations.map((r) => r.target.id))];
     const items = await this.workItems(project, ids);
     return { iteration, rows: buildSprintTree(relations, items) };

@@ -369,14 +369,42 @@ function Backlog({
   );
 }
 
+/** The dropdown value of a sprint: two teams can share one iteration, so the team is part of it. */
+const iterationKey = (i: SprintIteration) =>
+  i.team ? `${i.team.id}|${i.id}` : i.id;
+
+/** The sprints per team name, teams alphabetically, each in the list's order; one unnamed group without teams. */
+function byTeam(
+  iterations: SprintIteration[],
+): [string | null, SprintIteration[]][] {
+  const groups = new Map<string | null, SprintIteration[]>();
+  for (const i of iterations) {
+    const team = i.team?.name ?? null;
+    groups.set(team, [...(groups.get(team) ?? []), i]);
+  }
+  return [...groups].sort(([a], [b]) => (a ?? '').localeCompare(b ?? ''));
+}
+
+const iterationOption = (i: SprintIteration) => {
+  const name = i.team ? `${i.team.name}: ${i.name}` : i.name;
+  return (
+    <option key={iterationKey(i)} value={iterationKey(i)}>
+      {i.timeframe === 'current' ? `${name} (current)` : name}
+    </option>
+  );
+};
+
 function SprintPage({ connection }: { connection: Connection }) {
   const setSprintName = useStore((s) => s.setSprintName);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
-  /** The sprint picked in the dropdown; null follows the current sprint. */
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** The sprint picked in the dropdown, with its team's name when it has one; null follows the current sprint. */
+  const [selected, setSelected] = useState<{
+    id: string;
+    team?: string;
+  } | null>(null);
   const [iterations, setIterations] = useState<SprintIteration[]>([]);
   const lastLoad = useRef(0);
   const seq = useRef(0);
@@ -418,14 +446,21 @@ function SprintPage({ connection }: { connection: Connection }) {
     setBusy(true);
     try {
       const [sprint] = await Promise.all([
-        selectedId
-          ? api().invoke('workItems:sprint', connection.id, selectedId)
-          : api().invoke('workItems:sprint', connection.id),
+        selected?.team
+          ? api().invoke(
+              'workItems:sprint',
+              connection.id,
+              selected.id,
+              selected.team,
+            )
+          : selected
+            ? api().invoke('workItems:sprint', connection.id, selected.id)
+            : api().invoke('workItems:sprint', connection.id),
         loadTime(),
       ]);
       // The picked sprint is gone: go back to the current one.
-      if (selectedId && !sprint.iteration) {
-        if (mine === seq.current) setSelectedId(null);
+      if (selected && !sprint.iteration) {
+        if (mine === seq.current) setSelected(null);
         return;
       }
       const assigned = sprint.iteration
@@ -464,7 +499,7 @@ function SprintPage({ connection }: { connection: Connection }) {
     } finally {
       if (mine === seq.current) setBusy(false);
     }
-  }, [connection.id, selectedId, setSprintName, loadTime]);
+  }, [connection.id, selected, setSprintName, loadTime]);
 
   useEffect(() => {
     let live = true;
@@ -508,6 +543,17 @@ function SprintPage({ connection }: { connection: Connection }) {
   const iteration = load.status === 'ok' ? load.iteration : null;
   const dates =
     iteration && sprintDates(iteration.startDate, iteration.finishDate);
+  const picked = selected
+    ? iterations.find(
+        (i) => i.id === selected.id && i.team?.name === selected.team,
+      )
+    : // The default team's sprint is not known here: with several teams on
+      // that iteration, none is highlighted so each stays choosable.
+      (() => {
+        const same = iterations.filter((i) => i.id === iteration?.id);
+        return same.length === 1 ? same[0] : undefined;
+      })();
+  const pickedKey = picked ? iterationKey(picked) : '';
 
   return (
     <div className="page page-sprint">
@@ -524,17 +570,32 @@ function SprintPage({ connection }: { connection: Connection }) {
               <select
                 className="field"
                 aria-label="Sprint"
-                value={selectedId ?? iteration?.id ?? ''}
-                onChange={(e) => setSelectedId(e.target.value || null)}
+                value={pickedKey}
+                onChange={(e) => {
+                  const i = iterations.find(
+                    (i) => iterationKey(i) === e.target.value,
+                  );
+                  setSelected(
+                    i
+                      ? { id: i.id, ...(i.team && { team: i.team.name }) }
+                      : null,
+                  );
+                }}
               >
-                {!selectedId && !iteration && (
-                  <option value="">No current sprint</option>
-                )}
-                {iterations.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.timeframe === 'current' ? `${i.name} (current)` : i.name}
+                {!pickedKey && (
+                  <option value="">
+                    {iteration ? iteration.name : 'No current sprint'}
                   </option>
-                ))}
+                )}
+                {byTeam(iterations).map(([team, list]) =>
+                  team ? (
+                    <optgroup key={team} label={team}>
+                      {list.map(iterationOption)}
+                    </optgroup>
+                  ) : (
+                    list.map(iterationOption)
+                  ),
+                )}
               </select>
             )}
             <label className="sprint-search">
