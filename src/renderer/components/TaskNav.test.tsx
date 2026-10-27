@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
@@ -141,6 +141,7 @@ beforeEach(() => {
   useStore.setState({
     attention: {},
     navCollapsed: false,
+    navWidth: 240,
     repos,
     tasks,
     connections: [],
@@ -568,5 +569,54 @@ describe('TaskNav extra repos', () => {
     render(<TaskNav />);
     expect(screen.getByText('+1 repo')).toBeInTheDocument();
     expect(screen.getByText('+2 repos')).toBeInTheDocument();
+  });
+});
+
+describe('TaskNav width (#160)', () => {
+  beforeEach(() => installFakeApi({ 'usage:task': emptyUsage }));
+
+  const nav = () => screen.getByRole('navigation', { name: 'Tasks' });
+  const handle = () =>
+    screen.getByRole('separator', { name: 'Resize task list' });
+
+  it('grows and shrinks with the arrow keys and remembers it', async () => {
+    render(<TaskNav />);
+    expect(nav()).toHaveStyle({ width: '240px' });
+    expect(handle()).toHaveAttribute('aria-valuenow', '240');
+    handle().focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(nav()).toHaveStyle({ width: '256px' });
+    expect(localStorage.getItem('shellie.ui.navWidth')).toBe('256');
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(nav()).toHaveStyle({ width: '224px' });
+    expect(useStore.getState().navWidth).toBe(224);
+  });
+
+  it('follows a drag and stores the width on release', () => {
+    render(<TaskNav />);
+    fireEvent.pointerDown(handle(), { clientX: 240, pointerId: 1 });
+    fireEvent.pointerMove(handle(), { clientX: 300, pointerId: 1 });
+    expect(nav()).toHaveStyle({ width: '300px' });
+    expect(localStorage.getItem('shellie.ui.navWidth')).toBeNull();
+    fireEvent.pointerMove(handle(), { clientX: 2000, pointerId: 1 });
+    fireEvent.pointerUp(handle(), { clientX: 2000, pointerId: 1 });
+    expect(nav()).toHaveStyle({ width: '480px' });
+    expect(localStorage.getItem('shellie.ui.navWidth')).toBe('480');
+  });
+
+  it('resets to 240 on double-click', () => {
+    useStore.setState({ navWidth: 400 });
+    render(<TaskNav />);
+    expect(nav()).toHaveStyle({ width: '400px' });
+    fireEvent.doubleClick(handle());
+    expect(nav()).toHaveStyle({ width: '240px' });
+    expect(localStorage.getItem('shellie.ui.navWidth')).toBe('240');
+  });
+
+  it('has no handle and keeps the rail width when collapsed', () => {
+    useStore.setState({ navCollapsed: true, navWidth: 400 });
+    render(<TaskNav />);
+    expect(screen.queryByRole('separator')).toBeNull();
+    expect(nav().style.width).toBe('');
   });
 });

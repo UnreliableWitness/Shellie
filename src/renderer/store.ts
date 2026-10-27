@@ -14,7 +14,13 @@ import { api, onSettingsSaved } from './api';
 import { firstScreen } from './onboardingState';
 import type { RepoFold } from './review/repoGroups';
 import { track, trackScreen } from './telemetry';
-import { readPrefs, writePref } from './uiPrefs';
+import {
+  clampNavWidth,
+  readNavWidth,
+  readPrefs,
+  writeNavWidth,
+  writePref,
+} from './uiPrefs';
 
 export const USAGE_TAB = 'usage';
 export const DOCS_TAB = 'docs';
@@ -106,6 +112,8 @@ type Store = {
   viewsByTask: Record<string, HtmlView[]>;
   focus: boolean;
   navCollapsed: boolean;
+  /** The left nav's width in px when not collapsed (#160). */
+  navWidth: number;
   /** The task whose Discard confirm shows on its page (#124), else null. */
   discardTaskId: string | null;
   /** Opens the task's page with its Discard confirm. */
@@ -144,6 +152,7 @@ type Store = {
   ): void;
   toggleFocus(): void;
   setNavCollapsed(v: boolean): void;
+  setNavWidth(px: number): void;
 };
 
 let noticeSeq = 0;
@@ -201,6 +210,7 @@ export const useStore = create<Store>((set, get) => ({
   },
   cancelDiscard: () => set({ discardTaskId: null }),
   ...readPrefs(),
+  navWidth: readNavWidth(),
   go: (screen) => {
     const current = get().screen;
     if (screen.kind !== current.kind) trackScreen(screen.kind);
@@ -336,6 +346,11 @@ export const useStore = create<Store>((set, get) => ({
     track('nav.toggled', { collapsed: navCollapsed });
     writePref('navCollapsed', navCollapsed);
     set({ navCollapsed });
+  },
+  setNavWidth: (px) => {
+    const navWidth = clampNavWidth(px);
+    writeNavWidth(navWidth);
+    set({ navWidth });
   },
   load: async () => {
     const [repos, tasks, connections, settings] = await Promise.all([

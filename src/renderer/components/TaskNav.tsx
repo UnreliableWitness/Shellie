@@ -28,6 +28,7 @@ import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { activeConnection, useStore, useTaskConnectionId } from '../store';
+import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { AttentionDot } from './AttentionDot';
 import { WorkItemTypeIcon } from './ui';
 
@@ -421,6 +422,60 @@ function ProjectTile({ rail }: { rail: boolean }) {
   );
 }
 
+const NAV_STEP = 16;
+
+/** The drag handle on the nav's right edge (#160): drag, arrow keys, double-click resets. */
+function NavResize({
+  width,
+  onDrag,
+}: {
+  width: number;
+  onDrag(px: number | null): void;
+}) {
+  const setNavWidth = useStore((s) => s.setNavWidth);
+  const start = useRef<{ x: number; width: number } | null>(null);
+  const dragged = (clientX: number) =>
+    clampNavWidth(start.current!.width + clientX - start.current!.x);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize task list"
+      aria-valuenow={width}
+      aria-valuemin={NAV_WIDTH.min}
+      aria-valuemax={NAV_WIDTH.max}
+      tabIndex={0}
+      className="leftnav-resize"
+      title="Drag to resize, double-click to reset"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        start.current = { x: e.clientX, width };
+      }}
+      onPointerMove={(e) => {
+        if (start.current) onDrag(dragged(e.clientX));
+      }}
+      onPointerUp={(e) => {
+        if (!start.current) return;
+        setNavWidth(dragged(e.clientX));
+        start.current = null;
+        onDrag(null);
+      }}
+      onPointerCancel={() => {
+        start.current = null;
+        onDrag(null);
+      }}
+      onDoubleClick={() => setNavWidth(NAV_WIDTH.default)}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        setNavWidth(width + (e.key === 'ArrowRight' ? NAV_STEP : -NAV_STEP));
+      }}
+    />
+  );
+}
+
 export function TaskNav() {
   const tasks = useStore((s) => s.tasks);
   const repos = useStore((s) => s.repos);
@@ -429,6 +484,10 @@ export function TaskNav() {
   const connection = useStore(activeConnection);
   const navCollapsed = useStore((s) => s.navCollapsed);
   const setNavCollapsed = useStore((s) => s.setNavCollapsed);
+  const navWidth = useStore((s) => s.navWidth);
+  // The width while a drag is under way; stored only on release.
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const width = dragWidth ?? navWidth;
   const [showDone, setShowDone] = useState(false);
   const { open, done } = groupTasks(tasks, repos);
   const rail = navCollapsed;
@@ -444,7 +503,11 @@ export function TaskNav() {
           text: `${connection.name}: ${statusText(connection, true).text}`,
         };
   return (
-    <nav aria-label="Tasks" className={rail ? 'leftnav is-rail' : 'leftnav'}>
+    <nav
+      aria-label="Tasks"
+      className={rail ? 'leftnav is-rail' : 'leftnav'}
+      style={rail ? undefined : { width }}
+    >
       <ProjectTile rail={rail} />
       <NavItem
         icon={<Home20Regular aria-hidden="true" />}
@@ -525,6 +588,7 @@ export function TaskNav() {
           {rail ? <PanelLeftExpand20Regular /> : <PanelLeftContract20Regular />}
         </button>
       </div>
+      {!rail && <NavResize width={width} onDrag={setDragWidth} />}
     </nav>
   );
 }

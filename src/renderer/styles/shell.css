@@ -143,9 +143,27 @@
   flex-direction: column;
   background: var(--bg-chrome);
   border-right: 1px solid var(--line);
+  position: relative;
 }
 .leftnav.is-rail {
   width: 48px;
+}
+/* The drag handle over the nav's right border: drag to resize the nav. */
+.leftnav-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+.leftnav-resize:hover,
+.leftnav-resize:focus-visible {
+  background: var(--accent);
+  outline: none;
 }
 .projecttile-wrap {
   position: relative;
