@@ -13,7 +13,7 @@ import {
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { canRunAgent, recordPause, recordRun } from './activity.mjs';
-import { combined, loadActivity, saveActivity } from './activityStore.mjs';
+import { budgetFor, loadActivity, saveActivity } from './activityStore.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub, readTokenFile } from './github.mjs';
 import { bundleGit, runAgentJob, workDir } from './implement.mjs';
@@ -366,7 +366,7 @@ export async function runDecide({
         maxPerDay: config.maxAgentRunsPerDay,
       });
       const can = canRunAgent(
-        combined(store, store.own),
+        budgetFor(store, store.own),
         now,
         config.maxAgentRunsPerDay,
       );

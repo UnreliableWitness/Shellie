@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { canRunAgent, recordPause, recordRun } from './activity.mjs';
-import { combined, loadActivity, saveActivity } from './activityStore.mjs';
+import { budgetFor, loadActivity, saveActivity } from './activityStore.mjs';
 import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
 import { createGitHub } from './github.mjs';
@@ -91,7 +91,11 @@ export async function runPick({ gh, config, trusted, mode, now, summary }) {
     maxPerDay: config.maxAgentRunsPerDay,
   });
   let own = store.own;
-  const can = canRunAgent(combined(store, own), now, config.maxAgentRunsPerDay);
+  const can = canRunAgent(
+    budgetFor(store, own),
+    now,
+    config.maxAgentRunsPerDay,
+  );
   if (!can.ok) {
     summary(`No agent run: ${can.reason}.`);
     return null;

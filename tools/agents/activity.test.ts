@@ -72,3 +72,35 @@ describe('mergeActivity', () => {
     expect(m.pausedUntil).toBe('2026-10-26T12:00:00.000Z');
   });
 });
+
+describe('budgets', () => {
+  it('triage counts only its own runs; the others share theirs without triage', async () => {
+    const { budgetFor } = await import('./activityStore.mjs');
+    const triage = { v: 1, runsByDay: { '2026-10-26': 4 }, shadowSeen: {} };
+    const implement = {
+      v: 1,
+      poller: 'implement',
+      runsByDay: { '2026-10-26': 25 },
+      shadowSeen: {},
+    };
+    const review = {
+      v: 1,
+      poller: 'review',
+      runsByDay: { '2026-10-26': 3 },
+      shadowSeen: {},
+      pausedUntil: '2026-10-26T13:00:00.000Z',
+    };
+    expect(
+      budgetFor({ poller: 'triage', others: [implement, review] }, triage),
+    ).toEqual({
+      runsByDay: { '2026-10-26': 4 },
+      pausedUntil: '2026-10-26T13:00:00.000Z',
+    });
+    expect(
+      budgetFor({ poller: 'implement', others: [triage, review] }, implement),
+    ).toEqual({
+      runsByDay: { '2026-10-26': 28 },
+      pausedUntil: '2026-10-26T13:00:00.000Z',
+    });
+  });
+});
