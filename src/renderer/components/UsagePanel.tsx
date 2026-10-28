@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ModelTotals, UsageTool } from '../../shared/usage';
 import {
   hourTicks,
@@ -15,7 +16,8 @@ import { useTaskUsage } from '../hooks/useTaskUsage';
 import { usageModelColor } from '../modelColor';
 import { useStore } from '../store';
 import { TimePanel } from './TimePanel';
-import { RingGauge } from './ui';
+import { Pivots, RingGauge } from './ui';
+import { UsageLineage } from './UsageLineage';
 
 const DOT = String.fromCharCode(0xb7);
 const USAGE_TOOLS: UsageTool[] = ['claude-code', 'copilot-cli', 'opencode'];
@@ -165,6 +167,7 @@ export function UsagePanel({
   const task = useStore((s) => s.tasks.find((t) => t.id === taskId));
   const notify = useStore((s) => s.notify);
   const usage = useTaskUsage(taskId);
+  const [view, setView] = useState<'sessions' | 'lineage'>('sessions');
   // LIVE, the pulsing bin and the 6 h window must move on even when no new usage arrives.
   useClock(30_000);
 
@@ -268,13 +271,31 @@ export function UsagePanel({
           <div className="check check-warn">{`${usage.unpricedRequests} ${usage.unpricedRequests === 1 ? 'request uses a model' : 'requests use models'} that ${usage.unpricedRequests === 1 ? 'is' : 'are'} not in Shellie's official price list yet, so ${usage.unpricedRequests === 1 ? 'it is' : 'they are'} not in the totals. A Shellie update will add ${usage.unpricedRequests === 1 ? 'it' : 'them'}.`}</div>
         )}
         <div className="card up-box up-sessions">
-          <h3>{`Sessions ${DOT} ${usage?.sessions.length ?? 0}`}</h3>
+          <div className="up-head">
+            <h3>{`Sessions ${DOT} ${usage?.sessions.length ?? 0}`}</h3>
+            <Pivots
+              label="Usage view"
+              items={[
+                { key: 'sessions', label: 'Sessions' },
+                { key: 'lineage', label: 'Lineage' },
+              ]}
+              selected={view}
+              onSelect={setView}
+            />
+          </div>
           {usage && usage.sessions.length === 0 ? (
             <div className="empty">
               No AI usage captured for this task yet. Claude Code, Copilot CLI
               and OpenCode started in this task&apos;s terminals report here
               automatically.
             </div>
+          ) : usage && view === 'lineage' ? (
+            <UsageLineage
+              nodes={usage.lineage ?? []}
+              rootName={(n) =>
+                `${USAGE_TOOL_LABEL[n.tool]} ${DOT} ${when(n.startedAt)}`
+              }
+            />
           ) : (
             usage && (
               <table>

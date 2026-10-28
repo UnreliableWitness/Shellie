@@ -40,8 +40,18 @@ export type LedgerServiceDeps = {
 };
 
 type Cursors = { claude: Record<string, FileCursor>; openCode: number };
-/** What attribution and billable need that the record leaves out (never sent): session, folder, task id. */
-type Input = { id: string; s: string; c: string | null; t?: string };
+/**
+ * What attribution and billable need that the record leaves out (never sent): session, folder, task id; and
+ * for the Usage tab's lineage, an OpenCode child session's parent and agent.
+ */
+type Input = {
+  id: string;
+  s: string;
+  c: string | null;
+  t?: string;
+  p?: string;
+  a?: string;
+};
 
 const label = modelLabeler(OFFICIAL_RATES);
 /** OpenCode rows per synchronous database read, and records handled between yields to the event loop. */
@@ -255,6 +265,8 @@ export class LedgerService {
           s: r.sessionId,
           c: r.cwd,
           ...(r.taskId ? { t: r.taskId } : {}),
+          ...(r.parentSessionId ? { p: r.parentSessionId } : {}),
+          ...(r.agentLabel ? { a: r.agentLabel } : {}),
         };
         this.inputs.set(r.id, input);
         fresh.push(input);
@@ -331,6 +343,8 @@ export class LedgerService {
         cacheReadTokens: r.cacheReadTokens,
         cacheWriteTokens: r.cacheWrite5mTokens + r.cacheWrite1hTokens,
         fast: r.fast,
+        ...(input.p ? { parentSessionId: input.p } : {}),
+        ...(input.a ? { agent: input.a } : {}),
       });
     }
     this.report();

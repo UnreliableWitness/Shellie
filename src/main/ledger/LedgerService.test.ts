@@ -292,6 +292,27 @@ describe('LedgerService', () => {
     });
   });
 
+  it("sends an OpenCode child session's parent and agent to the Usage tab", async () => {
+    const oc = rec({
+      id: 'oc:o2',
+      tool: 'opencode',
+      sessionId: 'O2',
+      cwd: '/wt/t1',
+      parentSessionId: 'O1',
+      agentLabel: 'explore',
+    });
+    const s = setup({ openCode: [[oc]] });
+    s.state.tasks = [task1];
+    await s.svc.pass();
+    expect(s.toUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'O2',
+        parentSessionId: 'O1',
+        agent: 'explore',
+      }),
+    );
+  });
+
   it('includes Copilot CLI and PR summary records', async () => {
     const s = setup({
       usage: [

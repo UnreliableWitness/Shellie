@@ -60,6 +60,13 @@ const isApiRequest = (record: Obj, attrs: Record<string, Scalar>): boolean => {
   );
 };
 
+/** The subagent behind a `query_source` such as `agent:builtin:Explore` or `agent:custom`; undefined for the main thread and everything else. */
+export function subagentOf(querySource: string): string | undefined {
+  if (!querySource.startsWith('agent:')) return undefined;
+  const name = querySource.slice('agent:'.length).replace(/^builtin:/, '');
+  return !name || name === 'custom' || name === 'default' ? 'Subagent' : name;
+}
+
 /** Picks `claude_code.api_request` events tagged with `shellie.task.id` out of an OTLP/HTTP JSON logs body. */
 export function parseClaudeLogs(body: unknown): {
   events: UsageEvent[];
@@ -95,6 +102,8 @@ export function parseClaudeLogs(body: unknown): {
         const at = Number.isNaN(stamp)
           ? nanosToIso(record.timeUnixNano ?? record.observedTimeUnixNano)
           : safeIso(stamp);
+        const agent = subagentOf(str(attrs.query_source));
+        const effort = str(attrs.effort);
         events.push({
           id,
           taskId,
@@ -110,6 +119,8 @@ export function parseClaudeLogs(body: unknown): {
           ...(str(attrs['shellie.source']) === 'pr-summary' && {
             source: 'pr-summary' as const,
           }),
+          ...(agent && { agent }),
+          ...(effort && { effort }),
         });
       }
     }

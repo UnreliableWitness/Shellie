@@ -12,6 +12,7 @@ import {
   type UsageRecord,
   type UsageTool,
 } from '../../shared/usage';
+import { buildUsageTree } from '../../shared/usageViews';
 import { modelLabeler, priceEvent, round6 } from '../pricing/RateTable';
 import { JsonFileStore } from './JsonFileStore';
 
@@ -252,6 +253,11 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
       usdToEur: OFFICIAL_USD_TO_EUR,
       recent,
       byModel,
+      lineage: buildUsageTree(this.records(taskId), {
+        billable: (sessionId) => sessions.get(sessionId)!.billable,
+        label,
+        usdToEur: factor,
+      }),
     };
   }
 
