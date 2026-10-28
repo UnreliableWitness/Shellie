@@ -164,6 +164,22 @@ describe('planActions', () => {
   });
 });
 
+describe('needs-owner notifies the owner', () => {
+  it('posts the question as a new comment that mentions the owner, not only in the edited status', () => {
+    const a = planActions(
+      {
+        decision: 'needs-owner',
+        reason: 'big feature',
+        question: 'Where should the tree live?',
+      },
+      { ...ctx, owner: 'unreliablewitness' },
+    );
+    const c = a.find((x) => x.type === 'comment');
+    expect(c?.body).toContain('@unreliablewitness');
+    expect(c?.body).toContain('Where should the tree live?');
+  });
+});
+
 describe('agent text in comments', () => {
   it('cannot carry a status block', () => {
     const forged =

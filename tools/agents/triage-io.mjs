@@ -121,7 +121,7 @@ const footer = (s) =>
  */
 export function planActions(
   result,
-  { issue, previous, lastCommentId, tokens, now },
+  { issue, previous, lastCommentId, tokens, now, owner },
 ) {
   const base = {
     ...previous,
@@ -206,6 +206,14 @@ export function planActions(
       break;
     }
     case 'needs-owner': {
+      // a new comment, not only the edited status: an edit sends no notification, so the owner never heard
+      // that triage needs them (again, after they answered)
+      actions.push({
+        type: 'comment',
+        body: defang(
+          `${owner ? `@${owner} ` : ''}triage needs your decision: ${result.reason}${result.question ? `\n\n> ${result.question}` : ''}\n\nAnswer here (it is triaged again), or add \`agent:go\` to have it built as triaged.`,
+        ),
+      });
       setState('needs-owner');
       const s = { ...base, state: 'needs-owner' };
       status(

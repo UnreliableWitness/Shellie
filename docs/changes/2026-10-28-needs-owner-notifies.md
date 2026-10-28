@@ -1,0 +1,3 @@
+# "Needs the owner" notifies the owner
+
+On issue #170 triage asked the owner three questions, the owner answered one, and triage (round 2, right away) still needed the owner, but it only edited its status comment. GitHub sends no notification for an edit, so to the owner nothing seemed to happen for eleven hours (2026-10-28, `UnreliableWitness/agents-notify-owner`). Now a `needs-owner` triage also posts its reason and question as a new comment that @-mentions the owner (`planActions` in `tools/agents/triage-io.mjs`, the owner from `.github/agents/trusted.yml`). Known gap: the implementer handing an issue to the owner (`runPublish`'s `fail` with `toOwner`) still only edits the status comment.
