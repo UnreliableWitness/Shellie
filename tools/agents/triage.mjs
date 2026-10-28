@@ -273,6 +273,7 @@ export async function runTriage({
       }
       const lastCommentId = Math.max(0, ...comments.map((c) => c.id));
       const actions = planActions(v.value, {
+        owner: trusted.owner,
         issue,
         previous: decision.status ?? null,
         lastCommentId,
@@ -462,6 +463,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       console.log(
         v.ok
           ? planActions(v.value, {
+              owner: trusted.owner,
               issue,
               previous: null,
               lastCommentId: 0,
