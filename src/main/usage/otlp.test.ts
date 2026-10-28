@@ -96,6 +96,24 @@ describe('parseClaudeLogs', () => {
       },
     ]);
   });
+  it('reads the subagent from query_source and the effort', () => {
+    const one = (qs: string) =>
+      parseClaudeLogs(
+        body([
+          ...full,
+          kv('query_source', { stringValue: qs }),
+          kv('effort', { stringValue: 'high' }),
+        ]),
+      ).events[0];
+    expect(one('agent:builtin:Explore')).toMatchObject({
+      agent: 'Explore',
+      effort: 'high',
+    });
+    expect(one('agent:custom').agent).toBe('Subagent');
+    expect(one('repl_main_thread').agent).toBeUndefined();
+    expect(one('main').agent).toBeUndefined();
+    expect(parseClaudeLogs(body(full)).events[0].effort).toBeUndefined();
+  });
   it('lets a record attribute carry the task id when the resource does not', () => {
     const { events } = parseClaudeLogs(
       body([...full, kv('shellie.task.id', { stringValue: 'task-r' })], []),

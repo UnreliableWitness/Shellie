@@ -22,6 +22,12 @@ export type UsageEvent = {
   fast: boolean;
   /** Set on Shellie's own `claude -p` run for the PR description. */
   source?: 'pr-summary';
+  /** The subagent that made the request (Claude Code's `query_source`, OpenCode's agent); absent on the main thread. */
+  agent?: string;
+  /** OpenCode: the session that spawned this (subagent) session. */
+  parentSessionId?: string;
+  /** The reasoning effort, when the tool reports one (Claude Code). */
+  effort?: string;
 };
 
 export type RateSnapshot = {
@@ -157,6 +163,29 @@ export type TaskUsage = {
   recent: RecentPoint[];
   /** Billable sessions per model, most expensive first. */
   byModel: ModelTotals[];
+  /** Billable sessions as trees of their subagents, oldest first; absent from older main processes. */
+  lineage?: UsageNode[];
+};
+
+/** One node of the Usage tab's lineage: a session (root) or a subagent. Totals include the children. */
+export type UsageNode = {
+  id: string;
+  /** The subagent's name; empty on a session root (the main thread). */
+  label: string;
+  tool: UsageTool;
+  /** The model of most of the node's own requests, and its readable name. */
+  model: string;
+  modelLabel: string;
+  /** The effort of the node's own requests, when the tool reports one. */
+  effort: string | null;
+  parentId: string | null;
+  startedAt: string;
+  costUsd: number;
+  costEur: number;
+  tokens: number;
+  requests: number;
+  unpricedRequests: number;
+  children: UsageNode[];
 };
 
 export type ReceiverStatus = {

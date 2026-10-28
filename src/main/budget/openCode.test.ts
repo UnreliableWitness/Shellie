@@ -55,6 +55,17 @@ describe('parseOpenCodeMessage', () => {
       cacheWrite1hTokens: 0,
     });
   });
+  it("gives a child session's message its parent and agent", () => {
+    const data = JSON.stringify({ ...JSON.parse(msg()), agent: 'explore' });
+    expect(parseOpenCodeMessage('m1', 'ses2', data, 'ses1')).toMatchObject({
+      sessionId: 'ses2',
+      parentSessionId: 'ses1',
+      agentLabel: 'explore',
+    });
+    const top = parseOpenCodeMessage('m1', 'ses1', data, null);
+    expect(top).not.toHaveProperty('parentSessionId');
+    expect(top).not.toHaveProperty('agentLabel');
+  });
   it('skips user messages, unfinished messages and bad JSON', () => {
     expect(parseOpenCodeMessage('m', 's', msg({ role: 'user' }))).toBeNull();
     expect(parseOpenCodeMessage('m', 's', msg({ completed: null }))).toBeNull();
@@ -83,11 +94,11 @@ describe('OpenCodeReader', () => {
     db.exec(
       `CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)`,
     );
-    const put = (id: string, updated: number, data: string) =>
+    const put = (id: string, updated: number, data: string, session = 'ses1') =>
       db
         .prepare('INSERT OR REPLACE INTO message VALUES (?, ?, ?, ?, ?)')
-        .run(id, 'ses1', 1, updated, data);
-    return { file, put, close: () => db.close() };
+        .run(id, session, 1, updated, data);
+    return { file, put, db, close: () => db.close() };
   };
 
   it('reads new messages after the cursor, all providers', () => {
@@ -138,6 +149,25 @@ describe('OpenCodeReader', () => {
     }
     expect(seen).toEqual(['oc:a', 'oc:b', 'oc:c', 'oc:d', 'oc:e']);
     expect(cursor).toBe(300);
+    close();
+  });
+
+  it("reads a child session's parent from the session table", () => {
+    const { file, put, close, db } = makeDb();
+    db.exec(
+      `CREATE TABLE session (id text PRIMARY KEY, parent_id text, title text NOT NULL)`,
+    );
+    db.prepare('INSERT INTO session VALUES (?, ?, ?)').run('ses1', null, 'a');
+    db.prepare('INSERT INTO session VALUES (?, ?, ?)').run('ses2', 'ses1', 'b');
+    put('m1', 100, msg());
+    put('m2', 200, msg(), 'ses2');
+    put('m3', 300, msg(), 'ses3');
+    const r = new OpenCodeReader(file).read(0);
+    expect(r.records.map((x) => [x.sessionId, x.parentSessionId])).toEqual([
+      ['ses1', undefined],
+      ['ses2', 'ses1'],
+      ['ses3', undefined],
+    ]);
     close();
   });
 

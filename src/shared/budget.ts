@@ -56,6 +56,10 @@ export type BudgetRecord = BudgetTokens & {
   fast: boolean;
   /** The Shellie task the request belongs to, when known (Copilot CLI, PR summaries). */
   taskId?: string;
+  /** OpenCode: the session that spawned this one, when it is a subagent's session. */
+  parentSessionId?: string;
+  /** OpenCode: the subagent's agent name, on a child session's requests. */
+  agentLabel?: string;
 };
 
 /** One rollup row: a day x tool x model x provider x vendor x inShellie x fast. */

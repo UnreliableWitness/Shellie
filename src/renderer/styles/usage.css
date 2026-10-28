@@ -211,6 +211,67 @@
   padding: 16px 0;
   text-align: left;
 }
+/* Lineage: sessions with their subagents, one row per agent */
+.up-sessions .up-head {
+  align-items: center;
+}
+.ul-tree,
+.ul-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ul-row {
+  display: grid;
+  /* Fixed tracks, so the columns line up across rows at every depth. */
+  grid-template-columns: 16px 8px minmax(0, 1fr) 11ch 8ch 80px 4ch 15ch;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+}
+.ul-row:hover {
+  background: var(--bg-hover);
+}
+.ul-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ul-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ul-name.is-root {
+  font-weight: 600;
+}
+.ul-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ul-effort {
+  justify-self: start;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-selected);
+  color: var(--muted);
+}
+.ul-eur {
+  font-weight: 600;
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
 .ring {
   flex: none;
   display: block;

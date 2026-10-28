@@ -257,6 +257,38 @@ describe('summarize byModel', () => {
   });
 });
 
+describe('summarize lineage', () => {
+  it('nests subagents under their session and adds up to the billable total', async () => {
+    const s = new UsageStore(dir(), () => OFFICIAL_RATES);
+    await s.load();
+    await s.add(ev({ id: 'main', effort: 'high' }));
+    await s.add(ev({ id: 'x', agent: 'Explore', model: 'claude-haiku-5-5' }));
+    await s.add(ev({ id: 'p', agent: 'Plan', model: 'claude-sonnet-5-5' }));
+    await s.add(ev({ id: 'off', sessionId: 's2' }));
+    await s.setBillable('t1', 's2', false);
+    const u = s.summarize('t1');
+    expect(u.lineage).toHaveLength(1);
+    const [root] = u.lineage!;
+    expect(root).toMatchObject({
+      id: 's1',
+      modelLabel: 'Claude Opus 5.5',
+      effort: 'high',
+      requests: 3,
+    });
+    expect(root.children.map((c) => [c.label, c.modelLabel])).toEqual([
+      ['Explore', 'Claude Haiku 5.5'],
+      ['Plan', 'Claude Sonnet 5.5'],
+    ]);
+    const own = s
+      .records('t1')
+      .filter((r) => r.sessionId === 's1')
+      .reduce((n, r) => n + r.costUsd!, 0);
+    expect(root.costUsd).toBeCloseTo(own, 6);
+    expect(root.costEur).toBeCloseTo(u.billable.costEur, 6);
+    expect(root.tokens).toBe(u.billable.tokens);
+  });
+});
+
 describe('OpenCode usage', () => {
   it('accepts OpenCode requests and totals them as their own tool', async () => {
     const s = new UsageStore(dir(), () => OFFICIAL_RATES);

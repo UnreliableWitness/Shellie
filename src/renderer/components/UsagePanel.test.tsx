@@ -222,6 +222,67 @@ describe('UsagePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'CSV' }));
     await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
   });
+  it('shows the lineage: subagents nested under their session, folding', async () => {
+    const node = {
+      label: '',
+      tool: 'claude-code' as const,
+      model: 'claude-opus-5-5',
+      modelLabel: 'Claude Opus 5.5',
+      effort: 'high',
+      parentId: null,
+      startedAt: '2026-10-14T09:12:00.000Z',
+      costUsd: 10,
+      costEur: 9.2,
+      tokens: 3_608_000,
+      requests: 3,
+      unpricedRequests: 0,
+    };
+    installFakeApi({
+      'usage:task': () => ({
+        ...usage,
+        lineage: [
+          {
+            ...node,
+            id: 's1',
+            children: [
+              {
+                ...node,
+                id: 's1:Explore',
+                label: 'Explore',
+                model: 'claude-haiku-5-5',
+                modelLabel: 'Claude Haiku 5.5',
+                effort: null,
+                parentId: 's1',
+                costUsd: 2,
+                costEur: 1.84,
+                tokens: 1000,
+                requests: 1,
+                children: [],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    render(<UsagePanel taskId="t1" />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Lineage' }));
+    const tree = screen.getByRole('tree', { name: 'Cost per agent' });
+    const [root] = within(tree).getAllByRole('treeitem');
+    expect(root).toHaveAttribute('aria-level', '1');
+    expect(within(root).getByText('Opus 5.5')).toBeTruthy();
+    expect(within(root).getByText('high')).toBeTruthy();
+    const child = within(root).getByRole('treeitem');
+    expect(child).toHaveAttribute('aria-level', '2');
+    expect(within(child).getByText('Explore')).toBeTruthy();
+    expect(within(child).getByText('Haiku 5.5')).toBeTruthy();
+    expect(within(child).getByText(`${EURO}1.84`)).toBeTruthy();
+    expect(within(child).getByText('20%')).toBeTruthy();
+    await userEvent.click(
+      within(root).getByRole('button', { name: 'Hide subagents' }),
+    );
+    expect(within(root).queryByText('Explore')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
   it('explains an empty task', async () => {
     useStore.setState({
       repos: [

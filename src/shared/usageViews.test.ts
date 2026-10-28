@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { RecentPoint, SessionSummary, TaskUsage } from './usage';
+import type {
+  RecentPoint,
+  SessionSummary,
+  TaskUsage,
+  UsageRecord,
+} from './usage';
 import {
+  buildUsageTree,
   hourTicks,
   isLive,
   modelLegendName,
@@ -141,5 +147,118 @@ describe('isLive', () => {
   it('is live within 5 minutes of the last event', () => {
     expect(isLive(session({ lastAt: at(4) }), NOW)).toBe(true);
     expect(isLive(session({ lastAt: at(6) }), NOW)).toBe(false);
+  });
+});
+
+describe('buildUsageTree', () => {
+  const rec = (o: Partial<UsageRecord>): UsageRecord => ({
+    id: 'r',
+    taskId: 't1',
+    tool: 'claude-code',
+    sessionId: 's1',
+    model: 'claude-opus-5-5',
+    at: at(30),
+    inputTokens: 10,
+    outputTokens: 5,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    fast: false,
+    costUsd: 1,
+    rateId: 'x',
+    rate: null,
+    ...o,
+  });
+  const opts = {
+    billable: (sessionId: string) => sessionId !== 'off',
+    label: (model: string) => `L ${model}`,
+    usdToEur: 0.5,
+  };
+
+  it('puts subagents under their session and rolls their cost up', () => {
+    const tree = buildUsageTree(
+      [
+        rec({ id: 'm', effort: 'high' }),
+        rec({
+          id: 'a',
+          agent: 'Explore',
+          model: 'claude-haiku-5-5',
+          costUsd: 2,
+          at: at(20),
+        }),
+        rec({
+          id: 'b',
+          agent: 'Plan',
+          model: 'claude-sonnet-5-5',
+          costUsd: 4,
+          at: at(10),
+        }),
+      ],
+      opts,
+    );
+    expect(tree).toHaveLength(1);
+    const [root] = tree;
+    expect(root).toMatchObject({
+      id: 's1',
+      label: '',
+      model: 'claude-opus-5-5',
+      modelLabel: 'L claude-opus-5-5',
+      effort: 'high',
+      parentId: null,
+      costUsd: 7,
+      costEur: 3.5,
+      tokens: 45,
+      requests: 3,
+    });
+    expect(root.children.map((c) => [c.label, c.model, c.costEur])).toEqual([
+      ['Explore', 'claude-haiku-5-5', 1],
+      ['Plan', 'claude-sonnet-5-5', 2],
+    ]);
+    expect(root.children[0]).toMatchObject({ parentId: 's1', effort: null });
+  });
+
+  it('nests OpenCode child sessions under their parent, keeps Copilot flat and skips sessions that are not billable', () => {
+    const tree = buildUsageTree(
+      [
+        rec({ id: 'p', tool: 'opencode', sessionId: 'oc1' }),
+        rec({
+          id: 'c',
+          tool: 'opencode',
+          sessionId: 'oc2',
+          parentSessionId: 'oc1',
+          agent: 'general',
+          costUsd: null,
+          at: at(20),
+        }),
+        rec({ id: 'g', tool: 'copilot-cli', sessionId: 'cp', at: at(10) }),
+        rec({ id: 'x', sessionId: 'off', at: at(5) }),
+      ],
+      opts,
+    );
+    expect(tree.map((n) => n.id)).toEqual(['oc1', 'cp']);
+    expect(tree[0].children.map((c) => [c.id, c.label, c.parentId])).toEqual([
+      ['oc2', 'general', 'oc1'],
+    ]);
+    expect(tree[0]).toMatchObject({
+      costUsd: 1,
+      requests: 2,
+      unpricedRequests: 1,
+    });
+    expect(tree[1].children).toEqual([]);
+  });
+
+  it('keeps a child session whose parent is not billable as a root', () => {
+    const tree = buildUsageTree(
+      [
+        rec({ id: 'p', tool: 'opencode', sessionId: 'off' }),
+        rec({
+          id: 'c',
+          tool: 'opencode',
+          sessionId: 'oc2',
+          parentSessionId: 'off',
+        }),
+      ],
+      opts,
+    );
+    expect(tree.map((n) => [n.id, n.parentId])).toEqual([['oc2', null]]);
   });
 });
