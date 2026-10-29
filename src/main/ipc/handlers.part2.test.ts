@@ -472,6 +472,8 @@ describe('handlers: reopen a finished task', () => {
     writeFileSync(path.join(wt, 'stray.txt'), 'left over');
     await hx.store.update((st) => {
       st.tasks[0].summary = null;
+      st.tasks[0].baseSha = 'f'.repeat(40);
+      st.tasks[0].baseRef = 'gone/base';
     });
     await expect(hx.h['tasks:reopen'](hx.t.id)).rejects.toThrow(
       /cannot be restored/,
@@ -884,10 +886,48 @@ describe('handlers: reopen a finished task', () => {
     await hx.terminals.killAllForTask(hx.t.id);
   });
 
-  it('refuses when the branch is gone for good, and the task stays done', async () => {
+  it('makes a branch that is gone for good again from its base (#178)', async () => {
     const hx = await finished({ removeWorktree: true, deleteBranch: true });
     await hx.store.update((st) => {
       st.tasks[0].summary!.commits = [{ sha: 'f'.repeat(40), subject: 'x' }];
+    });
+    const base = git(
+      hx.repo,
+      'rev-parse',
+      hx.store.state.tasks[0].baseSha ?? hx.store.state.tasks[0].baseRef,
+    ).trim();
+    const result = await reopenSetup(hx);
+    expect(result.ok).toBe(true);
+    const task = hx.store.state.tasks[0];
+    expect(task.status).toBe('ready');
+    expect(git(task.worktreePath, 'branch', '--show-current').trim()).toBe(
+      task.branch,
+    );
+    expect(git(task.worktreePath, 'rev-parse', 'HEAD').trim()).toBe(base);
+    await hx.terminals.killAllForTask(task.id);
+  });
+
+  it('makes the branch again from its base for a task finished before summaries (#178)', async () => {
+    const hx = await finished({ removeWorktree: true, deleteBranch: true });
+    await hx.store.update((st) => {
+      st.tasks[0].summary = null;
+    });
+    const result = await reopenSetup(hx);
+    expect(result.ok).toBe(true);
+    const task = hx.store.state.tasks[0];
+    expect(git(task.worktreePath, 'branch', '--show-current').trim()).toBe(
+      task.branch,
+    );
+    expect(existsSync(path.join(task.worktreePath, 'feature.txt'))).toBe(false);
+    await hx.terminals.killAllForTask(task.id);
+  });
+
+  it('refuses when the branch and its base are gone, and the task stays done', async () => {
+    const hx = await finished({ removeWorktree: true, deleteBranch: true });
+    await hx.store.update((st) => {
+      st.tasks[0].summary!.commits = [{ sha: 'f'.repeat(40), subject: 'x' }];
+      st.tasks[0].baseSha = 'e'.repeat(40);
+      st.tasks[0].baseRef = 'gone/base';
     });
     await expect(hx.h['tasks:reopen'](hx.t.id)).rejects.toThrow(
       `Branch ${hx.t.branch} cannot be restored`,
@@ -1137,6 +1177,8 @@ describe('handlers: reopen a finished task', () => {
     git(hx.api, 'branch', '-D', hx.t.branch);
     await hx.store.update((st) => {
       st.tasks[0].extraWorkspaces[0].summary = null;
+      st.tasks[0].extraWorkspaces[0].baseSha = 'f'.repeat(40);
+      st.tasks[0].extraWorkspaces[0].baseRef = 'gone/base';
     });
     await expect(hx.h['tasks:reopen'](hx.t.id)).rejects.toThrow(
       `api: branch ${hx.t.branch} cannot be restored`,
