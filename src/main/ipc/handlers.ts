@@ -1580,7 +1580,7 @@ export function createHandlers(s: Services): Handlers {
 
   /**
    * Where a reopened workspace's branch comes from: the local branch (null), else `origin/<branch>`, else the last
-   * commit of its Finish summary, else its base when the branch had no commits.
+   * commit of its Finish summary, else its base: a branch that is gone for good starts again from there (#178).
    */
   const restoreSource = async (
     repoPath: string,
@@ -1601,15 +1601,16 @@ export function createHandlers(s: Services): Handlers {
       return { from: remote, via: 'origin' };
     if (head && (await s.git.commitExists(repoPath, head)))
       return { from: head, via: 'commit' };
-    if (ws.summary && ws.summary.commitCount === 0)
-      return { from: ws.baseSha ?? ws.baseRef, via: 'base' };
+    for (const base of [ws.baseSha, ws.baseRef])
+      if (base && (await s.git.commitExists(repoPath, base)))
+        return { from: base, via: 'base' };
     // The home keeps the message it had before #48; another repo's names that repo.
     const what =
       ws.id === HOME_ID
         ? `Branch ${ws.branch}`
         : `${s.repos.list().find((r) => r.id === ws.repoId)?.name ?? path.basename(repoPath)}: branch ${ws.branch}`;
     throw new Error(
-      `${what} cannot be restored: it was deleted and is not on origin`,
+      `${what} cannot be restored: it was deleted, is not on origin, and its base is gone too`,
     );
   };
 
