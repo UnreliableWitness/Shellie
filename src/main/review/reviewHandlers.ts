@@ -9,7 +9,7 @@ import {
 import type { Task } from '../../shared/types';
 import { parseDocsTarget } from '../../shared/workspaces';
 import type { DocsWatcher } from '../docs/DocsWatcher';
-import { existingWorkspace } from '../workspaces/existing';
+import { watchableWorkspace } from '../workspaces/existing';
 import type { GitDirWatcher } from './GitDirWatcher';
 import type { ReviewService } from './ReviewService';
 
@@ -87,9 +87,8 @@ export function createReviewHandlers(
         return { live: false };
       }
       const { taskId, workspaceId } = parseDocsTarget(target);
-      const ws = existingWorkspace(task(taskId), workspaceId, {
-        requireReady: true,
-      });
+      const ws = watchableWorkspace(task(taskId), workspaceId);
+      if (!ws) return { live: false };
       const files = d.docsWatcher.start(target, ws.worktreePath);
       const gitDir = await d.gitDirWatcher.start(target, ws.worktreePath);
       return { live: files && gitDir };
