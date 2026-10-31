@@ -41,7 +41,7 @@ export async function runSmoke(o: {
       log('smoke failed: the pty timed out');
       return false;
     }
-    const output = terminals.buffer(id);
+    const output = terminals.buffer(id) ?? '';
     if (result === UNKNOWN_EXIT && output.includes(MARKER)) {
       // The pty closed before node-pty knew the code (conpty.dll); the marker proves the command ran.
       log('smoke: the pty reported no exit code, the marker arrived');

@@ -125,13 +125,11 @@ export function TerminalView({
     });
     void api()
       .invoke('terminals:buffer', terminalId)
-      .catch(() => {
-        // Only a terminal main does not know has no buffer.
-        if (live) setGone(true);
-        return '';
-      })
+      .catch(() => null)
       .then((buf) => {
         if (!live) return;
+        // Only a terminal main does not know has no buffer.
+        if (buf === null) setGone(true);
         const snapshot = buf ?? '';
         if (snapshot) t.write(snapshot);
         let skip = 0;
