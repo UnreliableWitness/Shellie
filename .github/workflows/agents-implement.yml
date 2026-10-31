@@ -48,11 +48,17 @@ jobs:
         with:
           app-id: ${{ vars.AGENTS_APP_ID }}
           private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      # the owner's project token, for the order of the Ready cards on the board (optional; not needed to pick)
+      - name: Hand the project token to the script in a file
+        env:
+          TOKEN: ${{ secrets.AGENTS_PROJECT_TOKEN }}
+        run: if [ -n "$TOKEN" ]; then umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-project-token"; fi
       - id: pick
         name: Pick an issue
         env:
           AGENTS_MODE: ${{ vars.AGENTS_MODE }}
           AGENTS_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          AGENTS_PROJECT_TOKEN_FILE: ${{ runner.temp }}/agents-project-token
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/implement.mjs pick
       - if: steps.pick.outputs.issue != ''

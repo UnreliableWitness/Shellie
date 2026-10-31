@@ -23,6 +23,8 @@ They run on the owner's **Claude subscription**, never on an API key, and only o
    - **Never add an `ANTHROPIC_API_KEY` secret.** Claude Code would prefer it and bill it; the scripts refuse to run when it is set.
 3. Repo variable **`AGENTS_MODE=shadow`** to start.
 
+4. **Project token** (for the board, optional): a classic personal access token (https://github.com/settings/tokens/new) with only the scopes **`project`** and **`public_repo`**, saved as repo secret `AGENTS_PROJECT_TOKEN` (`gh secret set AGENTS_PROJECT_TOKEN -R UnreliableWitness/Shellie` in a terminal, not in a chat). A GitHub App cannot change a personal account's projects, so the board sync uses this token; it is used only in the sync and in the implementer's pick (to read the Ready order), never where an agent runs. Draft cards become issues in the token owner's name. Without it, the board is not synced and the implementer keeps its own order.
+
 Later stages add an Azure login for the health agent and branch protection on `main`; their steps will be listed here.
 
 ## Modes (`AGENTS_MODE` repo variable)
@@ -101,6 +103,28 @@ If you merge an agent PR yourself, or close it, the agents notice: a merge goes 
 **Release notice:** when a published release contains the merge, the notifier comments on the issue ("Fixed in **vX.Y.Z** … Shellie updates itself within about half an hour"), labels it `agent:released` and closes it. If no release has it 26 hours after the merge (a scheduled release was missed: it failed, or `main` was red), it tells you once with `agent:needs-owner`. A merge that changes no app files (tests, docs, tooling) is closed at once: there is no version for it.
 
 **Still broken:** a comment from a trusted person on a released issue (closed in the last 30 days) reopens it, and triage looks at it again.
+
+## The project board
+
+The GitHub Project **"Shellie"** on the owner's account (created by the first sync, linked to the repo) shows every open issue as a card. `agents-project.yml` syncs it after every agent run and every 15 minutes:
+
+| Column | When |
+|---|---|
+| Inbox | new, not triaged yet (also an untrusted reporter's issue waiting for `agent:go`) |
+| Needs info / Needs you | `agent:needs-info` / `agent:needs-owner` |
+| Ready | `agent:ready` |
+| In progress | `claude-working` |
+| In review | `agent:pr-open` |
+| Waiting for you | the agent PR has `agent:awaits-owner` or `agent:hold-merge` |
+| Merged / Released / Closed | `agent:merged` / `agent:released` / closed otherwise |
+
+The labels stay the source of truth: a card moved by hand goes back where its labels say on the next sync, except for the moves that steer:
+
+- **A draft card** (+ Add item on the board, without picking an issue) becomes an issue in the repo, created as the owner, and triage picks it up.
+- **A "Needs you" card dragged to Ready** is the owner's go-ahead (`agent:go`): it is implemented as triaged.
+- **The order of the Ready column is the implementer's priority**: it takes the top card first; issues not on the board come after, bugs before chores before features, oldest first.
+
+GitHub sends no event when a card moves on a personal account's board, so a move is seen at the next sync (within about 15 minutes).
 
 ## Limits
 

@@ -19,9 +19,10 @@ import { canRunAgent, recordPause, recordRun } from './activity.mjs';
 import { budgetFor, loadActivity, saveActivity } from './activityStore.mjs';
 import { runClaude } from './claude.mjs';
 import { isTrusted, parseConfig, parseTrusted } from './config.mjs';
-import { createGitHub } from './github.mjs';
+import { createGitHub, readTokenFile } from './github.mjs';
 import { downloadImages, imageLines, imageUrls } from './images.mjs';
 import { pickForImplement } from './pick.mjs';
+import { boardRank } from './project.mjs';
 import {
   branchName,
   classifyPaths,
@@ -78,7 +79,16 @@ async function writeStatus(gh, n, comment, status, summary) {
  * @returns {Promise<null | { issue: number, title: string, body: string, author: string, spec: any, kind: string,
  *   risk: string, branch: string, baseSha: string, comments: { author: string, body: string }[] }>}
  */
-export async function runPick({ gh, config, trusted, mode, now, summary }) {
+/** rank: the order of the Ready cards on the project board (empty: the old order, bugs first, oldest first) */
+export async function runPick({
+  gh,
+  config,
+  trusted,
+  mode,
+  now,
+  summary,
+  rank = new Map(),
+}) {
   if (!LIVE_MODES.includes(mode)) {
     summary(`Implementer is off (AGENTS_MODE=${mode || 'unset'}).`);
     return null;
@@ -160,6 +170,7 @@ export async function runPick({ gh, config, trusted, mode, now, summary }) {
     humanPrTitles,
     openAgentPrs,
     config,
+    rank,
   });
   if (!pick) {
     summary(`Nothing to implement (${reason}).`);
@@ -696,7 +707,15 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const readJson = (file) =>
     existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
   if (step === 'pick') {
+    // the owner's order on the project board; without the token, or if the board cannot be read, the old order
+    const rank = await boardRank(
+      readTokenFile(process.env.AGENTS_PROJECT_TOKEN_FILE),
+    ).catch((e) => {
+      summary(`board order not read: ${e.message}`);
+      return new Map();
+    });
     const task = await runPick({
+      rank,
       gh: createGitHub(repo, process.env.AGENTS_GH_TOKEN),
       config,
       trusted,
