@@ -177,3 +177,31 @@ describe('pickForImplement', () => {
     expect(pickNumber([feature, chore])).toBe(2);
   });
 });
+
+describe('pickForImplement: board order', () => {
+  it("takes the owner's order on the board first, then bugs before features, oldest first", () => {
+    const bug = { issue: issue(5), status: status() };
+    const feature = {
+      issue: issue(9, { labels: labels('agent:ready', 'kind:feature') }),
+      status: status({ kind: 'feature' }),
+    };
+    const other = { issue: issue(3), status: status() };
+    // the owner dragged #9 to the top of Ready, #5 below it; #3 is not on the board
+    const rank = new Map([
+      [9, 0],
+      [5, 1],
+    ]);
+    expect(
+      pickForImplement([bug, feature, other] as never, ctx({ rank }) as never)
+        .pick?.issue.number,
+    ).toBe(9);
+    expect(
+      pickForImplement([bug, other] as never, ctx({ rank }) as never).pick
+        ?.issue.number,
+    ).toBe(5);
+    expect(
+      pickForImplement([bug, other] as never, ctx() as never).pick?.issue
+        .number,
+    ).toBe(3);
+  });
+});

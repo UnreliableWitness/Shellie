@@ -770,7 +770,7 @@ async function boot(): Promise<void> {
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
     // Agent tabs that stop right after starting (a missing CLI, an invalid OpenCode config) say why (#109).
     const terminalFailures = new TerminalFailures({
-      buffer: (id) => terminals.buffer(id),
+      buffer: (id) => terminals.buffer(id) ?? '',
       runMs: (id) => terminals.runMs(id),
       kindOf: (id) => {
         for (const t of store.state.tasks)

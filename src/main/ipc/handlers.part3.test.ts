@@ -77,6 +77,7 @@ describe('handlers: after a relaunch', () => {
     await h2['terminals:restart'](shellId);
     expect(fresh.runningCount(t.id)).toBe(1);
     expect(typeof (await h2['terminals:buffer'](shellId))).toBe('string');
+    expect(await h2['terminals:buffer']('nope')).toBeNull();
     await expect(h2['terminals:restart']('nope')).rejects.toThrow();
   });
 });

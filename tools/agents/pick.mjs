@@ -8,7 +8,8 @@ const KIND_ORDER = ['bug', 'chore', 'feature'];
 /**
  * @param {{ issue: any, status: any }[]} candidates open issues with their status block (null without one)
  * @param {{ trusted: any, botLogin: string, now: Date, humanBranches: string[], humanPrTitles: string[],
- *   openAgentPrs: number, config: { maxOpenAgentPrs: number, maxImplementAttempts: number } }} ctx
+ *   openAgentPrs: number, config: { maxOpenAgentPrs: number, maxImplementAttempts: number },
+ *   rank?: Map<number, number> }} ctx rank: issue number to its position on the project board
  * @returns {{ pick?: { issue: any, status: any }, reason: string }}
  */
 export function pickForImplement(candidates, ctx) {
@@ -38,11 +39,18 @@ export function pickForImplement(candidates, ctx) {
       has(issue, 'agent:approved')
     );
   });
-  const rank = ({ status }) => {
+  const kindRank = ({ status }) => {
     const i = KIND_ORDER.indexOf(status.kind);
     return i === -1 ? KIND_ORDER.length : i;
   };
-  eligible.sort((a, b) => rank(a) - rank(b) || a.issue.number - b.issue.number);
+  // the owner's order on the project board first (cards not on it come after), then bugs, chores, features
+  const boardRank = ({ issue }) => ctx.rank?.get(issue.number) ?? Infinity;
+  eligible.sort(
+    (a, b) =>
+      boardRank(a) - boardRank(b) ||
+      kindRank(a) - kindRank(b) ||
+      a.issue.number - b.issue.number,
+  );
   return eligible.length
     ? { pick: eligible[0], reason: 'picked' }
     : { reason: 'nothing-ready' };
