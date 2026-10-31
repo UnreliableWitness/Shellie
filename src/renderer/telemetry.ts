@@ -32,11 +32,23 @@ export function trackError(error: unknown, props?: TelemetryProps): void {
   });
 }
 
+/**
+ * Chromium's notice that a ResizeObserver callback caused another resize in the same
+ * frame ("loop completed with undelivered notifications", formerly "loop limit
+ * exceeded"). The remaining notifications arrive next frame; nothing is broken.
+ */
+export function isBenignResizeObserverError(message: unknown): boolean {
+  return (
+    typeof message === 'string' && message.startsWith('ResizeObserver loop')
+  );
+}
+
 /** Reports uncaught renderer errors and unhandled rejections. Call once at startup. */
 export function installErrorTracking(target: Window = window): void {
-  target.addEventListener('error', (ev) =>
-    trackError(ev.error ?? ev.message, { source: 'window.onerror' }),
-  );
+  target.addEventListener('error', (ev) => {
+    if (isBenignResizeObserverError(ev.message)) return;
+    trackError(ev.error ?? ev.message, { source: 'window.onerror' });
+  });
   target.addEventListener('unhandledrejection', (ev) =>
     trackError(ev.reason, { source: 'unhandledrejection' }),
   );
