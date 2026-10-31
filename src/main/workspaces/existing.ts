@@ -23,3 +23,16 @@ export function existingWorkspace(
     throw new Error(`The task is not ready (${task.status})`);
   return requireWorktree(workspaceById(task, workspaceId));
 }
+
+/**
+ * The workspace a watcher can follow: null when the task is not ready or its worktree folder is gone,
+ * so the caller falls back to polling instead of failing (issue #181).
+ */
+export function watchableWorkspace(
+  task: Task,
+  workspaceId: string | undefined,
+): WorkspaceView | null {
+  if (task.status !== 'ready') return null;
+  const ws = workspaceById(task, workspaceId);
+  return existsSync(ws.worktreePath) ? ws : null;
+}
