@@ -46,9 +46,7 @@ globalThis.ResizeObserver ??= NoResize as never;
 /** A terminal main does not know: the app was relaunched since it started. */
 const relaunched = () =>
   installFakeApi({
-    'terminals:buffer': () => {
-      throw new Error('Unknown terminal t1');
-    },
+    'terminals:buffer': () => null,
     'terminals:isRunning': () => false,
     'terminals:restart': () => undefined,
   });

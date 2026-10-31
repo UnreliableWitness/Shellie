@@ -428,7 +428,8 @@ export type Channels = {
   };
   /** Why an agent tab stopped, when its exit needs explaining (#109); null otherwise. */
   'terminals:failure': { args: [id: string]; result: TerminalFailure | null };
-  'terminals:buffer': { args: [id: string]; result: string };
+  /** null for a terminal main does not know: the app was relaunched since it started (#180). */
+  'terminals:buffer': { args: [id: string]; result: string | null };
   'terminals:isRunning': { args: [id: string]; result: boolean };
   /** The renderer re-coloured this terminal; programs that asked (mode 2031) are told the scheme changed. */
   'terminals:reportScheme': {

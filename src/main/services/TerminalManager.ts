@@ -314,8 +314,10 @@ export class TerminalManager extends EventEmitter<{
     return e ? (e.exitedAt ?? this.now()) - e.startedAt : 0;
   }
 
-  buffer(id: string): string {
-    return this.get(id).buffer.slice(-BUFFER_LIMIT);
+  /** The terminal's recent output; null for one this process does not know (the app relaunched, #180). */
+  buffer(id: string): string | null {
+    const e = this.entries.get(id);
+    return e ? e.buffer.slice(-BUFFER_LIMIT) : null;
   }
 
   has(id: string): boolean {

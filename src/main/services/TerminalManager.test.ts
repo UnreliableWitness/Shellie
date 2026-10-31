@@ -145,6 +145,8 @@ describe('TerminalManager', () => {
     expect(m.runningCount('x')).toBe(0);
     expect(m.runningCount('y')).toBe(1);
     expect(() => m.write('a', 'x')).toThrow(/Unknown terminal/);
+    // A relaunched app asks for tabs it never started: no buffer, and no error (#180).
+    expect(m.buffer('missing')).toBeNull();
     m.kill('c');
   });
 
@@ -161,7 +163,7 @@ describe('TerminalManager', () => {
     const second = waitFor(m, 'r');
     m.restart('r');
     await second;
-    expect(m.buffer('r').split('run').length - 1).toBe(1);
+    expect(m.buffer('r')!.split('run').length - 1).toBe(1);
   });
 
   it('restarts at the size the view last gave, not the default (#162)', async () => {
