@@ -1,0 +1,50 @@
+# Keeps the GitHub Project board "Shellie" in step with the agents (docs/agents.md): every card in the column its
+# labels say, draft cards turned into issues, a needs-owner card dragged to Ready turned into agent:go.
+# Uses the owner's classic token AGENTS_PROJECT_TOKEN (scopes project and public_repo): a GitHub App cannot change
+# a personal account's projects. No agent runs here.
+name: Agents · project board
+on:
+  workflow_run:
+    workflows:
+      [
+        'Agents · triage',
+        'Agents · implement',
+        'Agents · PR',
+        'Agents · notify',
+      ]
+    types: [completed]
+  # GitHub has no event for a card moved on a personal account's board: the poll picks those up
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-project
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: vars.AGENTS_MODE != '' && vars.AGENTS_MODE != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Hand the project token to the script in a file
+        env:
+          TOKEN: ${{ secrets.AGENTS_PROJECT_TOKEN }}
+        run: if [ -n "$TOKEN" ]; then umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-project-token"; fi
+      - name: Sync the board
+        env:
+          AGENTS_PROJECT_TOKEN_FILE: ${{ runner.temp }}/agents-project-token
+        run: node tools/agents/project.mjs

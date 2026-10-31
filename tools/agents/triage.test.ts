@@ -535,6 +535,7 @@ describe('runTriage', () => {
     expect(readTokenFile(file)).toBe('ghs_secret');
     expect(existsSync(file)).toBe(false);
     expect(readTokenFile(undefined)).toBeUndefined();
+    expect(readTokenFile(join(tmpdir(), 'no-such-token-file'))).toBeUndefined();
   });
 
   it('reopens a released issue when a trusted person says it is still broken', async () => {
