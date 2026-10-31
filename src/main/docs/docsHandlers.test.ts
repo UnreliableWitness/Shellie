@@ -126,6 +126,17 @@ describe('docs handlers', () => {
     await h['docs:watch']('t1', false);
     expect(watcher.active('t1')).toBe(false);
   });
+  it('watch falls back to polling when the worktree is missing', async () => {
+    const { h, repo, watcher } = setup();
+    rmSync(repo, { recursive: true, force: true });
+    expect(await h['docs:watch']('t1', true)).toEqual({ live: false });
+    expect(watcher.active('t1')).toBe(false);
+  });
+  it('watch falls back to polling for a task that is not ready', async () => {
+    const { h, watcher } = setup('done');
+    expect(await h['docs:watch']('t1', true)).toEqual({ live: false });
+    expect(watcher.active('t1')).toBe(false);
+  });
 });
 
 describe('docs handlers across workspaces', () => {

@@ -1,5 +1,5 @@
 // src/main/review/reviewHandlers.test.ts
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -126,5 +126,15 @@ describe('review handlers', () => {
     const stop = vi.spyOn(gitDirWatcher, 'stop');
     await h['review:watch']('t1', false);
     expect(stop).toHaveBeenCalledWith('t1');
+  });
+
+  it('watch falls back to polling when the worktree is missing', async () => {
+    const { h, repo, docsWatcher, gitDirWatcher } = setup();
+    rmSync(repo, { recursive: true, force: true });
+    const files = vi.spyOn(docsWatcher, 'start');
+    const gitDir = vi.spyOn(gitDirWatcher, 'start');
+    expect(await h['review:watch']('t1', true)).toEqual({ live: false });
+    expect(files).not.toHaveBeenCalled();
+    expect(gitDir).not.toHaveBeenCalled();
   });
 });

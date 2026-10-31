@@ -12,7 +12,7 @@ import {
   workspaceById,
 } from '../../shared/workspaces';
 import type { GitClient } from '../services/GitClient';
-import { requireWorktree } from '../workspaces/existing';
+import { requireWorktree, watchableWorkspace } from '../workspaces/existing';
 import type { DocsWatcher } from './DocsWatcher';
 import { type SessionDocs, toSlash, toWire } from './sessionDocs';
 import {
@@ -222,7 +222,10 @@ export function createDocsHandlers(d: DocsDeps): Pick<Handlers, DocsChannels> {
         d.watcher.stop(target);
         return { live: false };
       }
-      return { live: d.watcher.start(target, worktree(target)) };
+      const { taskId, workspaceId } = parseDocsTarget(target);
+      const ws = watchableWorkspace(d.taskById(taskId), workspaceId);
+      if (!ws) return { live: false };
+      return { live: d.watcher.start(target, ws.worktreePath) };
     },
     'html:open': async (target, p) => {
       const real = await htmlFile(target, p);
