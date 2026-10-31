@@ -731,6 +731,30 @@ describe('handlers: reopen a finished task', () => {
     expect(home.files.map((f) => f.path)).not.toContain('c.txt');
   });
 
+  it('summarises a worktree folder with no .git as empty instead of failing (#184)', async () => {
+    const hx = await finished({ removeWorktree: false, deleteBranch: false });
+    const extra = await withExtra(hx);
+    rmSync(path.join(extra, '.git'), { recursive: true, force: true });
+    await expect(hx.h['tasks:gitSummary'](hx.t.id, 'w2')).resolves.toEqual({
+      branch: '',
+      ahead: 0,
+      behind: 0,
+      hasUpstream: false,
+      files: [],
+    });
+  });
+
+  it('still fails the summary when .git is there but git fails', async () => {
+    const hx = await finished({ removeWorktree: false, deleteBranch: false });
+    const extra = await withExtra(hx);
+    rmSync(path.join(extra, '.git'), { recursive: true, force: true });
+    writeFileSync(
+      path.join(extra, '.git'),
+      `gitdir: ${path.join(extra, 'missing')}\n`,
+    );
+    await expect(hx.h['tasks:gitSummary'](hx.t.id, 'w2')).rejects.toThrow();
+  });
+
   it('a terminal of a removed or dropped workspace runs in the active home', async () => {
     const hx = await finished({ removeWorktree: false, deleteBranch: false });
     await withExtra(hx);

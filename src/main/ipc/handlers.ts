@@ -2774,7 +2774,20 @@ export function createHandlers(s: Services): Handlers {
     },
     'tasks:gitSummary': async (taskId, workspaceId) => {
       const w = workspaceById(taskById(taskId), workspaceId);
-      return s.git.summary(w.worktreePath, w.baseRef);
+      return s.git
+        .summary(w.worktreePath, w.baseRef)
+        .catch(async (e: unknown) => {
+          // A folder that lost its .git has nothing to show; failing here would log every poll (#184).
+          if (!(await pathExists(path.join(w.worktreePath, '.git'))))
+            return {
+              branch: '',
+              ahead: 0,
+              behind: 0,
+              hasUpstream: false,
+              files: [],
+            };
+          throw e;
+        });
     },
     'tasks:finishChecks': async (taskId) => {
       // A scan error must never keep the user from finishing.
