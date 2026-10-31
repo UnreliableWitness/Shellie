@@ -744,6 +744,13 @@ describe('handlers: reopen a finished task', () => {
     });
   });
 
+  it('still fails the summary when the worktree folder is gone (#184)', async () => {
+    const hx = await finished({ removeWorktree: false, deleteBranch: false });
+    const extra = await withExtra(hx);
+    rmSync(extra, { recursive: true, force: true });
+    await expect(hx.h['tasks:gitSummary'](hx.t.id, 'w2')).rejects.toThrow();
+  });
+
   it('still fails the summary when .git is there but git fails', async () => {
     const hx = await finished({ removeWorktree: false, deleteBranch: false });
     const extra = await withExtra(hx);

@@ -2778,7 +2778,11 @@ export function createHandlers(s: Services): Handlers {
         .summary(w.worktreePath, w.baseRef)
         .catch(async (e: unknown) => {
           // A folder that lost its .git has nothing to show; failing here would log every poll (#184).
-          if (!(await pathExists(path.join(w.worktreePath, '.git'))))
+          // A missing folder keeps failing, so the renderer hides the git state.
+          if (
+            (await pathExists(w.worktreePath)) &&
+            !(await pathExists(path.join(w.worktreePath, '.git')))
+          )
             return {
               branch: '',
               ahead: 0,
