@@ -102,7 +102,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 ## Errors
 
 - Uncaught exceptions in the main process (monitored only: Electron's own handling is unchanged) and unhandled promise rejections.
-- Renderer `window.onerror` and `unhandledrejection`.
+- Renderer `window.onerror` and `unhandledrejection`. Chromium's harmless "ResizeObserver loop …" notice is filtered out and not reported.
 - A failed boot (the splash or the "Shellie could not start" dialog).
 - Every IPC call that fails (error type, message, stack and the channel name such as `tasks:create`; never the arguments).
 - An unexpected setup failure.
