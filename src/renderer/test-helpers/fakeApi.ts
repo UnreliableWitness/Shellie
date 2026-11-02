@@ -197,6 +197,7 @@ const defaults: FakeHandlers = {
   'secrets:list': () => [],
   'secrets:forget': () => undefined,
   'secrets:repoDefault': () => 'development',
+  'repos:copyEntries': () => ({ entries: [], suggestions: [] }),
   'secrets:status': () => ({
     state: 'empty',
     reasons: [],

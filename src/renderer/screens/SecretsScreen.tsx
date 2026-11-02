@@ -1,4 +1,8 @@
-import { Shield16Filled, Warning16Regular } from '@fluentui/react-icons';
+import {
+  ChevronLeft16Regular,
+  Shield16Filled,
+  Warning16Regular,
+} from '@fluentui/react-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Environment,
@@ -20,7 +24,8 @@ type Editing =
 const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`;
 
-function StatusPanel({
+/** A repo's secrets status: the protected sentence, or a warning card per reason with its action. */
+export function StatusPanel({
   repo,
   status,
   onClean,
@@ -205,6 +210,25 @@ export function SecretsScreen({ repoId }: { repoId?: string }) {
     <div className="page">
       <PageHeader
         title="Secrets"
+        before={
+          <button
+            type="button"
+            className="btn btn-subtle btn-sm"
+            onClick={() =>
+              go(
+                repo
+                  ? {
+                      kind: 'settings',
+                      repoId: repo.id,
+                      section: 'repo-secrets',
+                    }
+                  : { kind: 'settings', section: 'secrets' },
+              )
+            }
+          >
+            <ChevronLeft16Regular aria-hidden="true" /> Settings
+          </button>
+        }
         commands={
           <>
             <button

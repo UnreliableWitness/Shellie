@@ -55,6 +55,24 @@ const list = (scope: string) =>
   scope === 'all' ? [openai] : scope === 'r1' ? [stripe, openai] : [openai];
 
 describe('Secrets page', () => {
+  it('SecretsScreen back link opens Settings on the repo', async () => {
+    installFakeApi({ 'secrets:list': list });
+    const { unmount } = render(<SecretsScreen repoId="r1" />);
+    await userEvent.click(screen.getByRole('button', { name: /Settings/ }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      repoId: 'r1',
+      section: 'repo-secrets',
+    });
+    unmount();
+    render(<SecretsScreen />);
+    await userEvent.click(screen.getByRole('button', { name: /Settings/ }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      section: 'secrets',
+    });
+  });
+
   it('shows masks and sources, gaps with add, and all-repos secrets tagged', async () => {
     installFakeApi({ 'secrets:list': list });
     render(<SecretsScreen repoId="r1" />);

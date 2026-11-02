@@ -832,6 +832,21 @@ describe('SettingsScreen', () => {
       expect(screen.queryByText(/No settings match/)).toBeNull();
     });
 
+    it("search 'env' finds the Secrets category", async () => {
+      installFakeApi();
+      useStore.setState({ repos: [webshop] });
+      render(<SettingsScreen />);
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+        'env',
+      );
+      const link = screen.getByRole('link', { name: 'Secrets' });
+      expect(link).toBeVisible();
+      expect(link).toHaveAttribute('href', '#secrets');
+      expect(document.getElementById('secrets')).toBeVisible();
+      expect(document.getElementById('secrets-repo-r1')).toBeInTheDocument();
+    });
+
     it('finds the agent commands row by the words of its description', async () => {
       installFakeApi();
       useStore.setState({ repos: [webshop], screen: repoScope });

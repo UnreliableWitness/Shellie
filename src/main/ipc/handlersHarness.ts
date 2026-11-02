@@ -157,6 +157,7 @@ export async function harness(
         opts,
       ),
     pickFolder: async () => '/picked',
+    pickFile: async () => null,
     launch: async () => {},
     usage,
     time,

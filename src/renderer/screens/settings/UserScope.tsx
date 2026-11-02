@@ -12,6 +12,7 @@ import { useSettingsSearch } from '../../components/settings/settingsSearch';
 import { TimeSection } from '../../components/TimeSection';
 import { MindMark } from '../../components/ui';
 import { useStore } from '../../store';
+import { SecretsCategory } from './SecretsCategory';
 
 export type SettingsCategoryInfo = {
   id: string;
@@ -20,7 +21,7 @@ export type SettingsCategoryInfo = {
   keywords: string[];
 };
 
-/** The User scope's categories, in tree order. `secrets` opens the Secrets page (until Task 7). */
+/** The User scope's categories, in tree order. */
 export const USER_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'ado',
@@ -35,7 +36,8 @@ export const USER_CATEGORIES: SettingsCategoryInfo[] = [
       'tracker',
     ],
   },
-  { id: 'secrets', title: 'Secrets', keywords: ['env', 'environment'] },
+  // Rows of its own (SecretsCategory) register the search text.
+  { id: 'secrets', title: 'Secrets', keywords: [] },
   {
     id: 'editor',
     title: 'Editor',
@@ -105,13 +107,12 @@ export const USER_CATEGORIES: SettingsCategoryInfo[] = [
  * An existing section as one searchable block (category granularity) until Tasks 6-8 turn it into
  * rows: it registers itself with the search and hides while the query does not match it.
  */
-/** Registers a category's search entry; with `children`, shows them only while the query matches. */
 function SectionBlock({
   info,
   children,
 }: {
   info: SettingsCategoryInfo;
-  children?: ReactNode;
+  children: ReactNode;
 }) {
   const search = useSettingsSearch();
   const texts = [info.title, ...info.keywords];
@@ -121,7 +122,6 @@ function SectionBlock({
     () => register(`${info.id}-block`, 'user', texts, info.id),
     [register, info.id, textKey],
   );
-  if (children === undefined) return null;
   return <div hidden={!search.matches(texts)}>{children}</div>;
 }
 
@@ -289,13 +289,12 @@ export function UserScope() {
   return (
     <>
       {USER_CATEGORIES.map((c) =>
-        SECTIONS[c.id] ? (
+        c.id === 'secrets' ? (
+          <SecretsCategory key={c.id} />
+        ) : (
           <SectionBlock key={c.id} info={c}>
             {SECTIONS[c.id]()}
           </SectionBlock>
-        ) : (
-          // Secrets is a link to its own page for now; its entry keeps search and the tree in step.
-          <SectionBlock key={c.id} info={c} />
         ),
       )}
     </>

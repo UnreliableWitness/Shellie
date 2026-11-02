@@ -23,10 +23,13 @@ const SOURCE_LABEL: Record<ConfigSource, string> = {
 export function SettingsCategory({
   id,
   title,
+  commands,
   children,
 }: {
   id: string;
   title: string;
+  /** Buttons next to the heading. */
+  commands?: ReactNode;
   children: ReactNode;
 }) {
   const search = useSettingsSearch();
@@ -35,7 +38,14 @@ export function SettingsCategory({
   return (
     <CategoryContext.Provider value={id}>
       <section id={id} className="section settings-category" hidden={hidden}>
-        <h2>{title}</h2>
+        {commands ? (
+          <div className="settings-category-head">
+            <h2>{title}</h2>
+            {commands}
+          </div>
+        ) : (
+          <h2>{title}</h2>
+        )}
         {children}
       </section>
     </CategoryContext.Provider>

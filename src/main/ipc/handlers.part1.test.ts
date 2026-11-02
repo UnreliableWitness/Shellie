@@ -1,6 +1,7 @@
 // handlers tests, part 1 of 6 (split so CI can run them on several machines at once).
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -311,6 +312,33 @@ describe('handlers: repos', () => {
     );
     await h['repos:reveal'](added.id, '.env');
     expect(shown).toEqual([path.join(added.path, '.env')]);
+  });
+
+  it('repos:pickFile returns a repo-relative path and refuses one outside', async () => {
+    let picked: string | null = null;
+    const opened: string[] = [];
+    const { h, added } = await harness(undefined, {
+      pickFile: async (at) => {
+        opened.push(at);
+        return picked;
+      },
+    });
+    expect(await h['repos:pickFile'](added.id)).toBeNull();
+    expect(opened).toEqual([added.path]);
+    picked = path.join(added.path, 'config', 'appsettings.local.json');
+    mkdirSync(path.dirname(picked), { recursive: true });
+    writeFileSync(picked, '{}');
+    expect(await h['repos:pickFile'](added.id)).toBe(
+      'config/appsettings.local.json',
+    );
+    picked = path.join(path.dirname(added.path), 'elsewhere', '.env');
+    await expect(h['repos:pickFile'](added.id)).rejects.toThrow(
+      'Pick a file inside the repo',
+    );
+    picked = added.path;
+    await expect(h['repos:pickFile'](added.id)).rejects.toThrow(
+      'Pick a file inside the repo',
+    );
   });
 
   it('repos:copyEntries reports state and counts', async () => {

@@ -192,6 +192,8 @@ export type Channels = {
   };
   /** Shows a file inside the repo (or, with null, the repo folder) in the file manager. */
   'repos:reveal': { args: [repoId: string, rel: string | null]; result: void };
+  /** A file picked inside the repo, repo-relative with forward slashes; null when cancelled. Refuses a file outside. */
+  'repos:pickFile': { args: [repoId: string]; result: string | null };
   /** Opens `.shellie.yml` (or `.miac.yml`) in the repo's editor. */
   'repos:openConfigFile': { args: [repoId: string]; result: void };
   /** Writes `.shellie.yml` with the settings that differ from the defaults, then drops the overrides. */

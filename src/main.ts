@@ -907,6 +907,13 @@ async function boot(): Promise<void> {
         });
         return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
       },
+      pickFile: async (defaultPath) => {
+        const r = await dialog.showOpenDialog({
+          defaultPath,
+          properties: ['openFile', 'showHiddenFiles'],
+        });
+        return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
+      },
       launch: (cmd) =>
         new Promise<void>((resolve, reject) => {
           const child = spawn(cmd.command, cmd.args, {

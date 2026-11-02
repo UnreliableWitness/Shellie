@@ -88,7 +88,6 @@ function SettingsTree({
   activeId: string | null;
 }) {
   const search = useSettingsSearch();
-  const go = useStore((s) => s.go);
   const repos = useStore((s) => s.repos);
   const searching = search.query.trim() !== '';
   const categories =
@@ -97,20 +96,6 @@ function SettingsTree({
     <nav className="settings-nav" aria-label="Settings sections">
       {categories.map((c) => {
         if (searching && search.categoryCount(c.id).matching === 0) return null;
-        if (c.id === 'secrets') {
-          return (
-            <a
-              key={c.id}
-              href="#secrets"
-              onClick={(e) => {
-                e.preventDefault();
-                go({ kind: 'secrets' });
-              }}
-            >
-              {c.title}
-            </a>
-          );
-        }
         return (
           <a
             key={c.id}
@@ -246,9 +231,9 @@ export function SettingsScreen() {
     return stop;
   }, [section, link]);
 
-  const spyIds = (scope === 'user' ? USER_CATEGORIES : REPO_CATEGORIES)
-    .map((c) => c.id)
-    .filter((id) => id !== 'secrets');
+  const spyIds = (scope === 'user' ? USER_CATEGORIES : REPO_CATEGORIES).map(
+    (c) => c.id,
+  );
   const activeId = useScrollSpy(
     mainRef,
     spyIds,

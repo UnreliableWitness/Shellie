@@ -243,6 +243,8 @@ export type Services = {
     opts?: { lenient?: boolean },
   ) => Promise<EffectiveConfig>;
   pickFolder: () => Promise<string | null>;
+  /** A file dialog opened at `defaultPath`; null when cancelled. */
+  pickFile: (defaultPath: string) => Promise<string | null>;
   launch: (cmd: Command) => Promise<void>;
   /** Runs an agent probe with a timeout; defaults to `execFile` (tests inject a fake). */
   runProbe?: ProbeRunner;
@@ -3732,6 +3734,18 @@ export function createHandlers(s: Services): Handlers {
         return;
       }
       (s.revealFile ?? (() => undefined))(target);
+    },
+    'repos:pickFile': async (repoId) => {
+      const repo = s.repos.get(repoId);
+      const picked = await s.pickFile(repo.path);
+      if (picked === null) return null;
+      // Both resolved, so a repo reached through a symlink still matches what the dialog returns.
+      const real = (p: string) => fs.realpath(p).catch(() => p);
+      const root = await real(repo.path);
+      const rel = path.relative(root, await real(picked));
+      if (!rel || insideDir(root, rel) === null)
+        throw new Error('Pick a file inside the repo');
+      return rel.split(path.sep).join('/');
     },
     'repos:openConfigFile': async (repoId) => {
       const repo = s.repos.get(repoId);
