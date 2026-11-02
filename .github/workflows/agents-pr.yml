@@ -136,7 +136,7 @@ jobs:
           node-version: 24
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code@2.1.310
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: fix-task
           path: ${{ runner.temp }}/agents
@@ -180,11 +180,11 @@ jobs:
         env:
           TOKEN: ${{ steps.app-token.outputs.token }}
         run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: fix-task
           path: ${{ runner.temp }}/agents
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true # missing when the fix job died
         with:
           name: fix-result
