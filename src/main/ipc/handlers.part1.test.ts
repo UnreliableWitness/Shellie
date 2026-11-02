@@ -279,6 +279,48 @@ describe('handlers: repos', () => {
     );
   });
 
+  it('createConfigFile writes only non-default keys and clears overrides', async () => {
+    const { h } = await harness();
+    const dir = makeRepo('create-config');
+    writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+    const repo = await h['repos:add'](dir);
+    await h['repos:setOverride'](repo.id, 'copy', ['.env']);
+    const saved = await h['repos:createConfigFile'](repo.id);
+    expect(readFileSync(path.join(dir, '.shellie.yml'), 'utf8')).toBe(
+      'copy:\n  - .env\n',
+    );
+    expect(saved.overrides).toEqual({});
+    expect(saved.configFound).toBe(true);
+    expect((await h['repos:config'](repo.id)).config.copy).toEqual(['.env']);
+  });
+
+  it('createConfigFile refuses when a file exists', async () => {
+    const { h, added } = await harness();
+    await expect(h['repos:createConfigFile'](added.id)).rejects.toThrow(
+      'webshop: .shellie.yml already exists',
+    );
+  });
+
+  it('repos:reveal refuses a path outside the repo', async () => {
+    const shown: string[] = [];
+    const { h, added } = await harness(undefined, {
+      revealFile: (p) => shown.push(p),
+    });
+    await expect(h['repos:reveal'](added.id, '../x')).rejects.toThrow(
+      /outside/,
+    );
+    await h['repos:reveal'](added.id, '.env');
+    expect(shown).toEqual([path.join(added.path, '.env')]);
+  });
+
+  it('repos:copyEntries reports state and counts', async () => {
+    const t = telemetryEvents();
+    const { h, added } = await harness(undefined, { telemetry: t.telemetry });
+    const { entries } = await h['repos:copyEntries'](added.id);
+    expect(entries).toMatchObject([{ path: '.env', state: 'notIgnored' }]);
+    expect(t.named('settings.copyEntries')).toHaveLength(1);
+  });
+
   it('repos:config returns sources and file values', async () => {
     const { h, added } = await harness();
     await h['repos:setOverride'](added.id, 'setup', ['pnpm i']);

@@ -36,6 +36,7 @@ import type {
   Repo,
   RepoOverrides,
   SetupEvent,
+  CopyEntry,
   StartSettings,
   SetupState,
   Sprint,
@@ -184,6 +185,17 @@ export type Channels = {
     result: Repo;
   };
   'repos:clearOverrides': { args: [repoId: string]; result: Repo };
+  /** The state of each `copy:` entry, and ignored env files not listed (Settings). */
+  'repos:copyEntries': {
+    args: [repoId: string];
+    result: { entries: CopyEntry[]; suggestions: string[] };
+  };
+  /** Shows a file inside the repo (or, with null, the repo folder) in the file manager. */
+  'repos:reveal': { args: [repoId: string, rel: string | null]; result: void };
+  /** Opens `.shellie.yml` (or `.miac.yml`) in the repo's editor. */
+  'repos:openConfigFile': { args: [repoId: string]; result: void };
+  /** Writes `.shellie.yml` with the settings that differ from the defaults, then drops the overrides. */
+  'repos:createConfigFile': { args: [repoId: string]; result: Repo };
   /** Clearing the mark makes a repo found in a task a normal repo. */
   'repos:setDiscovered': {
     args: [repoId: string, discovered: boolean];

@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import type { RepoOverrides, ShellieConfig } from '../../shared/types';
 import { OVERRIDE_KEYS, type OverrideKey } from '../../shared/repoConfig';
@@ -146,4 +146,27 @@ function toConfig(
     ...(c.review ? { reviewCollapse: c.review.collapse } : {}),
     found,
   };
+}
+
+/** The `.shellie.yml` text for the keys where `effective` differs from `defaults` (what no file gives). */
+export function configDiffYaml(
+  effective: ShellieConfig,
+  defaults: ShellieConfig,
+): string {
+  const differs = (a: unknown, b: unknown) =>
+    JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
+  const doc: Record<string, unknown> = {};
+  if (differs(effective.base, defaults.base)) doc.base = effective.base;
+  if (differs(effective.branch, defaults.branch)) doc.branch = effective.branch;
+  if (differs(effective.copy, defaults.copy)) doc.copy = effective.copy;
+  if (
+    differs(effective.copyAgentConfig ?? true, defaults.copyAgentConfig ?? true)
+  )
+    doc.copyAgentConfig = effective.copyAgentConfig ?? true;
+  if (differs(effective.setup, defaults.setup)) doc.setup = effective.setup;
+  if (differs(effective.run, defaults.run)) doc.run = effective.run;
+  if (differs(effective.apm, defaults.apm)) doc.apm = effective.apm;
+  if (differs(effective.reviewCollapse ?? [], defaults.reviewCollapse ?? []))
+    doc.review = { collapse: effective.reviewCollapse };
+  return Object.keys(doc).length === 0 ? '{}\n' : stringifyYaml(doc);
 }

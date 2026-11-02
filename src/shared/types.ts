@@ -259,6 +259,22 @@ export const StateSchema = z.object({
 });
 export type State = z.infer<typeof StateSchema>;
 
+export type CopyEntryState =
+  | 'present'
+  | 'missing'
+  | 'holdsSecrets'
+  | 'notIgnored'
+  | 'outside';
+/** One `copy:` entry of a repo, as Settings shows it (never contents). */
+export type CopyEntry = {
+  path: string;
+  state: CopyEntryState;
+  folder: boolean;
+  files?: number;
+  size?: number;
+  modified?: string;
+};
+
 export type ShellieConfig = {
   base: string;
   branch: string;

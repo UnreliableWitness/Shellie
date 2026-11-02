@@ -25,7 +25,9 @@ import {
   cleanAll,
   cleanWorktree,
   computeStatus,
+  holding,
   storedNames,
+  trackedIn,
 } from '../secrets/status';
 import { denyRulesFor, denyTargets, inWorktree } from '../secrets/deny';
 import {
@@ -116,6 +118,13 @@ import {
   runProbe,
   type ProbeRunner,
 } from '../services/agentDetector';
+import { inspectCopyEntries } from '../services/envFiles';
+import {
+  configDiffYaml,
+  configFileFor,
+  shellieDefaults,
+} from '../services/ShellieConfig';
+import { insideDir } from '../services/SetupRunner';
 import { createEditorHandlers } from '../editors/editorHandlers';
 import {
   detectEditors,
@@ -3685,6 +3694,77 @@ export function createHandlers(s: Services): Handlers {
       reposChanged();
       tel.event('settings.repoOverride', { key: 'all', reset: true });
       return repo;
+    },
+    'repos:copyEntries': async (repoId) => {
+      const repo = s.repos.get(repoId);
+      const copy = await copyOf(repo.path);
+      const result = await inspectCopyEntries(repo.path, copy, {
+        git: s.git,
+        secretFiles: async (repoPath) => {
+          const tracked = await trackedIn(s.git, repoPath);
+          if (!tracked) return [];
+          return (
+            await holding(
+              repoPath,
+              copy,
+              storedNames(s.secrets, repoId),
+              tracked,
+            )
+          ).files;
+        },
+      });
+      const counts: Record<string, number> = {};
+      for (const e of result.entries)
+        counts[e.state] = (counts[e.state] ?? 0) + 1;
+      tel.event('settings.copyEntries', undefined, {
+        ...counts,
+        suggestions: result.suggestions.length,
+      });
+      return result;
+    },
+    'repos:reveal': async (repoId, rel) => {
+      const repo = s.repos.get(repoId);
+      const target = rel === null ? repo.path : insideDir(repo.path, rel);
+      if (target === null) throw new Error('That path is outside the repo');
+      if (rel === null && s.openPath) {
+        const error = await s.openPath(target);
+        if (error) throw new Error(error);
+        return;
+      }
+      (s.revealFile ?? (() => undefined))(target);
+    },
+    'repos:openConfigFile': async (repoId) => {
+      const repo = s.repos.get(repoId);
+      const file = await configFileFor(repo.path);
+      if (!file) throw new Error(`${repo.name}: no .shellie.yml to open`);
+      try {
+        await editors.openFile(repo.id, repo.path, file);
+      } catch {
+        const error = await (s.openPath ?? (async () => ''))(file);
+        if (error) throw new Error(error);
+      }
+    },
+    'repos:createConfigFile': async (repoId) => {
+      const repo = await s.repos.refresh(repoId);
+      const effective = await s.loadConfig(repo.path, { lenient: true });
+      const text = configDiffYaml(
+        effective,
+        await shellieDefaults(repo.path, false, s.git),
+      );
+      try {
+        await fs.writeFile(path.join(repo.path, '.shellie.yml'), text, {
+          flag: 'wx',
+        });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'EEXIST')
+          throw new Error(`${repo.name}: .shellie.yml already exists`);
+        throw e;
+      }
+      await s.repos.clearOverrides(repoId);
+      const saved = await s.repos.refresh(repoId);
+      reposChanged();
+      tel.event('settings.repoOverride', { key: 'all', reset: true });
+      return saved;
     },
     'repos:setDiscovered': async (repoId, discovered) => {
       const repo = await s.repos.setDiscovered(repoId, discovered);

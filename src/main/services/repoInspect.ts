@@ -43,6 +43,32 @@ export function proposeConfig(
   return `${lines.join('\n')}\n`;
 }
 
+/** The git-ignored `.env*` and `appsettings.*.local.json` files in a repo's top folder, sorted. */
+export async function findEnvCandidates(
+  top: string,
+  git: Pick<GitClient, 'run'>,
+  entries?: string[],
+): Promise<string[]> {
+  const names = entries ?? (await fs.readdir(top));
+  const candidates = names
+    .filter(
+      (e) => e.startsWith('.env') || /^appsettings\..+\.local\.json$/i.test(e),
+    )
+    .sort();
+  if (candidates.length === 0) return [];
+  try {
+    const ignored = new Set(
+      (await git.run(top, ['check-ignore', '--', ...candidates]))
+        .split(/\r?\n/)
+        .filter(Boolean),
+    );
+    return candidates.filter((c) => ignored.has(c));
+  } catch {
+    // check-ignore exits 1 when nothing is ignored
+    return [];
+  }
+}
+
 async function readFacts(
   git: GitClient,
   top: string,
@@ -65,24 +91,7 @@ async function readFacts(
   } catch {
     // no or unreadable package.json
   }
-  const candidates = entries
-    .filter(
-      (e) => e.startsWith('.env') || /^appsettings\..+\.local\.json$/i.test(e),
-    )
-    .sort();
-  let envFiles: string[] = [];
-  if (candidates.length > 0) {
-    try {
-      const ignored = new Set(
-        (await git.run(top, ['check-ignore', '--', ...candidates]))
-          .split(/\r?\n/)
-          .filter(Boolean),
-      );
-      envFiles = candidates.filter((c) => ignored.has(c));
-    } catch {
-      // check-ignore exits 1 when nothing is ignored
-    }
-  }
+  const envFiles = await findEnvCandidates(top, git, entries);
   const existingFile = await configFileFor(top);
   return {
     existingFile,
