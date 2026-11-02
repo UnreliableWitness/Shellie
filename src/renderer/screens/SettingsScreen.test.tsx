@@ -162,6 +162,36 @@ describe('SettingsScreen', () => {
     );
   });
 
+  it("saves a repo's own Claude Code command on leaving the field, and keeps the other one", async () => {
+    const { calls } = installFakeApi();
+    useStore.setState({
+      repos: [{ ...webshop, agentCommands: { opencode: 'opencode --foo' } }],
+    });
+    render(<SettingsScreen />);
+    await userEvent.click(screen.getByText('Agent commands'));
+    const claude = screen.getByLabelText('Claude Code command for webshop');
+    expect(claude).toHaveAttribute('placeholder', 'claude');
+    expect(screen.getByLabelText('OpenCode command for webshop')).toHaveValue(
+      'opencode --foo',
+    );
+    await userEvent.type(claude, 'claude --permission-mode acceptEdits');
+    expect(calls.some((c) => c.channel === 'repos:setAgentCommands')).toBe(
+      false,
+    );
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'repos:setAgentCommands')?.args,
+      ).toEqual([
+        'r1',
+        {
+          claude: 'claude --permission-mode acceptEdits',
+          opencode: 'opencode --foo',
+        },
+      ]),
+    );
+  });
+
   describe('start options', () => {
     const conn = {
       id: 'c1',

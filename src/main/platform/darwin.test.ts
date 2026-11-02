@@ -131,6 +131,31 @@ describe('darwinPlatform', () => {
       args: ['-l', '-c', "exec claude '--continue'"],
     });
   });
+  it("runs the repo's own claude command as shell text, with Shellie's flags quoted after it", () => {
+    expect(
+      p.claudeCommand(
+        'go',
+        ['--session-id', 'abc'],
+        'claude --permission-mode acceptEdits',
+      ),
+    ).toEqual({
+      command: '/bin/zsh',
+      args: [
+        '-l',
+        '-c',
+        "exec claude --permission-mode acceptEdits '--session-id' 'abc' '--append-system-prompt' 'go'",
+      ],
+    });
+    expect(p.claudeCommand(null, ['--continue'], '  ').args.at(-1)).toBe(
+      "exec claude '--continue'",
+    );
+  });
+  it("runs the repo's own opencode command", () => {
+    expect(p.opencodeCommand('opencode --foo').args.at(-1)).toBe(
+      'exec opencode --foo',
+    );
+    expect(p.opencodeCommand('').args.at(-1)).toBe('exec opencode');
+  });
   it('starts Copilot CLI through a login shell', () => {
     expect(p.copilotCommand()).toEqual({
       command: '/bin/zsh',

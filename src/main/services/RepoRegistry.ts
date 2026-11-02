@@ -2,7 +2,9 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import {
+  AgentCommandsSchema,
   StartSettingsSchema,
+  type AgentCommands,
   type Repo,
   type StartSettings,
 } from '../../shared/types';
@@ -131,6 +133,19 @@ export class RepoRegistry {
     });
   }
 
+  /** Stores a repo's own agent start commands, trimmed; an empty one is dropped, so the tab runs the default. */
+  setAgentCommands(repoId: string, commands: AgentCommands): Promise<Repo> {
+    const parsed = AgentCommandsSchema.parse(commands);
+    const kept: AgentCommands = {};
+    for (const key of ['claude', 'opencode'] as const) {
+      const value = parsed[key]?.trim();
+      if (value) kept[key] = value;
+    }
+    return this.patch(repoId, (r) => {
+      r.agentCommands = kept;
+    });
+  }
+
   /** Re-reads name, base branch and .shellie.yml presence, e.g. after the user edits the file. */
   async refresh(id: string): Promise<Repo> {
     const current = this.get(id);
@@ -169,7 +184,12 @@ export class RepoRegistry {
 
   private async describe(
     base: Pick<Repo, 'id' | 'path' | 'connectionId'> &
-      Partial<Pick<Repo, 'workItemOnStart' | 'discovered' | 'baseBranch'>>,
+      Partial<
+        Pick<
+          Repo,
+          'workItemOnStart' | 'discovered' | 'baseBranch' | 'agentCommands'
+        >
+      >,
   ): Promise<Repo> {
     const config = await this.loadConfig(base.path);
     return {
@@ -185,6 +205,7 @@ export class RepoRegistry {
       configFound: config.found,
       discovered: base.discovered ?? false,
       workItemOnStart: base.workItemOnStart ?? StartSettingsSchema.parse({}),
+      ...(base.agentCommands && { agentCommands: base.agentCommands }),
     };
   }
 

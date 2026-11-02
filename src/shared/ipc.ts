@@ -17,6 +17,7 @@ import type { TerminalFailure } from './terminalFailure';
 
 export type RestartOptions = { withoutProjectConfig?: boolean };
 import type {
+  AgentCommands,
   Connection,
   ConnectionInput,
   CreateTaskInput,
@@ -160,6 +161,11 @@ export type Channels = {
   };
   'repos:setWorkItemOnStart': {
     args: [repoId: string, settings: StartSettings];
+    result: Repo;
+  };
+  /** The repo's own Claude Code and OpenCode start commands; an empty one means the default. */
+  'repos:setAgentCommands': {
+    args: [repoId: string, commands: AgentCommands];
     result: Repo;
   };
   /** Clearing the mark makes a repo found in a task a normal repo. */

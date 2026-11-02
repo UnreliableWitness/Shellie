@@ -249,6 +249,45 @@ describe('handlers: Claude Code sessions', () => {
     expect(def.sessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(calls.at(-1)?.flags).toEqual(['--session-id', def.sessionId]);
   });
+
+  it("starts Claude Code and OpenCode with the repo's own command, and the defaults without one (#191)", async () => {
+    const base = testPlatform();
+    const claudeBases: (string | undefined)[] = [];
+    const opencodeBases: (string | undefined)[] = [];
+    const platform = {
+      ...base,
+      claudeCommand: (
+        _prompt: string | null,
+        _flags: string[] = [],
+        own?: string,
+      ) => {
+        claudeBases.push(own);
+        return base.runCommand(echoCmd('claude'));
+      },
+      opencodeCommand: (own?: string) => {
+        opencodeBases.push(own);
+        return base.runCommand(echoCmd('opencode'));
+      },
+    };
+    const hx = await harness(fakeCrypto(), { platform });
+    const done = hx.setupDone();
+    const t = await hx.h['tasks:create'](hx.input({ openShell: false }));
+    await done;
+    await hx.h['terminals:open'](t.id, { kind: 'claude', label: 'Claude' });
+    await hx.h['terminals:open'](t.id, { kind: 'opencode', label: 'OC' });
+    await hx.h['repos:setAgentCommands'](hx.added.id, {
+      claude: 'claude --permission-mode acceptEdits',
+      opencode: 'opencode --foo',
+    });
+    await hx.h['terminals:open'](t.id, { kind: 'claude', label: 'Claude' });
+    await hx.h['terminals:open'](t.id, { kind: 'opencode', label: 'OC' });
+    expect(claudeBases).toEqual([
+      undefined,
+      'claude --permission-mode acceptEdits',
+    ]);
+    expect(opencodeBases).toEqual([undefined, 'opencode --foo']);
+    await hx.terminals.killAllForTask(t.id);
+  });
 });
 
 describe('handlers: terminals opened from the + menu', () => {

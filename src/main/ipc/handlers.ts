@@ -986,6 +986,10 @@ export function createHandlers(s: Services): Handlers {
     runNames?: string[],
     denyPaths: string[] = [],
   ): Command => {
+    // The repo's own start command (#191); a repo removed since falls back to the default.
+    const own = s.repos
+      .list()
+      .find((r) => r.id === terminalWorkspace(task, def).repoId)?.agentCommands;
     if (def.kind === 'claude') {
       const cwd = terminalWorkspace(task, def).worktreePath;
       const dirs = activeWorkspaces(task)
@@ -996,30 +1000,34 @@ export function createHandlers(s: Services): Handlers {
         s.claudeThemeSettings?.(denyRulesFor(denyPaths)) ?? null;
       const theme = themeFile ? ['--settings', themeFile] : [];
       if (resume && !def.sessionId)
-        return s.platform.claudeCommand(null, [
-          '--continue',
-          ...dirs,
-          ...theme,
-        ]);
+        return s.platform.claudeCommand(
+          null,
+          ['--continue', ...dirs, ...theme],
+          own?.claude,
+        );
       if (resume && def.sessionId && sessionExists(def.sessionId))
-        return s.platform.claudeCommand(null, [
-          '--resume',
-          def.sessionId,
+        return s.platform.claudeCommand(
+          null,
+          ['--resume', def.sessionId, ...dirs, ...theme],
+          own?.claude,
+        );
+      return s.platform.claudeCommand(
+        claudeContext(task, runNames),
+        [
+          ...(def.sessionId ? ['--session-id', def.sessionId] : []),
           ...dirs,
           ...theme,
-        ]);
-      return s.platform.claudeCommand(claudeContext(task, runNames), [
-        ...(def.sessionId ? ['--session-id', def.sessionId] : []),
-        ...dirs,
-        ...theme,
-      ]);
+        ],
+        own?.claude,
+      );
     }
     if (def.kind === 'run' && def.setupCommands)
       return s.platform.setupCommands(def.setupCommands);
     if (def.kind === 'run' && def.command)
       return s.platform.runCommand(def.command, runArgs.get(def.id));
     if (def.kind === 'copilot') return s.platform.copilotCommand();
-    if (def.kind === 'opencode') return s.platform.opencodeCommand();
+    if (def.kind === 'opencode')
+      return s.platform.opencodeCommand(own?.opencode);
     return s.platform.interactiveShell();
   };
 
@@ -3643,6 +3651,11 @@ export function createHandlers(s: Services): Handlers {
     },
     'repos:setWorkItemOnStart': async (repoId, settings) => {
       const repo = await s.repos.setWorkItemOnStart(repoId, settings);
+      reposChanged();
+      return repo;
+    },
+    'repos:setAgentCommands': async (repoId, commands) => {
+      const repo = await s.repos.setAgentCommands(repoId, commands);
       reposChanged();
       return repo;
     },

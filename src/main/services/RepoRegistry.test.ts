@@ -110,6 +110,33 @@ describe('RepoRegistry', () => {
       assignToMe: true,
       stateOverrides: {},
     });
+    expect(reg.get('r1').agentCommands).toBeUndefined();
+  });
+
+  it('setAgentCommands stores trimmed commands, drops empty ones and keeps them on refresh', async () => {
+    const dir = tempDir('shellie-reg-cmd-');
+    const file = path.join(dir, 'state.json');
+    const store = new TaskStore(file);
+    await store.load();
+    const reg = new RepoRegistry(store, new GitClient());
+    const added = await reg.add(makeRepo('commands'));
+    expect(added.agentCommands).toBeUndefined();
+    const updated = await reg.setAgentCommands(added.id, {
+      claude: '  claude --permission-mode acceptEdits ',
+      opencode: '   ',
+    });
+    expect(updated.agentCommands).toEqual({
+      claude: 'claude --permission-mode acceptEdits',
+    });
+    const store2 = new TaskStore(file);
+    await store2.load();
+    const reg2 = new RepoRegistry(store2, new GitClient());
+    expect((await reg2.refresh(added.id)).agentCommands).toEqual({
+      claude: 'claude --permission-mode acceptEdits',
+    });
+    expect(
+      (await reg2.setAgentCommands(added.id, { claude: '' })).agentCommands,
+    ).toEqual({});
   });
 
   it('setWorkItemOnStart persists', async () => {

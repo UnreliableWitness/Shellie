@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AppSettings } from '../../shared/usage';
 import type { ThemeChoice } from '../../shared/theme';
 import type {
+  AgentCommands,
   ShellieConfig,
   Repo,
   StartSettings,
@@ -128,6 +129,62 @@ function StartOptions({ repo }: { repo: Repo }) {
   );
 }
 
+const AGENT_COMMANDS = [
+  { key: 'claude', label: 'Claude Code command' },
+  { key: 'opencode', label: 'OpenCode command' },
+] as const;
+
+/** The repo's own start command for Claude Code and OpenCode tabs (#191), saved on leaving a field. */
+function AgentCommandOptions({ repo }: { repo: Repo }) {
+  const notify = useStore((s) => s.notify);
+  const saved = repo.agentCommands;
+  const [draft, setDraft] = useState<AgentCommands>(saved ?? {});
+
+  useEffect(() => setDraft(saved ?? {}), [saved]);
+
+  // repos:changed is broadcast by the handler and refreshes the store.
+  const save = (key: keyof AgentCommands) => {
+    if ((draft[key] ?? '') === (saved?.[key] ?? '')) return;
+    void tryInvoke(
+      () =>
+        api().invoke('repos:setAgentCommands', repo.id, {
+          ...saved,
+          [key]: draft[key] ?? '',
+        }),
+      notify,
+    );
+  };
+
+  return (
+    <div className="list-row" style={{ display: 'block' }}>
+      <details>
+        <summary>Agent commands</summary>
+        <div className="small muted" style={{ marginTop: 4 }}>
+          Runs in your shell when a tab starts; empty means the default. Shellie
+          adds its own flags after the Claude Code command (session, resume,
+          extra folders, theme, task context), so enter only yours, e.g.{' '}
+          <span className="mono">claude --permission-mode acceptEdits</span>.
+        </div>
+        {AGENT_COMMANDS.map(({ key, label }) => (
+          <div key={key} className="small" style={{ marginTop: 4 }}>
+            <label>
+              {label}{' '}
+              <input
+                className="field mono"
+                aria-label={`${label} for ${repo.name}`}
+                placeholder={key}
+                value={draft[key] ?? ''}
+                onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                onBlur={() => save(key)}
+              />
+            </label>
+          </div>
+        ))}
+      </details>
+    </div>
+  );
+}
+
 function RepoRow({ repo }: { repo: Repo }) {
   const notify = useStore((s) => s.notify);
   const setRepos = useStore((s) => s.setRepos);
@@ -210,6 +267,7 @@ function RepoRow({ repo }: { repo: Repo }) {
         </button>
       </div>
       {repo.connectionId && <StartOptions repo={repo} />}
+      <AgentCommandOptions repo={repo} />
       {shown !== null && (
         <div
           className="codeblock"

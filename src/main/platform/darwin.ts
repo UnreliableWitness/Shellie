@@ -41,11 +41,12 @@ export function darwinPlatform(env: NodeJS.ProcessEnv): Platform {
       command: '/usr/bin/osascript',
       args: ['-l', 'JavaScript', '-e', CLONE_DIR, src, dest],
     }),
-    claudeCommand: (context, flags = []) =>
+    // A repo's own command is the user's shell text, so it is not quoted; Shellie's flags are.
+    claudeCommand: (context, flags = [], base) =>
       login([
         '-c',
         [
-          'exec claude',
+          `exec ${base?.trim() || 'claude'}`,
           ...[
             ...flags,
             ...(context === null ? [] : ['--append-system-prompt', context]),
@@ -55,7 +56,8 @@ export function darwinPlatform(env: NodeJS.ProcessEnv): Platform {
     probeCommand: (name) =>
       login(['-c', `command -v ${name} && ${name} --version`]),
     copilotCommand: () => login(['-c', 'exec copilot']),
-    opencodeCommand: () => login(['-c', 'exec opencode']),
+    opencodeCommand: (base) =>
+      login(['-c', `exec ${base?.trim() || 'opencode'}`]),
     userSecretsDir: (id) =>
       env.HOME
         ? path.posix.join(env.HOME, '.microsoft', 'usersecrets', id)

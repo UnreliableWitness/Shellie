@@ -32,9 +32,14 @@ export interface Platform {
   /**
    * Start Claude Code. `context` (the task) is appended to its system prompt, so Claude knows the task but waits
    * for the user's first message; null when resuming, as the session already has it. `flags` are Shellie's own
-   * (session id, resume).
+   * (session id, resume). `base` is the repo's own command line (the user's shell text, run as written, with the
+   * flags after it); empty or absent means plain `claude`.
    */
-  claudeCommand(context: string | null, flags?: string[]): Command;
+  claudeCommand(
+    context: string | null,
+    flags?: string[],
+    base?: string,
+  ): Command;
   /**
    * Look for an agent CLI on the user's PATH: stdout is the executable's path on line 1 and `<name> --version`
    * on line 2; the exit code is non-zero when `name` is not found.
@@ -42,8 +47,8 @@ export interface Platform {
   probeCommand(name: string): Command;
   /** Start GitHub Copilot CLI. */
   copilotCommand(): Command;
-  /** Start OpenCode (no AI cost tracking). */
-  opencodeCommand(): Command;
+  /** Start OpenCode (no AI cost tracking); `base` is the repo's own command line, like for Claude. */
+  opencodeCommand(base?: string): Command;
   /** Where .NET stores a project's user secrets (`secrets.json` inside); the folder may not exist; null when the home folder is unknown. */
   userSecretsDir(id: string): string | null;
   /** Open a folder in the editor. */

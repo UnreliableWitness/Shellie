@@ -237,6 +237,39 @@ describe('windowsPlatform', () => {
     });
   });
 
+  it("runs the repo's own claude command through PowerShell, even with a claude.exe on PATH", () => {
+    expect(
+      make({ claude: 'C:\\bin\\claude.exe' }).claudeCommand(
+        `it's "go"`,
+        ['--session-id', 'abc'],
+        'claude --permission-mode acceptEdits',
+      ),
+    ).toEqual({
+      command: 'powershell.exe',
+      args: [
+        '-NoLogo',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-NoProfile',
+        '-Command',
+        "& claude --permission-mode acceptEdits '--session-id' 'abc' '--append-system-prompt' $env:SHELLIE_CLAUDE_PROMPT",
+      ],
+      env: { SHELLIE_CLAUDE_PROMPT: "it's 'go'" },
+    });
+    // An empty command is the default.
+    expect(
+      make({ claude: 'C:\\bin\\claude.exe' }).claudeCommand(null, [], ' '),
+    ).toEqual({ command: 'C:\\bin\\claude.exe', args: [] });
+  });
+
+  it("runs the repo's own opencode command", () => {
+    expect(
+      make({ opencode: 'C:\\o\\opencode.exe' })
+        .opencodeCommand('opencode --foo')
+        .args.at(-1),
+    ).toBe('& opencode --foo');
+  });
+
   it('starts opencode like copilot', () => {
     expect(make({ opencode: 'C:\\o\\opencode.exe' }).opencodeCommand()).toEqual(
       { command: 'C:\\o\\opencode.exe', args: [] },

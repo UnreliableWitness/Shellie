@@ -195,6 +195,13 @@ export const TaskSchema = z.object({
 });
 export type Task = z.infer<typeof TaskSchema>;
 
+/** A repo's own start commands for agent tabs: free shell text, Shellie adds its flags after it. */
+export const AgentCommandsSchema = z.object({
+  claude: z.string().optional(),
+  opencode: z.string().optional(),
+});
+export type AgentCommands = z.infer<typeof AgentCommandsSchema>;
+
 const RepoObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -209,6 +216,8 @@ const RepoObjectSchema = z.object({
     assignToMe: true,
     stateOverrides: {},
   }),
+  /** The command line a Claude Code or OpenCode tab runs in this repo (#191); absent means `claude` or `opencode`. */
+  agentCommands: AgentCommandsSchema.optional(),
 });
 // Repos saved before the rename have miacYmlFound.
 export const RepoSchema = z.preprocess(
