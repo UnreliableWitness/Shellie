@@ -1,0 +1,3 @@
+# Dependabot waits a week before offering a release
+
+Dependabot's version updates now use a `cooldown` (`.github/dependabot.yml`, both ecosystems): a new release of a dependency is offered only once it has been published for 7 days, 14 for an npm major. Malicious versions pushed through a hijacked maintainer account are usually found and removed within days, so this keeps them out of the patch and minor updates the PR poller merges by itself. Security updates skip the wait, so a fix for a known vulnerability still comes at once. Known gap: the wait is Dependabot's own; a dependency installed by hand (`npm install`) is not held back.
