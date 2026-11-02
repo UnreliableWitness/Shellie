@@ -163,12 +163,10 @@ export function periodsOf(
         task.finishedAt ? Date.parse(task.finishedAt) : now,
       ],
     ];
-  return task.openPeriods.map(
-    (p): Interval => [
-      Date.parse(p.start),
-      p.end === null ? now : Date.parse(p.end),
-    ],
-  );
+  return task.openPeriods.map((p): Interval => [
+    Date.parse(p.start),
+    p.end === null ? now : Date.parse(p.end),
+  ]);
 }
 
 /** Seconds from `3.5`, `3,5`, `3h`, `3h 30m`, `3h30`, `210m`, `45m` (a bare number is hours); null for anything else. */

@@ -1032,13 +1032,16 @@ describe('handlers: finish every workspace of a task', () => {
     commitFile(hx.repos[1].wt, 'docs.txt', 'a\n', 'Docs change');
     const realPush = GitClient.prototype.push;
     let failDocs = true;
-    hx.push.mockImplementation(
-      async function (this: GitClient, cwd, remote, branch) {
-        if (failDocs && cwd === hx.repos[1].wt)
-          throw new Error('! [rejected] (fetch first)');
-        return realPush.call(this, cwd, remote, branch);
-      },
-    );
+    hx.push.mockImplementation(async function (
+      this: GitClient,
+      cwd,
+      remote,
+      branch,
+    ) {
+      if (failDocs && cwd === hx.repos[1].wt)
+        throw new Error('! [rejected] (fetch first)');
+      return realPush.call(this, cwd, remote, branch);
+    });
     const finishAll = {
       ...opts,
       workspaces: [
