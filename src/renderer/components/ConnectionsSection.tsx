@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { connectionSection } from './GitAuthNotice';
 import { errorMessage } from '../../shared/errors';
 import { ProviderPicker, type ProviderChoice } from './ProviderPicker';
+import { SettingRow, SettingsCategory } from './settings/SettingRow';
 
 function ConnectionRow({ connection }: { connection: Connection }) {
   const notify = useStore((s) => s.notify);
@@ -289,10 +290,11 @@ export function ConnectionsSection() {
   }
 
   return (
-    <section id="ado" className="section">
-      <div className="section-head">
-        <h2>Connections</h2>
-        {!noTracker && (
+    <SettingsCategory
+      id="ado"
+      title="Connections"
+      commands={
+        noTracker ? undefined : (
           <button
             type="button"
             className="btn"
@@ -300,24 +302,51 @@ export function ConnectionsSection() {
           >
             Add connection&hellip;
           </button>
-        )}
-      </div>
-      <ProviderPicker
-        value={noTracker ? 'none' : 'azure-devops'}
-        onChange={(v) => void choose(v)}
-      />
-      <div className="list">
-        {connections.length === 0 && (
-          <div className="empty">
-            {noTracker
-              ? 'Tasks start blank on a branch: no work item, nothing written back.'
-              : 'No connections yet. Add your organization and pick its projects with a personal access token.'}
-          </div>
-        )}
-        {[...groups].map(([key, list]) => (
-          <OrganizationGroup key={key} connections={list} />
-        ))}
-      </div>
-    </section>
+        )
+      }
+    >
+      <SettingRow
+        id="user-conn-tracker"
+        category="Connections"
+        title="Work item tracker"
+        description="Where tasks get their work items from."
+        keywords={['Azure DevOps', 'GitHub', 'No tracker', 'provider']}
+        modified={noTracker}
+        onReset={() => void choose('azure-devops')}
+      >
+        <ProviderPicker
+          value={noTracker ? 'none' : 'azure-devops'}
+          onChange={(v) => void choose(v)}
+        />
+      </SettingRow>
+      <SettingRow
+        id="user-conn-ado"
+        category="Connections"
+        title="Azure DevOps"
+        description="Organizations and projects Shellie reads work items from, with their personal access token."
+        keywords={[
+          'organization',
+          'project',
+          'personal access token',
+          'PAT',
+          'Update token',
+          'Add a project',
+          'Verify',
+        ]}
+      >
+        <div className="list">
+          {connections.length === 0 && (
+            <div className="empty">
+              {noTracker
+                ? 'Tasks start blank on a branch: no work item, nothing written back.'
+                : 'No connections yet. Add your organization and pick its projects with a personal access token.'}
+            </div>
+          )}
+          {[...groups].map(([key, list]) => (
+            <OrganizationGroup key={key} connections={list} />
+          ))}
+        </div>
+      </SettingRow>
+    </SettingsCategory>
   );
 }

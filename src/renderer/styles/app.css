@@ -251,6 +251,14 @@ fieldset.group legend {
   background: var(--warn-bg);
   color: var(--warn);
 }
+.tag-red {
+  background: var(--red-bg);
+  color: var(--red);
+}
+.tag-muted {
+  background: var(--bg-selected);
+  color: var(--muted);
+}
 .dot {
   width: 8px;
   height: 8px;

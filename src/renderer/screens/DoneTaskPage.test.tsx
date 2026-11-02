@@ -32,6 +32,7 @@ const task: TaskView = {
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: created.toISOString(),
@@ -87,6 +88,7 @@ beforeEach(() =>
         connectionId: 'c1',
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,

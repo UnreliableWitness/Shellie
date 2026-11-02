@@ -1,9 +1,9 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { SetupState, TaskView } from '../../shared/types';
 import { useStore } from '../store';
-import { installFakeApi } from '../test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { SetupScreen } from './SetupScreen';
 
 const task: TaskView = {
@@ -30,6 +30,7 @@ const task: TaskView = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: 'now',
@@ -92,6 +93,7 @@ beforeEach(() =>
         connectionId: null,
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,
@@ -418,5 +420,93 @@ describe('SetupScreen', () => {
         ),
       ).toBe(true),
     );
+  });
+
+  describe('This task will…', () => {
+    const recorded = {
+      branch: 'feature/48231-show',
+      base: 'origin/main',
+      copy: ['.env'],
+      commands: ['npm ci'],
+      apm: null,
+      tabs: ['Claude Code', 'zsh'],
+      run: [],
+      workItem: { move: 'Active', assign: true },
+      editor: null,
+    };
+    const withSummary = (over: Partial<TaskView> = {}): TaskView => ({
+      ...task,
+      setup: { ...task.setup, summary: recorded },
+      ...over,
+    });
+
+    it('setup page shows the recorded summary, not the current config', async () => {
+      useStore.setState({ tasks: [withSummary()] });
+      // The repo's setup changed after the task was created.
+      installFakeApi({
+        'tasks:setupState': () => state,
+        'repos:config': () => ({
+          config: {
+            base: 'main',
+            branch: '{type}/{id}-{slug}',
+            copy: ['.env.local'],
+            setup: ['pnpm install'],
+            run: {},
+            found: true,
+          },
+          worktreeRoot: '/src/webshop.worktrees',
+          ...noOverrides,
+        }),
+      });
+      render(<SetupScreen taskId="t1" />);
+      const card = await screen.findByRole('region', {
+        name: 'This task will…',
+      });
+      expect(
+        within(card)
+          .getByText('Setup', { selector: '.task-summary-label' })
+          .closest('li'),
+      ).toHaveTextContent('npm ci');
+      expect(card).not.toHaveTextContent('pnpm install');
+      expect(
+        within(card)
+          .getByText('Env', { selector: '.task-summary-label' })
+          .closest('li'),
+      ).toHaveTextContent('.env');
+      expect(card).not.toHaveTextContent('.env.local');
+      expect(
+        within(card)
+          .getByText('Work item', { selector: '.task-summary-label' })
+          .closest('li'),
+      ).toHaveTextContent('Move to Active, assign to me');
+    });
+
+    it('older task without summary shows no card', async () => {
+      installFakeApi({ 'tasks:setupState': () => state });
+      render(<SetupScreen taskId="t1" />);
+      await screen.findByRole('listitem', {
+        name: 'Create branch and worktree',
+      });
+      expect(
+        screen.queryByRole('region', { name: 'This task will…' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('collapses the card once setup is done', async () => {
+      useStore.setState({ tasks: [withSummary({ status: 'ready' })] });
+      installFakeApi({ 'tasks:setupState': () => state });
+      render(<SetupScreen taskId="t1" />);
+      const toggle = await screen.findByRole('button', {
+        name: /This task will…/,
+      });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(
+        screen.queryByText('Branch', { selector: '.task-summary-label' }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(toggle);
+      expect(
+        screen.getByText('Branch', { selector: '.task-summary-label' }),
+      ).toBeInTheDocument();
+    });
   });
 });

@@ -29,6 +29,7 @@ const task = (id: string, terms: string[]): TaskView => ({
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: terms.map((t) => ({ id: t, kind: 'shell' as const, label: t })),
   createdAt: 'now',
@@ -255,6 +256,7 @@ describe('activeConnection', () => {
     connectionId,
     configFound: true,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

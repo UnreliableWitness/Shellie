@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { type BudgetSettings, type Vendor, VENDORS } from '../../shared/budget';
 import { api, saveSettings, tryInvoke } from '../api';
+import { type AppSettings, defaultSettings } from '../../shared/usage';
 import { useStore } from '../store';
+import { SettingRow, SettingsCategory } from './settings/SettingRow';
 import { useCostServerStatus } from './CostServerSection';
 
 type Draft = {
@@ -41,12 +43,14 @@ export function BudgetSection({
     copilot: Boolean(tiers?.copilot),
   };
   const [drafts, setDrafts] = useState<Drafts | null>(null);
+  const [saved, setSaved] = useState<AppSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
     void tryInvoke(() => api().invoke('settings:get'), notify).then((s) => {
       if (!live || !s) return;
+      setSaved(s);
       setDrafts({
         claude: toDraft(s.claudeBudget),
         copilot: toDraft(s.copilotBudget),
@@ -94,12 +98,33 @@ export function BudgetSection({
       };
     }
     setError(null);
-    const saved = await tryInvoke(() => saveSettings(patch), notify);
-    if (saved) notify('info', 'Settings saved');
+    const next = await tryInvoke(() => saveSettings(patch), notify);
+    if (next) {
+      setSaved(next);
+      notify('info', 'Settings saved');
+    }
   };
 
   const update = (vendor: Vendor, next: Partial<Draft>) =>
     setDrafts((d) => d && { ...d, [vendor]: { ...d[vendor], ...next } });
+
+  /** Puts one part of a budget back to its default in the form and saves only that part. */
+  const reset = async (
+    vendor: Vendor,
+    part: Partial<BudgetSettings>,
+    form: Partial<Draft>,
+  ) => {
+    update(vendor, form);
+    setError(null);
+    const next = await tryInvoke(
+      () =>
+        saveSettings((fresh) => ({
+          [KEYS[vendor]]: { ...fresh[KEYS[vendor]], ...part },
+        })),
+      notify,
+    );
+    if (next) setSaved(next);
+  };
 
   const alertBox = (
     vendor: Vendor,
@@ -121,117 +146,144 @@ export function BudgetSection({
       </label>
     );
 
+  const defaults = defaultSettings();
   return (
-    <section id="budgets" className="section">
-      <div className="section-head">
-        <h2>Budgets</h2>
-      </div>
-      <div className="list">
-        {drafts && (
-          <>
-            {VENDORS.map((vendor) => {
-              const locked = managed[vendor];
-              const tier = tiers?.[vendor];
-              // A managed budget shows the server's amount and start day, not the local ones.
-              const d =
-                locked && tier
-                  ? {
-                      ...drafts[vendor],
-                      monthlyEur: String(tier.monthlyEur),
-                      monthStartDay: String(tier.monthStartDay),
-                    }
-                  : drafts[vendor];
-              return (
-                <div
-                  key={vendor}
-                  className="conn-form"
-                  role="group"
-                  aria-label={`${NAMES[vendor]} budget`}
-                >
-                  <h3 style={{ gridColumn: '1 / -1' }}>
-                    {NAMES[vendor]} budget
-                  </h3>
-                  <label htmlFor={`budget-eur-${vendor}`}>
-                    Monthly budget (€)
-                  </label>
-                  <input
-                    id={`budget-eur-${vendor}`}
-                    className="field mono"
-                    type="number"
-                    min={1}
-                    step="any"
-                    placeholder="No budget"
-                    disabled={locked}
-                    value={d.monthlyEur}
-                    onChange={(e) =>
-                      update(vendor, { monthlyEur: e.target.value })
-                    }
-                  />
-                  <label htmlFor={`budget-day-${vendor}`}>
-                    Month starts on day
-                  </label>
-                  <input
-                    id={`budget-day-${vendor}`}
-                    className="field mono"
-                    type="number"
-                    min={1}
-                    max={28}
-                    disabled={locked}
-                    value={d.monthStartDay}
-                    onChange={(e) =>
-                      update(vendor, { monthStartDay: e.target.value })
-                    }
-                  />
-                  {locked && (
-                    <>
-                      <span />
-                      <span className="small muted">
-                        Set by your cost server
-                      </span>
-                    </>
+    <SettingsCategory id="budgets" title="Budgets">
+      {drafts &&
+        saved &&
+        VENDORS.map((vendor) => {
+          const locked = managed[vendor];
+          const tier = tiers?.[vendor];
+          const name = NAMES[vendor];
+          const stored = saved[KEYS[vendor]];
+          const initial = defaults[KEYS[vendor]];
+          // A managed budget shows the server's amount and start day, not the local ones.
+          const d =
+            locked && tier
+              ? {
+                  ...drafts[vendor],
+                  monthlyEur: String(tier.monthlyEur),
+                  monthStartDay: String(tier.monthStartDay),
+                }
+              : drafts[vendor];
+          const alertsChanged = (
+            Object.keys(initial.alerts) as (keyof Draft['alerts'])[]
+          ).some((k) => stored.alerts[k] !== initial.alerts[k]);
+          return (
+            <div key={vendor} role="group" aria-label={`${name} budget`}>
+              <SettingRow
+                id={`user-budget-${vendor}-amount`}
+                category="Budgets"
+                title={`${name} monthly budget`}
+                description={HELP[vendor]}
+                keywords={['Monthly budget', 'EUR', 'spend', 'limit']}
+                modified={!locked && stored.monthlyEur !== initial.monthlyEur}
+                onReset={
+                  locked
+                    ? undefined
+                    : () =>
+                        void reset(
+                          vendor,
+                          { monthlyEur: initial.monthlyEur },
+                          { monthlyEur: toDraft(initial).monthlyEur },
+                        )
+                }
+              >
+                <input
+                  id={`budget-eur-${vendor}`}
+                  aria-label="Monthly budget (€)"
+                  className="field mono"
+                  type="number"
+                  min={1}
+                  step="any"
+                  placeholder="No budget"
+                  disabled={locked}
+                  value={d.monthlyEur}
+                  onChange={(e) =>
+                    update(vendor, { monthlyEur: e.target.value })
+                  }
+                />
+                {locked && (
+                  <>
+                    {' '}
+                    <span className="small muted">Set by your cost server</span>
+                  </>
+                )}
+              </SettingRow>
+              <SettingRow
+                id={`user-budget-${vendor}-start`}
+                category="Budgets"
+                title={`${name} month start`}
+                description="The day of the month the budget starts again (1 to 28)."
+                keywords={['Month starts on day', 'month start day', 'reset']}
+                modified={
+                  !locked && stored.monthStartDay !== initial.monthStartDay
+                }
+                onReset={
+                  locked
+                    ? undefined
+                    : () =>
+                        void reset(
+                          vendor,
+                          { monthStartDay: initial.monthStartDay },
+                          { monthStartDay: toDraft(initial).monthStartDay },
+                        )
+                }
+              >
+                <input
+                  id={`budget-day-${vendor}`}
+                  aria-label="Month starts on day"
+                  className="field mono"
+                  type="number"
+                  min={1}
+                  max={28}
+                  disabled={locked}
+                  value={d.monthStartDay}
+                  onChange={(e) =>
+                    update(vendor, { monthStartDay: e.target.value })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id={`user-budget-${vendor}-alerts`}
+                category="Budgets"
+                title={`${name} warnings`}
+                description="Which warnings Home shows for this budget."
+                keywords={['alerts', '80%', 'forecast', 'used up']}
+                modified={alertsChanged}
+                onReset={() =>
+                  void reset(
+                    vendor,
+                    { alerts: initial.alerts },
+                    { alerts: initial.alerts },
+                  )
+                }
+              >
+                <div>
+                  {alertBox(vendor, 'at80', 'Warn at 80% of the budget')}
+                  {alertBox(
+                    vendor,
+                    'forecastOver',
+                    'Warn when the forecast goes over',
                   )}
-                  <span>Warnings</span>
-                  <div>
-                    {alertBox(vendor, 'at80', 'Warn at 80% of the budget')}
-                    {alertBox(
-                      vendor,
-                      'forecastOver',
-                      'Warn when the forecast goes over',
-                    )}
-                    {alertBox(
-                      vendor,
-                      'at100',
-                      'Warn when the budget is used up',
-                    )}
-                  </div>
-                  <span />
-                  <span className="small muted">{HELP[vendor]}</span>
+                  {alertBox(vendor, 'at100', 'Warn when the budget is used up')}
                 </div>
-              );
-            })}
-            <div className="conn-form">
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={save}
-                >
-                  Save
-                </button>
-              </div>
-              {error && (
-                <div
-                  role="alert"
-                  className="conn-status-bad"
-                  style={{ gridColumn: '1 / -1' }}
-                >
-                  {error}
-                </div>
-              )}
+              </SettingRow>
             </div>
-          </>
-        )}
-      </div>
-    </section>
+          );
+        })}
+      {drafts && saved && (
+        <div className="settings-actions">
+          <button type="button" className="btn btn-primary" onClick={save}>
+            Save
+          </button>
+          {error && (
+            <div role="alert" className="conn-status-bad">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+    </SettingsCategory>
   );
 }

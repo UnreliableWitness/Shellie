@@ -4,6 +4,7 @@ import { isReopening } from '../../shared/workspaces';
 import { api, tryInvoke } from '../api';
 import { GitAuthNotice } from '../components/GitAuthNotice';
 import { StepList } from '../components/StepList';
+import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { TaskTypeIcon } from '../components/TaskTypeIcon';
 import { PageHeader } from '../components/ui';
 import { useStore } from '../store';
@@ -169,6 +170,16 @@ export function SetupScreen({ taskId }: { taskId: string }) {
       />
       <div className="setup">
         <section className="setup-left">
+          {task.setup.summary && (
+            <TaskSummaryCard
+              summary={task.setup.summary}
+              repoId={task.repoId}
+              collapsible={
+                task.status === 'ready' ||
+                (state?.finished === true && state.ok === true)
+              }
+            />
+          )}
           <div className="muted">
             {reopening
               ? task.status === 'setup-failed'

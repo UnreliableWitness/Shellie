@@ -7,10 +7,11 @@ import {
   type AgentsDetected,
 } from '../../shared/agents';
 import type { DefaultTerminals } from '../../shared/terminals';
-import type { AppSettings } from '../../shared/usage';
+import { type AppSettings, defaultSettings } from '../../shared/usage';
 import { pretick } from '../agentsPretick';
 import { api, saveSettings, tryInvoke } from '../api';
 import { useStore } from '../store';
+import { SettingRow, SettingsCategory } from './settings/SettingRow';
 
 const DOTS: Record<AgentId, string> = {
   claude: 'var(--chart-claude)',
@@ -216,16 +217,36 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
   );
 
   if (embedded) return <div className="list">{body}</div>;
+  const defaults = defaultSettings().defaultTerminals;
+  const modified =
+    !!tabs &&
+    (Object.keys(defaults) as (keyof DefaultTerminals)[]).some(
+      (k) => tabs[k] !== defaults[k],
+    );
+  const reset = async () => {
+    setTabs(defaults);
+    await tryInvoke(() => saveSettings({ defaultTerminals: defaults }), notify);
+  };
   return (
-    <section id="terminals" className="section">
-      <div className="section-head">
-        <h2>Agents and terminals</h2>
-      </div>
-      <div className="list">
-        <div className="list-row" style={{ display: 'block' }}>
-          {body}
-        </div>
-      </div>
-    </section>
+    <SettingsCategory id="terminals" title="Agents and terminals">
+      <SettingRow
+        id="user-terminals-default"
+        category="Agents and terminals"
+        title="Default terminals"
+        description="The tabs a new task opens, and which agent CLIs are installed."
+        keywords={[
+          'Claude Code',
+          'Copilot CLI',
+          'OpenCode',
+          'shell',
+          'agents',
+          'Check again',
+        ]}
+        modified={modified}
+        onReset={() => void reset()}
+      >
+        {body ?? <div className="muted small">Loading&hellip;</div>}
+      </SettingRow>
+    </SettingsCategory>
   );
 }

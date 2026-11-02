@@ -244,7 +244,7 @@ async function stripCopied(
   log(`left stored secrets out of ${path.basename(target)}`);
 }
 
-function insideDir(base: string, rel: string): string | null {
+export function insideDir(base: string, rel: string): string | null {
   const target = path.resolve(base, rel);
   return isInside(base, target) ? target : null;
 }

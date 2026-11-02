@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskView } from '../../shared/types';
 import { CHANGES_TAB, useStore } from '../store';
-import { installFakeApi } from '../test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { Shell } from '../App';
 import { invalidateRepoConfig } from '../hooks/useRepoConfig';
 
@@ -63,6 +63,7 @@ const task: TaskView = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [
     { id: 'c1', kind: 'claude', label: 'Claude Code' },
@@ -102,6 +103,7 @@ const extra = {
 } as unknown as TaskView['extraWorkspaces'][number];
 const config = {
   worktreeRoot: '/src/webshop.worktrees',
+  ...noOverrides,
   config: {
     base: 'main',
     branch: '{type}/{id}-{slug}',
@@ -123,6 +125,7 @@ beforeEach(() =>
         connectionId: null,
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,
@@ -942,6 +945,7 @@ describe('TaskScreen workspaces', () => {
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

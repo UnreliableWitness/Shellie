@@ -1,8 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
-import type { ShellieConfig } from '../../shared/types';
+import type { RepoOverrides, ShellieConfig } from '../../shared/types';
+import { OVERRIDE_KEYS, type OverrideKey } from '../../shared/repoConfig';
 import { pathExists } from '../fsRetry';
 import { GitClient } from './GitClient';
 import {
@@ -48,20 +49,48 @@ export async function loadShellieConfig(
   repoPath: string,
   git?: BaseGit,
 ): Promise<ShellieConfig> {
-  const file = await configFileFor(repoPath);
-  const defaultSetup = (await pathExists(
-    path.join(repoPath, 'package-lock.json'),
-  ))
+  return (await loadShellieFile(repoPath, git)).config;
+}
+
+/** What `.shellie.yml` gives: the config, the keys the file itself sets, and their values (Settings' "file value"). */
+export type ShellieFile = {
+  config: ShellieConfig;
+  fileKeys: Set<OverrideKey>;
+  file: Partial<RepoOverrides>;
+};
+
+/** The config when the file gives nothing: no file, or (Settings) a file that does not parse. */
+export async function shellieDefaults(
+  repoPath: string,
+  found: boolean,
+  git?: BaseGit,
+): Promise<ShellieConfig> {
+  return toConfig(
+    ShellieYmlSchema.parse({}),
+    await defaultSetupFor(repoPath),
+    found,
+    await defaultBaseBranch(repoPath, git),
+  );
+}
+
+async function defaultSetupFor(repoPath: string): Promise<string[]> {
+  return (await pathExists(path.join(repoPath, 'package-lock.json')))
     ? ['npm ci']
     : [];
+}
 
+/** Reads `.shellie.yml` once; throws `ShellieConfigError` when it is not valid. */
+export async function loadShellieFile(
+  repoPath: string,
+  git?: BaseGit,
+): Promise<ShellieFile> {
+  const file = await configFileFor(repoPath);
   if (file === null)
-    return toConfig(
-      ShellieYmlSchema.parse({}),
-      defaultSetup,
-      false,
-      await defaultBaseBranch(repoPath, git),
-    );
+    return {
+      config: await shellieDefaults(repoPath, false, git),
+      fileKeys: new Set(),
+      file: {},
+    };
 
   const text = await fs.readFile(file, 'utf8');
   let doc: unknown;
@@ -82,12 +111,22 @@ export async function loadShellieConfig(
       .join('; ');
     throw new ShellieConfigError(file, detail);
   }
-  return toConfig(
+  const config = toConfig(
     parsed.data,
-    defaultSetup,
+    await defaultSetupFor(repoPath),
     true,
     parsed.data.base ?? (await defaultBaseBranch(repoPath, git)),
   );
+  // A strict schema: every key of the parsed document is one the file sets.
+  const raw = doc as Record<string, unknown>;
+  const fileKeys = new Set<OverrideKey>();
+  for (const k of OVERRIDE_KEYS) {
+    const yamlKey = k === 'reviewCollapse' ? 'review' : k;
+    if (raw[yamlKey] !== undefined) fileKeys.add(k);
+  }
+  const values: Partial<RepoOverrides> = {};
+  for (const k of fileKeys) Object.assign(values, { [k]: config[k] });
+  return { config, fileKeys, file: values };
 }
 
 function toConfig(
@@ -107,4 +146,27 @@ function toConfig(
     ...(c.review ? { reviewCollapse: c.review.collapse } : {}),
     found,
   };
+}
+
+/** The `.shellie.yml` text for the keys where `effective` differs from `defaults` (what no file gives). */
+export function configDiffYaml(
+  effective: ShellieConfig,
+  defaults: ShellieConfig,
+): string {
+  const differs = (a: unknown, b: unknown) =>
+    JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
+  const doc: Record<string, unknown> = {};
+  if (differs(effective.base, defaults.base)) doc.base = effective.base;
+  if (differs(effective.branch, defaults.branch)) doc.branch = effective.branch;
+  if (differs(effective.copy, defaults.copy)) doc.copy = effective.copy;
+  if (
+    differs(effective.copyAgentConfig ?? true, defaults.copyAgentConfig ?? true)
+  )
+    doc.copyAgentConfig = effective.copyAgentConfig ?? true;
+  if (differs(effective.setup, defaults.setup)) doc.setup = effective.setup;
+  if (differs(effective.run, defaults.run)) doc.run = effective.run;
+  if (differs(effective.apm, defaults.apm)) doc.apm = effective.apm;
+  if (differs(effective.reviewCollapse ?? [], defaults.reviewCollapse ?? []))
+    doc.review = { collapse: effective.reviewCollapse };
+  return Object.keys(doc).length === 0 ? '{}\n' : stringifyYaml(doc);
 }

@@ -1,10 +1,10 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo } from '../../shared/types';
 import { defaultSettings } from '../../shared/usage';
 import { useStore } from '../store';
-import { installFakeApi } from '../test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { NewTaskScreen } from './NewTaskScreen';
 
 const webshop: Repo = {
@@ -15,6 +15,7 @@ const webshop: Repo = {
   connectionId: null,
   configFound: true,
   discovered: false,
+  overrides: {},
   workItemOnStart: {
     moveToInProgress: true,
     assignToMe: true,
@@ -23,6 +24,7 @@ const webshop: Repo = {
 };
 const config = {
   worktreeRoot: '/src/webshop.worktrees',
+  ...noOverrides,
   config: {
     base: 'main',
     branch: '{type}/{id}-{slug}',
@@ -66,6 +68,22 @@ describe('NewTaskScreen', () => {
     expect(screen.getByLabelText('Branch')).toHaveValue(
       'bugfix/48231-show-estimated-delivery-date-on-product',
     );
+  });
+
+  it('shows a broken .shellie.yml and does not create a task', async () => {
+    installFakeApi({
+      'repos:config': () => ({
+        ...config,
+        fileError: '/src/webshop/.shellie.yml: not valid YAML: bad',
+      }),
+    });
+    render(<NewTaskScreen />);
+    expect(
+      await screen.findByText('/src/webshop/.shellie.yml: not valid YAML: bad'),
+    ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Work item id'), '48231');
+    await userEvent.type(screen.getByLabelText('Title'), 'Broken');
+    expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled();
   });
 
   it('keeps a branch the user edited by hand', async () => {
@@ -614,5 +632,45 @@ describe('NewTaskScreen', () => {
       await screen.findByRole('button', { name: /Save delivery address/ }),
     );
     await waitFor(() => expect(create).toBeEnabled());
+  });
+
+  it('shows what the task will do, live from the form', async () => {
+    installFakeApi({
+      'repos:config': () => config,
+      'repos:copyEntries': () => ({
+        entries: [
+          { path: '.env', state: 'present', folder: false },
+          { path: '.env.local', state: 'missing', folder: false },
+        ],
+        suggestions: [],
+      }),
+    });
+    render(<NewTaskScreen />);
+    await userEvent.type(screen.getByLabelText('Work item id'), '48231');
+    await userEvent.type(screen.getByLabelText('Title'), 'Show date');
+    const card = await screen.findByRole('region', {
+      name: 'This task will…',
+    });
+    const line = (name: string) =>
+      within(card)
+        .getByText(name, { selector: '.task-summary-label' })
+        .closest('li');
+    await waitFor(() =>
+      expect(line('Setup')).toHaveTextContent('npm ci, npm run build'),
+    );
+    expect(line('Branch')).toHaveTextContent(
+      'feature/48231-show-date from origin/main',
+    );
+    expect(line('Work item')).toHaveTextContent(
+      'Move to In Progress, assign to me',
+    );
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      '.env.local is missing in the main checkout',
+    );
+    await userEvent.click(screen.getByLabelText('npm run build'));
+    expect(line('Setup')).toHaveTextContent(/^Setupnpm ciEdit$/);
+    expect(line('Opens')).toHaveTextContent('Claude Code, Shell');
+    await userEvent.click(screen.getByLabelText('Open a shell tab'));
+    expect(line('Opens')).not.toHaveTextContent('Shell');
   });
 });

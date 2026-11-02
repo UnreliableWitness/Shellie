@@ -32,6 +32,7 @@ const task: TaskView = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: 'now',
@@ -142,6 +143,7 @@ beforeEach(() => {
         connectionId: 'c1',
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,
@@ -294,6 +296,7 @@ describe('UsagePanel', () => {
           connectionId: null,
           configFound: true,
           discovered: false,
+          overrides: {},
           workItemOnStart: {
             moveToInProgress: true,
             assignToMe: true,

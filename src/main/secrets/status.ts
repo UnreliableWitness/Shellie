@@ -25,7 +25,7 @@ export type StatusDeps = {
 };
 
 /** The files git tracks under `root`; null when git cannot say (never an empty set: that would read as "none"). */
-async function trackedIn(
+export async function trackedIn(
   git: GitClient,
   root: string,
 ): Promise<Set<string> | null> {
@@ -74,7 +74,7 @@ async function walk(
 }
 
 /** The copied files holding a stored key, with how many of the stored names they hold between them. */
-async function holding(
+export async function holding(
   root: string,
   copy: string[],
   names: string[],

@@ -18,7 +18,7 @@ import {
 } from '../../shared/terminalFailure';
 import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { GitClient } from '../services/GitClient';
-import { loadShellieConfig } from '../services/ShellieConfig';
+import { loadEffectiveConfig } from '../services/effectiveConfig';
 import { TaskStore } from '../services/TaskStore';
 import { TerminalManager } from '../services/TerminalManager';
 import { addOrigin, commitFile, git, makeRepo } from '../test-helpers/gitRepo';
@@ -31,6 +31,10 @@ import {
 } from '../test-helpers/shell';
 import { createHandlers, type Services } from './handlers';
 import { allTerminals, harness } from './handlersHarness';
+
+/** The file's config without any repo overrides. */
+const loadShellieConfig = (p: string) =>
+  loadEffectiveConfig(p, { repos: () => [], tasks: () => [] });
 
 describe('handlers: terminals', () => {
   it('opens a run terminal, exposes its buffer, restarts and kills it', async () => {

@@ -30,6 +30,7 @@ const task: TaskView = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [
     { id: 'c1', kind: 'claude', label: 'Claude Code' },
@@ -99,6 +100,7 @@ beforeEach(() => {
         connectionId: 'c1',
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,

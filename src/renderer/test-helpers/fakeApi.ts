@@ -2,6 +2,7 @@ import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
 import type { Channels, Events, ShellieApi } from '../../shared/ipc';
 import type { RendererTelemetry } from '../../shared/telemetry';
+import { OVERRIDE_KEYS, type ConfigSource } from '../../shared/repoConfig';
 
 type AnyFn = (...args: never[]) => unknown;
 export type FakeHandlers = Partial<{
@@ -35,6 +36,15 @@ export const emptyTime = (taskId: string): TaskTime => ({
   booking: null,
   estimate: null,
 });
+
+/** The `repos:config` fields of a repo with no overrides and nothing from the file; spread next to `config`. */
+export const noOverrides = {
+  sources: Object.fromEntries(
+    OVERRIDE_KEYS.map((k) => [k, 'default' as ConfigSource]),
+  ) as Channels['repos:config']['result']['sources'],
+  file: {},
+  fileError: null,
+};
 
 const defaults: FakeHandlers = {
   'budget:get': (_vendor, monthOffset) => ({
@@ -187,6 +197,7 @@ const defaults: FakeHandlers = {
   'secrets:list': () => [],
   'secrets:forget': () => undefined,
   'secrets:repoDefault': () => 'development',
+  'repos:copyEntries': () => ({ entries: [], suggestions: [] }),
   'secrets:status': () => ({
     state: 'empty',
     reasons: [],
@@ -217,6 +228,7 @@ const defaults: FakeHandlers = {
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: settings,
   }),
   'repos:setAgentCommands': (repoId, commands) => ({
@@ -227,6 +239,7 @@ const defaults: FakeHandlers = {
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

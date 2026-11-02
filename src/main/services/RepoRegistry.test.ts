@@ -45,6 +45,7 @@ describe('RepoRegistry', () => {
       path: repo,
       connectionId: 'c1',
       discovered: true,
+      overrides: {},
     });
     expect(await reg.addDiscovered(path.join(repo), null)).toEqual(added);
     expect(reg.list()).toHaveLength(1);
@@ -71,6 +72,7 @@ describe('RepoRegistry', () => {
       connectionId: null,
       configFound: false,
       discovered: false,
+      overrides: {},
       workItemOnStart: {
         moveToInProgress: true,
         assignToMe: true,
@@ -97,6 +99,7 @@ describe('RepoRegistry', () => {
             connectionId: null,
             configFound: false,
             discovered: false,
+            overrides: {},
           },
         ],
         tasks: [],
@@ -169,6 +172,7 @@ describe('RepoRegistry', () => {
       baseBranch: 'develop',
       configFound: true,
       discovered: false,
+      overrides: {},
       workItemOnStart: {
         moveToInProgress: true,
         assignToMe: true,
@@ -245,6 +249,7 @@ describe('RepoRegistry', () => {
           startClaude: false,
           openShell: false,
           openCopilot: false,
+          summary: null,
         },
         terminals: [],
         createdAt: 'now',
@@ -365,5 +370,37 @@ describe('RepoRegistry.add options', () => {
     expect(reg.get(added.id).baseBranch).toBe('master');
     reg.list()[0] = { ...added, baseBranch: 'develop' };
     expect((await reg.refresh(added.id)).baseBranch).toBe('develop');
+  });
+  it('setOverride stores and null removes', async () => {
+    const reg = await registry();
+    const added = await reg.add(makeRepo('over'));
+    const set = await reg.setOverride(added.id, 'setup', ['pnpm i']);
+    expect(set.overrides).toEqual({ setup: ['pnpm i'] });
+    await reg.setOverride(added.id, 'apm', false);
+    expect(reg.get(added.id).overrides).toEqual({
+      setup: ['pnpm i'],
+      apm: false,
+    });
+    const removed = await reg.setOverride(added.id, 'setup', null);
+    expect(removed.overrides).toEqual({ apm: false });
+    expect((await reg.clearOverrides(added.id)).overrides).toEqual({});
+  });
+
+  it('refresh keeps overrides', async () => {
+    const reg = await registry();
+    const added = await reg.add(makeRepo('keep'));
+    await reg.setOverride(added.id, 'branch', 'fix/{id}');
+    expect((await reg.refresh(added.id)).overrides).toEqual({
+      branch: 'fix/{id}',
+    });
+  });
+
+  it('setOverride rejects a wrong type', async () => {
+    const reg = await registry();
+    const added = await reg.add(makeRepo('wrong'));
+    await expect(
+      reg.setOverride(added.id, 'setup', 'x' as unknown as string[]),
+    ).rejects.toThrow();
+    expect(reg.get(added.id).overrides).toEqual({});
   });
 });

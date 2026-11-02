@@ -1,6 +1,7 @@
 // handlers tests, part 1 of 6 (split so CI can run them on several machines at once).
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -19,7 +20,12 @@ import type { WorkspaceDetector } from '../workspaces/WorkspaceDetector';
 import { commitFile, git, makeRepo } from '../test-helpers/gitRepo';
 import { isWindows, sleepCmd, writeLineCmd } from '../test-helpers/shell';
 import { createHandlers } from './handlers';
-import { connDirs, harness, expectTerminalsKept } from './handlersHarness';
+import {
+  connDirs,
+  harness,
+  expectTerminalsKept,
+  telemetryEvents,
+} from './handlersHarness';
 
 describe('handlers: cost server', () => {
   const budgets = {
@@ -259,6 +265,132 @@ describe('handlers: repos', () => {
     });
     const cfg = await h['repos:config'](repo.id);
     expect(cfg.config).toMatchObject({ found: false, base: 'develop' });
+  });
+
+  it('repos:config corrects a stale base branch of a repo without .shellie.yml (#120)', async () => {
+    const { h, store } = await harness();
+    const dir = makeRepo('stale-base');
+    git(dir, 'branch', 'develop');
+    const repo = await h['repos:add'](dir, { baseBranch: 'develop' });
+    store.state.repos.find((r) => r.id === repo.id)!.baseBranch = 'gone';
+    const cfg = await h['repos:config'](repo.id);
+    expect(cfg.config.base).toBe('main');
+    expect(store.state.repos.find((r) => r.id === repo.id)?.baseBranch).toBe(
+      'main',
+    );
+  });
+
+  it('createConfigFile writes only non-default keys and clears overrides', async () => {
+    const { h } = await harness();
+    const dir = makeRepo('create-config');
+    writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+    const repo = await h['repos:add'](dir);
+    await h['repos:setOverride'](repo.id, 'copy', ['.env']);
+    const saved = await h['repos:createConfigFile'](repo.id);
+    expect(readFileSync(path.join(dir, '.shellie.yml'), 'utf8')).toBe(
+      'copy:\n  - .env\n',
+    );
+    expect(saved.overrides).toEqual({});
+    expect(saved.configFound).toBe(true);
+    expect((await h['repos:config'](repo.id)).config.copy).toEqual(['.env']);
+  });
+
+  it('createConfigFile refuses when a file exists', async () => {
+    const { h, added } = await harness();
+    await expect(h['repos:createConfigFile'](added.id)).rejects.toThrow(
+      'webshop: .shellie.yml already exists',
+    );
+  });
+
+  it('repos:reveal refuses a path outside the repo', async () => {
+    const shown: string[] = [];
+    const { h, added } = await harness(undefined, {
+      revealFile: (p) => shown.push(p),
+    });
+    await expect(h['repos:reveal'](added.id, '../x')).rejects.toThrow(
+      /outside/,
+    );
+    await h['repos:reveal'](added.id, '.env');
+    expect(shown).toEqual([path.join(added.path, '.env')]);
+  });
+
+  it('repos:pickFile returns a repo-relative path and refuses one outside', async () => {
+    let picked: string | null = null;
+    const opened: string[] = [];
+    const { h, added } = await harness(undefined, {
+      pickFile: async (at) => {
+        opened.push(at);
+        return picked;
+      },
+    });
+    expect(await h['repos:pickFile'](added.id)).toBeNull();
+    expect(opened).toEqual([added.path]);
+    picked = path.join(added.path, 'config', 'appsettings.local.json');
+    mkdirSync(path.dirname(picked), { recursive: true });
+    writeFileSync(picked, '{}');
+    expect(await h['repos:pickFile'](added.id)).toBe(
+      'config/appsettings.local.json',
+    );
+    picked = path.join(path.dirname(added.path), 'elsewhere', '.env');
+    await expect(h['repos:pickFile'](added.id)).rejects.toThrow(
+      'Pick a file inside the repo',
+    );
+    picked = added.path;
+    await expect(h['repos:pickFile'](added.id)).rejects.toThrow(
+      'Pick a file inside the repo',
+    );
+  });
+
+  it('repos:copyEntries reports state and counts', async () => {
+    const t = telemetryEvents();
+    const { h, added } = await harness(undefined, { telemetry: t.telemetry });
+    const { entries } = await h['repos:copyEntries'](added.id);
+    expect(entries).toMatchObject([{ path: '.env', state: 'notIgnored' }]);
+    expect(t.named('settings.copyEntries')).toHaveLength(1);
+  });
+
+  it('repos:config returns sources and file values', async () => {
+    const { h, added } = await harness();
+    await h['repos:setOverride'](added.id, 'setup', ['pnpm i']);
+    const cfg = await h['repos:config'](added.id);
+    expect(cfg.config).toMatchObject({
+      copy: ['.env'],
+      setup: ['pnpm i'],
+      found: true,
+    });
+    expect(cfg.config).not.toHaveProperty('sources');
+    expect(cfg.sources).toMatchObject({
+      copy: 'file',
+      setup: 'override',
+      run: 'default',
+    });
+    expect(cfg.file).toEqual({ copy: ['.env'] });
+    expect(cfg.fileError).toBeNull();
+  });
+
+  it('repos:config reports a broken .shellie.yml instead of throwing', async () => {
+    const { h, added, repo } = await harness();
+    writeFileSync(path.join(repo, '.shellie.yml'), 'copy: [\n');
+    const cfg = await h['repos:config'](added.id);
+    expect(cfg.fileError).toMatch(/not valid YAML/);
+    expect(cfg.config.copy).toEqual([]);
+  });
+
+  it('repos:setOverride broadcasts repos:changed', async () => {
+    const { telemetry, named } = telemetryEvents();
+    const { h, added, broadcasts } = await harness(undefined, { telemetry });
+    const repo = await h['repos:setOverride'](added.id, 'branch', 'x/{id}');
+    expect(repo.overrides).toEqual({ branch: 'x/{id}' });
+    expect(broadcasts.some((b) => b.event === 'repos:changed')).toBe(true);
+    expect(named('settings.repoOverride')).toEqual([
+      ['settings.repoOverride', { key: 'branch', reset: false }, undefined],
+    ]);
+    broadcasts.length = 0;
+    expect((await h['repos:clearOverrides'](added.id)).overrides).toEqual({});
+    expect(broadcasts.some((b) => b.event === 'repos:changed')).toBe(true);
+    await expect(
+      h['repos:setOverride'](added.id, 'copy', 'nope'),
+    ).rejects.toThrow();
   });
 });
 

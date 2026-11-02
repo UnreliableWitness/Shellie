@@ -87,6 +87,10 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `usage.exportCsv` | none |
 | `focus.toggled`, `nav.toggled` | on / collapsed |
 | `settings.changed` | names of the changed settings (not their values) |
+| `settings.repoOverride` | `key`: which per-repo setting was overridden (`base`, `branch`, `copy`, `copyAgentConfig`, `setup`, `run`, `apm`, `reviewCollapse`, or `all` for Reset all), `reset`: true when it was removed; never the value |
+| `settings.copyEntries` | measurements: count per `copy:` entry state (`present`, `missing`, `holdsSecrets`, `notIgnored`, `outside`) and `suggestions`; no names or paths |
+| `settings.scope` | the Settings scope tab chosen (`user` or `repo`), by the tab or the other scope's results link |
+| `settings.search` | a Settings search, sent once the box has been still for 1 s; measurement `results`: matching settings in the current scope. Never the query |
 | `workItems.search` | picker scope (`sprint` or `mine`); whether search text was typed (not the text) |
 | `secrets.discovered` | Shellie looked for a repo's secrets (the import page opened); measurements only: `values` found, `secretLike`, `unassigned` (no environment from the file or profile name), `skipped` (names that cannot be environment variables), and the number of values per source kind (`dotenv`, `appsettings`, `launchSettings`, `userSecrets`, `vscode`, `compose`, `localSettings`, `secretsFolder`, `other`). Never a name, value, path or source |
 | `secrets.imported` | an import saved values; `environments`: the environments it saved values for, from the fixed four (`development`, `test`, `uat`, `production`, comma-separated); `rewriteWorktreeCopies`; measurements `values`, `worktreesRewritten`, `filesChanged` (main-checkout files the import took the keys out of) |

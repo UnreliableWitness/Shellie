@@ -10,7 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskView } from '../shared/types';
 import { useStore } from './store';
-import { installFakeApi } from './test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from './test-helpers/fakeApi';
 import { App, Shell } from './App';
 
 vi.mock('./components/TerminalView', () => ({ TerminalView: () => null }));
@@ -34,6 +34,7 @@ const task: TaskView = {
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: 'now',
@@ -63,6 +64,7 @@ const repo = {
   connectionId: null,
   configFound: true,
   discovered: false,
+  overrides: {},
   workItemOnStart: {
     moveToInProgress: true,
     assignToMe: true,
@@ -246,6 +248,7 @@ describe('full pages', () => {
     installFakeApi({
       'repos:config': () => ({
         worktreeRoot: '/src/webshop.worktrees',
+        ...noOverrides,
         config: {
           base: 'main',
           branch: '{type}/{id}-{slug}',
@@ -273,6 +276,7 @@ describe('full pages', () => {
     installFakeApi({
       'repos:config': () => ({
         worktreeRoot: '/src/webshop.worktrees',
+        ...noOverrides,
         config: {
           base: 'main',
           branch: '{type}/{id}-{slug}',

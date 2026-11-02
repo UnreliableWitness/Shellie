@@ -57,6 +57,28 @@ export const TaskStatusSchema = z.enum([
 ]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+/**
+ * What a task was given at creation ("This task will…"), shown on its setup page. Recorded once, so a setting
+ * changed later applies to the next task, not this one.
+ */
+export const SetupSummarySchema = z.object({
+  branch: z.string(),
+  base: z.string(),
+  copy: z.array(z.string()),
+  commands: z.array(z.string()),
+  /** The `apm` setting: false is off, null means the harnesses of the tabs. */
+  apm: z.union([z.literal(false), z.array(z.string())]).nullable(),
+  tabs: z.array(z.string()),
+  run: z.array(z.string()),
+  /** Null when the task has no work item; `move` is the state it moves to, null when it is not moved. */
+  workItem: z
+    .object({ move: z.string().nullable(), assign: z.boolean() })
+    .nullable(),
+  /** The chosen editor's label; null when Shellie picks one. */
+  editor: z.string().nullable(),
+});
+export type SetupSummary = z.infer<typeof SetupSummarySchema>;
+
 export const TaskSetupSchema = z.object({
   copy: z.boolean(),
   commands: z.array(z.string()),
@@ -65,6 +87,8 @@ export const TaskSetupSchema = z.object({
   openCopilot: z.boolean().default(false),
   /** Open an OpenCode tab when the task is ready. Absent on tasks from before the choice existed. */
   openOpencode: z.boolean().optional(),
+  /** What the task was given at creation; null on tasks from before it was recorded. */
+  summary: SetupSummarySchema.nullable().default(null),
 });
 
 /** What a finished task did, captured from git just before its worktree is removed. */
@@ -202,6 +226,21 @@ export const AgentCommandsSchema = z.object({
 });
 export type AgentCommands = z.infer<typeof AgentCommandsSchema>;
 
+/** Per-repo settings that win over `.shellie.yml`; a missing key means "not overridden". */
+export const RepoOverridesSchema = z
+  .object({
+    base: z.string().min(1),
+    branch: z.string().min(1),
+    copy: z.array(z.string()),
+    copyAgentConfig: z.boolean(),
+    setup: z.array(z.string()),
+    run: z.record(z.string(), z.string()),
+    apm: z.union([z.literal(false), z.literal('auto'), z.array(z.string())]),
+    reviewCollapse: z.array(z.string()),
+  })
+  .partial();
+export type RepoOverrides = z.infer<typeof RepoOverridesSchema>;
+
 const RepoObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -218,6 +257,7 @@ const RepoObjectSchema = z.object({
   }),
   /** The command line a Claude Code or OpenCode tab runs in this repo (#191); absent means `claude` or `opencode`. */
   agentCommands: AgentCommandsSchema.optional(),
+  overrides: RepoOverridesSchema.default({}),
 });
 // Repos saved before the rename have miacYmlFound.
 export const RepoSchema = z.preprocess(
@@ -242,6 +282,22 @@ export const StateSchema = z.object({
   discardedCleanup: z.array(DiscardedCleanupSchema).default([]),
 });
 export type State = z.infer<typeof StateSchema>;
+
+export type CopyEntryState =
+  | 'present'
+  | 'missing'
+  | 'holdsSecrets'
+  | 'notIgnored'
+  | 'outside';
+/** One `copy:` entry of a repo, as Settings shows it (never contents). */
+export type CopyEntry = {
+  path: string;
+  state: CopyEntryState;
+  folder: boolean;
+  files?: number;
+  size?: number;
+  modified?: string;
+};
 
 export type ShellieConfig = {
   base: string;

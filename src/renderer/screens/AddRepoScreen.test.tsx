@@ -93,8 +93,10 @@ describe('AddRepoScreen', () => {
   it('writes the edited proposal and the base branch by default', async () => {
     const { calls } = installFakeApi({
       'repos:inspect': () => inspection,
-      'repos:add': () => ({}) as never,
+      'repos:add': () => ({ id: 'r2', name: 'api' }) as never,
     });
+    // With another repo already registered, Settings opens on the one just added.
+    useStore.setState({ repos: [{ id: 'r1', name: 'webshop' } as never] });
     render(<AddRepoScreen folder="/src/webshop" />);
     await screen.findByText('Linked to project Shellie');
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -117,7 +119,7 @@ describe('AddRepoScreen', () => {
     await waitFor(() =>
       expect(useStore.getState().screen).toEqual({
         kind: 'settings',
-        section: 'repos',
+        repoId: 'r2',
       }),
     );
   });

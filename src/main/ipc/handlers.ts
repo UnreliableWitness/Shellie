@@ -25,7 +25,9 @@ import {
   cleanAll,
   cleanWorktree,
   computeStatus,
+  holding,
   storedNames,
+  trackedIn,
 } from '../secrets/status';
 import { denyRulesFor, denyTargets, inWorktree } from '../secrets/deny';
 import {
@@ -66,15 +68,16 @@ import type {
   DiscardWorkspaceCheck,
   FinishOptions,
   FinishRowResult,
-  ShellieConfig,
   PendingCleanup,
   PullRequestRef,
   Repo,
+  RepoOverrides,
   SetupEvent,
   SetupState,
   Task,
   TaskStatus,
   TaskSummary,
+  SetupSummary,
   TaskView,
   TerminalDef,
   WorkItemDetails,
@@ -83,6 +86,8 @@ import type {
   WorkspaceCheck,
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
+import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
+import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
   activeHome,
   activeWorkspaces,
@@ -115,6 +120,13 @@ import {
   runProbe,
   type ProbeRunner,
 } from '../services/agentDetector';
+import { inspectCopyEntries } from '../services/envFiles';
+import {
+  configDiffYaml,
+  configFileFor,
+  shellieDefaults,
+} from '../services/ShellieConfig';
+import { insideDir } from '../services/SetupRunner';
 import { createEditorHandlers } from '../editors/editorHandlers';
 import {
   detectEditors,
@@ -227,8 +239,14 @@ export type Services = {
   reviewDir?: string;
   terminals: TerminalManager;
   runner: SetupRunner;
-  loadConfig: (repoPath: string) => Promise<ShellieConfig>;
+  /** `.shellie.yml` with the repo's overrides on top (`loadEffectiveConfig`); `lenient` reports a broken file instead of throwing. */
+  loadConfig: (
+    repoPath: string,
+    opts?: { lenient?: boolean },
+  ) => Promise<EffectiveConfig>;
   pickFolder: () => Promise<string | null>;
+  /** A file dialog opened at `defaultPath`; null when cancelled. */
+  pickFile: (defaultPath: string) => Promise<string | null>;
   launch: (cmd: Command) => Promise<void>;
   /** Runs an agent probe with a timeout; defaults to `execFile` (tests inject a fake). */
   runProbe?: ProbeRunner;
@@ -519,7 +537,12 @@ export function createHandlers(s: Services): Handlers {
 
   /** Work item types per connection, with icons, for the session. A failed load is not kept, so the next call retries. */
   const typesCache = new Map<string, Promise<WorkItemTypeMeta[]>>();
-  const dropTypes = (connectionId: string) => typesCache.delete(connectionId);
+  /** The types already fetched, by connection: a new task's summary names the real In Progress state from them. */
+  const typesKnown = new Map<string, WorkItemTypeMeta[]>();
+  const dropTypes = (connectionId: string) => {
+    typesCache.delete(connectionId);
+    typesKnown.delete(connectionId);
+  };
 
   /** Runs an Azure DevOps call for a connection; a rejected token flips the status so Settings and the footer turn red. */
   const withConnection = async <T>(
@@ -2594,15 +2617,21 @@ export function createHandlers(s: Services): Handlers {
       return result;
     },
     'repos:config': async (repoId) => {
-      const config = await s.loadConfig(s.repos.get(repoId).path);
       // A repo kept in Shellie only (no file) starts from the base branch it was added with when that still exists,
-      // else the detected default; refresh corrects the stored value.
-      const repo = config.found
+      // else the detected default; refresh corrects a stale stored value (#120) before the merge uses it.
+      const repo = s.repos.get(repoId).configFound
         ? s.repos.get(repoId)
         : await s.repos.refresh(repoId);
+      const { sources, file, fileError, ...config } = await s.loadConfig(
+        repo.path,
+        { lenient: true },
+      );
       return {
-        config: config.found ? config : { ...config, base: repo.baseBranch },
+        config,
         worktreeRoot: worktreeRoot(repo.path),
+        sources,
+        file,
+        fileError,
       };
     },
 
@@ -2648,6 +2677,27 @@ export function createHandlers(s: Services): Handlers {
       )
         throw new Error(`Branch ${branch} is already being created`);
       for (const k of keys) creating.add(k);
+      let summary: SetupSummary | null = null;
+      try {
+        const config = await s.loadConfig(repo.path, { lenient: true });
+        summary = buildSetupSummary({
+          repoId: repo.id,
+          branch,
+          base: input.baseRef,
+          config,
+          copy: input.copy,
+          commands: input.commands,
+          tabs: setupTabLabels(input, s.platform.shellLabel),
+          workItem: input.workItem,
+          start: repo.workItemOnStart,
+          types: repo.connectionId
+            ? (typesKnown.get(repo.connectionId) ?? null)
+            : null,
+          editor: s.settings.get().editor,
+        });
+      } catch {
+        // The summary is for display; a config that cannot be read now shows up in setup itself.
+      }
       const createdAt = new Date().toISOString();
       const task: Task = {
         id: randomUUID(),
@@ -2667,6 +2717,7 @@ export function createHandlers(s: Services): Handlers {
           openShell: input.openShell,
           openCopilot: input.openCopilot ?? false,
           openOpencode: input.openOpencode ?? false,
+          summary,
         },
         terminals: [],
         createdAt,
@@ -3659,6 +3710,105 @@ export function createHandlers(s: Services): Handlers {
       reposChanged();
       return repo;
     },
+    'repos:setOverride': async (repoId, key, value) => {
+      const repo = await s.repos.setOverride(
+        repoId,
+        key,
+        value as RepoOverrides[typeof key] | null,
+      );
+      reposChanged();
+      tel.event('settings.repoOverride', { key, reset: value === null });
+      return repo;
+    },
+    'repos:clearOverrides': async (repoId) => {
+      const repo = await s.repos.clearOverrides(repoId);
+      reposChanged();
+      tel.event('settings.repoOverride', { key: 'all', reset: true });
+      return repo;
+    },
+    'repos:copyEntries': async (repoId) => {
+      const repo = s.repos.get(repoId);
+      const copy = await copyOf(repo.path);
+      const result = await inspectCopyEntries(repo.path, copy, {
+        git: s.git,
+        secretFiles: async (repoPath) => {
+          const tracked = await trackedIn(s.git, repoPath);
+          if (!tracked) return [];
+          return (
+            await holding(
+              repoPath,
+              copy,
+              storedNames(s.secrets, repoId),
+              tracked,
+            )
+          ).files;
+        },
+      });
+      const counts: Record<string, number> = {};
+      for (const e of result.entries)
+        counts[e.state] = (counts[e.state] ?? 0) + 1;
+      tel.event('settings.copyEntries', undefined, {
+        ...counts,
+        suggestions: result.suggestions.length,
+      });
+      return result;
+    },
+    'repos:reveal': async (repoId, rel) => {
+      const repo = s.repos.get(repoId);
+      const target = rel === null ? repo.path : insideDir(repo.path, rel);
+      if (target === null) throw new Error('That path is outside the repo');
+      if (rel === null && s.openPath) {
+        const error = await s.openPath(target);
+        if (error) throw new Error(error);
+        return;
+      }
+      (s.revealFile ?? (() => undefined))(target);
+    },
+    'repos:pickFile': async (repoId) => {
+      const repo = s.repos.get(repoId);
+      const picked = await s.pickFile(repo.path);
+      if (picked === null) return null;
+      // Both resolved, so a repo reached through a symlink still matches what the dialog returns.
+      const real = (p: string) => fs.realpath(p).catch(() => p);
+      const root = await real(repo.path);
+      const rel = path.relative(root, await real(picked));
+      if (!rel || insideDir(root, rel) === null)
+        throw new Error('Pick a file inside the repo');
+      return rel.split(path.sep).join('/');
+    },
+    'repos:openConfigFile': async (repoId) => {
+      const repo = s.repos.get(repoId);
+      const file = await configFileFor(repo.path);
+      if (!file) throw new Error(`${repo.name}: no .shellie.yml to open`);
+      try {
+        await editors.openFile(repo.id, repo.path, file);
+      } catch {
+        const error = await (s.openPath ?? (async () => ''))(file);
+        if (error) throw new Error(error);
+      }
+    },
+    'repos:createConfigFile': async (repoId) => {
+      const repo = await s.repos.refresh(repoId);
+      const effective = await s.loadConfig(repo.path, { lenient: true });
+      const text = configDiffYaml(
+        effective,
+        await shellieDefaults(repo.path, false, s.git),
+      );
+      try {
+        await fs.writeFile(path.join(repo.path, '.shellie.yml'), text, {
+          flag: 'wx',
+        });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'EEXIST')
+          throw new Error(`${repo.name}: .shellie.yml already exists`);
+        throw e;
+      }
+      await s.repos.clearOverrides(repoId);
+      const saved = await s.repos.refresh(repoId);
+      reposChanged();
+      tel.event('settings.repoOverride', { key: 'all', reset: true });
+      return saved;
+    },
     'repos:setDiscovered': async (repoId, discovered) => {
       const repo = await s.repos.setDiscovered(repoId, discovered);
       reposChanged();
@@ -3779,6 +3929,14 @@ export function createHandlers(s: Services): Handlers {
           ),
         );
         typesCache.set(connectionId, hit);
+        const fetched = hit;
+        hit.then(
+          (types) => {
+            if (typesCache.get(connectionId) === fetched)
+              typesKnown.set(connectionId, types);
+          },
+          () => {},
+        );
         hit.catch(() => {
           if (typesCache.get(connectionId) === hit) dropTypes(connectionId);
         });

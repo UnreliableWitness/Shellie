@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../shared/usage';
 import { startTaskFor } from './startTask';
-import { installFakeApi } from './test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from './test-helpers/fakeApi';
 
 const config = {
   worktreeRoot: '/w',
+  ...noOverrides,
   config: {
     base: 'main',
     branch: '{type}/{id}-{slug}',
@@ -78,5 +79,27 @@ describe('startTaskFor', () => {
       expect(input.environment).toBe('development');
       expect(input.environmentConfirmed).toBeUndefined();
     }
+  });
+
+  it('refuses with the error when .shellie.yml is broken', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => ({
+        ...config,
+        fileError: '/r/.shellie.yml: not valid YAML: bad',
+      }),
+      'tasks:create': () => ({ id: 't1' }) as never,
+    });
+    const notify = vi.fn();
+    const task = await startTaskFor(
+      'r1',
+      { id: '5', type: 'Task', title: 'Store the address', url: null },
+      notify,
+    );
+    expect(task).toBeUndefined();
+    expect(calls.some((c) => c.channel === 'tasks:create')).toBe(false);
+    expect(notify).toHaveBeenCalledWith(
+      'error',
+      '/r/.shellie.yml: not valid YAML: bad',
+    );
   });
 });

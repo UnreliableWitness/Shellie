@@ -187,7 +187,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
           'repository',
         ),
       );
-    } else go({ kind: 'settings', section: 'repos' });
+    } else go({ kind: 'settings', repoId: added.id });
   };
 
   return (
