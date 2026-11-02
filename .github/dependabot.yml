@@ -1,0 +1,32 @@
+# Dependency updates (#193). The PR poller (tools/agents/pr.mjs, docs/agents.md) merges a Dependabot PR by itself
+# when it is a patch or minor update and CI is green; majors and GitHub Actions bumps wait for the owner's Approve.
+# Security updates come as soon as an advisory is out (Settings › Code security), version updates weekly.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Brussels
+    # minor and patch updates in one PR; each major update has its own
+    groups:
+      npm-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+    labels: [dependencies]
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Brussels
+    groups:
+      actions-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+    labels: [dependencies]
+    open-pull-requests-limit: 5

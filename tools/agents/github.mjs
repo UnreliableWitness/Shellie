@@ -120,6 +120,7 @@ export function createGitHub(repo, token) {
       ...(await list(`${r}/pulls/${n}/comments?per_page=100`)),
     ],
     listPullFileStats: (n) => list(`${r}/pulls/${n}/files?per_page=100`),
+    listPullCommits: (n) => list(`${r}/pulls/${n}/commits?per_page=100`),
     updateBranch: (n, sha) =>
       api(`${r}/pulls/${n}/update-branch`, {
         method: 'PUT',

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from './config.mjs';
-import { decidePr, mainState, prBookkeeping } from './pr-decide.mjs';
+import {
+  decideDependabot,
+  decidePr,
+  dependabotUpdateType,
+  mainState,
+  prBookkeeping,
+} from './pr-decide.mjs';
 
 const sha = 'h1';
 const finding = {
@@ -434,5 +440,189 @@ describe('decidePr: re-run a red CI once before a fix', () => {
       decidePr(input(red, {}, { ...changes, ciRerunSha: undefined }) as never)
         .action,
     ).toBe('fix');
+  });
+});
+
+const meta = (...types: string[]) =>
+  [
+    'Bump the npm-minor-patch group with 2 updates',
+    '',
+    '---',
+    'updated-dependencies:',
+    ...types.flatMap((t, i) => [
+      `- dependency-name: dep${i}`,
+      '  dependency-type: direct:development',
+      `  update-type: version-update:semver-${t}`,
+    ]),
+    '...',
+  ].join('\n');
+
+describe('dependabotUpdateType', () => {
+  it("takes the largest update from the commits' metadata", () => {
+    expect(dependabotUpdateType([meta('patch')], '')).toBe('patch');
+    expect(dependabotUpdateType([meta('patch', 'minor')], '')).toBe('minor');
+    expect(dependabotUpdateType([meta('minor', 'major')], '')).toBe('major');
+  });
+  it('falls back to the versions in the title and body when the metadata has no update type', () => {
+    const msg =
+      'Bump vite from 6.1.0 to 6.1.2\n\n---\nupdated-dependencies:\n- dependency-name: vite\n  dependency-version: 6.1.2\n...';
+    expect(
+      dependabotUpdateType([msg], 'Bump vite from 6.1.0 to 6.1.2\n\nBumps ...'),
+    ).toBe('patch');
+    expect(
+      dependabotUpdateType(
+        [msg],
+        'Bump the npm group\n\nUpdates `a` from 1.2.0 to 1.3.0\nUpdates `b` from 2.0.0 to 3.0.0',
+      ),
+    ).toBe('major');
+    // a 0.x minor bump may break
+    expect(dependabotUpdateType([], 'Bump x from 0.3.1 to 0.4.0')).toBe(
+      'major',
+    );
+  });
+  it('is unknown without anything to read', () => {
+    expect(dependabotUpdateType(['Bump x'], 'Bump x')).toBe('unknown');
+    expect(dependabotUpdateType([], 'Bump x from 1.0.0-rc.1 to 1.0.0')).toBe(
+      'unknown',
+    );
+  });
+});
+
+describe('decideDependabot', () => {
+  const dep = (
+    over: Record<string, unknown> = {},
+    pr: Record<string, unknown> = {},
+    prState: Record<string, unknown> = {},
+  ) => ({
+    pr: {
+      number: 30,
+      user: { login: 'dependabot[bot]' },
+      labels: labels('dependencies'),
+      mergeable_state: 'clean',
+      head: { sha },
+      ...pr,
+    },
+    prState: { v: 1, kind: 'dependabot', ...prState },
+    checks: { state: 'green', failed: [] as string[] },
+    mainGreen: true,
+    mode: 'full',
+    ownerApproved: false,
+    ownerChangesRequested: false,
+    updateType: 'minor',
+    paths: { denied: [] as string[] },
+    behindMain: false,
+    ...over,
+  });
+
+  it('merges a green patch or minor update with a green main, without a review', () => {
+    expect(decideDependabot(dep() as never)).toMatchObject({
+      action: 'merge',
+      reason: 'minor update',
+    });
+    expect(decideDependabot(dep({ updateType: 'patch' }) as never).action).toBe(
+      'merge',
+    );
+  });
+
+  it("asks the owner for a major or unknown update, and merges it on the owner's Approve of the head", () => {
+    expect(decideDependabot(dep({ updateType: 'major' }) as never)).toEqual({
+      action: 'awaits-owner',
+      reasons: ['a major update'],
+    });
+    expect(
+      decideDependabot(dep({ updateType: 'unknown' }) as never).reasons,
+    ).toEqual(['the update type is unknown']);
+    expect(
+      decideDependabot(
+        dep({ updateType: 'major', ownerApproved: true }) as never,
+      ),
+    ).toMatchObject({ action: 'merge', reason: 'owner approved' });
+    // told once per commit and set of reasons
+    expect(
+      decideDependabot(
+        dep(
+          { updateType: 'major' },
+          {},
+          { awaitsOwnerSha: sha, awaitsOwnerReasons: 'a major update' },
+        ) as never,
+      ).reason,
+    ).toBe('owner-told');
+  });
+
+  it('never merges on red or running CI, a red main, a hold or a stop', () => {
+    expect(
+      decideDependabot(
+        dep({ checks: { state: 'pending', failed: [] } }) as never,
+      ).reason,
+    ).toBe('ci-pending');
+    expect(
+      decideDependabot(
+        dep({
+          checks: { state: 'red', failed: ['windows-installer'] },
+        }) as never,
+      ).action,
+    ).toBe('rerun');
+    // red again after the re-run: no fixer, the owner decides, and an Approve does not override it
+    expect(
+      decideDependabot(
+        dep(
+          {
+            checks: { state: 'red', failed: ['windows-installer'] },
+            ownerApproved: true,
+          },
+          {},
+          { ciRerunSha: sha },
+        ) as never,
+      ),
+    ).toEqual({
+      action: 'awaits-owner',
+      reasons: ['CI is red after a re-run (windows-installer)'],
+    });
+    expect(decideDependabot(dep({ mainGreen: false }) as never).reason).toBe(
+      'main-not-green',
+    );
+    expect(
+      decideDependabot(dep({}, { labels: labels('agent:hold-merge') }) as never)
+        .reasons,
+    ).toEqual(['agent:hold-merge']);
+    expect(
+      decideDependabot(dep({}, { labels: labels('agent:stop') }) as never)
+        .reason,
+    ).toBe('stopped');
+  });
+
+  it('leaves a conflict to Dependabot and brings a branch that is behind up to date', () => {
+    expect(
+      decideDependabot(dep({}, { mergeable_state: 'dirty' }) as never).reason,
+    ).toBe('dependabot-rebases');
+    expect(decideDependabot(dep({ behindMain: true }) as never).action).toBe(
+      'update-branch',
+    );
+  });
+
+  it('asks the owner for a workflow change and in implement mode', () => {
+    expect(
+      decideDependabot(
+        dep({ paths: { denied: ['.github/workflows/ci.yml'] } }) as never,
+      ).reasons,
+    ).toEqual(['touches .github/workflows/ci.yml']);
+    expect(
+      decideDependabot(dep({ mode: 'implement' }) as never).reasons,
+    ).toEqual(['implement mode: nothing merges by itself']);
+  });
+});
+
+describe('decidePr: dependency changes by agents', () => {
+  it('still waits for the owner when an agent PR touches package-lock.json', () => {
+    expect(
+      decidePr(
+        input({
+          paths: { denied: [], ownerOnly: ['package-lock.json'] },
+        }) as never,
+      ),
+    ).toEqual({
+      action: 'awaits-owner',
+      reasons: ['touches package-lock.json'],
+    });
   });
 });

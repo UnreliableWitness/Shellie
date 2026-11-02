@@ -30,6 +30,7 @@ describe('createGitHub', () => {
       'listReviews',
       'listPrComments',
       'listPullFileStats',
+      'listPullCommits',
       'updateBranch',
       'mergePull',
       'jobLogTail',
