@@ -92,13 +92,18 @@ export function windowsPlatform(
     args: [...BASE_ARGS, '-NoProfile', '-NonInteractive', '-Command', command],
   });
 
-  /** `flags` are Shellie's own tokens (no user text), so they are quoted for PowerShell; a prompt goes through an env var. */
+  /**
+   * `flags` are Shellie's own tokens (no user text), so they are quoted for PowerShell; a prompt goes through an env var.
+   * `base` is a repo's own command line, the user's PowerShell text: it always runs through PowerShell, unquoted.
+   */
   const tool = (
     name: string,
     flags: string[],
     promptEnv: string | null = null,
+    base?: string,
   ): Command => {
-    const found = deps.which(name);
+    const own = base?.trim();
+    const found = own ? null : deps.which(name);
     if (found && found.toLowerCase().endsWith('.exe'))
       return {
         command: found,
@@ -106,7 +111,7 @@ export function windowsPlatform(
       };
     // Not on PATH, or an npm shim: the same command line either way, so a missing tool fails in PowerShell
     // with the flags it was given ("not recognized") instead of a bare name that drops them.
-    const line = [`& ${name}`, ...flags.map(psQuote)];
+    const line = [`& ${own || name}`, ...flags.map(psQuote)];
     if (promptEnv !== null)
       return {
         ...ps([...line, '$env:SHELLIE_CLAUDE_PROMPT'].join(' ')),
@@ -144,16 +149,17 @@ export function windowsPlatform(
           .join('\n'),
       ),
     // The context is the value of the last flag, so it can travel in the env var like any prompt.
-    claudeCommand: (context, flags = []) =>
+    claudeCommand: (context, flags = [], base) =>
       tool(
         'claude',
         context === null ? flags : [...flags, '--append-system-prompt'],
         context,
+        base,
       ),
     probeCommand: (name) =>
       ps(`(Get-Command ${name} -ErrorAction Stop).Source; & ${name} --version`),
     copilotCommand: () => tool('copilot', []),
-    opencodeCommand: () => tool('opencode', []),
+    opencodeCommand: (base) => tool('opencode', [], null, base),
     userSecretsDir: (id) => {
       const appData =
         env.APPDATA ??
