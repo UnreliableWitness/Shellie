@@ -113,7 +113,7 @@ jobs:
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/pr.mjs decide
       - if: steps.decide.outputs.pr != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fix-task
           path: ${{ runner.temp }}/agents/fix-task.json
@@ -146,7 +146,7 @@ jobs:
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/pr.mjs run
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fix-result
           path: |
