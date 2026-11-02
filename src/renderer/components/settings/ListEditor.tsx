@@ -4,7 +4,7 @@ import {
   ArrowUp16Regular,
   Dismiss16Regular,
 } from '@fluentui/react-icons';
-import { type KeyboardEvent, useState } from 'react';
+import { type KeyboardEvent, useRef, useState } from 'react';
 import { IconButton } from '../ui/IconButton';
 
 /** An input that edits a draft: Enter or blur commits, Escape puts the old value back. */
@@ -26,17 +26,16 @@ function ItemInput({
   onCancel?: () => void;
 }) {
   const [draft, setDraft] = useState(value);
-  const [done, setDone] = useState(false);
+  // Set by Enter, Escape or a blur until the next edit, so the blur that follows Enter or Escape does nothing.
+  const done = useRef(false);
   const finish = (commit: boolean) => {
-    if (done) return;
-    setDone(true);
+    if (done.current) return;
+    done.current = true;
     if (commit) onCommit(draft.trim());
     else {
       setDraft(value);
       onCancel?.();
     }
-    // the same input can be used again after a commit
-    queueMicrotask(() => setDone(false));
   };
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -55,7 +54,10 @@ function ItemInput({
       placeholder={placeholder}
       value={draft}
       autoFocus={autoFocus}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => {
+        done.current = false;
+        setDraft(e.target.value);
+      }}
       onKeyDown={onKey}
       onBlur={() => finish(true)}
     />

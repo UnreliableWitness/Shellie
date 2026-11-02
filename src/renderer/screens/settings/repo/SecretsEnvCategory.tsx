@@ -120,11 +120,17 @@ export function SecretsEnvCategory({
     await loadSecrets();
   };
   const changeDefault = async (next: Environment) => {
+    const previous = env;
     setEnv(next);
-    await tryInvoke(
-      () => api().invoke('secrets:setRepoDefault', repo.id, next),
+    const saved = await tryInvoke(
+      () =>
+        api()
+          .invoke('secrets:setRepoDefault', repo.id, next)
+          .then(() => true),
       notify,
     );
+    // A failed save puts the select back on what is stored.
+    if (!saved) setEnv(previous);
   };
   const suggestions = (copy?.suggestions ?? []).filter(
     (s) => !list.includes(s),

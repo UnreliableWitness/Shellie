@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SecretsReason, SecretsStatus } from '../../../shared/secrets';
-import { api, tryInvoke } from '../../api';
+import { api } from '../../api';
 import {
   SettingRow,
   SettingsCategory,
@@ -43,21 +43,28 @@ export function reasonLine(r: SecretsReason): string {
 /** User › Secrets: each repository's secrets status, with the way into the manager and the import. */
 export function SecretsCategory() {
   const allRepos = useStore((s) => s.repos);
-  const notify = useStore((s) => s.notify);
   const go = useStore((s) => s.go);
   const repos = allRepos.filter((r) => !r.discovered);
   const ids = repos.map((r) => r.id).join('\u0000');
-  const [statuses, setStatuses] = useState<Record<string, SecretsStatus>>({});
+  /** Per repo: its status, or null when it could not be checked (shown on the row, never as a notice). */
+  const [statuses, setStatuses] = useState<
+    Record<string, SecretsStatus | null>
+  >({});
 
   const load = useCallback(async () => {
     const list = ids ? ids.split('\u0000') : [];
-    const results = await tryInvoke(
-      () => Promise.all(list.map((id) => api().invoke('secrets:status', id))),
-      notify,
+    const results = await Promise.allSettled(
+      list.map((id) => api().invoke('secrets:status', id)),
     );
-    if (results)
-      setStatuses(Object.fromEntries(list.map((id, i) => [id, results[i]])));
-  }, [ids, notify]);
+    setStatuses(
+      Object.fromEntries(
+        list.map((id, i) => {
+          const r = results[i];
+          return [id, r.status === 'fulfilled' ? r.value : null];
+        }),
+      ),
+    );
+  }, [ids]);
 
   useEffect(() => {
     void load();
@@ -98,7 +105,7 @@ export function SecretsCategory() {
         const status = statuses[repo.id];
         const first = status?.reasons[0];
         const canImport =
-          status !== undefined &&
+          status != null &&
           (status.state === 'empty' ||
             status.reasons.some((r) => r.kind === 'copy'));
         return (
@@ -111,7 +118,9 @@ export function SecretsCategory() {
             keywords={SECRETS_KEYWORDS}
           >
             <div className="settings-secrets-row">
-              {status ? (
+              {status === null ? (
+                <span className="text-warn">{"Couldn't check"}</span>
+              ) : status ? (
                 <>
                   <span className={`tag ${STATE[status.state].tag}`}>
                     {STATE[status.state].label}

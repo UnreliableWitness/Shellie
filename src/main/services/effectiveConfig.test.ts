@@ -55,7 +55,8 @@ describe('loadEffectiveConfig', () => {
     expect(c).toMatchObject({
       copy: ['.env'],
       setup: ['pnpm i'],
-      base: 'develop',
+      // The file sets no base: the live default (no git here, so 'main'), not the stored 'develop'.
+      base: 'main',
       found: true,
       fileError: null,
     });
@@ -86,6 +87,53 @@ describe('loadEffectiveConfig', () => {
     expect(e.sources.copy).toBe('override');
   });
 
+  it("a file without base follows the live default branch, not the repo's stored base", async () => {
+    const r = dir();
+    const repo = repoAt(r, { baseBranch: 'master' });
+    const c = await loadEffectiveConfig(r, {
+      repos: () => [repo],
+      tasks: () => [],
+      load: async () => ({
+        config: {
+          base: 'main',
+          branch: 'x/{id}',
+          copy: [],
+          copyAgentConfig: true,
+          setup: [],
+          run: {},
+          found: true,
+        },
+        fileKeys: new Set(['copy'] as const),
+        file: { copy: [] },
+      }),
+    });
+    expect(c.base).toBe('main');
+    expect(c.sources.base).toBe('default');
+  });
+
+  it('without a file the stored base is used', async () => {
+    const r = dir();
+    const repo = repoAt(r, { baseBranch: 'master' });
+    const c = await loadEffectiveConfig(r, {
+      repos: () => [repo],
+      tasks: () => [],
+      load: async () => ({
+        config: {
+          base: 'main',
+          branch: 'x/{id}',
+          copy: [],
+          copyAgentConfig: true,
+          setup: [],
+          run: {},
+          found: false,
+        },
+        fileKeys: new Set(),
+        file: {},
+      }),
+    });
+    expect(c.base).toBe('master');
+  });
+
   it('unknown path: file only', async () => {
     const r = dir();
     writeFileSync(path.join(r, '.shellie.yml'), 'base: release\n');
@@ -108,7 +156,7 @@ describe('loadEffectiveConfig', () => {
     );
     const c = await loadEffectiveConfig(r, deps, { lenient: true });
     expect(c.fileError).toMatch(/not valid YAML/);
-    expect(c).toMatchObject({ setup: ['make'], copy: [], base: 'develop' });
+    expect(c).toMatchObject({ setup: ['make'], copy: [], base: 'main' });
     expect(c.file).toEqual({});
   });
 });

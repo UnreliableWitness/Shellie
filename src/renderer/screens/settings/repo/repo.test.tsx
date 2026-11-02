@@ -137,6 +137,26 @@ describe('RepoScope categories', () => {
     expect(screen.getByRole('menuitem', { name: 'Reset' })).toBeDisabled();
   });
 
+  it('Base branch saves once on Enter then leaving the field', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => configResult(),
+      'repos:setOverride': () => webshop,
+    });
+    render(<RepoScope repo={webshop} active />);
+    const input = await screen.findByLabelText('Base branch');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'develop{Enter}');
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.channel === 'repos:setOverride'),
+      ).toHaveLength(1),
+    );
+    expect(calls.filter((c) => c.channel === 'repos:setOverride')).toHaveLength(
+      1,
+    );
+  });
+
   it('branch preview renders', async () => {
     installFakeApi({ 'repos:config': () => configResult() });
     render(<RepoScope repo={webshop} active />);
@@ -301,6 +321,23 @@ describe('RepoScope categories', () => {
       expect(
         calls.find((c) => c.channel === 'repos:setOverride')?.args,
       ).toEqual(['r1', 'apm', ['claude', 'opencode']]),
+    );
+  });
+
+  it('unticking the last apm box stores Off, not an empty list', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => configResult({ config: { apm: ['claude'] } }),
+      'repos:setOverride': () => webshop,
+    });
+    render(<RepoScope repo={webshop} active />);
+    expect(await screen.findByLabelText('Agent packages')).toHaveValue(
+      'choose',
+    );
+    await userEvent.click(screen.getByRole('checkbox', { name: 'claude' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'repos:setOverride')?.args,
+      ).toEqual(['r1', 'apm', false]),
     );
   });
 

@@ -63,6 +63,7 @@ export function NewTaskScreen({
   const [config, setConfig] = useState<{
     config: ShellieConfig;
     worktreeRoot: string;
+    fileError: string | null;
   } | null>(null);
   const [id, setId] = useState('');
   const [type, setType] = useState<WorkItemType>('User Story');
@@ -409,6 +410,12 @@ export function NewTaskScreen({
                 </option>
               ))}
             </select>
+            {config?.fileError != null && (
+              // A task never starts on a broken file's defaults: Create stays off until it is fixed.
+              <p className="text-red small form-grid-full" role="alert">
+                {config.fileError}
+              </p>
+            )}
             <label htmlFor="nt-base">From</label>
             <select
               id="nt-base"
@@ -554,7 +561,13 @@ export function NewTaskScreen({
               type="button"
               className="btn btn-primary"
               disabled={
-                busy || !repo || !config || !baseRef || !branch || !canCreate
+                busy ||
+                !repo ||
+                !config ||
+                config.fileError !== null ||
+                !baseRef ||
+                !branch ||
+                !canCreate
               }
               onClick={() => void create()}
             >

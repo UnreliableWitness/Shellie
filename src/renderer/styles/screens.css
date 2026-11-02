@@ -168,6 +168,10 @@
 .form-grid .label {
   color: var(--muted);
 }
+.form-grid-full {
+  grid-column: 1 / -1;
+  margin: 0;
+}
 .form-stack {
   display: flex;
   flex-direction: column;

@@ -119,6 +119,25 @@ describe('User › Secrets', () => {
   });
 });
 
+describe('User › Secrets when a status fails', () => {
+  it("one failing status leaves the others shown and says Couldn't check, without a notice", async () => {
+    const { emit } = installFakeApi({
+      'secrets:status': (repoId) => {
+        if (repoId === 'r2') throw new Error('git broke');
+        return protectedStatus;
+      },
+    });
+    render(<SecretsCategory />);
+    const shop = document.getElementById('secrets-repo-r1')!;
+    const pay = document.getElementById('secrets-repo-r2')!;
+    expect(await within(shop).findByText('Protected')).toBeInTheDocument();
+    expect(await within(pay).findByText("Couldn't check")).toBeInTheDocument();
+    emit('repos:changed', []);
+    expect(await within(pay).findByText("Couldn't check")).toBeInTheDocument();
+    expect(useStore.getState().notices).toEqual([]);
+  });
+});
+
 describe('Repository › Secrets & env', () => {
   it('Repository Secrets & env shows the status panel and entries with states', async () => {
     const { calls } = installFakeApi({
@@ -194,6 +213,22 @@ describe('Repository › Secrets & env', () => {
       kind: 'secrets',
       repoId: 'r1',
     });
+  });
+
+  it('Default environment goes back when saving it fails', async () => {
+    installFakeApi({
+      'repos:config': () => configResult([]),
+      'secrets:repoDefault': () => 'test',
+      'secrets:setRepoDefault': () => {
+        throw new Error('disk full');
+      },
+    });
+    render(<RepoScope repo={webshop} active />);
+    const env = screen.getByLabelText('Default environment');
+    await waitFor(() => expect(env).toHaveValue('test'));
+    await userEvent.selectOptions(env, 'development');
+    await waitFor(() => expect(env).toHaveValue('test'));
+    expect(useStore.getState().notices.length).toBe(1);
   });
 
   it('Remove a copied file sends the shorter copy override', async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { KeyValueEditor } from './KeyValueEditor';
@@ -95,6 +95,21 @@ describe('ListEditor', () => {
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(input.value).toBe('a');
     expect(out()).toBe('["a"]');
+  });
+});
+
+describe('ListEditor saving', () => {
+  it('commits once on Enter then blur', async () => {
+    // The parent saves asynchronously, so the items have not changed yet when the field loses focus.
+    const onChange = vi.fn();
+    render(<ListEditor label="Copy" items={['a']} onChange={onChange} />);
+    const input = screen.getByLabelText('Copy item 1');
+    fireEvent.change(input, { target: { value: 'z' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {});
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(['z']);
   });
 });
 

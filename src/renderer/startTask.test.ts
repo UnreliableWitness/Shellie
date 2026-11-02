@@ -80,4 +80,26 @@ describe('startTaskFor', () => {
       expect(input.environmentConfirmed).toBeUndefined();
     }
   });
+
+  it('refuses with the error when .shellie.yml is broken', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => ({
+        ...config,
+        fileError: '/r/.shellie.yml: not valid YAML: bad',
+      }),
+      'tasks:create': () => ({ id: 't1' }) as never,
+    });
+    const notify = vi.fn();
+    const task = await startTaskFor(
+      'r1',
+      { id: '5', type: 'Task', title: 'Store the address', url: null },
+      notify,
+    );
+    expect(task).toBeUndefined();
+    expect(calls.some((c) => c.channel === 'tasks:create')).toBe(false);
+    expect(notify).toHaveBeenCalledWith(
+      'error',
+      '/r/.shellie.yml: not valid YAML: bad',
+    );
+  });
 });

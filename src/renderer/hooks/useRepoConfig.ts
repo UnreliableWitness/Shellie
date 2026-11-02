@@ -9,7 +9,10 @@ const cache = new Map<
   { config: ShellieConfig; worktreeRoot: string }
 >();
 
-/** The effective .shellie.yml of a repo, cached per session. Returns null until loaded. */
+/**
+ * The effective .shellie.yml of a repo, cached per session and fetched again after `repos:changed` (a Settings
+ * edit) while mounted. Returns null until loaded.
+ */
 export function useRepoConfig(repoId: string | null) {
   const notify = useStore((s) => s.notify);
   const [value, setValue] = useState(
@@ -17,23 +20,33 @@ export function useRepoConfig(repoId: string | null) {
   );
   useEffect(() => {
     if (!repoId) return setValue(null);
-    const hit = cache.get(repoId);
-    if (hit) return setValue(hit);
-    setValue(null);
     let live = true;
-    void api()
-      .invoke('repos:config', repoId)
-      .then((r) => {
-        cache.set(repoId, r);
-        if (live) setValue(r);
-      })
-      .catch((e: unknown) => {
-        if (!live) return;
-        setValue(null);
-        notify('error', errorMessage(e));
-      });
+    const fetchConfig = () =>
+      api()
+        .invoke('repos:config', repoId)
+        .then((r) => {
+          cache.set(repoId, r);
+          if (live) setValue(r);
+        })
+        .catch((e: unknown) => {
+          if (!live) return;
+          setValue(null);
+          notify('error', errorMessage(e));
+        });
+    const hit = cache.get(repoId);
+    if (hit) setValue(hit);
+    else {
+      setValue(null);
+      void fetchConfig();
+    }
+    // Keeps the last value on screen while the new one loads.
+    const off = api().on('repos:changed', () => {
+      cache.delete(repoId);
+      void fetchConfig();
+    });
     return () => {
       live = false;
+      off();
     };
   }, [repoId, notify]);
   return value;

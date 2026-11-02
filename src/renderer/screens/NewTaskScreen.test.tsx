@@ -70,6 +70,22 @@ describe('NewTaskScreen', () => {
     );
   });
 
+  it('shows a broken .shellie.yml and does not create a task', async () => {
+    installFakeApi({
+      'repos:config': () => ({
+        ...config,
+        fileError: '/src/webshop/.shellie.yml: not valid YAML: bad',
+      }),
+    });
+    render(<NewTaskScreen />);
+    expect(
+      await screen.findByText('/src/webshop/.shellie.yml: not valid YAML: bad'),
+    ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Work item id'), '48231');
+    await userEvent.type(screen.getByLabelText('Title'), 'Broken');
+    expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled();
+  });
+
   it('keeps a branch the user edited by hand', async () => {
     installFakeApi({ 'repos:config': () => config });
     render(<NewTaskScreen />);

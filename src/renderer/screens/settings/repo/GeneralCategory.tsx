@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { renderBranch } from '../../../../shared/naming';
 import type { Repo } from '../../../../shared/types';
 import { api, tryInvoke } from '../../../api';
@@ -32,15 +32,25 @@ function CommitInput({
   onDraft?: (v: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  // Set by a save until the next edit, so the blur after Enter does not save the same draft again.
+  const committed = useRef(false);
+  useEffect(() => {
+    committed.current = false;
+    setDraft(value);
+  }, [value]);
   const change = (v: string) => {
+    committed.current = false;
     setDraft(v);
     onDraft?.(v);
   };
   const commit = () => {
+    if (committed.current) return;
     const v = draft.trim();
     if (!v) return change(value);
-    if (v !== value) onCommit(v);
+    if (v !== value) {
+      committed.current = true;
+      onCommit(v);
+    }
   };
   return (
     <input

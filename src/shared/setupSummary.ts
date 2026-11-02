@@ -25,18 +25,25 @@ export function setupTabLabels(
   ];
 }
 
-/** The state Start moves a work item of this type to: the repo's override, else the type's first In Progress state when known. */
+/**
+ * The state Start moves a work item of this type to, by Start's own rule (`planStart` in main): with the type's
+ * states known (exact name), the override when it is one of its In Progress states, else its first In Progress
+ * state; with them unknown, the override as given, else "In Progress".
+ */
 export function inProgressState(
   type: string,
   start: StartSettings,
   types: WorkItemTypeMeta[] | null,
 ): string {
-  const states =
-    types?.find((t) => t.name.toLowerCase() === type.toLowerCase())?.states ??
-    [];
   const override = start.stateOverrides[type];
-  if (override) return override;
-  return states.find((s) => s.category === 'InProgress')?.name ?? 'In Progress';
+  const states = types?.find((t) => t.name === type)?.states;
+  if (!states) return override || 'In Progress';
+  const inProgress = states.filter((s) => s.category === 'InProgress');
+  return (
+    (override && inProgress.find((s) => s.name === override)?.name) ||
+    inProgress[0]?.name ||
+    'In Progress'
+  );
 }
 
 /** "This task will…": what a task is given, from the effective config, the New task choices and the repo's settings. */

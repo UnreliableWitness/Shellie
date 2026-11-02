@@ -26,11 +26,13 @@ export function SetupCategory({
     else if (next === 'off') void settings.set('apm', false);
     else void settings.set('apm', [...APM_TARGETS]);
   };
-  const toggle = (target: string, on: boolean) =>
-    void settings.set(
-      'apm',
-      APM_TARGETS.filter((t) => (t === target ? on : chosen.includes(t))),
+  const toggle = (target: string, on: boolean) => {
+    const next = APM_TARGETS.filter((t) =>
+      t === target ? on : chosen.includes(t),
     );
+    // No harness ticked is Off, not an empty list.
+    void settings.set('apm', next.length > 0 ? next : false);
+  };
   return (
     <SettingsCategory id="repo-setup" title={title}>
       <SettingRow

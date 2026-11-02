@@ -17,7 +17,7 @@ export const OVERRIDE_KEYS: readonly OverrideKey[] = [
 /**
  * Layers a repo's own overrides over what `.shellie.yml` gave (`base` is what
  * `loadShellieConfig` returned). `fileKeys` are the keys the file sets.
- * Base: override, then the file's, then the repo's stored base, then `base.base`.
+ * Base: override, then the file's, then `repoBase` (the caller passes it only without a file), then `base.base`.
  */
 export function mergeConfig(
   base: ShellieConfig,

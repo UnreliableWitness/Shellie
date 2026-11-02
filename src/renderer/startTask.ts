@@ -31,7 +31,12 @@ export async function startTaskFor(
     notify,
   );
   if (!loaded) return undefined;
-  const [{ config }, settings, repoDefault] = loaded;
+  const [{ config, fileError }, settings, repoDefault] = loaded;
+  // repos:config is lenient for Settings; a task never starts on a broken file's defaults.
+  if (fileError !== null) {
+    notify('error', fileError);
+    return undefined;
+  }
   return tryInvoke(
     () =>
       api().invoke('tasks:create', {

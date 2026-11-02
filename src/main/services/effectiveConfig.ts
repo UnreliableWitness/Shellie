@@ -70,7 +70,8 @@ export async function loadEffectiveConfig(
   const repo = repoFor(p, deps);
   const { config, sources } = mergeConfig(loaded.config, {
     overrides: repo?.overrides ?? {},
-    repoBase: repo?.baseBranch ?? null,
+    // The stored base is refreshed only for repos without a file; with one, the live default branch stands.
+    repoBase: loaded.config.found ? null : (repo?.baseBranch ?? null),
     fileKeys: loaded.fileKeys,
   });
   return { ...config, sources, file: loaded.file, fileError };
