@@ -26,7 +26,10 @@ const webshop: Repo = {
   },
 };
 
+const repoScope = { kind: 'settings' as const, scope: 'repo' as const };
+
 beforeEach(() => {
+  window.localStorage.clear();
   useStore.setState({
     repos: [],
     tasks: [],
@@ -37,7 +40,7 @@ beforeEach(() => {
 });
 
 describe('SettingsScreen', () => {
-  it('lists repos with their base branch and .shellie.yml status', () => {
+  it('lists repos with their base branch and .shellie.yml status', async () => {
     installFakeApi();
     useStore.setState({
       repos: [
@@ -58,15 +61,21 @@ describe('SettingsScreen', () => {
           },
         },
       ],
+      screen: repoScope,
     });
     render(<SettingsScreen />);
-    expect(screen.getByText('webshop')).toBeInTheDocument();
+    expect(screen.getByLabelText('Repository')).toHaveValue('r1');
+    expect(screen.getByRole('option', { name: 'api' })).toBeInTheDocument();
     expect(
       screen.getByText(`/src/webshop ${DOT} base main`),
     ).toBeInTheDocument();
     expect(screen.getByText('.shellie.yml found')).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Repository'), 'r2');
     expect(
       screen.getByText('No .shellie.yml, using defaults'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`/src/api ${DOT} base develop`),
     ).toBeInTheDocument();
   });
 
@@ -74,9 +83,14 @@ describe('SettingsScreen', () => {
     const { calls } = installFakeApi({
       'repos:setDiscovered': () => ({ ...webshop, discovered: false }),
     });
-    useStore.setState({ repos: [{ ...webshop, discovered: true }] });
+    useStore.setState({
+      repos: [{ ...webshop, discovered: true }],
+      screen: repoScope,
+    });
     render(<SettingsScreen />);
-    expect(screen.getByText('Found in a task')).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'webshop (found in a task)' }),
+    ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole('button', { name: 'Make it a normal repo' }),
     );
@@ -92,6 +106,7 @@ describe('SettingsScreen', () => {
       'repos:pickFolder': () => '/src/picked',
     });
     render(<SettingsScreen />);
+    await userEvent.click(screen.getByRole('tab', { name: 'Repository' }));
     await userEvent.click(screen.getByRole('button', { name: ADD_FOLDER }));
     await waitFor(() =>
       expect(useStore.getState().screen).toEqual({
@@ -118,9 +133,8 @@ describe('SettingsScreen', () => {
         },
       }),
     });
-    useStore.setState({ repos: [webshop] });
+    useStore.setState({ repos: [webshop], screen: repoScope });
     render(<SettingsScreen />);
-    await userEvent.click(screen.getByRole('button', { name: 'Show setup' }));
     await waitFor(() =>
       expect(screen.getByText(/dev: npm run dev/)).toBeInTheDocument(),
     );
@@ -152,6 +166,7 @@ describe('SettingsScreen', () => {
           },
         },
       ],
+      screen: repoScope,
     });
     render(<SettingsScreen />);
     await userEvent.selectOptions(
@@ -169,9 +184,9 @@ describe('SettingsScreen', () => {
     const { calls } = installFakeApi();
     useStore.setState({
       repos: [{ ...webshop, agentCommands: { opencode: 'opencode --foo' } }],
+      screen: repoScope,
     });
     render(<SettingsScreen />);
-    await userEvent.click(screen.getByText('Agent commands'));
     const claude = screen.getByLabelText('Claude Code command for webshop');
     expect(claude).toHaveAttribute('placeholder', 'claude');
     expect(screen.getByLabelText('OpenCode command for webshop')).toHaveValue(
@@ -235,7 +250,11 @@ describe('SettingsScreen', () => {
 
     it('shows both options checked for a repo with a connection', () => {
       installFakeApi(handlers() as never);
-      useStore.setState({ repos: [linked], connections: [conn] });
+      useStore.setState({
+        repos: [linked],
+        connections: [conn],
+        screen: repoScope,
+      });
       render(<SettingsScreen />);
       expect(
         screen.getByRole('checkbox', {
@@ -249,7 +268,11 @@ describe('SettingsScreen', () => {
 
     it('shows neither option without a connection', () => {
       installFakeApi(handlers() as never);
-      useStore.setState({ repos: [webshop], connections: [conn] });
+      useStore.setState({
+        repos: [webshop],
+        connections: [conn],
+        screen: repoScope,
+      });
       render(<SettingsScreen />);
       expect(
         screen.queryByRole('checkbox', {
@@ -265,7 +288,11 @@ describe('SettingsScreen', () => {
 
     it('saves when the move option is unticked', async () => {
       const { calls } = installFakeApi(handlers() as never);
-      useStore.setState({ repos: [linked], connections: [conn] });
+      useStore.setState({
+        repos: [linked],
+        connections: [conn],
+        screen: repoScope,
+      });
       render(<SettingsScreen />);
       await userEvent.click(
         screen.getByRole('checkbox', {
@@ -284,7 +311,11 @@ describe('SettingsScreen', () => {
 
     it('loads types on open and sets and clears an override', async () => {
       const { calls } = installFakeApi(handlers() as never);
-      useStore.setState({ repos: [linked], connections: [conn] });
+      useStore.setState({
+        repos: [linked],
+        connections: [conn],
+        screen: repoScope,
+      });
       render(<SettingsScreen />);
       expect(calls.some((c) => c.channel === 'workItems:types')).toBe(false);
       await userEvent.click(screen.getByText('Override per type'));
@@ -318,7 +349,11 @@ describe('SettingsScreen', () => {
         },
       };
       const { calls } = installFakeApi(handlers() as never);
-      useStore.setState({ repos: [withOverride], connections: [conn] });
+      useStore.setState({
+        repos: [withOverride],
+        connections: [conn],
+        screen: repoScope,
+      });
       render(<SettingsScreen />);
       await userEvent.click(screen.getByText('Override per type'));
       const select = await screen.findByLabelText('In Progress state for Task');
@@ -673,5 +708,174 @@ describe('SettingsScreen', () => {
       proto.scrollIntoView = original;
       globalThis.ResizeObserver = originalRO;
     }
+  });
+
+  describe('shell', () => {
+    const api2: Repo = {
+      ...webshop,
+      id: 'r2',
+      name: 'api',
+      path: '/src/api',
+    };
+
+    it('opens on the User scope by default', () => {
+      installFakeApi();
+      useStore.setState({ repos: [webshop] });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'User' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByRole('combobox', { name: 'Theme' })).toBeVisible();
+      expect(screen.queryByRole('combobox', { name: 'Repository' })).toBeNull();
+      expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
+    });
+
+    it('Repository tab shows the chosen repo', async () => {
+      const { tracked } = installFakeApi();
+      window.localStorage.setItem('shellie.settings.repoId', 'r2');
+      useStore.setState({ repos: [webshop, api2] });
+      render(<SettingsScreen />);
+      await userEvent.click(screen.getByRole('tab', { name: 'Repository' }));
+      expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
+        'r2',
+      );
+      expect(screen.getByText(`/src/api ${DOT} base main`)).toBeVisible();
+      expect(screen.getByRole('link', { name: 'General' })).toBeVisible();
+      expect(tracked).toContainEqual(
+        expect.objectContaining({
+          name: 'settings.scope',
+          props: { scope: 'repo' },
+        }),
+      );
+      expect(window.localStorage.getItem('shellie.settings.scope')).toBe(
+        'repo',
+      );
+      await userEvent.selectOptions(
+        screen.getByRole('combobox', { name: 'Repository' }),
+        'r1',
+      );
+      expect(window.localStorage.getItem('shellie.settings.repoId')).toBe('r1');
+    });
+
+    it('deep link section ado scrolls in the User scope', async () => {
+      installFakeApi();
+      window.localStorage.setItem('shellie.settings.scope', 'repo');
+      const scroll = vi.fn();
+      const proto = Element.prototype as { scrollIntoView?: unknown };
+      const original = proto.scrollIntoView;
+      proto.scrollIntoView = scroll;
+      try {
+        useStore.setState({
+          repos: [webshop],
+          screen: { kind: 'settings', section: 'ado' },
+        });
+        const { container } = render(<SettingsScreen />);
+        expect(screen.getByRole('tab', { name: 'User' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await waitFor(() => expect(scroll).toHaveBeenCalled());
+        expect(scroll.mock.contexts[0]).toBe(container.querySelector('#ado'));
+      } finally {
+        proto.scrollIntoView = original;
+      }
+    });
+
+    it('deep link repoId opens the Repository scope on that repo', () => {
+      installFakeApi();
+      useStore.setState({
+        repos: [webshop, api2],
+        screen: { kind: 'settings', repoId: 'r2' },
+      });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
+        'r2',
+      );
+    });
+
+    it('the old repos deep link opens the first repo', () => {
+      installFakeApi();
+      window.localStorage.setItem('shellie.settings.repoId', 'r2');
+      useStore.setState({
+        repos: [webshop, api2],
+        screen: { kind: 'settings', section: 'repos' },
+      });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
+        'r1',
+      );
+    });
+
+    it('search filters across categories and offers the other scope', async () => {
+      const { tracked } = installFakeApi();
+      useStore.setState({ repos: [webshop] });
+      render(<SettingsScreen />);
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+        'connection',
+      );
+      expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
+      expect(screen.queryByRole('link', { name: 'Appearance' })).toBeNull();
+      expect(screen.queryByRole('combobox', { name: 'Theme' })).toBeNull();
+      await userEvent.click(
+        screen.getByRole('button', { name: '1 result in Repository' }),
+      );
+      expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByLabelText('Connection for webshop')).toBeVisible();
+      expect(
+        screen.getByRole('button', { name: '1 result in User' }),
+      ).toBeVisible();
+      await waitFor(
+        () =>
+          expect(tracked).toContainEqual(
+            expect.objectContaining({
+              name: 'settings.search',
+              props: { results: 1 },
+            }),
+          ),
+        { timeout: 2000 },
+      );
+      expect(JSON.stringify(tracked)).not.toContain('connection');
+    });
+
+    it('no match shows the empty state', async () => {
+      installFakeApi();
+      render(<SettingsScreen />);
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+        'zzzz',
+      );
+      expect(
+        screen.getByText(
+          `No settings match ${String.fromCharCode(8220)}zzzz${String.fromCharCode(8221)}`,
+        ),
+      ).toBeVisible();
+    });
+
+    it('Cmd+F focuses the search box', async () => {
+      installFakeApi();
+      render(<SettingsScreen />);
+      await userEvent.keyboard('{Meta>}f{/Meta}');
+      expect(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+      ).toHaveFocus();
+    });
+
+    it('no repos: Repository tab shows Add folder', async () => {
+      installFakeApi();
+      render(<SettingsScreen />);
+      await userEvent.click(screen.getByRole('tab', { name: 'Repository' }));
+      expect(screen.getByText(/No repositories yet/)).toBeVisible();
+      expect(screen.getByRole('button', { name: ADD_FOLDER })).toBeVisible();
+      expect(screen.queryByRole('combobox', { name: 'Repository' })).toBeNull();
+    });
   });
 });

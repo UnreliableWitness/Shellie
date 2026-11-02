@@ -1,429 +1,174 @@
-import { useEffect, useState } from 'react';
-import type { AppSettings } from '../../shared/usage';
-import type { ThemeChoice } from '../../shared/theme';
-import type {
-  AgentCommands,
-  ShellieConfig,
-  Repo,
-  StartSettings,
-  WorkItemTypeMeta,
-} from '../../shared/types';
-import { api, saveSettings, tryInvoke } from '../api';
-import { ConnectionsSection } from '../components/ConnectionsSection';
-import { CostSection } from '../components/CostSection';
-import { EditorSection } from '../components/EditorSection';
-import { AgentsSection } from '../components/AgentsSection';
-import { TimeSection } from '../components/TimeSection';
-import { BudgetSection } from '../components/BudgetSection';
-import { CostServerSection } from '../components/CostServerSection';
-import { MindMark, PageHeader } from '../components/ui';
-import { useStore } from '../store';
+import { Search16Regular } from '@fluentui/react-icons';
+import { useEffect, useRef, useState } from 'react';
+import { api, tryInvoke } from '../api';
+import {
+  matchesQuery,
+  SettingsSearchProvider,
+  useSettingsSearch,
+} from '../components/settings/settingsSearch';
+import { useScrollSpy } from '../components/settings/useScrollSpy';
+import { PageHeader, Pivots } from '../components/ui';
+import { type Screen, useStore } from '../store';
+import { track } from '../telemetry';
+import { REPO_CATEGORIES, RepoScope } from './settings/RepoScope';
+import { USER_CATEGORIES, UserScope } from './settings/UserScope';
 
-function renderConfig(
-  name: string,
-  c: ShellieConfig,
-  worktreeRoot: string,
-): string {
-  const lines = [
-    `${name}/.shellie.yml${c.found ? '' : ' (defaults, file not found)'}`,
-    `base: ${c.base}`,
-    `branch: "${c.branch}"`,
-    `copy: [${c.copy.join(', ')}]`,
-    'setup:',
-    ...c.setup.map((s) => `  - ${s}`),
-    'run:',
-    ...Object.entries(c.run).map(([k, v]) => `  ${k}: ${v}`),
-    ...(c.apm === undefined
-      ? []
-      : [`apm: ${c.apm === false ? 'false' : `[${c.apm.join(', ')}]`}`]),
-    '',
-    `# worktrees go in ${worktreeRoot}`,
-  ];
-  return lines.join('\n');
+type Scope = 'user' | 'repo';
+type SettingsLink = Extract<Screen, { kind: 'settings' }>;
+
+const SCOPE_KEY = 'shellie.settings.scope';
+const REPO_KEY = 'shellie.settings.repoId';
+const SCOPE_LABEL: Record<Scope, string> = {
+  user: 'User',
+  repo: 'Repository',
+};
+const other = (s: Scope): Scope => (s === 'user' ? 'repo' : 'user');
+
+function readPref(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
-function StartOptions({ repo }: { repo: Repo }) {
-  const notify = useStore((s) => s.notify);
-  const [types, setTypes] = useState<WorkItemTypeMeta[] | null>(null);
-  const settings = repo.workItemOnStart;
-  const connectionId = repo.connectionId;
+function writePref(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // a per-viewer convenience only
+  }
+}
 
-  // repos:changed is broadcast by the handler and refreshes the store.
-  const save = (next: StartSettings) =>
-    tryInvoke(
-      () => api().invoke('repos:setWorkItemOnStart', repo.id, next),
-      notify,
-    );
+/** Where a deep link opens: a repo or a `repo-*` (or the old `repos`) section is the Repository scope. */
+function linkScope(link: SettingsLink | null): Scope | null {
+  if (!link) return null;
+  if (link.repoId) return 'repo';
+  if (link.section)
+    return link.section === 'repos' || link.section.startsWith('repo-')
+      ? 'repo'
+      : 'user';
+  return link.scope ?? null;
+}
 
-  const loadTypes = async (open: boolean) => {
-    if (!open || types !== null || !connectionId) return;
-    const result = await tryInvoke(
-      () => api().invoke('workItems:types', connectionId),
-      notify,
-    );
-    if (result) setTypes(result);
-  };
-
-  const choose = (type: string, state: string) => {
-    const { [type]: _removed, ...rest } = settings.stateOverrides;
-    void save({
-      ...settings,
-      stateOverrides: state ? { ...rest, [type]: state } : rest,
-    });
-  };
-
+function initialScope(link: SettingsLink | null): Scope {
+  const stored = readPref(SCOPE_KEY);
   return (
-    <div className="list-row" style={{ display: 'block' }}>
-      <div>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.moveToInProgress}
-            onChange={(e) =>
-              void save({ ...settings, moveToInProgress: e.target.checked })
-            }
-          />{' '}
-          Move the work item to In Progress on start
-        </label>
-      </div>
-      <div>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.assignToMe}
-            onChange={(e) =>
-              void save({ ...settings, assignToMe: e.target.checked })
-            }
-          />{' '}
-          Assign it to me if unassigned
-        </label>
-      </div>
-      <details
-        onToggle={(e) =>
-          void loadTypes((e.currentTarget as HTMLDetailsElement).open)
-        }
-      >
-        <summary>Override per type</summary>
-        {types?.map((t) => (
-          <div key={t.name} className="small" style={{ marginTop: 4 }}>
-            <span>{t.name}</span>{' '}
-            <select
-              className="field"
-              aria-label={`In Progress state for ${t.name}`}
-              value={settings.stateOverrides[t.name] ?? ''}
-              onChange={(e) => choose(t.name, e.target.value)}
+    linkScope(link) ??
+    (stored === 'repo' || stored === 'user' ? stored : 'user')
+  );
+}
+
+/** The repo a deep link asks for; the old `repos` section opens the first repo. */
+function linkRepo(link: SettingsLink | null, firstRepo: string | null) {
+  if (link?.repoId) return link.repoId;
+  if (link?.section === 'repos') return firstRepo;
+  return null;
+}
+
+function SearchTelemetry({ scope }: { scope: Scope }) {
+  const search = useSettingsSearch();
+  const active = search.query.trim() !== '';
+  const results = active ? search.countOther(other(scope)) : 0;
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setTimeout(
+      () => track('settings.search', { results }),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [active, search.query, results]);
+  return null;
+}
+
+function SettingsTree({
+  scope,
+  activeId,
+}: {
+  scope: Scope;
+  activeId: string | null;
+}) {
+  const search = useSettingsSearch();
+  const go = useStore((s) => s.go);
+  const repos = useStore((s) => s.repos);
+  const searching = search.query.trim() !== '';
+  const categories =
+    scope === 'user' ? USER_CATEGORIES : repos.length ? REPO_CATEGORIES : [];
+  return (
+    <nav className="settings-nav" aria-label="Settings sections">
+      {categories.map((c) => {
+        if (c.id === 'secrets') {
+          if (
+            searching &&
+            !matchesQuery(search.query, [c.title, ...c.keywords])
+          )
+            return null;
+          return (
+            <a
+              key={c.id}
+              href="#secrets"
+              onClick={(e) => {
+                e.preventDefault();
+                go({ kind: 'secrets' });
+              }}
             >
-              <option value="">Default</option>
-              {t.states
-                .filter((s) => s.category === 'InProgress')
-                .map((s) => (
-                  <option key={s.name} value={s.name}>
-                    {s.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-        ))}
-      </details>
-    </div>
+              {c.title}
+            </a>
+          );
+        }
+        if (searching && search.categoryCount(c.id).matching === 0) return null;
+        return (
+          <a
+            key={c.id}
+            href={`#${c.id}`}
+            className={activeId === c.id ? 'active' : undefined}
+            aria-current={activeId === c.id ? 'true' : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              document
+                .getElementById(c.id)
+                ?.scrollIntoView?.({ block: 'start' });
+            }}
+          >
+            {c.title}
+          </a>
+        );
+      })}
+    </nav>
   );
 }
 
-const AGENT_COMMANDS = [
-  { key: 'claude', label: 'Claude Code command' },
-  { key: 'opencode', label: 'OpenCode command' },
-] as const;
-
-/** The repo's own start command for Claude Code and OpenCode tabs (#191), saved on leaving a field. */
-function AgentCommandOptions({ repo }: { repo: Repo }) {
-  const notify = useStore((s) => s.notify);
-  const saved = repo.agentCommands;
-  const [draft, setDraft] = useState<AgentCommands>(saved ?? {});
-
-  useEffect(() => setDraft(saved ?? {}), [saved]);
-
-  // repos:changed is broadcast by the handler and refreshes the store.
-  const save = (key: keyof AgentCommands) => {
-    if ((draft[key] ?? '') === (saved?.[key] ?? '')) return;
-    void tryInvoke(
-      () =>
-        api().invoke('repos:setAgentCommands', repo.id, {
-          ...saved,
-          [key]: draft[key] ?? '',
-        }),
-      notify,
-    );
-  };
-
-  return (
-    <div className="list-row" style={{ display: 'block' }}>
-      <details>
-        <summary>Agent commands</summary>
-        <div className="small muted" style={{ marginTop: 4 }}>
-          Runs in your shell when a tab starts; empty means the default. Shellie
-          adds its own flags after the Claude Code command (session, resume,
-          extra folders, theme, task context), so enter only yours, e.g.{' '}
-          <span className="mono">claude --permission-mode acceptEdits</span>.
-        </div>
-        {AGENT_COMMANDS.map(({ key, label }) => (
-          <div key={key} className="small" style={{ marginTop: 4 }}>
-            <label>
-              {label}{' '}
-              <input
-                className="field mono"
-                aria-label={`${label} for ${repo.name}`}
-                placeholder={key}
-                value={draft[key] ?? ''}
-                onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-                onBlur={() => save(key)}
-              />
-            </label>
-          </div>
-        ))}
-      </details>
-    </div>
-  );
-}
-
-function RepoRow({ repo }: { repo: Repo }) {
-  const notify = useStore((s) => s.notify);
-  const setRepos = useStore((s) => s.setRepos);
-  const connections = useStore((s) => s.connections);
-  const [shown, setShown] = useState<string | null>(null);
-
-  const show = async () => {
-    if (shown !== null) return setShown(null);
-    const result = await tryInvoke(
-      () => api().invoke('repos:config', repo.id),
-      notify,
-    );
-    if (result)
-      setShown(renderConfig(repo.name, result.config, result.worktreeRoot));
-  };
-  const remove = async () => {
-    const ok = await tryInvoke(async () => {
-      await api().invoke('repos:remove', repo.id);
-      return true;
-    }, notify);
-    if (ok) setRepos(await api().invoke('repos:list'));
-  };
-
+/** "N results in Repository" and the empty state, from the rows both scopes register. */
+function SearchStatus({
+  scope,
+  onSwitch,
+}: {
+  scope: Scope;
+  onSwitch: (s: Scope) => void;
+}) {
+  const search = useSettingsSearch();
+  const query = search.query.trim();
+  if (!query) return null;
+  const here = search.countOther(other(scope));
+  const there = search.countOther(scope);
   return (
     <>
-      <div className="list-row">
-        <div className="grow">
-          <span style={{ fontWeight: 600 }}>{repo.name}</span>
-          <span className="mono small muted">
-            {repo.path} &middot; base {repo.baseBranch}
-          </span>
-        </div>
-        {repo.discovered && (
-          <>
-            <span className="tag">Found in a task</span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() =>
-                tryInvoke(
-                  () => api().invoke('repos:setDiscovered', repo.id, false),
-                  notify,
-                )
-              }
-            >
-              Make it a normal repo
-            </button>
-          </>
-        )}
-        {repo.configFound ? (
-          <span className="tag tag-green">.shellie.yml found</span>
-        ) : (
-          <span className="tag tag-warn">No .shellie.yml, using defaults</span>
-        )}
-        <select
-          className="field"
-          aria-label={`Connection for ${repo.name}`}
-          value={repo.connectionId ?? ''}
-          onChange={async (e) => {
-            const value = e.target.value || null;
-            // repos:changed is broadcast by the handler and updates the store.
-            await tryInvoke(
-              () => api().invoke('repos:setConnection', repo.id, value),
-              notify,
-            );
-          }}
+      {there > 0 && (
+        <button
+          type="button"
+          className="link"
+          onClick={() => onSwitch(other(scope))}
         >
-          <option value="">No connection</option>
-          {connections.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} / {c.project}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={show}>
-          {shown === null ? 'Show setup' : 'Hide setup'}
+          {there} {there === 1 ? 'result' : 'results'} in{' '}
+          {SCOPE_LABEL[other(scope)]}
         </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={remove}>
-          Remove
-        </button>
-      </div>
-      {repo.connectionId && <StartOptions repo={repo} />}
-      <AgentCommandOptions repo={repo} />
-      {shown !== null && (
-        <div
-          className="codeblock"
-          style={{ borderRadius: 0, borderWidth: '0 0 1px 0' }}
-        >
-          {shown}
+      )}
+      {here === 0 && (
+        <div className="settings-empty">
+          No settings match &ldquo;{query}&rdquo;
         </div>
       )}
     </>
-  );
-}
-
-function AppearanceSection() {
-  const notify = useStore((s) => s.notify);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void tryInvoke(() => api().invoke('settings:get'), notify).then((s) => {
-      if (live && s) setSettings(s);
-    });
-    return () => {
-      live = false;
-    };
-  }, [notify]);
-
-  const toggle = async (
-    patch: Partial<
-      Pick<
-        AppSettings,
-        'showSplash' | 'sendTelemetry' | 'notifyOnDone' | 'theme'
-      >
-    >,
-  ) => {
-    if (!settings) return;
-    const saved = await tryInvoke(() => saveSettings(patch), notify);
-    if (saved) setSettings(saved);
-  };
-
-  return (
-    <section id="appearance" className="section">
-      <div className="section-head">
-        <h2>Appearance</h2>
-      </div>
-      <div className="list">
-        <div className="list-row">
-          <label>
-            Theme{' '}
-            <select
-              className="field"
-              aria-label="Theme"
-              value={settings?.theme ?? 'system'}
-              disabled={!settings}
-              onChange={(e) =>
-                void toggle({ theme: e.target.value as ThemeChoice })
-              }
-            >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
-        </div>
-        <div className="list-row">
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={settings?.showSplash ?? true}
-              disabled={!settings}
-              onChange={(e) => void toggle({ showSplash: e.target.checked })}
-            />{' '}
-            Show splash on start
-          </label>
-        </div>
-        <div className="list-row">
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={settings?.sendTelemetry ?? true}
-              disabled={!settings}
-              onChange={(e) => void toggle({ sendTelemetry: e.target.checked })}
-            />{' '}
-            Send anonymous usage and error data
-          </label>
-        </div>
-        <div className="list-row">
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={settings?.notifyOnDone ?? true}
-              disabled={!settings}
-              onChange={(e) => void toggle({ notifyOnDone: e.target.checked })}
-            />{' '}
-            Notify when an agent finishes its turn
-          </label>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function AboutSection() {
-  const [version, setVersion] = useState('');
-  const go = useStore((s) => s.go);
-  const notify = useStore((s) => s.notify);
-
-  const getStarted = async () => {
-    const saved = await tryInvoke(
-      () =>
-        saveSettings((f) => ({
-          onboarding: { ...f.onboarding, dismissedAt: null },
-        })),
-      notify,
-    );
-    if (saved) go({ kind: 'get-started' });
-  };
-
-  useEffect(() => {
-    let live = true;
-    api()
-      .invoke('app:info')
-      .then((i) => {
-        if (live) setVersion(i.version);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  return (
-    <section id="about" aria-label="About" className="section">
-      <div className="section-head">
-        <h2>About</h2>
-      </div>
-      <div className="card about">
-        <MindMark size={40} />
-        <div>
-          <div className="about-name">Shellie</div>
-          <div className="muted">
-            Development tasks as isolated workspaces, with AI cost per task
-          </div>
-          <div className="small muted">
-            General Systems Vehicle (accounting division)
-          </div>
-          {version && <div className="mono small muted">v{version}</div>}
-          <button
-            type="button"
-            className="link"
-            onClick={() => void getStarted()}
-          >
-            Get started
-          </button>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -431,9 +176,57 @@ export function SettingsScreen() {
   const repos = useStore((s) => s.repos);
   const go = useStore((s) => s.go);
   const notify = useStore((s) => s.notify);
-  const section = useStore((s) =>
-    s.screen.kind === 'settings' ? s.screen.section : undefined,
+  const link = useStore((s) =>
+    s.screen.kind === 'settings' ? s.screen : null,
   );
+  const section = link?.section;
+
+  const [scope, setScope] = useState<Scope>(() => initialScope(link));
+  const [repoId, setRepoId] = useState<string | null>(
+    () => linkRepo(link, repos[0]?.id ?? null) ?? readPref(REPO_KEY),
+  );
+  const [query, setQuery] = useState('');
+  // A new deep link while the page is open picks its scope and repo again.
+  const [seenLink, setSeenLink] = useState(link);
+  if (link !== seenLink) {
+    setSeenLink(link);
+    const s = linkScope(link);
+    if (s) setScope(s);
+    const r = linkRepo(link, repos[0]?.id ?? null);
+    if (r) setRepoId(r);
+    if (link?.section || link?.repoId) setQuery('');
+  }
+
+  const repo = repos.find((r) => r.id === repoId) ?? repos[0] ?? null;
+  useEffect(() => writePref(SCOPE_KEY, scope), [scope]);
+  useEffect(() => {
+    if (repo) writePref(REPO_KEY, repo.id);
+  }, [repo]);
+
+  const switchScope = (next: Scope) => {
+    if (next === scope) return;
+    setScope(next);
+    track('settings.scope', { scope: next });
+  };
+
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'f'
+      ) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!section) return;
     const jump = () =>
@@ -441,7 +234,7 @@ export function SettingsScreen() {
     jump();
     // Sections above the target load asynchronously and grow, so keep the
     // target in view while the layout settles, until the user takes over.
-    const main = document.querySelector('.settings-main');
+    const main = mainRef.current;
     let observer: ResizeObserver | undefined;
     if (main && typeof ResizeObserver !== 'undefined') {
       observer = new ResizeObserver(jump);
@@ -457,7 +250,16 @@ export function SettingsScreen() {
     for (const ev of userEvents) window.addEventListener(ev, stop, true);
     const timer = window.setTimeout(stop, 2000);
     return stop;
-  }, [section]);
+  }, [section, link]);
+
+  const spyIds = (scope === 'user' ? USER_CATEGORIES : REPO_CATEGORIES)
+    .map((c) => c.id)
+    .filter((id) => id !== 'secrets');
+  const activeId = useScrollSpy(
+    mainRef,
+    spyIds,
+    `${scope}|${query}|${repo?.id ?? ''}`,
+  );
 
   const addFolder = async () => {
     const folder = await tryInvoke(
@@ -467,67 +269,90 @@ export function SettingsScreen() {
     if (!folder) return;
     go({ kind: 'add-repo', from: 'settings', folder });
   };
+  const addFolderButton = (
+    <button type="button" className="btn" onClick={addFolder}>
+      Add folder&hellip;
+    </button>
+  );
 
   return (
     <div className="page">
       <PageHeader title="Settings" />
-      <div className="settings">
-        <nav className="settings-nav" aria-label="Settings sections">
-          <a href="#repos" className="active">
-            Repositories
-          </a>
-          <a href="#editor">Editor</a>
-          <a
-            href="#secrets"
-            onClick={(e) => {
-              e.preventDefault();
-              go({ kind: 'secrets' });
-            }}
-          >
-            Secrets
-          </a>
-          <a href="#ado">Connections</a>
-          <a href="#cost">AI cost and invoicing</a>
-          <a href="#time">Time tracking</a>
-          <a href="#budgets">Budgets</a>
-          <a href="#cost-server">Cost server</a>
-          <a href="#appearance">Appearance</a>
-          <a href="#terminals">Agents and terminals</a>
-        </nav>
-        <main className="settings-main">
-          <section id="repos" className="section">
-            <div className="section-head">
-              <h2>Repositories</h2>
-              <button type="button" className="btn" onClick={addFolder}>
-                Add folder&hellip;
-              </button>
-            </div>
-            {repos.length === 0 ? (
-              <div className="list">
-                <div className="empty">
-                  No repositories yet. Add the folder of a git repository to
-                  start tasks in it.
-                </div>
-              </div>
-            ) : (
-              <div className="list">
-                {repos.map((r) => (
-                  <RepoRow key={r.id} repo={r} />
-                ))}
-              </div>
+      <SettingsSearchProvider query={query}>
+        <SearchTelemetry scope={scope} />
+        <div className="settings-page">
+          <div className="settings-toolbar">
+            <label className="settings-search">
+              <Search16Regular aria-hidden="true" />
+              <input
+                ref={searchRef}
+                type="search"
+                className="field"
+                placeholder="Search settings"
+                aria-label="Search settings"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setQuery('');
+                }}
+              />
+            </label>
+            <Pivots<Scope>
+              label="Settings scope"
+              items={[
+                { key: 'user', label: SCOPE_LABEL.user },
+                { key: 'repo', label: SCOPE_LABEL.repo },
+              ]}
+              selected={scope}
+              onSelect={switchScope}
+            />
+            {scope === 'repo' && repo && (
+              <>
+                <select
+                  className="field"
+                  aria-label="Repository"
+                  value={repo.id}
+                  onChange={(e) => setRepoId(e.target.value)}
+                >
+                  {repos.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                      {r.discovered ? ' (found in a task)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {addFolderButton}
+              </>
             )}
-          </section>
-          <EditorSection />
-          <ConnectionsSection />
-          <CostSection />
-          <TimeSection />
-          <BudgetSection />
-          <CostServerSection />
-          <AgentsSection />
-          <AppearanceSection />
-          <AboutSection />
-        </main>
-      </div>
+          </div>
+          <div className="settings-tree">
+            <SettingsTree scope={scope} activeId={activeId} />
+            <main className="settings-main" ref={mainRef}>
+              <SearchStatus scope={scope} onSwitch={switchScope} />
+              <div className="settings-scope" hidden={scope !== 'user'}>
+                <UserScope />
+              </div>
+              <div className="settings-scope" hidden={scope !== 'repo'}>
+                {repo ? (
+                  <RepoScope
+                    key={repo.id}
+                    repo={repo}
+                    active={scope === 'repo'}
+                  />
+                ) : (
+                  <div className="list">
+                    <div className="empty">
+                      No repositories yet. Add the folder of a git repository to
+                      start tasks in it.
+                      <div style={{ marginTop: 8 }}>{addFolderButton}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </main>
+          </div>
+        </div>
+      </SettingsSearchProvider>
     </div>
   );
 }

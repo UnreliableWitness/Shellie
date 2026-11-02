@@ -1,10 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { KeyValueEditor } from './KeyValueEditor';
 import { ListEditor } from './ListEditor';
 import { SettingRow, SettingsCategory } from './SettingRow';
 import { matchesQuery, SettingsSearchProvider } from './settingsSearch';
+import { useScrollSpy } from './useScrollSpy';
 
 function List({ start }: { start: string[] }) {
   const [items, setItems] = useState(start);
@@ -119,5 +120,35 @@ describe('KeyValueEditor', () => {
     fireEvent.change(k, { target: { value: 'C' } });
     fireEvent.keyDown(k, { key: 'Enter' });
     expect(onChange).toHaveBeenCalledWith({ A: '1', B: '2', C: '' });
+  });
+});
+
+function Spy() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+  const active = useScrollSpy(ref, ['a', 'b'], shown);
+  return (
+    <>
+      <button type="button" onClick={() => setShown(true)}>
+        show
+      </button>
+      <output data-testid="active">{active}</output>
+      {shown && (
+        <div ref={ref}>
+          <div id="a" />
+          <div id="b" />
+        </div>
+      )}
+    </>
+  );
+}
+
+describe('useScrollSpy', () => {
+  it('binds to a container mounted after the first render', () => {
+    render(<Spy />);
+    expect(screen.getByTestId('active').textContent).toBe('a');
+    fireEvent.click(screen.getByRole('button', { name: 'show' }));
+    // jsdom puts every box at 0, so both tops have reached the container's top.
+    expect(screen.getByTestId('active').textContent).toBe('b');
   });
 });

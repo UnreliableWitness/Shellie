@@ -1137,13 +1137,41 @@
 .settings-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 8px 32px;
   border-bottom: 1px solid var(--line);
 }
-.settings-toolbar .input {
-  flex: 1;
+.settings-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 240px;
   max-width: 480px;
+}
+.settings-search svg {
+  position: absolute;
+  left: 8px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.settings-search .field {
+  width: 100%;
+  padding-left: 28px;
+}
+.settings-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.settings-scope[hidden] {
+  display: none;
+}
+.settings-repo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .settings-tree {
   flex: 1;

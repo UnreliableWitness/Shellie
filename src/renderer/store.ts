@@ -78,8 +78,16 @@ export type Screen =
   | { kind: 'add-repo'; from: 'settings' | 'get-started'; folder?: string }
   /** With `connectionId`, adds projects to that connection's organization with its stored token. */
   | { kind: 'connect'; from: 'settings' | 'get-started'; connectionId?: string }
-  /** `section` is the id of a settings section to scroll to on open. */
-  | { kind: 'settings'; section?: string }
+  /**
+   * `section` is the id of a settings category (or row) to scroll to on open; `repoId` opens the
+   * Repository scope on that repo; `scope` picks the tab when neither decides it.
+   */
+  | {
+      kind: 'settings';
+      section?: string;
+      repoId?: string;
+      scope?: 'user' | 'repo';
+    }
   | { kind: 'secrets'; repoId?: string }
   | { kind: 'secrets-import'; repoId: string };
 
