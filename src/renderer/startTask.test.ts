@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../shared/usage';
 import { startTaskFor } from './startTask';
-import { installFakeApi } from './test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from './test-helpers/fakeApi';
 
 const config = {
   worktreeRoot: '/w',
+  ...noOverrides,
   config: {
     base: 'main',
     branch: '{type}/{id}-{slug}',

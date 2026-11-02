@@ -19,7 +19,12 @@ import type { WorkspaceDetector } from '../workspaces/WorkspaceDetector';
 import { commitFile, git, makeRepo } from '../test-helpers/gitRepo';
 import { isWindows, sleepCmd, writeLineCmd } from '../test-helpers/shell';
 import { createHandlers } from './handlers';
-import { connDirs, harness, expectTerminalsKept } from './handlersHarness';
+import {
+  connDirs,
+  harness,
+  expectTerminalsKept,
+  telemetryEvents,
+} from './handlersHarness';
 
 describe('handlers: cost server', () => {
   const budgets = {
@@ -259,6 +264,50 @@ describe('handlers: repos', () => {
     });
     const cfg = await h['repos:config'](repo.id);
     expect(cfg.config).toMatchObject({ found: false, base: 'develop' });
+  });
+
+  it('repos:config returns sources and file values', async () => {
+    const { h, added } = await harness();
+    await h['repos:setOverride'](added.id, 'setup', ['pnpm i']);
+    const cfg = await h['repos:config'](added.id);
+    expect(cfg.config).toMatchObject({
+      copy: ['.env'],
+      setup: ['pnpm i'],
+      found: true,
+    });
+    expect(cfg.config).not.toHaveProperty('sources');
+    expect(cfg.sources).toMatchObject({
+      copy: 'file',
+      setup: 'override',
+      run: 'default',
+    });
+    expect(cfg.file).toEqual({ copy: ['.env'] });
+    expect(cfg.fileError).toBeNull();
+  });
+
+  it('repos:config reports a broken .shellie.yml instead of throwing', async () => {
+    const { h, added, repo } = await harness();
+    writeFileSync(path.join(repo, '.shellie.yml'), 'copy: [\n');
+    const cfg = await h['repos:config'](added.id);
+    expect(cfg.fileError).toMatch(/not valid YAML/);
+    expect(cfg.config.copy).toEqual([]);
+  });
+
+  it('repos:setOverride broadcasts repos:changed', async () => {
+    const { telemetry, named } = telemetryEvents();
+    const { h, added, broadcasts } = await harness(undefined, { telemetry });
+    const repo = await h['repos:setOverride'](added.id, 'branch', 'x/{id}');
+    expect(repo.overrides).toEqual({ branch: 'x/{id}' });
+    expect(broadcasts.some((b) => b.event === 'repos:changed')).toBe(true);
+    expect(named('settings.repoOverride')).toEqual([
+      ['settings.repoOverride', { key: 'branch', reset: false }, undefined],
+    ]);
+    broadcasts.length = 0;
+    expect((await h['repos:clearOverrides'](added.id)).overrides).toEqual({});
+    expect(broadcasts.some((b) => b.event === 'repos:changed')).toBe(true);
+    await expect(
+      h['repos:setOverride'](added.id, 'copy', 'nope'),
+    ).rejects.toThrow();
   });
 });
 

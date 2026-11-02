@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { HomeSnapshot } from '../../../shared/home';
 import type { Repo, TaskView } from '../../../shared/types';
 import { useStore } from '../../store';
-import { installFakeApi } from '../../test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from '../../test-helpers/fakeApi';
 import { TasksBand } from './TasksBand';
 
 const repo = {
@@ -116,6 +116,7 @@ describe('TasksBand', () => {
     const { calls } = installFakeApi({
       'repos:config': () => ({
         worktreeRoot: '/w',
+        ...noOverrides,
         config: {
           base: 'main',
           branch: '{type}/{id}-{slug}',

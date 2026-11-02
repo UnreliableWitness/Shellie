@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../shared/usage';
 import type { Repo } from '../../shared/types';
 import { useStore } from '../store';
-import { installFakeApi } from '../test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { SettingsScreen } from './SettingsScreen';
 
 const DOT = String.fromCharCode(183);
@@ -107,6 +107,7 @@ describe('SettingsScreen', () => {
     installFakeApi({
       'repos:config': () => ({
         worktreeRoot: '/src/webshop.worktrees',
+        ...noOverrides,
         config: {
           base: 'main',
           branch: '{type}/{id}-{slug}',

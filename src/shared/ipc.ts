@@ -14,6 +14,7 @@ import type {
 } from './secrets';
 import type { TrackerProvider } from './trackers';
 import type { TerminalFailure } from './terminalFailure';
+import type { ConfigSource, OverrideKey } from './repoConfig';
 
 export type RestartOptions = { withoutProjectConfig?: boolean };
 import type {
@@ -33,6 +34,7 @@ import type {
   SessionDoc,
   NewTerminal,
   Repo,
+  RepoOverrides,
   SetupEvent,
   StartSettings,
   SetupState,
@@ -90,9 +92,17 @@ export type Channels = {
   'repos:pickFolder': { args: []; result: string | null };
   /** The agent CLIs on this machine; cached per launch unless `force`. */
   'agents:detect': { args: [force?: boolean]; result: AgentsDetected };
+  /** The repo's config with its overrides on top; `sources` per key, `file` the values the file alone gives. */
   'repos:config': {
     args: [repoId: string];
-    result: { config: ShellieConfig; worktreeRoot: string };
+    result: {
+      config: ShellieConfig;
+      worktreeRoot: string;
+      sources: Record<OverrideKey, ConfigSource>;
+      file: Partial<RepoOverrides>;
+      /** Why `.shellie.yml` could not be read; null when it was fine or there is none. */
+      fileError: string | null;
+    };
   };
   /** Masked views only; a repo id also returns the All repositories ones. */
   'secrets:list': { args: [scope: string]; result: SecretView[] };
@@ -168,6 +178,12 @@ export type Channels = {
     args: [repoId: string, commands: AgentCommands];
     result: Repo;
   };
+  /** One setting that wins over `.shellie.yml`; null removes it. */
+  'repos:setOverride': {
+    args: [repoId: string, key: OverrideKey, value: unknown];
+    result: Repo;
+  };
+  'repos:clearOverrides': { args: [repoId: string]; result: Repo };
   /** Clearing the mark makes a repo found in a task a normal repo. */
   'repos:setDiscovered': {
     args: [repoId: string, discovered: boolean];

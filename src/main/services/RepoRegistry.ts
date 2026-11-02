@@ -3,12 +3,15 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import {
   AgentCommandsSchema,
+  RepoOverridesSchema,
   StartSettingsSchema,
   type AgentCommands,
   type Repo,
+  type RepoOverrides,
   type StartSettings,
 } from '../../shared/types';
 import type { GitClient } from './GitClient';
+import { OVERRIDE_KEYS, type OverrideKey } from '../../shared/repoConfig';
 import { samePath } from '../paths';
 import { loadShellieConfig } from './ShellieConfig';
 import type { TaskStore } from './TaskStore';
@@ -143,6 +146,36 @@ export class RepoRegistry {
     }
     return this.patch(repoId, (r) => {
       r.agentCommands = kept;
+    });
+  }
+
+  /** Sets one setting that wins over `.shellie.yml`; null removes it, so the file's value (or the default) applies. */
+  async setOverride<K extends OverrideKey>(
+    repoId: string,
+    key: K,
+    value: RepoOverrides[K] | null,
+  ): Promise<Repo> {
+    this.get(repoId);
+    if (!OVERRIDE_KEYS.includes(key))
+      throw new Error(`Unknown repo setting ${String(key)}`);
+    const parsed =
+      value === null
+        ? undefined
+        : (RepoOverridesSchema.shape[key].parse(value) as RepoOverrides[K]);
+    if (value !== null && parsed === undefined)
+      throw new Error(`No value for ${key}`);
+    return this.patch(repoId, (r) => {
+      const next = { ...r.overrides };
+      if (parsed === undefined) delete next[key];
+      else next[key] = parsed;
+      r.overrides = next;
+    });
+  }
+
+  /** Drops all of a repo's overrides. */
+  clearOverrides(repoId: string): Promise<Repo> {
+    return this.patch(repoId, (r) => {
+      r.overrides = {};
     });
   }
 

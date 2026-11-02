@@ -11,7 +11,11 @@ import type {
 } from '../../shared/types';
 import { Shell } from '../App';
 import { useStore } from '../store';
-import { type FakeHandlers, installFakeApi } from '../test-helpers/fakeApi';
+import {
+  type FakeHandlers,
+  installFakeApi,
+  noOverrides,
+} from '../test-helpers/fakeApi';
 import { filterRows, visibleRows } from './SprintScreen';
 
 vi.mock('../components/TerminalView', () => ({ TerminalView: () => null }));
@@ -161,6 +165,7 @@ const fake = (over: FakeHandlers = {}) =>
     'workItems:sprint': () => sprint,
     'repos:config': () => ({
       worktreeRoot: '/w',
+      ...noOverrides,
       config: {
         base: 'main',
         branch: '{type}/{id}-{slug}',
@@ -329,6 +334,7 @@ describe('Sprint page', () => {
     const { calls } = fake({
       'repos:config': () => ({
         worktreeRoot: '/w',
+        ...noOverrides,
         config: {
           base: 'main',
           branch: '{type}/{id}-{slug}',
@@ -382,6 +388,7 @@ describe('Sprint page', () => {
     const { calls } = fake({
       'repos:config': () => ({
         worktreeRoot: '/w',
+        ...noOverrides,
         config: {
           base: 'main',
           branch: '{type}/{id}-{slug}',

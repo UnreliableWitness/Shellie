@@ -14,7 +14,7 @@ import { OFFICIAL_RATES } from '../pricing/officialRates';
 import { SettingsStore } from '../usage/SettingsStore';
 import { UsageStore } from '../usage/UsageStore';
 import { GitClient } from '../services/GitClient';
-import { loadShellieConfig } from '../services/ShellieConfig';
+import { loadEffectiveConfig } from '../services/effectiveConfig';
 import { RepoRegistry } from '../services/RepoRegistry';
 import { SetupRunner } from '../services/SetupRunner';
 import { TaskStore } from '../services/TaskStore';
@@ -136,12 +136,13 @@ export async function harness(
   };
   const broadcasts: Broadcast[] = [];
   const waiters: ((e: Events['setup']) => void)[] = [];
+  const repos = new RepoRegistry(store, git);
   const services: Services = {
     store,
     git,
     platform,
     terminals,
-    repos: new RepoRegistry(store, git),
+    repos,
     connections,
     secrets,
     trackers: new TrackerRegistry(connections),
@@ -149,7 +150,12 @@ export async function harness(
       opened.push(url);
     },
     runner: new SetupRunner(git, platform),
-    loadConfig: loadShellieConfig,
+    loadConfig: (p, opts) =>
+      loadEffectiveConfig(
+        p,
+        { repos: () => repos.list(), tasks: () => store.state.tasks },
+        opts,
+      ),
     pickFolder: async () => '/picked',
     launch: async () => {},
     usage,

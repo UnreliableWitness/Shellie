@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo } from '../../shared/types';
 import { defaultSettings } from '../../shared/usage';
 import { useStore } from '../store';
-import { installFakeApi } from '../test-helpers/fakeApi';
+import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { NewTaskScreen } from './NewTaskScreen';
 
 const webshop: Repo = {
@@ -24,6 +24,7 @@ const webshop: Repo = {
 };
 const config = {
   worktreeRoot: '/src/webshop.worktrees',
+  ...noOverrides,
   config: {
     base: 'main',
     branch: '{type}/{id}-{slug}',

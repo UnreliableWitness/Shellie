@@ -73,7 +73,7 @@ import { ConnectionStore } from './main/services/ConnectionStore';
 import { SecretStore, secretsLoadNotice } from './main/secrets/SecretStore';
 import { GitClient } from './main/services/GitClient';
 import { connectionIdForPath, createGitAuth } from './main/services/gitAuth';
-import { loadShellieConfig } from './main/services/ShellieConfig';
+import { loadEffectiveConfig } from './main/services/effectiveConfig';
 import { RETRY_EVERY_MS as CLEANUP_RETRY_EVERY_MS } from './main/services/worktreeCleanup';
 import { RepoRegistry } from './main/services/RepoRegistry';
 import { taskWorkspaces } from './shared/workspaces';
@@ -895,7 +895,12 @@ async function boot(): Promise<void> {
       runner: new SetupRunner(git, platform, (repoId) => [
         ...new Set(secrets.list({ repoId }).map((v) => v.name)),
       ]),
-      loadConfig: loadShellieConfig,
+      loadConfig: (p, opts) =>
+        loadEffectiveConfig(
+          p,
+          { repos: () => repos.list(), tasks: () => store.state.tasks },
+          opts,
+        ),
       pickFolder: async () => {
         const r = await dialog.showOpenDialog({
           properties: ['openDirectory'],

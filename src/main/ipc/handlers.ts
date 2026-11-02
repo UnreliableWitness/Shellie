@@ -66,10 +66,10 @@ import type {
   DiscardWorkspaceCheck,
   FinishOptions,
   FinishRowResult,
-  ShellieConfig,
   PendingCleanup,
   PullRequestRef,
   Repo,
+  RepoOverrides,
   SetupEvent,
   SetupState,
   Task,
@@ -83,6 +83,7 @@ import type {
   WorkspaceCheck,
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
+import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
   activeHome,
   activeWorkspaces,
@@ -227,7 +228,11 @@ export type Services = {
   reviewDir?: string;
   terminals: TerminalManager;
   runner: SetupRunner;
-  loadConfig: (repoPath: string) => Promise<ShellieConfig>;
+  /** `.shellie.yml` with the repo's overrides on top (`loadEffectiveConfig`); `lenient` reports a broken file instead of throwing. */
+  loadConfig: (
+    repoPath: string,
+    opts?: { lenient?: boolean },
+  ) => Promise<EffectiveConfig>;
   pickFolder: () => Promise<string | null>;
   launch: (cmd: Command) => Promise<void>;
   /** Runs an agent probe with a timeout; defaults to `execFile` (tests inject a fake). */
@@ -2594,15 +2599,17 @@ export function createHandlers(s: Services): Handlers {
       return result;
     },
     'repos:config': async (repoId) => {
-      const config = await s.loadConfig(s.repos.get(repoId).path);
-      // A repo kept in Shellie only (no file) starts from the base branch it was added with when that still exists,
-      // else the detected default; refresh corrects the stored value.
-      const repo = config.found
-        ? s.repos.get(repoId)
-        : await s.repos.refresh(repoId);
+      const repo = s.repos.get(repoId);
+      const { sources, file, fileError, ...config } = await s.loadConfig(
+        repo.path,
+        { lenient: true },
+      );
       return {
-        config: config.found ? config : { ...config, base: repo.baseBranch },
+        config,
         worktreeRoot: worktreeRoot(repo.path),
+        sources,
+        file,
+        fileError,
       };
     },
 
@@ -3657,6 +3664,22 @@ export function createHandlers(s: Services): Handlers {
     'repos:setAgentCommands': async (repoId, commands) => {
       const repo = await s.repos.setAgentCommands(repoId, commands);
       reposChanged();
+      return repo;
+    },
+    'repos:setOverride': async (repoId, key, value) => {
+      const repo = await s.repos.setOverride(
+        repoId,
+        key,
+        value as RepoOverrides[typeof key] | null,
+      );
+      reposChanged();
+      tel.event('settings.repoOverride', { key, reset: value === null });
+      return repo;
+    },
+    'repos:clearOverrides': async (repoId) => {
+      const repo = await s.repos.clearOverrides(repoId);
+      reposChanged();
+      tel.event('settings.repoOverride', { key: 'all', reset: true });
       return repo;
     },
     'repos:setDiscovered': async (repoId, discovered) => {
