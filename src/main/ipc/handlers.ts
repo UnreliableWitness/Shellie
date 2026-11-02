@@ -2599,7 +2599,11 @@ export function createHandlers(s: Services): Handlers {
       return result;
     },
     'repos:config': async (repoId) => {
-      const repo = s.repos.get(repoId);
+      // A repo kept in Shellie only (no file) starts from the base branch it was added with when that still exists,
+      // else the detected default; refresh corrects a stale stored value (#120) before the merge uses it.
+      const repo = s.repos.get(repoId).configFound
+        ? s.repos.get(repoId)
+        : await s.repos.refresh(repoId);
       const { sources, file, fileError, ...config } = await s.loadConfig(
         repo.path,
         { lenient: true },

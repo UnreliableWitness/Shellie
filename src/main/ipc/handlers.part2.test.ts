@@ -19,7 +19,6 @@ import {
 import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { GitClient } from '../services/GitClient';
 import { loadEffectiveConfig } from '../services/effectiveConfig';
-
 import { TaskStore } from '../services/TaskStore';
 import { TerminalManager } from '../services/TerminalManager';
 import { addOrigin, commitFile, git, makeRepo } from '../test-helpers/gitRepo';

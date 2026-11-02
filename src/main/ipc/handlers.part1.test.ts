@@ -266,6 +266,19 @@ describe('handlers: repos', () => {
     expect(cfg.config).toMatchObject({ found: false, base: 'develop' });
   });
 
+  it('repos:config corrects a stale base branch of a repo without .shellie.yml (#120)', async () => {
+    const { h, store } = await harness();
+    const dir = makeRepo('stale-base');
+    git(dir, 'branch', 'develop');
+    const repo = await h['repos:add'](dir, { baseBranch: 'develop' });
+    store.state.repos.find((r) => r.id === repo.id)!.baseBranch = 'gone';
+    const cfg = await h['repos:config'](repo.id);
+    expect(cfg.config.base).toBe('main');
+    expect(store.state.repos.find((r) => r.id === repo.id)?.baseBranch).toBe(
+      'main',
+    );
+  });
+
   it('repos:config returns sources and file values', async () => {
     const { h, added } = await harness();
     await h['repos:setOverride'](added.id, 'setup', ['pnpm i']);
