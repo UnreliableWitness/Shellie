@@ -37,14 +37,19 @@ export function SettingsCategory({
   const hidden = search.query.trim() !== '' && matching === 0;
   return (
     <CategoryContext.Provider value={id}>
-      <section id={id} className="section settings-category" hidden={hidden}>
+      <section
+        id={id}
+        className="section settings-category"
+        aria-labelledby={`${id}-title`}
+        hidden={hidden}
+      >
         {commands ? (
           <div className="settings-category-head">
-            <h2>{title}</h2>
+            <h2 id={`${id}-title`}>{title}</h2>
             {commands}
           </div>
         ) : (
-          <h2>{title}</h2>
+          <h2 id={`${id}-title`}>{title}</h2>
         )}
         {children}
       </section>

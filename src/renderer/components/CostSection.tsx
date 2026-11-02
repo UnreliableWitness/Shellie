@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Rate, ReceiverStatus } from '../../shared/usage';
-import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
+import { defaultSettings, OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { api, saveSettings, tryInvoke } from '../api';
 import { useStore } from '../store';
+import { SettingRow, SettingsCategory } from './settings/SettingRow';
 
 type SettingsDraft = {
   receiverPort: string;
@@ -29,16 +30,19 @@ const tier = (r: Rate): string =>
 function InvoicingPart() {
   const notify = useStore((s) => s.notify);
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
+  const [savedPort, setSavedPort] = useState<number | null>(null);
   const [status, setStatus] = useState<ReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
     void tryInvoke(() => api().invoke('settings:get'), notify).then((s) => {
-      if (live && s)
+      if (live && s) {
         setDraft({
           receiverPort: String(s.receiverPort),
         });
+        setSavedPort(s.receiverPort);
+      }
     });
     const load = () =>
       api()
@@ -55,6 +59,20 @@ function InvoicingPart() {
     };
   }, [notify]);
 
+  const savePort = async (receiverPort: number) => {
+    const saved = await tryInvoke(
+      () =>
+        saveSettings({
+          receiverPort,
+        }),
+      notify,
+    );
+    if (saved) {
+      setSavedPort(saved.receiverPort);
+      notify('info', 'Settings saved');
+    }
+  };
+
   const save = async () => {
     if (!draft) return;
     const receiverPort = parseNumber(draft.receiverPort);
@@ -63,18 +81,28 @@ function InvoicingPart() {
       return;
     }
     setError(null);
-    const saved = await tryInvoke(
-      () =>
-        saveSettings({
-          receiverPort,
-        }),
-      notify,
-    );
-    if (saved) notify('info', 'Settings saved');
+    await savePort(receiverPort);
+  };
+
+  const reset = async () => {
+    const port = defaultSettings().receiverPort;
+    setDraft({ receiverPort: String(port) });
+    setError(null);
+    await savePort(port);
   };
 
   return (
-    <div className="list">
+    <SettingRow
+      id="user-cost-port"
+      category="AI cost"
+      title="Usage receiver port"
+      description="The local port Claude Code sends its usage to (OpenTelemetry). Amounts are in EUR."
+      keywords={['OpenTelemetry', 'OTLP', 'receiver', 'currency', 'invoice']}
+      modified={
+        savedPort !== null && savedPort !== defaultSettings().receiverPort
+      }
+      onReset={() => void reset()}
+    >
       {draft && (
         <div className="conn-form">
           <span>Invoice currency</span>
@@ -121,7 +149,7 @@ function InvoicingPart() {
           </div>
         </div>
       )}
-    </div>
+    </SettingRow>
   );
 }
 
@@ -143,11 +171,33 @@ function RatesPart() {
     };
   }, [notify]);
 
-  if (!officialAsOf) return null;
-
   return (
-    <div className="list">
-      <div className="small muted" style={{ padding: '10px 16px' }}>
+    <SettingRow
+      id="user-cost-rates"
+      category="AI cost"
+      title="Rates"
+      description="The built-in official list prices every amount is priced with, read-only."
+      keywords={['prices', 'models', 'tokens', 'USD', 'rate table']}
+    >
+      {officialAsOf ? (
+        <RatesTable rows={rows} officialAsOf={officialAsOf} />
+      ) : (
+        <div className="muted small">Loading&hellip;</div>
+      )}
+    </SettingRow>
+  );
+}
+
+function RatesTable({
+  rows,
+  officialAsOf,
+}: {
+  rows: Rate[];
+  officialAsOf: string;
+}) {
+  return (
+    <>
+      <div className="small muted" style={{ marginBottom: 6 }}>
         {`Official list prices as of ${officialAsOf} (USD per 1M tokens)`}
       </div>
       <div style={{ overflowX: 'auto' }}>
@@ -178,18 +228,15 @@ function RatesPart() {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }
 
 export function CostSection() {
   return (
-    <section id="cost" className="section">
-      <div className="section-head">
-        <h2>AI cost and invoicing</h2>
-      </div>
+    <SettingsCategory id="cost" title="AI cost and invoicing">
       <InvoicingPart />
       <RatesPart />
-    </section>
+    </SettingsCategory>
   );
 }

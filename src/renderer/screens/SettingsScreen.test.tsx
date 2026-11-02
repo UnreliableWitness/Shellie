@@ -876,7 +876,7 @@ describe('SettingsScreen', () => {
       await waitFor(
         () =>
           expect(searches()).toEqual([
-            expect.objectContaining({ props: { results: 1 } }),
+            expect.objectContaining({ props: { results: 3 } }),
           ]),
         { timeout: 2000 },
       );
@@ -889,7 +889,7 @@ describe('SettingsScreen', () => {
       );
       expect(screen.getByLabelText('Connection for webshop')).toBeVisible();
       expect(
-        screen.getByRole('button', { name: '1 result in User' }),
+        screen.getByRole('button', { name: '3 results in User' }),
       ).toBeVisible();
       // Same query in the other scope: not sent again.
       await new Promise((r) => setTimeout(r, 1200));

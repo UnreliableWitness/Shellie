@@ -14,15 +14,15 @@ import type { SettingsCategoryInfo } from './UserScope';
 
 /** The Repository scope's categories, in tree order. */
 export const REPO_CATEGORIES: SettingsCategoryInfo[] = [
-  { id: 'repo-secrets', title: 'Secrets & env', keywords: [] },
-  { id: 'repo-general', title: 'General', keywords: [] },
-  { id: 'repo-setup', title: 'Setup', keywords: [] },
-  { id: 'repo-agents', title: 'Agents', keywords: [] },
-  { id: 'repo-run', title: 'Run', keywords: [] },
-  { id: 'repo-workitems', title: 'Work items on start', keywords: [] },
-  { id: 'repo-editor', title: 'Editor', keywords: [] },
-  { id: 'repo-changes', title: 'Changes', keywords: [] },
-  { id: 'repo-danger', title: 'Danger zone', keywords: [] },
+  { id: 'repo-secrets', title: 'Secrets & env' },
+  { id: 'repo-general', title: 'General' },
+  { id: 'repo-setup', title: 'Setup' },
+  { id: 'repo-agents', title: 'Agents' },
+  { id: 'repo-run', title: 'Run' },
+  { id: 'repo-workitems', title: 'Work items on start' },
+  { id: 'repo-editor', title: 'Editor' },
+  { id: 'repo-changes', title: 'Changes' },
+  { id: 'repo-danger', title: 'Danger zone' },
 ];
 
 const title = (id: string) =>

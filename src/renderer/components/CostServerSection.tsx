@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CostServerStatus } from '../../shared/costServer';
 import { api, tryInvoke } from '../api';
 import { useStore } from '../store';
+import { SettingRow, SettingsCategory } from './settings/SettingRow';
 
 /** The cost server status from main, kept up to date by `costServer:changed`; null until it loads. */
 export function useCostServerStatus(): [
@@ -84,12 +85,21 @@ export function CostServerSection() {
   };
 
   return (
-    <section id="cost-server" className="section">
-      <div className="section-head">
-        <h2>Cost server</h2>
-      </div>
-      <div className="list">
-        {status && (
+    <SettingsCategory id="cost-server" title="Cost server">
+      <SettingRow
+        id="user-cost-server"
+        category="Cost server"
+        title="Connection"
+        description="Your company's cost server: where Shellie sends each AI request's cost, and where your budgets come from."
+        keywords={[
+          'Server address',
+          'Email',
+          'Company key',
+          'connect',
+          'Disconnect',
+        ]}
+      >
+        {status ? (
           <div className="conn-form">
             <label htmlFor="cost-server-url">Server address</label>
             <input
@@ -174,8 +184,10 @@ export function CostServerSection() {
               </div>
             )}
           </div>
+        ) : (
+          <div className="muted small">Loading&hellip;</div>
         )}
-      </div>
-    </section>
+      </SettingRow>
+    </SettingsCategory>
   );
 }
