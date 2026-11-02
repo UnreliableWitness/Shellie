@@ -796,3 +796,82 @@ describe('runDecide: a review carries over a merge of main', () => {
     expect(statusOf(gh, 9).reviews.h3).toBeUndefined();
   });
 });
+
+describe('runDecide: Dependabot PRs', () => {
+  const repo = { full_name: 'UnreliableWitness/Shellie' };
+  const dependabot = (type: string, prOver: Record<string, unknown> = {}) => {
+    const gh = fake({
+      conclusion: 'success',
+      labels: ['dependencies'],
+      prOver: {
+        title: 'Bump the npm-minor-patch group with 1 update',
+        body: '',
+        user: { login: 'dependabot[bot]' },
+        head: { sha: 'h1', ref: 'dependabot/npm_and_yarn/x-1.2.4', repo },
+        base: { repo },
+        ...prOver,
+      },
+    });
+    return Object.assign(gh, {
+      async listPullCommits() {
+        return [
+          {
+            commit: {
+              message: `Bump x\n\n---\nupdated-dependencies:\n- dependency-name: x\n  update-type: version-update:semver-${type}\n...`,
+            },
+          },
+        ];
+      },
+      async listPullFiles() {
+        return ['package.json', 'package-lock.json'];
+      },
+    });
+  };
+
+  it('merges a green minor update without a review and leaves the issues alone', async () => {
+    const gh = dependabot('minor');
+    expect(await runDecide(opts(gh) as never)).toBeNull();
+    expect(gh.writes).toContain('merge #9 h1');
+    expect(gh.writes).toContain(
+      'delete-branch dependabot/npm_and_yarn/x-1.2.4',
+    );
+    expect(gh.issue.labels.map((l) => l.name)).not.toContain('agent:merged');
+    expect(gh.comments[9].at(-1)!.body).toMatch(/next release/);
+  });
+
+  it('asks the owner once for a major update', async () => {
+    const gh = dependabot('major');
+    await runDecide(opts(gh) as never);
+    await runDecide(opts(gh) as never);
+    expect(gh.writes.filter((w) => w.startsWith('merge'))).toEqual([]);
+    expect(
+      gh.writes.filter((w) => w === 'label #9 +agent:awaits-owner'),
+    ).toHaveLength(1);
+  });
+
+  it('merges a major update on the owner’s Approve of the head', async () => {
+    const gh = dependabot('major');
+    gh.reviews = [
+      {
+        user: { login: 'UnreliableWitness' },
+        state: 'APPROVED',
+        commit_id: 'h1',
+      },
+    ];
+    await runDecide(opts(gh) as never);
+    expect(gh.writes).toContain('merge #9 h1');
+  });
+
+  it('ignores a PR on a dependabot/ branch by anyone else, and a Dependabot PR from a fork', async () => {
+    const other = dependabot('patch', {
+      user: { login: 'maximedebraekeleer' },
+    });
+    await runDecide(opts(other) as never);
+    expect(other.writes).toEqual([]);
+    const fork = dependabot('patch', {
+      head: { sha: 'h1', ref: 'dependabot/x', repo: { full_name: 'a/b' } },
+    });
+    await runDecide(opts(fork) as never);
+    expect(fork.writes).toEqual([]);
+  });
+});

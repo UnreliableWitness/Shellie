@@ -20,7 +20,14 @@ import { bundleGit, runAgentJob, workDir } from './implement.mjs';
 import { needsRelease } from '../release/needs-release.mjs';
 import { carriedReview } from './carry.mjs';
 import { downloadImages, imageLines, imageUrls } from './images.mjs';
-import { decidePr, mainState, prBookkeeping } from './pr-decide.mjs';
+import {
+  DEPENDABOT,
+  decideDependabot,
+  decidePr,
+  dependabotUpdateType,
+  mainState,
+  prBookkeeping,
+} from './pr-decide.mjs';
 import { classifyPaths, countChangedLines } from './publish-checks.mjs';
 import {
   defang,
@@ -73,6 +80,33 @@ async function writeStatus(gh, n, comment, status, summary) {
   else return gh.comment(n, body);
   return comment;
 }
+
+/** The owner's latest review decides: Approve on this commit, or Request changes. */
+async function ownerVerdict(gh, n, owner, sha) {
+  const latest = (await gh.listReviews(n))
+    .filter(
+      (r) =>
+        r.user?.login?.toLowerCase() === owner &&
+        ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state),
+    )
+    .sort((a, b) => (a.submitted_at ?? '').localeCompare(b.submitted_at ?? ''))
+    .at(-1);
+  return {
+    ownerApproved: latest?.state === 'APPROVED' && latest.commit_id === sha,
+    ownerChangesRequested: latest?.state === 'CHANGES_REQUESTED',
+  };
+}
+
+/** The workflow runs of a head commit's failed required checks. */
+const failedRunIds = (checks) =>
+  new Set(
+    checks.runs
+      .filter((r) => checks.failed.includes(r.name))
+      .map((r) =>
+        Number(/\/runs\/(\d+)/.exec(r.html_url ?? r.details_url ?? '')?.[1]),
+      )
+      .filter(Number.isInteger),
+  );
 
 /** The issue side of a merged PR, whoever merged it. */
 async function markMerged(gh, n, bot, { mergeSha, mergedAt, pr }) {
@@ -178,7 +212,8 @@ export async function runDecide({
     );
     await gh.close(redIssue.number, 'completed');
   }
-  const pulls = (await gh.listOpenPulls())
+  const openPulls = await gh.listOpenPulls();
+  const pulls = openPulls
     .filter(
       (p) =>
         p.user?.login === bot && p.labels?.some((l) => l.name === 'agent-pr'),
@@ -249,20 +284,12 @@ export async function runDecide({
       .map((f) => `${f.additions}\t${f.deletions}\t${f.filename}`)
       .join('\0');
     const paths = classifyPaths(stats.map((f) => f.filename));
-    // the owner's latest review decides: Approve on this commit, or Request changes
-    const ownerReviews = (await gh.listReviews(pr.number))
-      .filter(
-        (r) =>
-          r.user?.login?.toLowerCase() === trusted.owner &&
-          ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state),
-      )
-      .sort((a, b) =>
-        (a.submitted_at ?? '').localeCompare(b.submitted_at ?? ''),
-      );
-    const ownerLatest = ownerReviews.at(-1);
-    const ownerApproved =
-      ownerLatest?.state === 'APPROVED' && ownerLatest.commit_id === sha;
-    const ownerChangesRequested = ownerLatest?.state === 'CHANGES_REQUESTED';
+    const { ownerApproved, ownerChangesRequested } = await ownerVerdict(
+      gh,
+      pr.number,
+      trusted.owner,
+      sha,
+    );
     const trustedComments = [
       ...(await gh.listPrComments(pr.number)).map((c) => ({
         id: c.id,
@@ -305,17 +332,7 @@ export async function runDecide({
 
     if (d.action === 'rerun') {
       // a flaky test should not cost a fix round: the failed jobs run once more for this commit
-      const runIds = new Set(
-        checks.runs
-          .filter((r) => checks.failed.includes(r.name))
-          .map((r) =>
-            Number(
-              /\/runs\/(\d+)/.exec(r.html_url ?? r.details_url ?? '')?.[1],
-            ),
-          )
-          .filter(Number.isInteger),
-      );
-      for (const id of runIds) await rerun(id);
+      for (const id of failedRunIds(checks)) await rerun(id);
       prState = { ...prState, ciRerunSha: sha };
       await savePr(
         `**Agent PR status:** CI failed on \`${sha.slice(0, 7)}\` (${checks.failed.join(', ')}); its failed jobs run once more before a fix round.`,
@@ -419,11 +436,93 @@ export async function runDecide({
     }
   };
 
+  /** A Dependabot PR: no review, no fixer, no issue; CI is the gate and majors wait for the owner. */
+  const handleDependabot = async (listed) => {
+    const pr = await gh.getPull(listed.number);
+    const sha = pr.head.sha;
+    const found = await statusOf(gh, pr.number, bot);
+    let prComment = found.comment;
+    let prState = found.status ?? { v: 1, kind: 'dependabot' };
+    const savePr = async (line) => {
+      const body = renderStatus(prState, line);
+      if (prComment) await gh.editComment(prComment.id, body);
+      else prComment = await gh.comment(pr.number, body);
+    };
+    const checks = summarizeChecks(await gh.listCheckRuns(sha));
+    const updateType = dependabotUpdateType(
+      (await gh.listPullCommits(pr.number)).map((c) => c.commit?.message ?? ''),
+      `${pr.title ?? ''}\n${pr.body ?? ''}`,
+    );
+    const d = decideDependabot({
+      pr,
+      prState,
+      checks,
+      mainGreen,
+      mode,
+      ...(await ownerVerdict(gh, pr.number, trusted.owner, sha)),
+      updateType,
+      paths: classifyPaths(await gh.listPullFiles(pr.number)),
+      behindMain: ((await gh.compare('main', sha))?.behind_by ?? 0) > 0,
+    });
+    summary(
+      `Dependabot PR #${pr.number} (${updateType}): ${d.action}${d.reason ? ` (${d.reason})` : ''}${d.reasons ? `: ${d.reasons.join('; ')}` : ''}`,
+    );
+
+    if (d.action === 'rerun') {
+      for (const id of failedRunIds(checks)) await rerun(id);
+      prState = { ...prState, ciRerunSha: sha };
+      await savePr(
+        `**Agent PR status:** CI failed on \`${sha.slice(0, 7)}\` (${checks.failed.join(', ')}); its failed jobs run once more.`,
+      );
+    } else if (d.action === 'update-branch')
+      await gh.updateBranch(pr.number, sha);
+    else if (d.action === 'merge' && !merged) {
+      await gh.mergePull(pr.number, sha);
+      merged = true;
+      await gh.deleteBranch(pr.head.ref).catch(() => {});
+      await gh.comment(
+        pr.number,
+        `Merged (${d.reason}). It ships with the next release of Shellie (12:00 or 17:00 Brussels time) when it changes the app.`,
+      );
+    } else if (d.action === 'awaits-owner') {
+      await gh.addLabels(pr.number, ['agent:awaits-owner']);
+      await gh.comment(
+        pr.number,
+        `**Ready for the owner** (\`${sha.slice(0, 7)}\`): ${d.reasons.join('; ')}.\n\nMerge it, approve it (the agents then merge it in full mode once CI is green), or close it.`,
+      );
+      prState = {
+        ...prState,
+        awaitsOwnerSha: sha,
+        awaitsOwnerReasons: d.reasons.join('; '),
+      };
+      await savePr(
+        `**Agent PR status:** waiting for the owner (${d.reasons.join('; ')}).`,
+      );
+    }
+  };
+
+  // Dependabot PRs: opened by Dependabot itself, on a branch of this repository (never a fork)
+  const dependabotPulls = openPulls
+    .filter(
+      (p) =>
+        p.user?.login === DEPENDABOT &&
+        p.head?.repo?.full_name &&
+        p.head.repo.full_name === p.base?.repo?.full_name,
+    )
+    .sort((a, b) => a.number - b.number);
+
   for (const listed of pulls) {
     try {
       await handle(listed);
     } catch (e) {
       summary(`PR #${listed.number}: failed: ${e.message}`);
+    }
+  }
+  for (const listed of dependabotPulls) {
+    try {
+      await handleDependabot(listed);
+    } catch (e) {
+      summary(`Dependabot PR #${listed.number}: failed: ${e.message}`);
     }
   }
   return task;
