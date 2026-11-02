@@ -14,7 +14,7 @@ don't render standalone in a browser; read them for layout, copy, colors and dat
 | `NewTask.dc.html` | 2. New task from a work item: pick item, repo, base, branch, setup and start options |
 | `Setup.dc.html` | 3. Task setup running: step list plus live log (worktree, copy .env, npm ci, build) |
 | `Done.dc.html` | 4. Finish task: safety checks, final AI usage to work item, clean up worktree/branch |
-| `Settings.dc.html` | 5. Settings: repos and `.miac.yml`, Azure DevOps connection, rate table and currency |
+| `Settings.dc.html` | 5. Settings: repos and `.miac.yml`, Azure DevOps connection, rate table and currency (superseded by the 2026-11-02 Settings redesign, `docs/superpowers/specs/2026-11-02-settings-redesign-design.md`) |
 | `Usage.dc.html` | 6. Task AI usage: per-session tokens and cost, custom fields and comment on the work item |
 | `Invoicing.dc.html` | 7. AI cost per customer for invoicing, per period, with CSV export |
 
