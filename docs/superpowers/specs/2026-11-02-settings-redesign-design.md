@@ -17,13 +17,13 @@ The owner chose VS Code's Settings editor as the model.
 - One settings page shaped like VS Code's: search, scope tabs (User | Repository), a category tree, uniform rows.
 - Everything about one repo in one place, grouped, editable.
 - Repo settings the user changes are personal overrides kept in Shellie; `.shellie.yml` is never written by them.
-- Env files ("Secrets & env") prominent per repo, with their state checked.
+- Secrets prominent: a Secrets category in both scopes surfacing the existing Secrets manager, and the env files a
+  task copies per repo with their state checked.
 - New task and the setup page show a summary of what the task will do, with links to the setting behind each line.
 
 ## Non-goals
 
-- Shellie holding env values itself (an encrypted key/value store). Discussed and rejected for now: two copies of
-  the truth drift apart, and the worktree still gets a plain file. Env files stay in the main checkout.
+- A new way to store secrets: the existing Secrets feature is the store; this redesign only surfaces it.
 - Writing overrides back into `.shellie.yml` or "promote to team". Personal only, for now.
 - Overriding User settings per repo beyond what is already per repo (e.g. default terminals per repo). Not now.
 - Changing Connections and the onboarding pages (Connect, Add repository, Agents) beyond restyling and links.
@@ -64,14 +64,16 @@ work in both scopes (design call: VS Code is the model, and a page where only ha
 broken). Record-like parts (the Connections list, the budget's month chart if any, About) stay as blocks that search
 matches by their category name. Behaviour unchanged:
 
-1. **Connections** (today's ConnectionsSection).
-2. **Editor**: the default editor and Look again. The per-repo editor rows move to the Repository scope.
-3. **Agents and terminals** (default terminals, detected agents).
-4. **AI cost and invoicing**.
-5. **Time tracking**.
-6. **Claude budget**.
-7. **Appearance** (theme, splash, notify on done, telemetry).
-8. **About** (version, Get started).
+1. **Connections** (today's ConnectionsSection, with the tracker picker).
+2. **Secrets** (see Secrets & env below).
+3. **Editor**: the default editor and Look again. The per-repo editor rows move to the Repository scope.
+4. **Agents and terminals** (default terminals, detected agents).
+5. **AI cost and invoicing** (receiver port, rates).
+6. **Time tracking**.
+7. **Budgets** (Claude and Copilot; read-only when the cost server manages them).
+8. **Cost server** (address, email, company key; connect / disconnect).
+9. **Appearance** (theme, splash, notify on done, telemetry).
+10. **About** (version, Get started).
 
 ## Repository scope
 
@@ -86,14 +88,15 @@ Categories:
    item), connection (dropdown, as today), "Found in a task" with "Make it a normal repo" when discovered.
 3. **Setup**: setup commands (list editor: add, edit, remove, reorder), agent packages (apm: Automatic from the
    tabs / Off / a chosen list of `claude`, `copilot`, `opencode`).
-4. **Run**: named run commands (`run:`), a name/command list editor.
-5. **Work items on start**: move to In Progress, assign to me, and the In Progress state per work item type shown
+4. **Agents**: the repo's Claude Code and OpenCode commands (today's `AgentCommandOptions`, `repos:setAgentCommands`).
+5. **Run**: named run commands (`run:`), a name/command list editor.
+6. **Work items on start**: move to In Progress, assign to me, and the In Progress state per work item type shown
    in full (no "Override per type" fold; types load when the category scrolls into view or the scope opens).
    Disabled with a hint when the repo has no connection.
-6. **Editor**: this repo's editor (Automatic or a detected one) and, for Visual Studio, the solution; today's
+7. **Editor**: this repo's editor (Automatic or a detected one) and, for Visual Studio, the solution; today's
    `editor.repos[repoId]`.
-7. **Changes**: files to collapse as generated (`review.collapse`).
-8. **Danger zone**: Remove repository (with an in-page confirm bar, as Changes' discard does).
+8. **Changes**: files to collapse as generated (`review.collapse`).
+9. **Danger zone**: Remove repository (with an in-page confirm bar, as Changes' discard does).
 
 ### Where each value comes from
 
@@ -118,7 +121,9 @@ Three layers, like VS Code's Default < User < Workspace:
 ### Storage
 
 - Overrides live on the repo record in `state.json`: a new optional `Repo.overrides` (zod, default `{}`) with the
-  same keys as `ShellieYmlSchema` (`base`, `branch`, `copy`, `setup`, `run`, `apm`, `review`), each optional.
+  same keys as `ShellieYmlSchema` (`base`, `branch`, `copy`, `copyAgentConfig`, `setup`, `run`, `apm`, `review`),
+  each optional. `RepoRegistry.describe` rebuilds a repo from a fixed field list and `refresh` replaces it, so
+  `overrides` must be carried through `describe` (as `agentCommands` is) or a refresh wipes them.
   Validated with the same schema pieces.
 - The repo's `baseBranch` stays what it is today (inspected base, used when there is no file); `overrides.base`
   takes precedence over both.
@@ -128,34 +133,49 @@ Three layers, like VS Code's Default < User < Workspace:
 
 ### Effective config everywhere
 
-Today `loadShellieConfig(path)` is called from `RepoRegistry.describe`, `handlers.ts` (create task, reopen,
-`repos:config`) and the Changes page's `collapseOf(worktreePath)`. All of these must read the merged config:
-defaults, then the file, then the repo's overrides. Note `collapseOf` reads the *worktree's* file (the task branch's
-version); it must map the worktree back to its repo to apply that repo's overrides. Setup, Start (`startTask.ts`),
+Today `loadShellieConfig(path)` is reached through `Services.loadConfig` from many places in `handlers.ts` (copy
+list, tests tab detection, run service, extra workspace restores, `buildPlan`, the Changes page's `collapseOf`,
+`repos:config`, secrets worktrees) and from `RepoRegistry.describe`. All of these must read the merged config:
+defaults, then the file, then the repo's overrides. The repo's stored `baseBranch` (today applied only in
+`repos:config` when there is no file) becomes part of the same merge, so every caller sees one base. `collapseOf`
+reads the *worktree's* file (the task branch's version); it must map the worktree back to its repo to apply that
+repo's overrides. Setup, Start (`startTask.ts`),
 New task, the run commands in `TerminalTabs`, reopen and multi-repo extra workspaces all go through `repos:config`
 or the handlers, so they pick the overrides up once the merge is in one function.
 
 ## Secrets & env
 
-Purpose: make clear which secret files each new worktree gets, where from, and whether that will work.
+Correction (2026-11-02, after the conversation): the first draft was written against an old branch and proposed that
+Shellie should not hold env values. `main` already has the Secrets feature (spec `2026-10-23-secrets-design.md`):
+values encrypted per developer, given only to the tabs that need them, per environment, with a manager page
+(`SecretsScreen`, screen `{ kind: 'secrets', repoId? }`) and an import page. The owner asked for secrets to be
+"more clear, more prominent in the settings"; that is this manager. So this redesign makes Secrets prominent in
+Settings and does not build a second mechanism.
 
-- Intro line: "Copied from your main checkout into each new worktree. They never leave this machine and Shellie
-  does not store their contents."
-- One row per entry in the effective `copy` list, with its state, checked when the category is shown and on focus:
-  - **Present** (green): exists in the main checkout. Shows size and last modified.
-  - **Missing** (warning): not in the main checkout; setup will skip it.
-  - **Not ignored by git** (red): the path is not git-ignored, so it could be committed. Checked with
-    `git check-ignore`, as `repoInspect` does.
-  - **Outside the repository** (red): the path escapes the repo (`insideDir` fails); setup skips it.
-  - A folder entry shows "folder" and its file count.
-- Row actions: **Open** (in the repo's editor), **Reveal** (Finder / Explorer), **Remove** (edits the override).
-- **Add file…**: a picker restricted to the repo, plus suggestions: the git-ignored `.env*` and
-  `appsettings.*.local.json` files `repoInspect` already finds, minus those already listed.
-- Since `copy` is a `.shellie.yml` key, adding or removing is an override like any other list.
-- Never read or show file contents in Settings. Telemetry: counts and states only, never names (check
-  `docs/telemetry.md` and the scrubber).
+- **User scope, category "Secrets"** (second, after Connections): one row per repo with its `secrets:status` in a
+  word (Protected / Needs attention / Nothing stored), the secret count, and the first warning reason in one line;
+  buttons **Manage** (`go({ kind: 'secrets', repoId })`) and, for "Nothing stored" or a `copy` reason, **Import…**
+  (`go({ kind: 'secrets-import', repoId })`). A header button **Open secrets manager** opens the All repositories
+  scope. Search matches "secret", "env", ".env", "environment", "password", "key".
+- **Repository scope, category "Secrets & env"** (first):
+  - The repo's status panel: the existing `StatusPanel` from `SecretsScreen.tsx`, exported and reused as is
+    (protected sentence, or the warning cards with Move values into Shellie / Clean worktrees).
+  - A summary row: N secrets stored, the repo's default environment (`secrets:repoDefault`, editable here with
+    `secrets:setRepoDefault`, same choices as the manager), and **Manage secrets** / **Import…**.
+  - **Files copied into each worktree** (the effective `copy` list, an override like any list) with a state per
+    entry, checked when the category is shown: **Present** (in the main checkout), **Missing** (warning: setup
+    skips it), **Holds secrets** (warning: the file has values Shellie keeps; the copy is rewritten without them, as
+    the Secrets feature already does; links to the manager), **Not ignored by git** (red), **Outside the
+    repository** (red). Actions per row: Reveal, Remove; **Add file…** with the git-ignored `.env*` /
+    `appsettings.*.local.json` suggestions `repoInspect` finds. The "copy agent config" switch (`copyAgentConfig`)
+    sits here too.
+  - Settings never shows a secret value or a file's contents.
+- `SecretsScreen` and `SecretsImportScreen` stay full pages (#15). Their Back goes to Settings, opening the
+  Repository scope on that repo's Secrets & env (or the User scope's Secrets for All repositories). The task
+  terminal's link to the manager (`TerminalView.tsx`) is unchanged.
+- Telemetry: counts and states only, never names.
 
-The same check feeds the New task summary.
+The same file states feed the New task summary.
 
 ## New task and setup summary
 
@@ -188,7 +208,10 @@ shows the card there.
 | Editor: per-repo rows | Repository → Editor |
 | Editor: default + Look again | User → Editor |
 | Add folder… | Repository scope (dropdown and empty state) |
-| Other sections | User scope, restyled |
+| Agent commands (per repo) | Repository → Agents |
+| Secrets nav link (separate page) | User → Secrets, Repository → Secrets & env (the page stays) |
+| Cost server | User → Cost server |
+| Other sections | User scope, as rows |
 
 ## Constraints
 
