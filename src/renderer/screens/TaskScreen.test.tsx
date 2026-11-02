@@ -123,6 +123,7 @@ beforeEach(() =>
         connectionId: null,
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,
@@ -942,6 +943,7 @@ describe('TaskScreen workspaces', () => {
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

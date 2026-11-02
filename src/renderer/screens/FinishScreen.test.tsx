@@ -680,6 +680,7 @@ describe('FinishScreen push that cannot sign in', () => {
           connectionId: 'c1',
           configFound: true,
           discovered: false,
+          overrides: {},
           workItemOnStart: {
             moveToInProgress: true,
             assignToMe: true,
@@ -978,6 +979,7 @@ describe('FinishScreen pull request failure with unpushed commits', () => {
             connectionId: 'c1',
             configFound: true,
             discovered: false,
+            overrides: {},
             workItemOnStart: {
               moveToInProgress: true,
               assignToMe: true,

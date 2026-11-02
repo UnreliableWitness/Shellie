@@ -217,6 +217,7 @@ const defaults: FakeHandlers = {
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: settings,
   }),
   'repos:setAgentCommands': (repoId, commands) => ({
@@ -227,6 +228,7 @@ const defaults: FakeHandlers = {
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

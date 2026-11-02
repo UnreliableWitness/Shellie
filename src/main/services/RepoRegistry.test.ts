@@ -45,6 +45,7 @@ describe('RepoRegistry', () => {
       path: repo,
       connectionId: 'c1',
       discovered: true,
+      overrides: {},
     });
     expect(await reg.addDiscovered(path.join(repo), null)).toEqual(added);
     expect(reg.list()).toHaveLength(1);
@@ -71,6 +72,7 @@ describe('RepoRegistry', () => {
       connectionId: null,
       configFound: false,
       discovered: false,
+      overrides: {},
       workItemOnStart: {
         moveToInProgress: true,
         assignToMe: true,
@@ -97,6 +99,7 @@ describe('RepoRegistry', () => {
             connectionId: null,
             configFound: false,
             discovered: false,
+            overrides: {},
           },
         ],
         tasks: [],
@@ -169,6 +172,7 @@ describe('RepoRegistry', () => {
       baseBranch: 'develop',
       configFound: true,
       discovered: false,
+      overrides: {},
       workItemOnStart: {
         moveToInProgress: true,
         assignToMe: true,

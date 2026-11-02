@@ -255,6 +255,7 @@ describe('activeConnection', () => {
     connectionId,
     configFound: true,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

@@ -202,6 +202,21 @@ export const AgentCommandsSchema = z.object({
 });
 export type AgentCommands = z.infer<typeof AgentCommandsSchema>;
 
+/** Per-repo settings that win over `.shellie.yml`; a missing key means "not overridden". */
+export const RepoOverridesSchema = z
+  .object({
+    base: z.string().min(1),
+    branch: z.string().min(1),
+    copy: z.array(z.string()),
+    copyAgentConfig: z.boolean(),
+    setup: z.array(z.string()),
+    run: z.record(z.string(), z.string()),
+    apm: z.union([z.literal(false), z.literal('auto'), z.array(z.string())]),
+    reviewCollapse: z.array(z.string()),
+  })
+  .partial();
+export type RepoOverrides = z.infer<typeof RepoOverridesSchema>;
+
 const RepoObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -218,6 +233,7 @@ const RepoObjectSchema = z.object({
   }),
   /** The command line a Claude Code or OpenCode tab runs in this repo (#191); absent means `claude` or `opencode`. */
   agentCommands: AgentCommandsSchema.optional(),
+  overrides: RepoOverridesSchema.default({}),
 });
 // Repos saved before the rename have miacYmlFound.
 export const RepoSchema = z.preprocess(

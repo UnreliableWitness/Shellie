@@ -142,6 +142,7 @@ beforeEach(() => {
         connectionId: 'c1',
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,
@@ -294,6 +295,7 @@ describe('UsagePanel', () => {
           connectionId: null,
           configFound: true,
           discovered: false,
+          overrides: {},
           workItemOnStart: {
             moveToInProgress: true,
             assignToMe: true,

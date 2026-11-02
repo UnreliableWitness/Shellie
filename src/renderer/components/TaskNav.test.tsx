@@ -15,6 +15,7 @@ const repos: Repo[] = [
     connectionId: null,
     configFound: true,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,
@@ -29,6 +30,7 @@ const repos: Repo[] = [
     connectionId: null,
     configFound: false,
     discovered: false,
+    overrides: {},
     workItemOnStart: {
       moveToInProgress: true,
       assignToMe: true,

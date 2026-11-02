@@ -187,7 +187,11 @@ export class RepoRegistry {
       Partial<
         Pick<
           Repo,
-          'workItemOnStart' | 'discovered' | 'baseBranch' | 'agentCommands'
+          | 'workItemOnStart'
+          | 'discovered'
+          | 'baseBranch'
+          | 'agentCommands'
+          | 'overrides'
         >
       >,
   ): Promise<Repo> {
@@ -205,6 +209,7 @@ export class RepoRegistry {
       configFound: config.found,
       discovered: base.discovered ?? false,
       workItemOnStart: base.workItemOnStart ?? StartSettingsSchema.parse({}),
+      overrides: base.overrides ?? {},
       ...(base.agentCommands && { agentCommands: base.agentCommands }),
     };
   }

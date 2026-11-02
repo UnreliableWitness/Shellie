@@ -19,6 +19,7 @@ describe('EditorSection', () => {
           connectionId: null,
           configFound: true,
           discovered: false,
+          overrides: {},
         } as never,
       ],
     });

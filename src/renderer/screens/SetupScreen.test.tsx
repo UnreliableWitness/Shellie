@@ -92,6 +92,7 @@ beforeEach(() =>
         connectionId: null,
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,

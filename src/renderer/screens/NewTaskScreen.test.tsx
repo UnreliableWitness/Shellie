@@ -15,6 +15,7 @@ const webshop: Repo = {
   connectionId: null,
   configFound: true,
   discovered: false,
+  overrides: {},
   workItemOnStart: {
     moveToInProgress: true,
     assignToMe: true,

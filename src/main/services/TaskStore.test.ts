@@ -54,6 +54,7 @@ describe('TaskStore', () => {
         connectionId: null,
         configFound: true,
         discovered: false,
+        overrides: {},
         workItemOnStart: {
           moveToInProgress: true,
           assignToMe: true,
@@ -121,6 +122,7 @@ describe('TaskStore', () => {
             connectionId: null,
             configFound: true,
             discovered: false,
+            overrides: {},
           },
         ],
         tasks: [
@@ -235,6 +237,7 @@ describe('TaskStore', () => {
             connectionId: null,
             configFound: false,
             discovered: false,
+            overrides: {},
             workItemOnStart: {
               moveToInProgress: true,
               assignToMe: true,

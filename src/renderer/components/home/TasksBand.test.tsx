@@ -12,6 +12,7 @@ const repo = {
   name: 'web',
   connectionId: 'c1',
   discovered: false,
+  overrides: {},
 } as Repo;
 const task = (over: Partial<TaskView>): TaskView =>
   ({
