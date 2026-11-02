@@ -1,6 +1,7 @@
 # Dependency updates (#193). The PR poller (tools/agents/pr.mjs, docs/agents.md) merges a Dependabot PR by itself
 # when it is a patch or minor update and CI is green; majors and GitHub Actions bumps wait for the owner's Approve.
-# Security updates come as soon as an advisory is out (Settings › Code security), version updates weekly.
+# Security updates come as soon as an advisory is out (Settings › Code security), version updates weekly, and only
+# for releases at least 7 days old (14 for an npm major).
 version: 2
 updates:
   - package-ecosystem: npm
@@ -15,6 +16,11 @@ updates:
       npm-minor-patch:
         patterns: ['*']
         update-types: [minor, patch]
+    # supply chain: a release is offered only after it has been out a while, so a hijacked version is usually
+    # caught and pulled first. Security updates skip this wait.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     labels: [dependencies]
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions
@@ -28,5 +34,8 @@ updates:
       actions-minor-patch:
         patterns: ['*']
         update-types: [minor, patch]
+    # the same wait; Actions tags are not always semver, so one number for all
+    cooldown:
+      default-days: 7
     labels: [dependencies]
     open-pull-requests-limit: 5
