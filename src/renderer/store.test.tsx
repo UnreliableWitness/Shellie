@@ -29,6 +29,7 @@ const task = (id: string, terms: string[]): TaskView => ({
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: terms.map((t) => ({ id: t, kind: 'shell' as const, label: t })),
   createdAt: 'now',

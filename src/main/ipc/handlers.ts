@@ -77,6 +77,7 @@ import type {
   Task,
   TaskStatus,
   TaskSummary,
+  SetupSummary,
   TaskView,
   TerminalDef,
   WorkItemDetails,
@@ -85,6 +86,7 @@ import type {
   WorkspaceCheck,
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
+import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
 import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
   activeHome,
@@ -535,7 +537,12 @@ export function createHandlers(s: Services): Handlers {
 
   /** Work item types per connection, with icons, for the session. A failed load is not kept, so the next call retries. */
   const typesCache = new Map<string, Promise<WorkItemTypeMeta[]>>();
-  const dropTypes = (connectionId: string) => typesCache.delete(connectionId);
+  /** The types already fetched, by connection: a new task's summary names the real In Progress state from them. */
+  const typesKnown = new Map<string, WorkItemTypeMeta[]>();
+  const dropTypes = (connectionId: string) => {
+    typesCache.delete(connectionId);
+    typesKnown.delete(connectionId);
+  };
 
   /** Runs an Azure DevOps call for a connection; a rejected token flips the status so Settings and the footer turn red. */
   const withConnection = async <T>(
@@ -2670,6 +2677,27 @@ export function createHandlers(s: Services): Handlers {
       )
         throw new Error(`Branch ${branch} is already being created`);
       for (const k of keys) creating.add(k);
+      let summary: SetupSummary | null = null;
+      try {
+        const config = await s.loadConfig(repo.path, { lenient: true });
+        summary = buildSetupSummary({
+          repoId: repo.id,
+          branch,
+          base: input.baseRef,
+          config,
+          copy: input.copy,
+          commands: input.commands,
+          tabs: setupTabLabels(input, s.platform.shellLabel),
+          workItem: input.workItem,
+          start: repo.workItemOnStart,
+          types: repo.connectionId
+            ? (typesKnown.get(repo.connectionId) ?? null)
+            : null,
+          editor: s.settings.get().editor,
+        });
+      } catch {
+        // The summary is for display; a config that cannot be read now shows up in setup itself.
+      }
       const createdAt = new Date().toISOString();
       const task: Task = {
         id: randomUUID(),
@@ -2689,6 +2717,7 @@ export function createHandlers(s: Services): Handlers {
           openShell: input.openShell,
           openCopilot: input.openCopilot ?? false,
           openOpencode: input.openOpencode ?? false,
+          summary,
         },
         terminals: [],
         createdAt,
@@ -3900,6 +3929,14 @@ export function createHandlers(s: Services): Handlers {
           ),
         );
         typesCache.set(connectionId, hit);
+        const fetched = hit;
+        hit.then(
+          (types) => {
+            if (typesCache.get(connectionId) === fetched)
+              typesKnown.set(connectionId, types);
+          },
+          () => {},
+        );
         hit.catch(() => {
           if (typesCache.get(connectionId) === hit) dropTypes(connectionId);
         });

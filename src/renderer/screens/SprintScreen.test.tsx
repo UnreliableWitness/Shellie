@@ -122,6 +122,7 @@ const task = (over: Partial<TaskView>): TaskView => ({
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: '2026-10-15T08:00:00.000Z',

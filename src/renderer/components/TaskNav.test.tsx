@@ -45,6 +45,7 @@ const base = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: 'now',

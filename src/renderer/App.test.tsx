@@ -34,6 +34,7 @@ const task: TaskView = {
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: 'now',

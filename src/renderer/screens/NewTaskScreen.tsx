@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { defaultEditorPrefs, type EditorPrefs } from '../../shared/editors';
 import { renderBranch, taskSlug } from '../../shared/naming';
+import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
 import { setupTabsFrom } from '../../shared/terminals';
 import type {
+  CopyEntry,
   ShellieConfig,
   WorkItemRef,
   WorkItemType,
@@ -15,10 +18,12 @@ import {
 } from '../../shared/secrets';
 import { api, tryInvoke } from '../api';
 import { EnvironmentConfirm } from '../components/secrets/EnvironmentChip';
+import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { PageHeader, Pivots, WorkItemTypeIcon } from '../components/ui';
 import { WorkItemPicker } from '../components/WorkItemPicker';
 import { useEscape } from '../hooks/useEscape';
 import { useStore } from '../store';
+import { useTypeMeta } from '../workItemTypes';
 
 type Mode = 'pick' | 'typed' | 'blank';
 const TYPES: WorkItemType[] = ['Issue', 'User Story', 'Bug', 'Task', 'Epic'];
@@ -82,11 +87,15 @@ export function NewTaskScreen({
   const [productionMinutes, setProductionMinutes] = useState<number | null>(
     null,
   );
+  const [editorPrefs, setEditorPrefs] =
+    useState<EditorPrefs>(defaultEditorPrefs);
+  const [copyStates, setCopyStates] = useState<CopyEntry[] | undefined>();
   useEffect(() => {
     let live = true;
     void tryInvoke(() => api().invoke('settings:get'), notify).then((s) => {
       if (!live || !s) return;
       setProductionMinutes(s.secrets.productionMinutes);
+      setEditorPrefs(s.editor);
       const tabs = setupTabsFrom(s.defaultTerminals);
       setStartClaude(tabs.startClaude);
       setOpenShell(tabs.openShell);
@@ -127,6 +136,7 @@ export function NewTaskScreen({
     if (!repoId) return;
     let live = true;
     setConfig(null);
+    setCopyStates(undefined);
     setBaseRef('');
     setCopy(true);
     setCommands({});
@@ -138,6 +148,12 @@ export function NewTaskScreen({
       notify,
     ).then((env) => {
       if (live && env) setEnvironment(isGuarded(env) ? 'development' : env);
+    });
+    void tryInvoke(
+      () => api().invoke('repos:copyEntries', repoId),
+      notify,
+    ).then((result) => {
+      if (live && result) setCopyStates(result.entries);
     });
     void tryInvoke(() => api().invoke('repos:config', repoId), notify).then(
       (result) => {
@@ -189,6 +205,34 @@ export function NewTaskScreen({
   const baseOptions = config
     ? [`origin/${config.config.base}`, config.config.base]
     : [];
+
+  const typeMeta = useTypeMeta(
+    connectionId,
+    workItem?.id ? workItem.type : null,
+  );
+  const chosenCommands = (config?.config.setup ?? []).filter(
+    (c) => commands[c],
+  );
+  /** What the task will get, live from the form and the repo's current settings. */
+  const summary =
+    repo && config
+      ? buildSetupSummary({
+          repoId: repo.id,
+          branch,
+          base: baseRef,
+          config: config.config,
+          copy,
+          commands: chosenCommands,
+          tabs: setupTabLabels(
+            { startClaude, openShell, openCopilot, openOpencode },
+            'Shell',
+          ),
+          workItem: mode === 'blank' || !workItem?.id ? null : workItem,
+          start: repo.workItemOnStart,
+          types: typeMeta ? [typeMeta] : null,
+          editor: editorPrefs,
+        })
+      : null;
 
   const canCreate =
     mode === 'pick'
@@ -245,7 +289,7 @@ export function NewTaskScreen({
             mode === 'blank' ? null : workItem && workItem.id ? workItem : null,
           branch,
           copy,
-          commands: (config?.config.setup ?? []).filter((c) => commands[c]),
+          commands: chosenCommands,
           startClaude,
           openShell,
           openCopilot,
@@ -407,6 +451,13 @@ export function NewTaskScreen({
               ))}
             </select>
           </div>
+          {summary && repo && (
+            <TaskSummaryCard
+              summary={summary}
+              repoId={repo.id}
+              copyStates={copyStates}
+            />
+          )}
           <fieldset className="group">
             <legend>Setup from .shellie.yml</legend>
             {config && config.config.copy.length > 0 && (

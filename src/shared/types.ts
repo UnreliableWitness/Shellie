@@ -57,6 +57,28 @@ export const TaskStatusSchema = z.enum([
 ]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+/**
+ * What a task was given at creation ("This task will…"), shown on its setup page. Recorded once, so a setting
+ * changed later applies to the next task, not this one.
+ */
+export const SetupSummarySchema = z.object({
+  branch: z.string(),
+  base: z.string(),
+  copy: z.array(z.string()),
+  commands: z.array(z.string()),
+  /** The `apm` setting: false is off, null means the harnesses of the tabs. */
+  apm: z.union([z.literal(false), z.array(z.string())]).nullable(),
+  tabs: z.array(z.string()),
+  run: z.array(z.string()),
+  /** Null when the task has no work item; `move` is the state it moves to, null when it is not moved. */
+  workItem: z
+    .object({ move: z.string().nullable(), assign: z.boolean() })
+    .nullable(),
+  /** The chosen editor's label; null when Shellie picks one. */
+  editor: z.string().nullable(),
+});
+export type SetupSummary = z.infer<typeof SetupSummarySchema>;
+
 export const TaskSetupSchema = z.object({
   copy: z.boolean(),
   commands: z.array(z.string()),
@@ -65,6 +87,8 @@ export const TaskSetupSchema = z.object({
   openCopilot: z.boolean().default(false),
   /** Open an OpenCode tab when the task is ready. Absent on tasks from before the choice existed. */
   openOpencode: z.boolean().optional(),
+  /** What the task was given at creation; null on tasks from before it was recorded. */
+  summary: SetupSummarySchema.nullable().default(null),
 });
 
 /** What a finished task did, captured from git just before its worktree is removed. */

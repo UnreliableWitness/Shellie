@@ -111,6 +111,7 @@ const task: Task = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: '2026-10-14T09:00:00.000Z',

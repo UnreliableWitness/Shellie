@@ -41,6 +41,7 @@ const task: TaskView = {
     startClaude: true,
     openShell: true,
     openCopilot: false,
+    summary: null,
   },
   terminals: [
     { id: 'c1', kind: 'claude', label: 'Claude Code' },

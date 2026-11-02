@@ -716,3 +716,58 @@ describe('handlers: secrets in tabs', () => {
     await hx.terminals.killAllForTask(task.id);
   });
 });
+
+describe('handlers: task setup summary', () => {
+  it('tasks:create records the summary', async () => {
+    const { h, input, setupDone, added, settings, terminals, store } =
+      await harness();
+    await h['repos:setWorkItemOnStart'](added.id, {
+      moveToInProgress: true,
+      assignToMe: false,
+      stateOverrides: { 'User Story': 'Doing' },
+    });
+    await h['repos:setOverride'](added.id, 'run', { dev: 'npm run dev' });
+    await h['repos:setOverride'](added.id, 'apm', ['claude']);
+    await settings.save({
+      ...settings.get(),
+      editor: { default: 'vscode', repos: {} },
+    });
+    const done = setupDone();
+    const task = await h['tasks:create'](
+      input({ commands: ['npm ci'], startClaude: true }),
+    );
+    await done;
+    expect(task.setup.summary).toEqual({
+      branch: 'feature/48231-show-estimated-delivery-date',
+      base: 'main',
+      copy: ['.env'],
+      commands: ['npm ci'],
+      apm: ['claude'],
+      tabs: ['Claude Code', testPlatform().shellLabel],
+      run: ['npm run dev'],
+      workItem: { move: 'Doing', assign: false },
+      editor: 'VS Code',
+    });
+    // Recorded once: a setting changed after creation applies to the next task.
+    await h['repos:setOverride'](added.id, 'copy', ['.env.local']);
+    expect(
+      store.state.tasks.find((t) => t.id === task.id)?.setup.summary?.copy,
+    ).toEqual(['.env']);
+    await terminals.killAllForTask(task.id);
+  });
+
+  it('records no copy and the default In Progress state without a choice', async () => {
+    const { h, input, setupDone, terminals } = await harness();
+    const done = setupDone();
+    const task = await h['tasks:create'](input({ copy: false }));
+    await done;
+    expect(task.setup.summary).toMatchObject({
+      copy: [],
+      apm: null,
+      tabs: [testPlatform().shellLabel],
+      workItem: { move: 'In Progress', assign: true },
+      editor: null,
+    });
+    await terminals.killAllForTask(task.id);
+  });
+});

@@ -26,6 +26,7 @@ const task = (over: Partial<Task> & Pick<Task, 'id'>): Task => ({
     startClaude: false,
     openShell: false,
     openCopilot: false,
+    summary: null,
   },
   terminals: [],
   createdAt: new Date(NOW - 3_600_000).toISOString(),

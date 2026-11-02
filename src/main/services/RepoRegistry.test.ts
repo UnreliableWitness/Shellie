@@ -249,6 +249,7 @@ describe('RepoRegistry', () => {
           startClaude: false,
           openShell: false,
           openCopilot: false,
+          summary: null,
         },
         terminals: [],
         createdAt: 'now',
