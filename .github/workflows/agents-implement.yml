@@ -34,7 +34,7 @@ jobs:
     outputs:
       issue: ${{ steps.pick.outputs.issue }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           persist-credentials: false
@@ -74,7 +74,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0
@@ -115,7 +115,7 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0
