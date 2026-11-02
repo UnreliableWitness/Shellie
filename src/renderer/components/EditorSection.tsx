@@ -4,10 +4,9 @@ import type { EditorChoice, EditorId, EditorPrefs } from '../../shared/editors';
 import { api, saveSettings, tryInvoke } from '../api';
 import { useStore } from '../store';
 
-/** Settings > Editor: the default editor and one per repo ("Automatic" picks from the project). */
+/** Settings > Editor: the default editor ("Automatic" picks from the project); each repo's own is under Repository › Editor. */
 export function EditorSection() {
   const notify = useStore((s) => s.notify);
-  const repos = useStore((s) => s.repos);
   const [choices, setChoices] = useState<EditorChoice[] | null>(null);
   const [prefs, setPrefs] = useState<EditorPrefs | null>(null);
 
@@ -76,36 +75,6 @@ export function EditorSection() {
               ))}
             </select>
           </label>
-          {repos.map((r) => (
-            <label key={r.id} className="list-row">
-              <span className="grow">{r.name}</span>
-              <select
-                className="field"
-                aria-label={`Editor for ${r.name}`}
-                value={value(prefs.repos[r.id]?.editor ?? null)}
-                onChange={(e) => {
-                  const editor = parse(e.target.value);
-                  void save((p) => ({
-                    ...p,
-                    repos: {
-                      ...p.repos,
-                      [r.id]: {
-                        solution: p.repos[r.id]?.solution ?? null,
-                        editor,
-                      },
-                    },
-                  }));
-                }}
-              >
-                <option value="">Default</option>
-                {choices.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
         </div>
       )}
       <p className="small muted">

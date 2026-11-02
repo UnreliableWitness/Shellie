@@ -1267,3 +1267,15 @@
     padding: 8px 16px;
   }
 }
+.settings-repo-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-file-error {
+  background: var(--red-bg);
+  color: var(--text);
+  border-left: 3px solid var(--red);
+  padding: 8px 12px;
+  border-radius: 2px;
+}

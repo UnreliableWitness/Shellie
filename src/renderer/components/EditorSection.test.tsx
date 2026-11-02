@@ -8,7 +8,7 @@ import { installFakeApi } from '../test-helpers/fakeApi';
 import { EditorSection } from './EditorSection';
 
 describe('EditorSection', () => {
-  it('saves the default and a repo’s editor, keeping the other settings', async () => {
+  it('saves the default editor, keeping the other settings; repo rows live under Repository', async () => {
     useStore.setState({
       repos: [
         {
@@ -37,15 +37,7 @@ describe('EditorSection', () => {
       target: { value: 'visualstudio' },
     });
     await waitFor(() => expect(current.editor.default).toBe('visualstudio'));
-    fireEvent.change(screen.getByLabelText('Editor for web'), {
-      target: { value: 'vscode' },
-    });
-    await waitFor(() =>
-      expect(current.editor).toEqual({
-        default: 'visualstudio',
-        repos: { r1: { editor: 'vscode', solution: null } },
-      }),
-    );
+    expect(screen.queryByLabelText('Editor for web')).toBeNull();
     expect(current.idleMinutes).toBe(9);
   });
 });

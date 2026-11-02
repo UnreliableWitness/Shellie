@@ -7,7 +7,6 @@ import { useStore } from '../store';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { SettingsScreen } from './SettingsScreen';
 
-const DOT = String.fromCharCode(183);
 const ADD_FOLDER = `Add folder${String.fromCharCode(8230)}`;
 
 const webshop: Repo = {
@@ -66,17 +65,13 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />);
     expect(screen.getByLabelText('Repository')).toHaveValue('r1');
     expect(screen.getByRole('option', { name: 'api' })).toBeInTheDocument();
-    expect(
-      screen.getByText(`/src/webshop ${DOT} base main`),
-    ).toBeInTheDocument();
+    expect(screen.getByText('/src/webshop')).toBeInTheDocument();
     expect(screen.getByText('.shellie.yml found')).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('Repository'), 'r2');
     expect(
       screen.getByText('No .shellie.yml, using defaults'),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(`/src/api ${DOT} base develop`),
-    ).toBeInTheDocument();
+    expect(screen.getByText('/src/api')).toBeInTheDocument();
   });
 
   it('marks a discovered repo and lets the user make it normal', async () => {
@@ -118,7 +113,7 @@ describe('SettingsScreen', () => {
     expect(calls.some((c) => c.channel === 'repos:add')).toBe(false);
   });
 
-  it('shows the effective config for a repo', async () => {
+  it('shows the effective config as rows', async () => {
     installFakeApi({
       'repos:config': () => ({
         worktreeRoot: '/src/webshop.worktrees',
@@ -135,10 +130,11 @@ describe('SettingsScreen', () => {
     });
     useStore.setState({ repos: [webshop], screen: repoScope });
     render(<SettingsScreen />);
-    await waitFor(() =>
-      expect(screen.getByText(/dev: npm run dev/)).toBeInTheDocument(),
+    expect(await screen.findByLabelText('Setup commands item 1')).toHaveValue(
+      'npm ci',
     );
-    expect(screen.getByText(/copy: \[\.env\]/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Base branch')).toHaveValue('main');
+    expect(screen.getByDisplayValue('npm run dev')).toBeInTheDocument();
   });
 
   it('links a repo to a connection', async () => {
@@ -266,7 +262,7 @@ describe('SettingsScreen', () => {
       ).toBeChecked();
     });
 
-    it('shows neither option without a connection', () => {
+    it('disables both options without a connection', () => {
       installFakeApi(handlers() as never);
       useStore.setState({
         repos: [webshop],
@@ -275,15 +271,15 @@ describe('SettingsScreen', () => {
       });
       render(<SettingsScreen />);
       expect(
-        screen.queryByRole('checkbox', {
+        screen.getByRole('checkbox', {
           name: 'Move the work item to In Progress on start',
         }),
-      ).toBeNull();
+      ).toBeDisabled();
       expect(
-        screen.queryByRole('checkbox', {
+        screen.getByRole('checkbox', {
           name: 'Assign it to me if unassigned',
         }),
-      ).toBeNull();
+      ).toBeDisabled();
     });
 
     it('saves when the move option is unticked', async () => {
@@ -309,7 +305,7 @@ describe('SettingsScreen', () => {
       );
     });
 
-    it('loads types on open and sets and clears an override', async () => {
+    it('loads types when shown and sets an override', async () => {
       const { calls } = installFakeApi(handlers() as never);
       useStore.setState({
         repos: [linked],
@@ -317,8 +313,6 @@ describe('SettingsScreen', () => {
         screen: repoScope,
       });
       render(<SettingsScreen />);
-      expect(calls.some((c) => c.channel === 'workItems:types')).toBe(false);
-      await userEvent.click(screen.getByText('Override per type'));
       const select = await screen.findByLabelText('In Progress state for Task');
       expect(
         Array.from((select as HTMLSelectElement).options).map((o) => o.text),
@@ -355,7 +349,6 @@ describe('SettingsScreen', () => {
         screen: repoScope,
       });
       render(<SettingsScreen />);
-      await userEvent.click(screen.getByText('Override per type'));
       const select = await screen.findByLabelText('In Progress state for Task');
       await userEvent.selectOptions(select, 'Default');
       await waitFor(() =>
@@ -740,7 +733,7 @@ describe('SettingsScreen', () => {
       expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
         'r2',
       );
-      expect(screen.getByText(`/src/api ${DOT} base main`)).toBeVisible();
+      expect(screen.getByText('/src/api')).toBeVisible();
       expect(screen.getByRole('link', { name: 'General' })).toBeVisible();
       expect(tracked).toContainEqual(
         expect.objectContaining({
