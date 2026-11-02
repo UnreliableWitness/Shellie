@@ -256,7 +256,7 @@ function stripDotenv(text: string, names: Set<string>): string {
     let last = i;
     if (q === '"' || q === "'" || q === '`') {
       let body = rest.slice(1);
-      for (let n = i; ; ) {
+      for (let n = i; ;) {
         if (closing(body, q) !== -1) {
           last = n;
           break;
