@@ -2,7 +2,6 @@ import { Search16Regular } from '@fluentui/react-icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, tryInvoke } from '../api';
 import {
-  matchesQuery,
   SettingsSearchProvider,
   useSettingsSearch,
 } from '../components/settings/settingsSearch';
@@ -59,25 +58,25 @@ function initialScope(link: SettingsLink | null): Scope {
   );
 }
 
-/** The repo a deep link asks for; the old `repos` section opens the first repo. */
-function linkRepo(link: SettingsLink | null, firstRepo: string | null) {
-  if (link?.repoId) return link.repoId;
-  if (link?.section === 'repos') return firstRepo;
-  return null;
+/** The repo a deep link asks for; without one (e.g. the old `repos` section) the remembered repo stays. */
+function linkRepo(link: SettingsLink | null): string | null {
+  return link?.repoId ?? null;
 }
 
 function SearchTelemetry({ scope }: { scope: Scope }) {
   const search = useSettingsSearch();
   const active = search.query.trim() !== '';
-  const results = active ? search.countOther(other(scope)) : 0;
+  const results = useRef(0);
+  results.current = active ? search.countOther(other(scope)) : 0;
+  // Keyed on the query only: a scope switch or late row registration does not send it again.
   useEffect(() => {
     if (!active) return;
     const timer = window.setTimeout(
-      () => track('settings.search', { results }),
+      () => track('settings.search', { results: results.current }),
       1000,
     );
     return () => window.clearTimeout(timer);
-  }, [active, search.query, results]);
+  }, [active, search.query]);
   return null;
 }
 
@@ -97,12 +96,8 @@ function SettingsTree({
   return (
     <nav className="settings-nav" aria-label="Settings sections">
       {categories.map((c) => {
+        if (searching && search.categoryCount(c.id).matching === 0) return null;
         if (c.id === 'secrets') {
-          if (
-            searching &&
-            !matchesQuery(search.query, [c.title, ...c.keywords])
-          )
-            return null;
           return (
             <a
               key={c.id}
@@ -116,7 +111,6 @@ function SettingsTree({
             </a>
           );
         }
-        if (searching && search.categoryCount(c.id).matching === 0) return null;
         return (
           <a
             key={c.id}
@@ -183,7 +177,7 @@ export function SettingsScreen() {
 
   const [scope, setScope] = useState<Scope>(() => initialScope(link));
   const [repoId, setRepoId] = useState<string | null>(
-    () => linkRepo(link, repos[0]?.id ?? null) ?? readPref(REPO_KEY),
+    () => linkRepo(link) ?? readPref(REPO_KEY),
   );
   const [query, setQuery] = useState('');
   // A new deep link while the page is open picks its scope and repo again.
@@ -192,7 +186,7 @@ export function SettingsScreen() {
     setSeenLink(link);
     const s = linkScope(link);
     if (s) setScope(s);
-    const r = linkRepo(link, repos[0]?.id ?? null);
+    const r = linkRepo(link);
     if (r) setRepoId(r);
     if (link?.section || link?.repoId) setQuery('');
   }

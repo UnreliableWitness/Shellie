@@ -798,9 +798,26 @@ describe('SettingsScreen', () => {
       );
     });
 
-    it('the old repos deep link opens the first repo', () => {
+    it('the old repos deep link opens the remembered repo', () => {
       installFakeApi();
       window.localStorage.setItem('shellie.settings.repoId', 'r2');
+      useStore.setState({
+        repos: [webshop, api2],
+        screen: { kind: 'settings', section: 'repos' },
+      });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
+        'r2',
+      );
+    });
+
+    it('the old repos deep link opens the first repo when the remembered one is gone', () => {
+      installFakeApi();
+      window.localStorage.setItem('shellie.settings.repoId', 'gone');
       useStore.setState({
         repos: [webshop, api2],
         screen: { kind: 'settings', section: 'repos' },
@@ -809,6 +826,30 @@ describe('SettingsScreen', () => {
       expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
         'r1',
       );
+    });
+
+    it('searching secrets keeps the Secrets entry and no empty state', async () => {
+      installFakeApi();
+      render(<SettingsScreen />);
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+        'secrets',
+      );
+      expect(screen.getByRole('link', { name: 'Secrets' })).toBeVisible();
+      expect(screen.queryByText(/No settings match/)).toBeNull();
+    });
+
+    it('finds the agent commands row by the words of its description', async () => {
+      installFakeApi();
+      useStore.setState({ repos: [webshop], screen: repoScope });
+      render(<SettingsScreen />);
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+        'permission mode',
+      );
+      expect(
+        screen.getByLabelText('Claude Code command for webshop'),
+      ).toBeVisible();
     });
 
     it('search filters across categories and offers the other scope', async () => {
@@ -822,6 +863,15 @@ describe('SettingsScreen', () => {
       expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
       expect(screen.queryByRole('link', { name: 'Appearance' })).toBeNull();
       expect(screen.queryByRole('combobox', { name: 'Theme' })).toBeNull();
+      const searches = () =>
+        tracked.filter((t) => 'name' in t && t.name === 'settings.search');
+      await waitFor(
+        () =>
+          expect(searches()).toEqual([
+            expect.objectContaining({ props: { results: 1 } }),
+          ]),
+        { timeout: 2000 },
+      );
       await userEvent.click(
         screen.getByRole('button', { name: '1 result in Repository' }),
       );
@@ -833,16 +883,9 @@ describe('SettingsScreen', () => {
       expect(
         screen.getByRole('button', { name: '1 result in User' }),
       ).toBeVisible();
-      await waitFor(
-        () =>
-          expect(tracked).toContainEqual(
-            expect.objectContaining({
-              name: 'settings.search',
-              props: { results: 1 },
-            }),
-          ),
-        { timeout: 2000 },
-      );
+      // Same query in the other scope: not sent again.
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(searches()).toHaveLength(1);
       expect(JSON.stringify(tracked)).not.toContain('connection');
     });
 

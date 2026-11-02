@@ -105,12 +105,13 @@ export const USER_CATEGORIES: SettingsCategoryInfo[] = [
  * An existing section as one searchable block (category granularity) until Tasks 6-8 turn it into
  * rows: it registers itself with the search and hides while the query does not match it.
  */
+/** Registers a category's search entry; with `children`, shows them only while the query matches. */
 function SectionBlock({
   info,
   children,
 }: {
   info: SettingsCategoryInfo;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const search = useSettingsSearch();
   const texts = [info.title, ...info.keywords];
@@ -120,6 +121,7 @@ function SectionBlock({
     () => register(`${info.id}-block`, 'user', texts, info.id),
     [register, info.id, textKey],
   );
+  if (children === undefined) return null;
   return <div hidden={!search.matches(texts)}>{children}</div>;
 }
 
@@ -286,11 +288,16 @@ const SECTIONS: Record<string, () => ReactNode> = {
 export function UserScope() {
   return (
     <>
-      {USER_CATEGORIES.filter((c) => SECTIONS[c.id]).map((c) => (
-        <SectionBlock key={c.id} info={c}>
-          {SECTIONS[c.id]()}
-        </SectionBlock>
-      ))}
+      {USER_CATEGORIES.map((c) =>
+        SECTIONS[c.id] ? (
+          <SectionBlock key={c.id} info={c}>
+            {SECTIONS[c.id]()}
+          </SectionBlock>
+        ) : (
+          // Secrets is a link to its own page for now; its entry keeps search and the tree in step.
+          <SectionBlock key={c.id} info={c} />
+        ),
+      )}
     </>
   );
 }

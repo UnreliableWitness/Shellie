@@ -344,7 +344,14 @@ export function RepoScope({ repo, active }: { repo: Repo; active: boolean }) {
               .
             </>
           }
-          keywords={['Claude Code command', 'OpenCode command']}
+          keywords={[
+            'Claude Code command',
+            'OpenCode command',
+            'shell',
+            'flags',
+            'permission mode',
+            'default',
+          ]}
         >
           <AgentCommandOptions repo={repo} />
         </SettingRow>
