@@ -34,7 +34,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0 # the agent reads history (git log, blame)
           persist-credentials: false # no GitHub token left in the checkout for the agent
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm

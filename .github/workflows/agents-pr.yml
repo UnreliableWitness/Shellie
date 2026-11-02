@@ -43,7 +43,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -86,7 +86,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -113,7 +113,7 @@ jobs:
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/pr.mjs decide
       - if: steps.decide.outputs.pr != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fix-task
           path: ${{ runner.temp }}/agents/fix-task.json
@@ -131,7 +131,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false # no GitHub token on this machine
       # no npm cache here: untrusted code runs on this machine, and it must not write a cache other jobs restore
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci
@@ -146,7 +146,7 @@ jobs:
           AGENTS_WORK: ${{ runner.temp }}/agents
         run: node tools/agents/pr.mjs run
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fix-result
           path: |
@@ -166,7 +166,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }} # never a PR's code, whatever the event
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
