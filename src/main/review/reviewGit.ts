@@ -109,7 +109,7 @@ export function parseNameStatus(
   const t = out.split('\0');
   const rows: { status: ReviewFileStatus; path: string; oldPath?: string }[] =
     [];
-  for (let i = 0; i < t.length; ) {
+  for (let i = 0; i < t.length;) {
     const code = t[i++];
     if (!code) continue;
     const status = STATUS[code[0]] ?? 'M';

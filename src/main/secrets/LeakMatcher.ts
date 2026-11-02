@@ -91,7 +91,7 @@ export function readable(s: string): { text: string; at: Int32Array | null } {
     if (run >= 0) parts.push(s.slice(run, i));
     run = -1;
   };
-  for (let i = 0; i < s.length; ) {
+  for (let i = 0; i < s.length;) {
     const c = s.charCodeAt(i);
     if (c === 0x1b) {
       endRun(i);
