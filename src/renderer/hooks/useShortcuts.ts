@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { DOCS_TAB, USAGE_TAB, useStore } from '../store';
+import { api } from '../api';
+import { BRAIN_TAB, DOCS_TAB, USAGE_TAB, useStore } from '../store';
 
 const isMac =
   typeof navigator !== 'undefined' &&
@@ -25,6 +26,18 @@ export function useShortcuts(): void {
         const task = tasks.find((t) => t.id === selectedTaskId);
         if (screen.kind !== 'task' || !task || task.status !== 'ready') return;
         setTab(task.id, DOCS_TAB);
+      } else if (e.shiftKey && e.code === 'KeyB') {
+        const task = tasks.find((t) => t.id === selectedTaskId);
+        if (screen.kind !== 'task' || !task || task.status !== 'ready') return;
+        // The tab exists only for a task with a brain.
+        api()
+          .invoke('brain:forTask', task.id)
+          .then(
+            (b) => {
+              if (b) setTab(task.id, BRAIN_TAB);
+            },
+            () => undefined,
+          );
       } else if (!e.shiftKey && digit) {
         const task = tasks.find((t) => t.id === selectedTaskId);
         if (screen.kind !== 'task' || !task || task.status !== 'ready') return;

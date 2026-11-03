@@ -48,3 +48,32 @@ describe('NewTerminalMenu', () => {
     expect(screen.queryByText(/not tracked/)).toBeNull();
   });
 });
+
+describe('NewTerminalMenu with a brain', () => {
+  it('offers a Brain terminal that does not go through onOpen', async () => {
+    const onOpen = vi.fn();
+    const onOpenBrain = vi.fn();
+    render(
+      <NewTerminalMenu
+        brain={{ id: 'b1', name: 'Acme' }}
+        onOpen={onOpen}
+        onOpenBrain={onOpenBrain}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'New terminal' }));
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: /Brain terminal/ }),
+    );
+    expect(onOpenBrain).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('has no Brain terminal without a brain', async () => {
+    render(<NewTerminalMenu onOpen={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'New terminal' }));
+    expect(
+      screen.queryByRole('menuitem', { name: /Brain terminal/ }),
+    ).toBeNull();
+  });
+});

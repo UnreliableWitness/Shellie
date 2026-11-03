@@ -12,7 +12,11 @@ export type BrainAction =
   | 'resolve'
   | 'resume'
   | 'retry'
-  | 'continue';
+  | 'continue'
+  /** From a task: the Brain tab opened, a brain terminal opened, the Finish option ticked. */
+  | 'tab'
+  | 'terminal'
+  | 'capture-option';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>

@@ -22,12 +22,17 @@ const NEW_TERMINALS: {
 export function NewTerminalMenu({
   disabled,
   workspaces = [],
+  brain,
   onOpen,
+  onOpenBrain,
 }: {
   disabled?: boolean;
   /** With more than one, choosing a terminal type asks for the repo to open it in. */
   workspaces?: { id: string; name: string; color?: number | null }[];
   onOpen: (def: NewTerminal) => void;
+  /** The task's brain: adds a "Brain terminal" entry, which runs in the brain folder and is not a task terminal. */
+  brain?: { id: string; name: string };
+  onOpenBrain?: () => void;
 }) {
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   const [choosing, setChoosing] = useState<NewTerminal | null>(null);
@@ -142,6 +147,21 @@ export function NewTerminalMenu({
                 {t.note && <span className="small muted">{t.note}</span>}
               </button>
             ))}
+          {!choosing && brain && (
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="menu-item"
+              onClick={() => {
+                close(false);
+                onOpenBrain?.();
+              }}
+            >
+              <span className="menu-title">Brain terminal</span>
+              <span className="small muted">{brain.name}</span>
+            </button>
+          )}
         </div>
       )}
     </>

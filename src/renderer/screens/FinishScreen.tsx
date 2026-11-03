@@ -21,6 +21,8 @@ import {
 } from '../components/PrDescriptionField';
 import { eur, plural } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
+import { useTaskBrain } from '../hooks/useBrains';
+import { trackBrain } from '../components/brain/brainActions';
 import { TimeSpentSection } from '../components/TimeSpentSection';
 import { useEstimateHours } from '../hooks/useEstimateHours';
 import { useTaskTime } from '../hooks/useTaskTime';
@@ -120,6 +122,8 @@ export function FinishScreen({ taskId }: { taskId: string }) {
   const [closeTerminals, setCloseTerminals] = useState(true);
   const [removeWorktree, setRemoveWorktree] = useState(true);
   const [deleteBranch, setDeleteBranch] = useState(true);
+  const brain = useTaskBrain(taskId);
+  const [captureTaskMd, setCaptureTaskMd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checksFailed, setChecksFailed] = useState<string | null>(null);
   const [pr, setPr] = useState<{
@@ -374,6 +378,7 @@ export function FinishScreen({ taskId }: { taskId: string }) {
           removeWorktree,
           deleteBranch,
           ...options,
+          ...(brain && captureTaskMd ? { captureTaskMd: true } : {}),
           ...(Object.keys(prSummaries).length > 0 ? { prSummaries } : {}),
           ...(!withoutTime && time && bookValue !== null
             ? { bookedSeconds: bookValue }
@@ -869,6 +874,24 @@ export function FinishScreen({ taskId }: { taskId: string }) {
               </>
             )}
           </label>
+          {brain && (
+            <>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={captureTaskMd}
+                  onChange={(e) => {
+                    if (e.target.checked) trackBrain('capture-option');
+                    setCaptureTaskMd(e.target.checked);
+                  }}
+                />
+                Capture task.md into the brain
+              </label>
+              <div className="muted small">
+                Adds this task&apos;s task.md as a source and runs a capture.
+              </div>
+            </>
+          )}
         </div>
 
         {finishError && (

@@ -49,6 +49,22 @@ describe('TaskSummaryCard', () => {
     expect(line('Editor')).toHaveTextContent('VS Code');
   });
 
+  it('shows the brain row, with a link to the brain settings', async () => {
+    const { rerender } = render(
+      <TaskSummaryCard summary={summary} repoId="r1" />,
+    );
+    expect(line('Brain')).toHaveTextContent('None for this project');
+    rerender(
+      <TaskSummaryCard summary={{ ...summary, brain: 'Acme' }} repoId="r1" />,
+    );
+    expect(line('Brain')).toHaveTextContent('Acme');
+    await userEvent.click(within(line('Brain')).getByText('Edit'));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      section: 'brains',
+    });
+  });
+
   it('says unchanged when the work item is left alone', () => {
     render(
       <TaskSummaryCard

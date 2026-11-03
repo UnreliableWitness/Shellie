@@ -48,3 +48,16 @@ export function useBrain(brainId: string): BrainView | null {
   useBrainChanged(brainId, load);
   return brain;
 }
+
+/** The brain of a task's project, null when it has none; fetched on mount and again when that brain changes. */
+export function useTaskBrain(taskId: string): BrainView | null {
+  const [brain, setBrain] = useState<BrainView | null>(null);
+  const load = useCallback(() => {
+    api()
+      .invoke('brain:forTask', taskId)
+      .then(setBrain, () => setBrain(null));
+  }, [taskId]);
+  useEffect(load, [load]);
+  useBrainChanged(brain?.id ?? null, load);
+  return brain;
+}

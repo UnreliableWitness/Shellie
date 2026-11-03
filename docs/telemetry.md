@@ -32,7 +32,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `home.refreshed` | the Home page's data was rebuilt; number of connections, number that failed; duration in ms |
 | `home.failed` | a connection failed in a Home rebuild; `kind` (`unauthorized`, `unreachable`, `timeout`, `step`) |
 | `home.clicked` | a click on Home; `band` (`task`, `up-next`, `review`, `team-review`, `my-pr`, `sprint`, `stats-period`, `budget-month`, `budget-settings`) |
-| `brain.screen.action` | a button or drop on a Brain page; `action` (`refresh`, `lint`, `digest`, `ask`, `drop`, `paste`, `resolve`, `resume`, `retry`, `continue`); never names, paths or content |
+| `brain.screen.action` | a button or drop on a Brain page; `action` (`refresh`, `lint`, `digest`, `ask`, `drop`, `paste`, `resolve`, `resume`, `retry`, `continue`, and from a task: `tab`, `terminal`, `capture-option`); never names, paths or content |
 | `budget.alert` | a budget alert fired (main); `vendor` (`claude`, `copilot`), `kind` (`at80`, `forecastOver`, `at100`) |
 | `costServer.connected`, `costServer.disconnected` | Settings › Cost server saved or forgot a connection; none (never the address, email or key) |
 | `costServer.connectFailed` | Settings › Cost server's test of a connection failed; `kind` (`network`, `auth`, `server`, `rejected`) |

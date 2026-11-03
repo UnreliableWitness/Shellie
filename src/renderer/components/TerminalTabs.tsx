@@ -1,5 +1,6 @@
 import {
   Branch16Regular,
+  Brain16Regular,
   BranchCompare16Regular,
   CheckmarkCircle16Regular,
   Delete16Regular,
@@ -13,15 +14,18 @@ import {
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState } from 'react';
 import type { Events } from '../../shared/ipc';
-import type { NewTerminal, TaskView } from '../../shared/types';
+import { brainTaskId } from '../../shared/brain';
+import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
 import { api, tryInvoke } from '../api';
 import { eur } from '../format';
+import { useTaskBrain } from '../hooks/useBrains';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useRepoConfig } from '../hooks/useRepoConfig';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { holdWatch } from '../review/holdWatch';
 import { useChangeCount } from '../review/useReview';
 import {
+  BRAIN_TAB,
   CHANGES_TAB,
   DOCS_TAB,
   type HtmlView,
@@ -29,6 +33,8 @@ import {
   useStore,
 } from '../store';
 import { AttentionDot } from './AttentionDot';
+import { trackBrain } from './brain/brainActions';
+import { BrainFiles } from './brain/BrainFiles';
 import { DocsTab } from './docs/DocsTab';
 import { HtmlViewTab } from './HtmlViewTab';
 import {
@@ -169,7 +175,14 @@ export function TerminalTabs({
   const discarding = useStore((s) => s.discardTaskId === task.id);
   const repos = useStore((s) => s.repos);
   const git = useGitSummary(task.id, task.worktreeMissing, visible);
-  const active = useStore((s) => s.activeTab(task.id));
+  const brain = useTaskBrain(task.id);
+  // The brain's terminal is a tab of this page only (not one of the task's terminals) until it is closed.
+  const [brainTerm, setBrainTerm] = useState<TerminalDef | null>(null);
+  const brainTermShown = useStore(
+    (s) => brainTerm !== null && s.tabByTask[task.id] === brainTerm.id,
+  );
+  const stored = useStore((s) => s.activeTab(task.id));
+  const active = brainTermShown && brainTerm ? brainTerm.id : stored;
   const setTab = useStore((s) => s.setTab);
   const attention = useStore((s) => s.attention);
   // Same rule as the shell: Focus chrome only for a ready task.
@@ -239,6 +252,22 @@ export function TerminalTabs({
       notify,
     );
     if (created) setTab(task.id, created.id);
+  };
+
+  const openBrainTerminal = async () => {
+    if (!brain) return;
+    const def = await tryInvoke(
+      () => api().invoke('brain:terminal', brain.id),
+      notify,
+    );
+    if (!def) return;
+    trackBrain('terminal');
+    setBrainTerm(def);
+    setTab(task.id, def.id);
+  };
+  const closeBrainTerminal = () => {
+    setBrainTerm(null);
+    if (brainTermShown) setTab(task.id, task.terminals[0]?.id ?? USAGE_TAB);
   };
 
   // The row scrolls sideways when its tabs do not fit; the selected tab (a new terminal or page) is kept in view.
@@ -318,6 +347,23 @@ export function TerminalTabs({
                 ) : null}
               </button>
             )}
+            {brain && ready && !task.worktreeMissing && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active === BRAIN_TAB}
+                aria-label="Brain"
+                className="pivot"
+                title={`Brain (${modKey}+Shift+B)`}
+                onClick={() => {
+                  if (active !== BRAIN_TAB) trackBrain('tab');
+                  setTab(task.id, BRAIN_TAB);
+                }}
+              >
+                <Brain16Regular aria-hidden="true" />
+                Brain
+              </button>
+            )}
             {task.terminals.map((t) => (
               <span key={t.id} className="term-tab">
                 <button
@@ -351,6 +397,21 @@ export function TerminalTabs({
                 </button>
               </span>
             ))}
+            {visible && active === BRAIN_TAB && brain && (
+              <div className="brain-tab">
+                <div className="brain-tab-head">
+                  <strong>{brain.name}</strong>
+                  <button
+                    type="button"
+                    className="link small"
+                    onClick={() => go({ kind: 'brain', brainId: brain.id })}
+                  >
+                    Open brain
+                  </button>
+                </div>
+                <BrainFiles brainId={brain.id} dir="wiki" />
+              </div>
+            )}
             {views.map((v) => (
               <span key={v.id} className="term-tab">
                 <button
@@ -378,6 +439,28 @@ export function TerminalTabs({
                 </button>
               </span>
             ))}
+            {brainTerm && (
+              <span className="term-tab">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active === brainTerm.id}
+                  className="pivot"
+                  onClick={() => setTab(task.id, brainTerm.id)}
+                >
+                  {`${brain?.name ?? 'Brain'} brain`}
+                </button>
+                <button
+                  type="button"
+                  className="term-tab-close"
+                  aria-label={`Close ${brain?.name ?? 'Brain'} brain`}
+                  title={`Close ${brain?.name ?? 'Brain'} brain`}
+                  onClick={closeBrainTerminal}
+                >
+                  <Dismiss12Regular aria-hidden="true" />
+                </button>
+              </span>
+            )}
             {runFrom.map((w) => (
               <RunChips
                 key={w.id}
@@ -393,7 +476,9 @@ export function TerminalTabs({
           <NewTerminalMenu
             disabled={task.worktreeMissing}
             workspaces={workspaces}
+            brain={brain ? { id: brain.id, name: brain.name } : undefined}
             onOpen={(def) => void open(def)}
+            onOpenBrain={() => void openBrainTerminal()}
           />
         </div>
         <div className="taskbar-right">
@@ -473,6 +558,16 @@ export function TerminalTabs({
             active === v.id && (
               <HtmlViewTab key={v.id} taskId={task.id} view={v} />
             ),
+        )}
+        {brainTerm && brain && (
+          <TerminalView
+            key={brainTerm.id}
+            terminalId={brainTerm.id}
+            taskId={brainTaskId(brain.id)}
+            resumes
+            autoStart
+            active={visible && active === brainTerm.id}
+          />
         )}
         {task.terminals.map((t) => (
           <TerminalView
