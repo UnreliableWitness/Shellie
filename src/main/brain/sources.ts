@@ -123,6 +123,8 @@ export async function addSource(
     };
   }
 
+  const written: string[] = [];
+  let staged = false;
   try {
     const sourcesDir = path.join(brainDir, 'sources');
     await fs.mkdir(sourcesDir, { recursive: true });
@@ -130,8 +132,9 @@ export async function addSource(
     const date = now();
     const slug = slugify(slugBase) || 'source';
     const name = sourceFileName(date, slug, taken);
+    written.push(path.join(sourcesDir, name));
     await fs.writeFile(
-      path.join(sourcesDir, name),
+      written[0],
       renderSource(
         {
           title,
@@ -144,18 +147,22 @@ export async function addSource(
       ),
     );
     if (original) {
-      await fs.writeFile(
-        path.join(
-          sourcesDir,
-          name.replace(/\.md$/, original.ext.toLowerCase()),
-        ),
-        original.buf,
+      const copy = path.join(
+        sourcesDir,
+        name.replace(/\.md$/, original.ext.toLowerCase()),
       );
+      written.push(copy);
+      await fs.writeFile(copy, original.buf);
     }
+    staged = true;
     await git.run(brainDir, ['add', '-A', 'sources']);
     await git.run(brainDir, ['commit', '-m', `Brain: add source ${name}`]);
     return { ok: true, path: `sources/${name}` };
   } catch (e) {
+    for (const f of written) await fs.rm(f, { force: true });
+    if (staged) {
+      await git.run(brainDir, ['reset', '-q', '--', 'sources']).catch(() => '');
+    }
     return {
       ok: false,
       reason: 'error',
@@ -174,7 +181,7 @@ export async function listSources(
     const dir = path.dirname(path.join(brainDir, s.path));
     const sibling = (await fs.readdir(dir)).find(
       (n) =>
-        n !== path.basename(s.path) &&
+        path.extname(n).toLowerCase() !== '.md' &&
         n.startsWith(`${path.basename(stem)}.`) &&
         path.extname(n) === n.slice(path.basename(stem).length),
     );

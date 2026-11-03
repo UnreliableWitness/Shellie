@@ -161,4 +161,89 @@ describe('brain sources', () => {
       ['sources/2026-11-01-old.md', false],
     ]);
   });
+
+  it('cleans up and allows a retry when the commit fails', async () => {
+    const f = path.join(root, 'Kickoff.vtt');
+    await fs.writeFile(f, VTT);
+    const failing = Object.create(git) as GitClient;
+    failing.run = (cwd, args, opts) =>
+      args[0] === 'commit'
+        ? Promise.reject(new Error('commit refused'))
+        : git.run(cwd, args, opts);
+    const r = await addSource(failing, dir, { file: f }, 'transcript', now);
+    expect(r).toEqual({
+      ok: false,
+      reason: 'error',
+      message: 'commit refused',
+    });
+    expect(await fs.readdir(path.join(dir, 'sources'))).toEqual(['.gitkeep']);
+    expect(await clean()).toBe('');
+    expect(await addSource(git, dir, { file: f }, 'transcript', now)).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-kickoff.md',
+    });
+  });
+
+  it('does not report a same-stem neighbour that is not an original', async () => {
+    await addSource(git, dir, { text: 'a', title: 'Foo' }, 'note', now);
+    await fs.writeFile(path.join(dir, 'sources/2026-11-03-foo.md.bak'), 'x');
+    await fs.writeFile(path.join(dir, 'sources/2026-11-03-foo.notes.md'), 'x');
+    const rows = await listSources(dir, null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].original).toBeNull();
+  });
+
+  it('suffixes same-title adds in the same second and lines up originals', async () => {
+    const a = path.join(root, 'a');
+    const b = path.join(root, 'b');
+    await fs.mkdir(a);
+    await fs.mkdir(b);
+    await fs.writeFile(path.join(a, 'Kickoff.vtt'), VTT);
+    await fs.writeFile(
+      path.join(b, 'Kickoff.vtt'),
+      VTT.replace('Welcome', 'Hi'),
+    );
+    const r1 = await addSource(
+      git,
+      dir,
+      { file: path.join(a, 'Kickoff.vtt') },
+      'transcript',
+      now,
+    );
+    const r2 = await addSource(
+      git,
+      dir,
+      { file: path.join(b, 'Kickoff.vtt') },
+      'transcript',
+      now,
+    );
+    expect(r1).toEqual({ ok: true, path: 'sources/2026-11-03-kickoff.md' });
+    expect(r2).toEqual({ ok: true, path: 'sources/2026-11-03-kickoff-2.md' });
+    const rows = await listSources(dir, null);
+    expect(rows.map((x) => [x.path, x.original]).sort()).toEqual([
+      ['sources/2026-11-03-kickoff-2.md', 'sources/2026-11-03-kickoff-2.vtt'],
+      ['sources/2026-11-03-kickoff.md', 'sources/2026-11-03-kickoff.vtt'],
+    ]);
+    expect(
+      await fs.readFile(
+        path.join(dir, 'sources/2026-11-03-kickoff-2.vtt'),
+        'utf8',
+      ),
+    ).toContain('Hi');
+  });
+
+  it('falls back to "source" when the slug is empty', async () => {
+    const f = path.join(root, '日本語.txt');
+    await fs.writeFile(f, 'konnichiwa');
+    const r1 = await addSource(
+      git,
+      dir,
+      { text: 'x', title: '!!!' },
+      'note',
+      now,
+    );
+    const r2 = await addSource(git, dir, { file: f }, 'doc', now);
+    expect(r1).toEqual({ ok: true, path: 'sources/2026-11-03-source.md' });
+    expect(r2).toEqual({ ok: true, path: 'sources/2026-11-03-source-2.md' });
+  });
 });
