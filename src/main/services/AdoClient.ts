@@ -826,7 +826,7 @@ export class AdoClient {
       }[];
     }>(`${base}/wiki/wikis?${API}`);
     const out: AdoWiki[] = [];
-    for (const w of list.value) {
+    for (const w of list.value ?? []) {
       let gitUrl: string;
       try {
         const repo = await this.request<{ remoteUrl: string }>(
@@ -835,8 +835,13 @@ export class AdoClient {
           { code: true },
         );
         gitUrl = repo.remoteUrl;
-      } catch {
-        continue;
+      } catch (e) {
+        if (
+          e instanceof AdoError &&
+          (e.kind === 'not-found' || e.kind === 'http')
+        )
+          continue;
+        throw e;
       }
       out.push({
         id: w.id,

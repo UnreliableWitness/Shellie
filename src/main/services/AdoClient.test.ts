@@ -1662,6 +1662,31 @@ describe('Home calls', () => {
         ['w2', 'main', 'B'],
       ]);
     });
+    it('wikis lists nothing when the project has no wikis', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis', {
+        body: {},
+      });
+      expect(await client.wikis('P')).toEqual([]);
+    });
+    it('wikis reports a missing Code scope instead of an empty list', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis', {
+        body: {
+          value: [
+            {
+              id: 'w1',
+              name: 'P.wiki',
+              type: 'projectWiki',
+              repositoryId: 'w1',
+              versions: [],
+            },
+          ],
+        },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/w1', {
+        status: 401,
+      });
+      await expect(client.wikis('P')).rejects.toThrow(CODE_READ_DENIED);
+    });
     it('wikiPages flattens the tree depth-first without the root', async () => {
       server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis/w1/pages', {
         body: {
