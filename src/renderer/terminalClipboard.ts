@@ -59,6 +59,7 @@ type ClipboardTerminal = Pick<
   | 'getSelection'
   | 'clearSelection'
   | 'paste'
+  | 'input'
 >;
 type TextClipboard = Pick<Clipboard, 'readText' | 'writeText'>;
 
@@ -77,12 +78,18 @@ export function attachClipboardKeys(
     if (action === 'passthrough') return true;
     e.preventDefault();
     if (action === 'paste') {
+      // With no text (an image) plain Ctrl+V reaches the program as ^V, as in Windows Terminal, so TUIs such as
+      // opencode can read the image from the clipboard themselves. Cmd+V and Ctrl+Shift+V never send ^V.
+      const sendKey = !mac && !e.shiftKey;
       void clipboard
         .readText()
         .then((text) => {
           if (text) t.paste(text);
+          else if (sendKey) t.input('\x16', true);
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (sendKey) t.input('\x16', true);
+        });
     } else if (t.hasSelection()) {
       void clipboard.writeText(t.getSelection()).catch(() => undefined);
       t.clearSelection();
