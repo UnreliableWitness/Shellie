@@ -82,7 +82,7 @@ describe('startBrainScheduler', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(digest).toHaveBeenCalledTimes(1);
 
-    // Tuesday: no digest even when it never ran.
+    // Tuesday, same week: enqueued already this week, nothing again.
     digest.mockClear();
     now = new Date(2026, 10, 3, 9, 0);
     await vi.advanceTimersByTimeAsync(1000);
@@ -92,6 +92,42 @@ describe('startBrainScheduler', () => {
     refresh.mockClear();
     await vi.advanceTimersByTimeAsync(5000);
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('catches up a missed Monday digest on a later day of the week', async () => {
+    // Tuesday 2026-11-03, 09:00 local; Monday was 2026-11-02.
+    const now = new Date(2026, 10, 3, 9, 0);
+    const digest = vi.fn();
+    const stop = startBrainScheduler({
+      brains: () => [
+        brain({
+          id: 'missed',
+          options: { weeklyDigest: true } as Brain['options'],
+          lastDigestAt: new Date(2026, 9, 27, 9, 0).toISOString(),
+        }),
+        brain({
+          id: 'never',
+          options: { weeklyDigest: true } as Brain['options'],
+        }),
+        brain({
+          id: 'had',
+          options: { weeklyDigest: true } as Brain['options'],
+          lastDigestAt: new Date(2026, 10, 2, 10, 0).toISOString(),
+        }),
+        brain({ id: 'off', lastDigestAt: null }),
+      ],
+      refresh: vi.fn(async () => undefined),
+      digest,
+      running: () => false,
+      now: () => now,
+      tick: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(digest.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'missed',
+      'never',
+    ]);
+    stop();
   });
 
   it('does not refresh a brain again while its refresh is in flight', async () => {

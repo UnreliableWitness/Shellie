@@ -5,15 +5,16 @@ const TICK_MS = 15 * 60 * 1000;
 /** A refresh that failed (offline, no access) is tried again after this, not on every tick. */
 const RETRY_MS = 60 * 60 * 1000;
 
-/** Monday 00:00 local of `now`'s week, or null when `now` is not a Monday. */
-function thisMonday(now: Date): Date | null {
-  if (now.getDay() !== 1) return null;
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+/** Monday 00:00 local of `now`'s week (the most recent Monday, today when it is one). */
+function lastMonday(now: Date): Date {
+  const back = (now.getDay() + 6) % 7;
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - back);
 }
 
 /**
  * The brains' background work while the app is open: a wiki mirror older than 24 h is refreshed (a failed one again after an hour), and a brain with
- * `weeklyDigest` gets its digest on Monday (once, and only when nothing runs for it). Checks at once and then every
+ * `weeklyDigest` gets its digest on Monday, or the next time the app is open after a Monday it missed (once per week,
+ * and only when nothing runs for it). Checks at once and then every
  * tick (default 15 min); returns the stop function.
  */
 export function startBrainScheduler(d: {
@@ -58,9 +59,8 @@ export function startBrainScheduler(d: {
           )
           .finally(() => refreshing.delete(b.id));
       }
-      const monday = thisMonday(at)?.getTime();
+      const monday = lastMonday(at).getTime();
       if (
-        monday !== undefined &&
         b.options.weeklyDigest &&
         digested.get(b.id) !== monday &&
         (!b.lastDigestAt || Date.parse(b.lastDigestAt) < monday) &&
