@@ -60,6 +60,15 @@ describe('parseClaudeLogs source', () => {
     expect(parseClaudeLogs(tagged).events[0].source).toBe('pr-summary');
     expect(parseClaudeLogs(body(full)).events[0].source).toBeUndefined();
   });
+  it('keeps brain events with source brain', () => {
+    const tagged = body(full, [
+      kv('shellie.task.id', { stringValue: 'brain:b1' }),
+      kv('shellie.source', { stringValue: 'brain' }),
+    ]);
+    const e = parseClaudeLogs(tagged).events[0];
+    expect(e.source).toBe('brain');
+    expect(e.taskId).toBe('brain:b1');
+  });
 });
 
 describe('attrMap', () => {

@@ -21,6 +21,17 @@ const rec = (over: Partial<UsageRecord>): UsageRecord => ({
 });
 
 describe('budgetRecordsFromUsage', () => {
+  it('admits brain records with a br: id', () => {
+    const out = budgetRecordsFromUsage([
+      rec({ id: 'req_9', source: 'brain', taskId: 'brain:b1' }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      id: 'br:req_9',
+      taskId: 'brain:b1',
+      provider: 'anthropic',
+    });
+  });
   it('maps Copilot CLI and PR summary records, drops tab records', () => {
     const out = budgetRecordsFromUsage([
       rec({ id: 'tr:sp', tool: 'copilot-cli', model: 'gpt-5' }),

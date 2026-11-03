@@ -86,6 +86,7 @@ function setup(
     /** Claude sessions per task from the usage store (OTLP). */
     usageSessions: {} as Record<string, string[]>,
     developer: null as string | null,
+    brains: [] as { id: string; organization: string; project: string }[],
   };
   const claudeQueue = [...(o.claude ?? [])];
   const ocQueue = [...(o.openCode ?? [])];
@@ -117,6 +118,7 @@ function setup(
         state.repos,
         connections,
         (id) => state.usageSessions[id] ?? [],
+        state.brains,
       ),
     isBillable: (taskId, sessionId) =>
       !state.notBillable.has(`${taskId}/${sessionId}`),
@@ -142,6 +144,25 @@ function setup(
 }
 
 describe('LedgerService', () => {
+  it('records brain usage at brain level, never billable, never dirty', async () => {
+    const s = setup({ claude: [[rec({ taskId: 'brain:b1' })]] });
+    s.state.brains.push({
+      id: 'b1',
+      organization: 'https://dev.azure.com/acme',
+      project: 'Shop',
+    });
+    await s.svc.pass();
+    const r = s.store.get('cc:m1')!;
+    expect(r.attribution).toEqual({
+      level: 'brain',
+      brainId: 'b1',
+      organization: 'https://dev.azure.com/acme',
+      project: 'Shop',
+    });
+    expect(r.billable).toBe(false);
+    expect(s.store.dirty(10)).toEqual([]);
+    expect(s.store.dirtyCount()).toBe(0);
+  });
   it('backfills everything the readers have on the first pass', async () => {
     const s = setup({
       claude: [[rec()]],
@@ -517,7 +538,15 @@ describe('LedgerService', () => {
     const [name, props] = s.telemetry.mock.calls[0]!;
     expect(name).toBe('ledger.records');
     expect(Object.keys(props).sort()).toEqual(
-      ['claudeCode', 'copilotCli', 'none', 'opencode', 'repo', 'task'].sort(),
+      [
+        'brain',
+        'claudeCode',
+        'copilotCli',
+        'none',
+        'opencode',
+        'repo',
+        'task',
+      ].sort(),
     );
     expect(props).toMatchObject({ claudeCode: 2, opencode: 1, copilotCli: 0 });
     expect(Object.values(props).every((v) => typeof v === 'number')).toBe(true);

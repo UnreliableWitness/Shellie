@@ -36,7 +36,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `costServer.connected`, `costServer.disconnected` | Settings › Cost server saved or forgot a connection; none (never the address, email or key) |
 | `costServer.connectFailed` | Settings › Cost server's test of a connection failed; `kind` (`network`, `auth`, `server`, `rejected`) |
 | `costServer.sendFailed` | sending ledger records (or the hourly hello) to the cost server failed; `kind` (as above), `status` (HTTP status, 0 without one) |
-| `ledger.records` | the cost ledger's record counts, at most once per local day; `claudeCode`, `opencode`, `copilotCli` (by tool), `task`, `repo`, `none` (by attribution); counts only, no amounts or names |
+| `ledger.records` | the cost ledger's record counts, at most once per local day; `claudeCode`, `opencode`, `copilotCli` (by tool), `task`, `repo`, `brain`, `none` (by attribution); counts only, no amounts or names |
 | `onboarding.shown` | the Get started page opened; none |
 | `onboarding.dismissed` | Skip for now on Get started, or Dismiss on its Home band; `repos`, `connections` (counts) |
 | `onboarding.step` | a step of first-run setup was left; `step` (`agents`, `connect`, `repository`), `outcome` (`continued`, `skipped`, `back`) |

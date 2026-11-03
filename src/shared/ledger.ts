@@ -18,6 +18,12 @@ export type Attribution =
       project: string | null;
       repo: string;
     }
+  | {
+      level: 'brain';
+      brainId: string;
+      organization: string;
+      project: string;
+    }
   | { level: 'none' };
 
 /** One AI request: tokens, list-price cost and who/what it belongs to. */
@@ -39,5 +45,5 @@ export type CostRecord = BudgetTokens & {
   shellieVersion: string;
 };
 
-/** Attribution only goes up: none, repo, task. */
-export const LEVEL_RANK = { none: 0, repo: 1, task: 2 } as const;
+/** Attribution only goes up: none, repo, task (a brain ranks with task). */
+export const LEVEL_RANK = { none: 0, repo: 1, task: 2, brain: 2 } as const;

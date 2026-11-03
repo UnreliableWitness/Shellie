@@ -2,6 +2,7 @@ import type { BudgetRecord } from '../../shared/budget';
 import { tokensOf } from '../../shared/budget';
 import type { Attribution, CostRecord } from '../../shared/ledger';
 import { LEVEL_RANK } from '../../shared/ledger';
+import { brainIdOf } from '../../shared/brain';
 import type { Connection, Repo, Task } from '../../shared/types';
 import { taskWorkspaces } from '../../shared/workspaces';
 import { isInside } from '../paths';
@@ -24,6 +25,8 @@ type RepoCtx = {
   paths: string[];
 };
 
+export type BrainCtx = { id: string; organization: string; project: string };
+
 /** What attribution needs from the tasks, repos and connections, built once per pass. `key` changes when any of it does. */
 export type AttributionContext = {
   key: string;
@@ -31,6 +34,7 @@ export type AttributionContext = {
   byId: Map<string, TaskCtx>;
   bySession: Map<string, TaskCtx>;
   repos: RepoCtx[];
+  brains: Map<string, BrainCtx>;
 };
 
 const workItemNumber = (id: string | undefined): number | null => {
@@ -44,6 +48,8 @@ export function attributionContext(
   connections: Connection[],
   /** Claude sessions the usage store (OTLP) has for a task: `claude` typed in a shell, a resume with a new id. */
   usageSessions: (taskId: string) => Iterable<string> = () => [],
+  /** Brains (a folder per Azure DevOps project); their usage is attributed to the brain, never billable. */
+  brains: BrainCtx[] = [],
 ): AttributionContext {
   const repoById = new Map(repos.map((r) => [r.id, r]));
   const connById = new Map(connections.map((c) => [c.id, c]));
@@ -108,11 +114,12 @@ export function attributionContext(
   const bySession = new Map<string, TaskCtx>();
   for (const t of taskCtx) for (const s of t.sessions) bySession.set(s, t);
   return {
-    key: JSON.stringify([taskCtx, repoCtx]),
+    key: JSON.stringify([taskCtx, repoCtx, brains]),
     tasks: taskCtx,
     byId: new Map(taskCtx.map((t) => [t.id, t])),
     bySession,
     repos: repoCtx,
+    brains: new Map(brains.map((b) => [b.id, b])),
   };
 }
 
@@ -161,6 +168,15 @@ export function attribute(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): Attribution {
+  const brainId = brainIdOf(r.taskId);
+  const brain = brainId === null ? undefined : ctx.brains.get(brainId);
+  if (brain)
+    return {
+      level: 'brain',
+      brainId: brain.id,
+      organization: brain.organization,
+      project: brain.project,
+    };
   const task = taskOf(r, ctx);
   if (task) return forTask(task.t, task.repo, ctx);
   const cwd = r.cwd;
@@ -180,9 +196,9 @@ export function attribute(
   return { level: 'none' };
 }
 
-/** Whether `next` may replace the stored attribution `prev`: only a higher level, or a repo that got its connection. Task level is frozen. */
+/** Whether `next` may replace the stored attribution `prev`: only a higher level, or a repo that got its connection. Task and brain level are frozen. */
 export function raises(prev: Attribution, next: Attribution): boolean {
-  if (prev.level === 'task') return false;
+  if (prev.level === 'task' || prev.level === 'brain') return false;
   if (LEVEL_RANK[next.level] > LEVEL_RANK[prev.level]) return true;
   return (
     prev.level === 'repo' &&
@@ -193,7 +209,7 @@ export function raises(prev: Attribution, next: Attribution): boolean {
 }
 
 /**
- * The stored version and a new one of the same request: attribution never goes down (and is frozen at task), the
+ * The stored version and a new one of the same request: attribution never goes down (and is frozen at task or brain), the
  * larger token copy wins, billable is the new one's. An unpriced stored copy takes the new copy's price when the
  * tokens are the same (a Shellie update brought a rate for its model).
  */

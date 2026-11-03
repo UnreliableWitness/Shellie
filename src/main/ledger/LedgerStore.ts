@@ -149,7 +149,11 @@ export class LedgerStore {
   /** Records whose current version the server has not accepted, oldest first. */
   dirty(limit: number): CostRecord[] {
     return this.all()
-      .filter((r) => this.sent[r.id] !== this.hashes.get(r.id))
+      .filter(
+        (r) =>
+          r.attribution.level !== 'brain' &&
+          this.sent[r.id] !== this.hashes.get(r.id),
+      )
       .sort((a, b) =>
         a.at < b.at
           ? -1
@@ -167,7 +171,12 @@ export class LedgerStore {
   /** How many records dirty() would return, without sorting them. */
   dirtyCount(): number {
     let n = 0;
-    for (const [id, h] of this.hashes) if (this.sent[id] !== h) n++;
+    for (const [id, h] of this.hashes)
+      if (
+        this.sent[id] !== h &&
+        this.byId.get(id)?.attribution.level !== 'brain'
+      )
+        n++;
     return n;
   }
 

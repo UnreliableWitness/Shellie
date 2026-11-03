@@ -21,7 +21,7 @@ export type UsageEvent = {
   cacheWriteTokens: number;
   fast: boolean;
   /** Set on Shellie's own `claude -p` run for the PR description. */
-  source?: 'pr-summary';
+  source?: 'pr-summary' | 'brain';
   /** The subagent that made the request (Claude Code's `query_source`, OpenCode's agent); absent on the main thread. */
   agent?: string;
   /** OpenCode: the session that spawned this (subagent) session. */

@@ -8,7 +8,7 @@ export function telemetryEnv(
   taskId: string,
   port: number,
   usageDir: string,
-  source?: 'pr-summary',
+  source?: 'pr-summary' | 'brain',
 ): Record<string, string> {
   return {
     CLAUDE_CODE_ENABLE_TELEMETRY: '1',

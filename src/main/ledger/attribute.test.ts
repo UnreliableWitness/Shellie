@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BudgetRecord } from '../../shared/budget';
 import type { CostRecord } from '../../shared/ledger';
 import type { Connection, Repo, Task } from '../../shared/types';
-import { attribute, attributionContext, merge } from './attribute';
+import { attribute, attributionContext, merge, raises } from './attribute';
 
 const conn = (id: string, org: string, project: string) =>
   ({ id, organizationUrl: org, project }) as Connection;
@@ -305,5 +305,46 @@ describe('merge', () => {
     });
     // A priced copy is never replaced by an unpriced one.
     expect(merge(priced, unpriced).costEur).toBe(1.84);
+  });
+});
+
+describe('brain attribution', () => {
+  const c = conn('c1', 'https://dev.azure.com/acme', 'Acme');
+  const brains = [
+    { id: 'b1', organization: c.organizationUrl, project: 'Acme' },
+  ];
+  it('attributes a brain record to the brain', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    expect(attribute(rec({ taskId: 'brain:b1' }), ctx)).toEqual({
+      level: 'brain',
+      brainId: 'b1',
+      organization: c.organizationUrl,
+      project: 'Acme',
+    });
+  });
+  it('an unknown brain id falls back to none', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    expect(attribute(rec({ taskId: 'brain:zzz' }), ctx)).toEqual({
+      level: 'none',
+    });
+  });
+  it('brain level is frozen like task', () => {
+    const b = {
+      level: 'brain' as const,
+      brainId: 'b1',
+      organization: 'o',
+      project: 'p',
+    };
+    expect(raises(b, { level: 'none' })).toBe(false);
+    expect(
+      raises(b, { level: 'repo', organization: 'o', project: 'p', repo: 'r' }),
+    ).toBe(false);
+    expect(raises({ level: 'none' }, b)).toBe(true);
+    expect(
+      raises(
+        { level: 'repo', organization: null, project: null, repo: 'r' },
+        b,
+      ),
+    ).toBe(true);
   });
 });

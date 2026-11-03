@@ -102,6 +102,7 @@ export function parseClaudeLogs(body: unknown): {
         const at = Number.isNaN(stamp)
           ? nanosToIso(record.timeUnixNano ?? record.observedTimeUnixNano)
           : safeIso(stamp);
+        const source = str(attrs['shellie.source']);
         const agent = subagentOf(str(attrs.query_source));
         const effort = str(attrs.effort);
         events.push({
@@ -116,9 +117,7 @@ export function parseClaudeLogs(body: unknown): {
           cacheReadTokens: int(attrs.cache_read_tokens),
           cacheWriteTokens: int(attrs.cache_creation_tokens),
           fast: attrs.speed === 'fast',
-          ...(str(attrs['shellie.source']) === 'pr-summary' && {
-            source: 'pr-summary' as const,
-          }),
+          ...(source === 'pr-summary' || source === 'brain' ? { source } : {}),
           ...(agent && { agent }),
           ...(effort && { effort }),
         });

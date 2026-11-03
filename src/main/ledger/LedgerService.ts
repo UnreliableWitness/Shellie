@@ -176,6 +176,7 @@ export class LedgerService {
     stored: boolean,
   ) {
     const a = r.attribution;
+    if (a.level === 'brain') return false;
     const taskId =
       a.level === 'task'
         ? a.taskId
@@ -286,7 +287,11 @@ export class LedgerService {
       const input = this.inputs.get(prev.id);
       if (!input) continue;
       let rec = prev;
-      if (reattribute && prev.attribution.level !== 'task') {
+      if (
+        reattribute &&
+        prev.attribution.level !== 'task' &&
+        prev.attribution.level !== 'brain'
+      ) {
         const a = attribute(asBudget(prev, input), ctx);
         if (raises(prev.attribution, a)) rec = { ...rec, attribution: a };
       }
@@ -366,6 +371,7 @@ export class LedgerService {
       copilotCli: 0,
       task: 0,
       repo: 0,
+      brain: 0,
       none: 0,
     };
     for (const r of this.d.store.all()) {

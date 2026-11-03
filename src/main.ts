@@ -754,6 +754,7 @@ async function boot(): Promise<void> {
               .records(id)
               .filter((r) => r.tool === 'claude-code')
               .map((r) => r.sessionId),
+          [],
         ),
       isBillable: (taskId, sessionId) => usage.isBillable(taskId, sessionId),
       // The email saved in Settings › Cost server; null when not connected.
