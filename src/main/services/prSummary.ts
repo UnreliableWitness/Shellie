@@ -153,10 +153,19 @@ type ResultMessage = {
   subtype?: string;
   is_error?: boolean;
   result?: unknown;
+  session_id?: unknown;
 };
 
 /** The text of `claude -p --output-format json`; throws when the run failed or the output is not that JSON. */
 export function claudeResult(stdout: string): string {
+  return claudeResultWithSession(stdout).result;
+}
+
+/** Like claudeResult, plus the run's session id (null when the JSON has none). */
+export function claudeResultWithSession(stdout: string): {
+  result: string;
+  sessionId: string | null;
+} {
   // A login shell's profile may print before Claude Code does: the JSON is the whole output or its last line.
   const lines = stdout.trim().split('\n');
   let parsed: unknown;
@@ -185,7 +194,10 @@ export function claudeResult(stdout: string): string {
     throw new Error(
       `Claude Code stopped (${msg.subtype ?? 'error'})${msg.result ? `: ${msg.result.slice(0, 200)}` : ''}`,
     );
-  return msg.result;
+  return {
+    result: msg.result,
+    sessionId: typeof msg.session_id === 'string' ? msg.session_id : null,
+  };
 }
 
 /** The written text as the PR gets it: no code fence around it, no title line, within PR_SUMMARY_MAX. */

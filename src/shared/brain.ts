@@ -11,6 +11,7 @@ export const brainIdOf = (taskId: string | undefined): string | null =>
     : null;
 
 export const BrainModelSchema = z.enum(['haiku', 'sonnet', 'opus']);
+export type BrainModel = z.infer<typeof BrainModelSchema>;
 
 export const BrainOptionsSchema = z.object({
   contextInTaskMd: z.boolean().default(true),
