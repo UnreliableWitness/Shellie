@@ -257,141 +257,144 @@ export function TerminalTabs({
       <EnvironmentBand task={task} />
       <RunApproveBar taskId={task.id} />
       <div className="taskbar">
-        <div
-          ref={tabrow}
-          role="tablist"
-          aria-label="Terminals"
-          className="tabrow"
-          onDoubleClick={(e) => {
-            if (ready && e.target === e.currentTarget) toggleFocus();
-          }}
-        >
-          {inFocus && (
-            <span className="tabrow-brand">
-              <MindMark size={14} />
-              <span className="mono">{task.workItem?.id ?? task.name}</span>
-            </span>
-          )}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={active === USAGE_TAB}
-            aria-label={unseen ? 'Usage, new usage' : 'Usage'}
-            className="pivot"
-            onClick={() => setTab(task.id, USAGE_TAB)}
+        <div className="tabs">
+          <div
+            ref={tabrow}
+            role="tablist"
+            aria-label="Terminals"
+            className="tabrow"
+            onDoubleClick={(e) => {
+              if (ready && e.target === e.currentTarget) toggleFocus();
+            }}
           >
-            <DataPie16Regular aria-hidden="true" />
-            Usage
-            {unseen && <span className="tab-new" aria-hidden="true" />}
-          </button>
-          {ready && !task.worktreeMissing && (
+            {inFocus && (
+              <span className="tabrow-brand">
+                <MindMark size={14} />
+                <span className="mono">{task.workItem?.id ?? task.name}</span>
+              </span>
+            )}
             <button
               type="button"
               role="tab"
-              aria-selected={active === DOCS_TAB}
-              aria-label={docsUnseen ? 'Docs, changed' : 'Docs'}
+              aria-selected={active === USAGE_TAB}
+              aria-label={unseen ? 'Usage, new usage' : 'Usage'}
               className="pivot"
-              title={`Docs (${modKey}+Shift+D)`}
-              onClick={() => setTab(task.id, DOCS_TAB)}
+              onClick={() => setTab(task.id, USAGE_TAB)}
             >
-              <Document16Regular aria-hidden="true" />
-              Docs
-              {docsUnseen && <span className="tab-new" aria-hidden="true" />}
+              <DataPie16Regular aria-hidden="true" />
+              Usage
+              {unseen && <span className="tab-new" aria-hidden="true" />}
             </button>
-          )}
-          {ready && !task.worktreeMissing && (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={active === CHANGES_TAB}
-              aria-label={
-                changeCount ? `Changes, ${changeCount} files` : 'Changes'
-              }
-              className="pivot"
-              onClick={() => setTab(task.id, CHANGES_TAB)}
-            >
-              <BranchCompare16Regular aria-hidden="true" />
-              Changes
-              {changeCount ? (
-                <span className="pivot-count">{changeCount}</span>
-              ) : null}
-            </button>
-          )}
-          {task.terminals.map((t) => (
-            <span key={t.id} className="term-tab">
+            {ready && !task.worktreeMissing && (
               <button
                 type="button"
                 role="tab"
-                aria-selected={active === t.id}
+                aria-selected={active === DOCS_TAB}
+                aria-label={docsUnseen ? 'Docs, changed' : 'Docs'}
                 className="pivot"
-                onClick={() => setTab(task.id, t.id)}
-                // Middle click closes, as in browsers and VS Code.
-                onAuxClick={(e) => {
-                  if (e.button === 1) void closeTerminal(t.id);
-                }}
+                title={`Docs (${modKey}+Shift+D)`}
+                onClick={() => setTab(task.id, DOCS_TAB)}
               >
-                {t.label}
-                {(t.kind === 'shell' || t.kind === 'run') &&
-                  task.environment !== 'development' && (
-                    <span
-                      className={`tab-env tab-env-${task.environment}`}
-                    >{` · ${ENVIRONMENT_LABEL[task.environment]}`}</span>
-                  )}
-                {attention[t.id] && <AttentionDot entry={attention[t.id]} />}
+                <Document16Regular aria-hidden="true" />
+                Docs
+                {docsUnseen && <span className="tab-new" aria-hidden="true" />}
               </button>
-              <button
-                type="button"
-                className="term-tab-close"
-                aria-label={`Close ${t.label}`}
-                title={`Close ${t.label}`}
-                onClick={() => void closeTerminal(t.id)}
-              >
-                <Dismiss12Regular aria-hidden="true" />
-              </button>
-            </span>
-          ))}
-          {views.map((v) => (
-            <span key={v.id} className="term-tab">
+            )}
+            {ready && !task.worktreeMissing && (
               <button
                 type="button"
                 role="tab"
-                aria-selected={active === v.id}
+                aria-selected={active === CHANGES_TAB}
+                aria-label={
+                  changeCount ? `Changes, ${changeCount} files` : 'Changes'
+                }
                 className="pivot"
-                title={v.path}
-                onClick={() => setTab(task.id, v.id)}
-                onAuxClick={(e) => {
-                  if (e.button === 1) closeView(task.id, v.id);
-                }}
+                onClick={() => setTab(task.id, CHANGES_TAB)}
               >
-                <Globe16Regular aria-hidden="true" />
-                {v.name}
+                <BranchCompare16Regular aria-hidden="true" />
+                Changes
+                {changeCount ? (
+                  <span className="pivot-count">{changeCount}</span>
+                ) : null}
               </button>
-              <button
-                type="button"
-                className="term-tab-close"
-                aria-label={`Close ${v.name}`}
-                title={`Close ${v.name}`}
-                onClick={() => closeView(task.id, v.id)}
-              >
-                <Dismiss12Regular aria-hidden="true" />
-              </button>
-            </span>
-          ))}
+            )}
+            {task.terminals.map((t) => (
+              <span key={t.id} className="term-tab">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active === t.id}
+                  className="pivot"
+                  onClick={() => setTab(task.id, t.id)}
+                  // Middle click closes, as in browsers and VS Code.
+                  onAuxClick={(e) => {
+                    if (e.button === 1) void closeTerminal(t.id);
+                  }}
+                >
+                  {t.label}
+                  {(t.kind === 'shell' || t.kind === 'run') &&
+                    task.environment !== 'development' && (
+                      <span
+                        className={`tab-env tab-env-${task.environment}`}
+                      >{` · ${ENVIRONMENT_LABEL[task.environment]}`}</span>
+                    )}
+                  {attention[t.id] && <AttentionDot entry={attention[t.id]} />}
+                </button>
+                <button
+                  type="button"
+                  className="term-tab-close"
+                  aria-label={`Close ${t.label}`}
+                  title={`Close ${t.label}`}
+                  onClick={() => void closeTerminal(t.id)}
+                >
+                  <Dismiss12Regular aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+            {views.map((v) => (
+              <span key={v.id} className="term-tab">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active === v.id}
+                  className="pivot"
+                  title={v.path}
+                  onClick={() => setTab(task.id, v.id)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) closeView(task.id, v.id);
+                  }}
+                >
+                  <Globe16Regular aria-hidden="true" />
+                  {v.name}
+                </button>
+                <button
+                  type="button"
+                  className="term-tab-close"
+                  aria-label={`Close ${v.name}`}
+                  title={`Close ${v.name}`}
+                  onClick={() => closeView(task.id, v.id)}
+                >
+                  <Dismiss12Regular aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+            {runFrom.map((w) => (
+              <RunChips
+                key={w.id}
+                workspace={w}
+                repoName={repoName(w)}
+                grouped={runFrom.length > 1}
+                disabled={task.worktreeMissing}
+                onOpen={(def) => void open(def)}
+              />
+            ))}
+          </div>
+          {/* Outside the scrolling row, so it never scrolls out of sight (#215). */}
           <NewTerminalMenu
             disabled={task.worktreeMissing}
             workspaces={workspaces}
             onOpen={(def) => void open(def)}
           />
-          {runFrom.map((w) => (
-            <RunChips
-              key={w.id}
-              workspace={w}
-              repoName={repoName(w)}
-              grouped={runFrom.length > 1}
-              disabled={task.worktreeMissing}
-              onOpen={(def) => void open(def)}
-            />
-          ))}
         </div>
         <div className="taskbar-right">
           {ready && <EnvironmentChip task={task} />}

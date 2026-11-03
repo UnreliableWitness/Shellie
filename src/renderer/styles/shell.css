@@ -513,6 +513,14 @@ button.projecttile:hover {
   background: var(--bg-page);
   border-bottom: 1px solid var(--line);
 }
+/* The tab row and the + after it; only the row scrolls, so the + stays in view. */
+.tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
 .tabrow {
   flex: 0 1 auto;
   min-width: 0;
@@ -531,6 +539,8 @@ button.projecttile:hover {
   color: var(--link);
 }
 .tab-add {
+  flex: none;
+  align-self: center;
   color: var(--muted);
 }
 /* A terminal tab and its close button; the button shows on hover, focus and for the active tab. */
