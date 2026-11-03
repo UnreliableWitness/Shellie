@@ -86,7 +86,12 @@ function setup(
     /** Claude sessions per task from the usage store (OTLP). */
     usageSessions: {} as Record<string, string[]>,
     developer: null as string | null,
-    brains: [] as { id: string; organization: string; project: string }[],
+    brains: [] as {
+      id: string;
+      organization: string;
+      project: string;
+      path: string;
+    }[],
   };
   const claudeQueue = [...(o.claude ?? [])];
   const ocQueue = [...(o.openCode ?? [])];
@@ -144,12 +149,34 @@ function setup(
 }
 
 describe('LedgerService', () => {
+  it('counts a brain transcript record by cwd: brain level, not billable, not dirty', async () => {
+    const s = setup({ claude: [[rec({ cwd: '/brains/shop/notes' })]] });
+    s.state.brains.push({
+      id: 'b1',
+      organization: 'https://dev.azure.com/acme',
+      project: 'Shop',
+      path: '/brains/shop',
+    });
+    await s.svc.pass();
+    const r = s.store.get('cc:m1')!;
+    expect(r.attribution).toMatchObject({ level: 'brain', brainId: 'b1' });
+    expect(r.billable).toBe(false);
+    expect(s.store.dirty(10)).toEqual([]);
+  });
+  it('an unknown brain id stays unattributed and never billable', async () => {
+    const s = setup({ claude: [[rec({ taskId: 'brain:gone' })]] });
+    await s.svc.pass();
+    const r = s.store.get('cc:m1')!;
+    expect(r.attribution).toEqual({ level: 'none' });
+    expect(r.billable).toBe(false);
+  });
   it('records brain usage at brain level, never billable, never dirty', async () => {
     const s = setup({ claude: [[rec({ taskId: 'brain:b1' })]] });
     s.state.brains.push({
       id: 'b1',
       organization: 'https://dev.azure.com/acme',
       project: 'Shop',
+      path: '/brains/shop',
     });
     await s.svc.pass();
     const r = s.store.get('cc:m1')!;

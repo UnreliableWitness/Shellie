@@ -1,7 +1,7 @@
 import type { BudgetRecord } from '../../shared/budget';
 import type { UsageRecord } from '../../shared/usage';
 
-/** Budget records from the usage store: Copilot CLI requests and Shellie's own `claude -p` runs (PR descriptions), and brain runs. Claude tab usage comes from the transcripts, so it is dropped here. */
+/** Budget records from the usage store: Copilot CLI requests and Shellie's own `claude -p` runs (PR descriptions). Claude tab usage comes from the transcripts, so it is dropped here. */
 export function budgetRecordsFromUsage(records: UsageRecord[]): BudgetRecord[] {
   const out: BudgetRecord[] = [];
   for (const r of records) {
@@ -12,9 +12,6 @@ export function budgetRecordsFromUsage(records: UsageRecord[]): BudgetRecord[] {
       provider = 'github-copilot';
     } else if (r.tool === 'claude-code' && r.source === 'pr-summary') {
       id = `sh:${r.id}`;
-      provider = 'anthropic';
-    } else if (r.tool === 'claude-code' && r.source === 'brain') {
-      id = `br:${r.id}`;
       provider = 'anthropic';
     } else continue;
     out.push({

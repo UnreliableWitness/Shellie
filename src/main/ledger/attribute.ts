@@ -25,7 +25,13 @@ type RepoCtx = {
   paths: string[];
 };
 
-export type BrainCtx = { id: string; organization: string; project: string };
+export type BrainCtx = {
+  id: string;
+  organization: string;
+  project: string;
+  /** The brain folder: transcripts of its Claude runs carry a cwd inside it. */
+  path: string;
+};
 
 /** What attribution needs from the tasks, repos and connections, built once per pass. `key` changes when any of it does. */
 export type AttributionContext = {
@@ -163,13 +169,34 @@ export function taskOf(
   return best ? { t: best.t, repo: best.repo } : null;
 }
 
+/** The known brain a record belongs to: by its `brain:` task id, else by a cwd inside the brain folder (longest path wins). */
+function brainOf(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
+  const id = brainIdOf(r.taskId);
+  const byId = id === null ? undefined : ctx.brains.get(id);
+  if (byId) return byId;
+  const cwd = r.cwd;
+  if (!cwd) return null;
+  let best: BrainCtx | null = null;
+  for (const b of ctx.brains.values())
+    if (isInside(b.path, cwd) && (!best || b.path.length > best.path.length))
+      best = b;
+  return best;
+}
+
+/** Whether a record is brain usage, also when its brain is unknown (deleted, not loaded yet): such a record is never billable. */
+export function isBrainRecord(
+  r: BudgetRecord,
+  ctx: AttributionContext,
+): boolean {
+  return brainIdOf(r.taskId) !== null || brainOf(r, ctx) !== null;
+}
+
 /** Task (see taskOf), else repo by folder, else none. */
 export function attribute(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): Attribution {
-  const brainId = brainIdOf(r.taskId);
-  const brain = brainId === null ? undefined : ctx.brains.get(brainId);
+  const brain = brainOf(r, ctx);
   if (brain)
     return {
       level: 'brain',

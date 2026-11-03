@@ -14,6 +14,7 @@ import { modelLabeler } from '../pricing/RateTable';
 import {
   type AttributionContext,
   attribute,
+  isBrainRecord,
   merge,
   raises,
   taskOf,
@@ -176,7 +177,7 @@ export class LedgerService {
     stored: boolean,
   ) {
     const a = r.attribution;
-    if (a.level === 'brain') return false;
+    if (a.level === 'brain' || isBrainRecord(asBudget(r, i), ctx)) return false;
     const taskId =
       a.level === 'task'
         ? a.taskId

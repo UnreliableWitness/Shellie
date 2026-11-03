@@ -311,7 +311,12 @@ describe('merge', () => {
 describe('brain attribution', () => {
   const c = conn('c1', 'https://dev.azure.com/acme', 'Acme');
   const brains = [
-    { id: 'b1', organization: c.organizationUrl, project: 'Acme' },
+    {
+      id: 'b1',
+      organization: c.organizationUrl,
+      project: 'Acme',
+      path: '/brains/acme',
+    },
   ];
   it('attributes a brain record to the brain', () => {
     const ctx = attributionContext([], [], [c], () => [], brains);
@@ -320,6 +325,16 @@ describe('brain attribution', () => {
       brainId: 'b1',
       organization: c.organizationUrl,
       project: 'Acme',
+    });
+  });
+  it('attributes a transcript record by cwd inside the brain folder', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    expect(attribute(rec({ cwd: '/brains/acme/wiki' }), ctx)).toMatchObject({
+      level: 'brain',
+      brainId: 'b1',
+    });
+    expect(attribute(rec({ cwd: '/brains/other' }), ctx)).toEqual({
+      level: 'none',
     });
   });
   it('an unknown brain id falls back to none', () => {
