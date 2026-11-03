@@ -8,6 +8,7 @@ import type {
 } from '../../shared/brain';
 import type { GitClient } from '../services/GitClient';
 import { convertFile } from './convert';
+import { withBrainGit } from './gitMutex';
 import {
   parseSourceFrontmatter,
   renderSource,
@@ -108,6 +109,34 @@ export async function addSource(
     body = input.text.trimEnd() + '\n';
   }
 
+  // Duplicate check, name choice and commit in one go per brain: concurrent adds never take the same name.
+  return withBrainGit(brainDir, () =>
+    writeSource(git, brainDir, type, now, {
+      title,
+      sourceUrl,
+      body,
+      hash,
+      slugBase,
+      original,
+    }),
+  );
+}
+
+async function writeSource(
+  git: GitClient,
+  brainDir: string,
+  type: SourceType,
+  now: () => Date,
+  src: {
+    title: string;
+    sourceUrl: string;
+    body: string;
+    hash: string;
+    slugBase: string;
+    original: { buf: Buffer; ext: string } | null;
+  },
+): Promise<AddSourceResult> {
+  const { title, sourceUrl, body, hash, slugBase, original } = src;
   const existing = await readSources(brainDir);
   const dup = existing.find((s) => s.fm.sha256 === hash);
   if (dup) {
@@ -119,6 +148,8 @@ export async function addSource(
   }
 
   const written: string[] = [];
+  // Repo-relative paths of what is written: the only paths staged and committed.
+  const rels: string[] = [];
   let staged = false;
   try {
     const sourcesDir = path.join(brainDir, 'sources');
@@ -128,6 +159,7 @@ export async function addSource(
     const slug = slugify(slugBase) || 'source';
     const name = sourceFileName(date, slug, taken);
     written.push(path.join(sourcesDir, name));
+    rels.push(`sources/${name}`);
     await fs.writeFile(
       written[0],
       renderSource(
@@ -142,21 +174,26 @@ export async function addSource(
       ),
     );
     if (original) {
-      const copy = path.join(
-        sourcesDir,
-        name.replace(/\.md$/, original.ext.toLowerCase()),
-      );
-      written.push(copy);
-      await fs.writeFile(copy, original.buf);
+      const copyName = name.replace(/\.md$/, original.ext.toLowerCase());
+      written.push(path.join(sourcesDir, copyName));
+      rels.push(`sources/${copyName}`);
+      await fs.writeFile(written[1], original.buf);
     }
     staged = true;
-    await git.run(brainDir, ['add', '-A', 'sources']);
-    await git.run(brainDir, ['commit', '-m', `Brain: add source ${name}`]);
+    await git.run(brainDir, ['add', '--', ...rels]);
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      `Brain: add source ${name}`,
+      '--',
+      ...rels,
+    ]);
     return { ok: true, path: `sources/${name}` };
   } catch (e) {
     for (const f of written) await fs.rm(f, { force: true });
-    if (staged) {
-      await git.run(brainDir, ['reset', '-q', '--', 'sources']).catch(() => '');
+    if (staged && rels.length) {
+      await git.run(brainDir, ['reset', '-q', '--', ...rels]).catch(() => '');
     }
     return {
       ok: false,

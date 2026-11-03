@@ -30,7 +30,10 @@ import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { startBrainScheduler } from './main/brain/scheduler';
-import { commitJobOutput } from './main/brain/brainHandlers';
+import {
+  commitJobOutput,
+  OUTSIDE_EDIT_MESSAGE,
+} from './main/brain/brainHandlers';
 import { telemetryEnv } from './main/usage/telemetryEnv';
 import { colorFgBg } from './main/services/claudeTheme';
 import { runWithInput } from './main/services/prSummary';
@@ -836,6 +839,11 @@ async function boot(): Promise<void> {
         const b = brains.get(id);
         if (!b) throw new Error(`Unknown brain ${id}`);
         await commitJobOutput(git, b.path, message);
+      },
+      beforeJob: async (id) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE);
       },
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);

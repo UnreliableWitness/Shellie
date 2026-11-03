@@ -51,6 +51,13 @@ export type BrainJobDeps = {
   onChange: (brainId: string, jobs: BrainJob[]) => void;
   /** Commits the job's output (wiki/, index.md, log.md, state); a throw fails the job. */
   commit: (brainId: string, message: string) => Promise<void>;
+  /**
+   * Runs with the lock held, before the skill: commits edits made outside a job (so the job's commit never sweeps
+   * them in). A throw fails the job.
+   */
+  beforeJob: (brainId: string) => Promise<void>;
+  /** Called when a held lock arms the retry timer (tests wait for it). */
+  onLockRetry?: (brainId: string) => void;
   timeoutMs?: number;
   lockRetryMs?: number;
   now?: () => Date;
@@ -222,12 +229,14 @@ export class BrainJobRunner {
         l.retry = null;
         this.pump(brainId);
       }, d.lockRetryMs ?? 5000);
+      d.onLockRetry?.(brainId);
       return;
     }
     try {
       job.status = 'running';
       job.startedAt = this.now().toISOString();
       this.changed(brainId);
+      await d.beforeJob(brainId);
       const stdout = await d.run(
         d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
         {

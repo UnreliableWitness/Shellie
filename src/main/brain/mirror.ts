@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { BrainWiki, RefreshResult } from '../../shared/brain';
 import { errorMessage } from '../../shared/errors';
 import type { GitClient } from '../services/GitClient';
+import { withBrainGit } from './gitMutex';
 import { parseSourceFrontmatter, renderSource, sha256 } from './sourceFile';
 
 /** Env for git (the auth header), built by the caller from the connection's PAT. */
@@ -11,6 +12,11 @@ export type MirrorAuth = () => Promise<Record<string, string>>;
 export type { RefreshResult };
 
 const WIKI_DIR = 'sources/wiki';
+/** The wiki checkout keeps LF whatever the machine's git says (Windows runners set core.autocrlf=true). */
+const LF = ['-c', 'core.autocrlf=false'];
+
+/** Sources are our files: LF everywhere, so a page hashes the same on every platform. */
+export const toLf = (text: string) => text.replace(/\r\n/g, '\n');
 
 export function mirrorDir(brainDir: string): string {
   return path.join(brainDir, '.mirror');
@@ -114,21 +120,29 @@ async function syncMirror(
   if (cloned) {
     try {
       sameRemote =
-        (await git.run(mirror, ['remote', 'get-url', 'origin'])).trim() ===
-        wiki.gitUrl;
+        (
+          await git.run(mirror, [...LF, 'remote', 'get-url', 'origin'])
+        ).trim() === wiki.gitUrl;
     } catch {
       sameRemote = false;
     }
   }
   if (cloned && sameRemote) {
-    await git.run(mirror, ['fetch', '-q', 'origin', wiki.version], { env });
-    await git.run(mirror, ['reset', '-q', '--hard', `origin/${wiki.version}`], {
+    await git.run(mirror, [...LF, 'fetch', '-q', 'origin', wiki.version], {
       env,
     });
+    await git.run(
+      mirror,
+      [...LF, 'reset', '-q', '--hard', `origin/${wiki.version}`],
+      {
+        env,
+      },
+    );
     // The root page or mapped path may have changed since the last refresh.
     await git.run(
       mirror,
       [
+        ...LF,
         'sparse-checkout',
         'set',
         '--no-cone',
@@ -143,6 +157,7 @@ async function syncMirror(
     await git.run(
       brainDir,
       [
+        ...LF,
         'clone',
         '-q',
         '--filter=blob:none',
@@ -157,6 +172,7 @@ async function syncMirror(
     await git.run(
       mirror,
       [
+        ...LF,
         'sparse-checkout',
         'set',
         '--no-cone',
@@ -164,7 +180,7 @@ async function syncMirror(
       ],
       { env },
     );
-    await git.run(mirror, ['checkout', '-q', wiki.version], { env });
+    await git.run(mirror, [...LF, 'checkout', '-q', wiki.version], { env });
   } catch (e) {
     await fs.rm(mirror, { recursive: true, force: true });
     throw e;
@@ -231,9 +247,8 @@ export async function refreshMirror(
         continue;
       }
       kept.add(rel);
-      const text = await fs.readFile(
-        path.join(mirror, ...segments(gitItemPath)),
-        'utf8',
+      const text = toLf(
+        await fs.readFile(path.join(mirror, ...segments(gitItemPath)), 'utf8'),
       );
       const hash = sha256(text);
       const prev = existing.get(rel);
@@ -265,12 +280,17 @@ export async function refreshMirror(
     await pruneEmptyDirs(wikiRoot);
 
     if (added + changed + removed > 0) {
-      await git.run(brainDir, ['add', '-A', WIKI_DIR]);
-      await git.run(brainDir, [
-        'commit',
-        '-m',
-        `Brain: refresh wiki mirror (+${added} ~${changed} -${removed})`,
-      ]);
+      await withBrainGit(brainDir, async () => {
+        await git.run(brainDir, ['add', '-A', '--', WIKI_DIR]);
+        await git.run(brainDir, [
+          'commit',
+          '-q',
+          '-m',
+          `Brain: refresh wiki mirror (+${added} ~${changed} -${removed})`,
+          '--',
+          WIKI_DIR,
+        ]);
+      });
     }
     return {
       ok: true,

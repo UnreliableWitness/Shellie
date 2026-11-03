@@ -10,9 +10,9 @@ import {
   makeRepo,
   cleanupTempRepos,
 } from '../test-helpers/gitRepo';
-import { refreshMirror, sparsePatterns } from './mirror';
+import { refreshMirror, sparsePatterns, toLf } from './mirror';
 import { scaffoldBrain } from './scaffold';
-import { parseSourceFrontmatter } from './sourceFile';
+import { parseSourceFrontmatter, sha256 } from './sourceFile';
 
 const ROOT = '/Customers/Acme/Second-brain.md';
 const KICK = 'Customers/Acme/Second-brain/Kick%2Doff-notes.md';
@@ -91,6 +91,25 @@ describe('wiki mirror', () => {
     expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
       'Brain: refresh wiki mirror (+2 ~0 -0)',
     );
+  });
+
+  it('writes a CRLF page with LF and hashes it like its LF version', async () => {
+    const crlf = 'Line one\r\nLine two\r\n';
+    const lf = 'Line one\nLine two\n';
+    expect(toLf(crlf)).toBe(lf);
+    await put(KICK, crlf);
+    const r = await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect(r).toMatchObject({ ok: true, added: 2 });
+    const file = path.join(dir, 'sources/wiki/Second brain/Kick-off notes.md');
+    const text = await fs.readFile(file, 'utf8');
+    expect(text).not.toContain('\r');
+    expect(text.endsWith(`\n\n${lf}`)).toBe(true);
+    expect(parseSourceFrontmatter(text)?.sha256).toBe(sha256(lf));
+    // The same page with LF line ends is no change.
+    await put(KICK, lf);
+    expect(
+      await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl),
+    ).toMatchObject({ ok: true, added: 0, changed: 0, removed: 0 });
   });
 
   it('removes mirror files for deleted pages', async () => {

@@ -59,6 +59,7 @@ function runner(over: Partial<BrainJobDeps> = {}) {
     commit: async (id, message) => {
       commits.push([id, message]);
     },
+    beforeJob: async () => undefined,
     lockRetryMs: 5000,
     ...over,
   });
@@ -128,6 +129,38 @@ describe('BrainJobRunner', () => {
       ['b1', 'Brain: lint'],
       ['b1', 'Brain: sync'],
     ]);
+  });
+
+  it('commits outside edits before the skill runs, with the lock held', async () => {
+    const seen: { calls: number; locked: boolean }[] = [];
+    const r = runner({
+      beforeJob: async (id) => {
+        seen.push({
+          calls: calls.length,
+          locked: existsSync(path.join(dirs[id], 'brain', 'lock')),
+        });
+      },
+    });
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(seen).toEqual([{ calls: 0, locked: true }]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('fails the job when beforeJob throws, without running the skill', async () => {
+    const r = runner({
+      beforeJob: async () => {
+        throw new Error('index.lock exists');
+      },
+    });
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(r.jobs('b1')[0]).toMatchObject({
+      status: 'failed',
+      error: 'index.lock exists',
+    });
+    expect(calls).toHaveLength(0);
+    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
   });
 
   it('fails the job when the commit throws and releases the lock', async () => {
@@ -212,10 +245,12 @@ describe('BrainJobRunner', () => {
   it('retries after 5 s when the lock is held', async () => {
     await acquireLock(dirs.b1);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const r = runner();
+    let armed: () => void = () => undefined;
+    const retryArmed = new Promise<void>((res) => (armed = res));
+    const r = runner({ onLockRetry: () => armed() });
     r.enqueue('b1', 'sync');
-    // Let the first lock attempt (real file I/O) fail and arm the retry timer.
-    for (let i = 0; i < 20; i++) await new Promise((res) => setImmediate(res));
+    // The first lock attempt (real file I/O) fails and arms the retry timer.
+    await retryArmed;
     await vi.advanceTimersByTimeAsync(4000);
     expect(calls).toHaveLength(0);
     const { releaseLock } = await import('./state');

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Brain } from '../../shared/brain';
 import type { GitClient } from '../services/GitClient';
 import type { BrainStore } from './BrainStore';
+import { withBrainGit } from './gitMutex';
 import { acquireLock, releaseLock } from './state';
 
 /** How much of the brain's index.md a task's task.md gets. */
@@ -114,15 +115,17 @@ async function appendLogLocked(
     const insert = lines[at + 1]?.trim() === '' ? at + 2 : at + 1;
     lines.splice(insert, 0, line);
     await fs.writeFile(file, lines.join(eol), 'utf8');
-    await git.run(brainDir, ['add', '--', 'log.md']);
-    await git.run(brainDir, [
-      'commit',
-      '-q',
-      '-m',
-      'Brain: task closed',
-      '--',
-      'log.md',
-    ]);
+    await withBrainGit(brainDir, async () => {
+      await git.run(brainDir, ['add', '--', 'log.md']);
+      await git.run(brainDir, [
+        'commit',
+        '-q',
+        '-m',
+        'Brain: task closed',
+        '--',
+        'log.md',
+      ]);
+    });
   } finally {
     await releaseLock(brainDir).catch(() => undefined);
   }

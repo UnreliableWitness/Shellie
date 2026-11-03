@@ -1789,9 +1789,7 @@ export function createHandlers(s: Services): Handlers {
         if (t.workItem) t.workItem.project = learned;
       });
     let project =
-      (typeof learned === 'string' && learned) ||
-      task.workItem.project ||
-      null;
+      (typeof learned === 'string' && learned) || task.workItem.project || null;
     if (!project)
       try {
         project = s.connections.get(connectionId).project;

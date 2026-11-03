@@ -20,6 +20,7 @@ import { BrainStore } from './BrainStore';
 import {
   commitJobOutput,
   createBrainHandlers,
+  OUTSIDE_EDIT_MESSAGE,
   type BrainHandlerDeps,
 } from './brainHandlers';
 import { acquireLock, releaseLock } from './state';
@@ -280,6 +281,46 @@ describe('brain handlers', () => {
     const n = await count();
     await commitJobOutput(git, v.path, 'Brain: lint');
     expect(await count()).toBe(n);
+  });
+
+  it('an outside edit committed before a job stays an outside edit after the job', async () => {
+    const v = await h['brain:create'](NEW);
+    await fs.writeFile(path.join(v.path, 'wiki', 'by-hand.md'), '# Mine\n');
+    await commitJobOutput(git, v.path, OUTSIDE_EDIT_MESSAGE);
+    // The job writes its own page and commits.
+    await fs.writeFile(path.join(v.path, 'wiki', 'agent.md'), '# Agent\n');
+    await commitJobOutput(git, v.path, 'Brain: capture sources/a.md');
+    expect((await h['brain:get'](v.id)).health.outsideEdits).toEqual([
+      'wiki/by-hand.md',
+    ]);
+    const subjects = (await git.run(v.path, ['log', '--format=%s', '-2']))
+      .trim()
+      .split('\n');
+    expect(subjects).toEqual([
+      'Brain: capture sources/a.md',
+      OUTSIDE_EDIT_MESSAGE,
+    ]);
+  });
+
+  it('commits job output of an adopted brain that lacks some of its paths', async () => {
+    const v = await h['brain:create'](NEW);
+    await git.run(v.path, ['rm', '-q', '-r', '--', 'index.md', 'wiki']);
+    await git.run(v.path, ['commit', '-q', '-m', 'Trim']);
+    await fs.appendFile(path.join(v.path, 'log.md'), '- captured\n');
+    await commitJobOutput(git, v.path, 'Brain: lint');
+    expect((await git.run(v.path, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: lint',
+    );
+  });
+
+  it('job output commits leave other files alone', async () => {
+    const v = await h['brain:create'](NEW);
+    await fs.writeFile(path.join(v.path, 'notes.txt'), 'mine\n');
+    await fs.writeFile(path.join(v.path, 'wiki', 'p.md'), '# P\n');
+    await commitJobOutput(git, v.path, 'Brain: lint');
+    expect((await git.run(v.path, ['status', '--porcelain'])).trim()).toBe(
+      '?? notes.txt',
+    );
   });
 
   it('delete with deleteFolder removes the folder and kills the terminal', async () => {

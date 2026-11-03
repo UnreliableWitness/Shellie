@@ -699,7 +699,7 @@ describe('handlers: finish with a brain', () => {
     const own = readFileSync(file, 'utf8');
     appendFileSync(
       file,
-      '\n## Context: Acme\nThe project\'s brain is at /x.\n\n- [Scope](wiki/scope.md)\n',
+      "\n## Context: Acme\nThe project's brain is at /x.\n\n- [Scope](wiki/scope.md)\n",
     );
     await hx.h['tasks:finish'](hx.t.id, { ...finish, captureTaskMd: true });
     const [source] = hx.sources();

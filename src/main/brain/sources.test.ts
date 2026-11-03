@@ -75,6 +75,37 @@ describe('brain sources', () => {
     expect(rows[0].original).toBe('sources/2026-11-03-kickoff.vtt');
   });
 
+  it('five concurrent adds all succeed with one commit each', async () => {
+    const before = Number(
+      (await git.run(dir, ['rev-list', '--count', 'HEAD'])).trim(),
+    );
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map((n) =>
+        addSource(git, dir, { text: `note ${n}`, title: 'Note' }, 'note', now),
+      ),
+    );
+    expect(results.every((r) => r.ok)).toBe(true);
+    expect(new Set(results.map((r) => (r.ok ? r.path : ''))).size).toBe(5);
+    const after = Number(
+      (await git.run(dir, ['rev-list', '--count', 'HEAD'])).trim(),
+    );
+    expect(after - before).toBe(5);
+    expect(await clean()).toBe('');
+  });
+
+  it('commits only the files it wrote', async () => {
+    await fs.writeFile(path.join(dir, 'sources', 'stray.md'), 'by hand\n');
+    const r = await addSource(
+      git,
+      dir,
+      { text: 'hello', title: 'Note' },
+      'note',
+      now,
+    );
+    expect(r.ok).toBe(true);
+    expect(await clean()).toBe('?? sources/stray.md');
+  });
+
   it('does not copy a markdown drop twice', async () => {
     const f = path.join(root, 'notes.md');
     await fs.writeFile(f, '# Meeting\n\nbody\n');

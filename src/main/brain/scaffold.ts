@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { GitClient } from '../services/GitClient';
+import { withBrainGit } from './gitMutex';
 import {
   managedTemplateFiles,
   TEMPLATES_VERSION,
@@ -33,11 +34,13 @@ export async function scaffoldBrain(
     { path: 'sources/.gitkeep', content: '' },
     { path: 'wiki/.gitkeep', content: '' },
   ]);
-  await git.run(dir, ['init', '-b', 'main']);
-  await git.run(dir, ['config', 'user.name', 'Shellie']);
-  await git.run(dir, ['config', 'user.email', 'shellie@localhost']);
-  await git.run(dir, ['add', '-A']);
-  await git.run(dir, ['commit', '-m', 'Brain created']);
+  await withBrainGit(dir, async () => {
+    await git.run(dir, ['init', '-b', 'main']);
+    await git.run(dir, ['config', 'user.name', 'Shellie']);
+    await git.run(dir, ['config', 'user.email', 'shellie@localhost']);
+    await git.run(dir, ['add', '-A']);
+    await git.run(dir, ['commit', '-m', 'Brain created']);
+  });
 }
 
 const exists = (p: string) =>
@@ -87,11 +90,16 @@ export async function applyTemplates(
   const wanted = new Set(paths);
   const files = managedTemplateFiles(name).filter((f) => wanted.has(f.path));
   await writeAll(dir, files);
-  await git.run(dir, ['add', '-A', '--', ...files.map((f) => f.path)]);
-  await git.run(dir, [
-    'commit',
-    '--allow-empty',
-    '-m',
-    `Brain: update skills to v${TEMPLATES_VERSION}`,
-  ]);
+  const written = files.map((f) => f.path);
+  await withBrainGit(dir, async () => {
+    await git.run(dir, ['add', '-A', '--', ...written]);
+    // Only the template files: nothing else staged in the brain lands in this commit.
+    await git.run(dir, [
+      'commit',
+      '--allow-empty',
+      '-m',
+      `Brain: update skills to v${TEMPLATES_VERSION}`,
+      ...(written.length ? ['--', ...written] : []),
+    ]);
+  });
 }

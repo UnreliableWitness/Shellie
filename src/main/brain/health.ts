@@ -7,14 +7,18 @@ import { readState } from './state';
 /** Commits Shellie makes in a brain: 'Brain: …', and the scaffold's first one. */
 const isBrainCommit = (subject: string) =>
   subject.startsWith('Brain:') || subject === 'Brain created';
+/** A /sync run: it reconciles the human edits in wiki/ made before it. */
+const isSyncCommit = (subject: string) =>
+  subject === 'Brain: sync' || subject.startsWith('Brain: sync ');
 
 const SUBJECT = '\u0001';
 /** Non-ASCII page names as they are, not octal-quoted. */
 const RAW = ['-c', 'core.quotepath=off'];
 
 /**
- * Files under wiki/ changed by commits since the last Brain commit that touched wiki/ (or the whole history when
- * there is none), plus uncommitted changes there.
+ * Files under wiki/ changed by commits other than Shellie's since the last /sync commit (or the whole history when
+ * there is none), plus uncommitted changes there. Outside edits a job start commits ('Edited outside a capture')
+ * stay listed until a /sync.
  */
 async function outsideEdits(brainDir: string, git: GitClient) {
   const found = new Set<string>();
@@ -28,14 +32,24 @@ async function outsideEdits(brainDir: string, git: GitClient) {
       'wiki/',
     ])
     .catch(() => '');
-  // Newest first: stop at the first Brain commit.
+  // Newest first: stop at the first sync.
   for (const block of log.split(SUBJECT).slice(1)) {
     const [subject, ...files] = block.split('\n');
-    if (isBrainCommit(subject)) break;
+    if (isSyncCommit(subject)) break;
+    if (isBrainCommit(subject)) continue;
     for (const f of files) if (f.trim()) found.add(f.trim());
   }
+  // No optional locks: Health must never hold .git/index.lock while a job or source commits.
   const status = await git
-    .run(brainDir, [...RAW, 'status', '--porcelain', '-uall', '--', 'wiki/'])
+    .run(brainDir, [
+      '--no-optional-locks',
+      ...RAW,
+      'status',
+      '--porcelain',
+      '-uall',
+      '--',
+      'wiki/',
+    ])
     .catch(() => '');
   for (const line of status.split('\n')) {
     if (line.length < 4) continue;

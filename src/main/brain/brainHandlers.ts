@@ -24,6 +24,7 @@ import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { pagesBucket, sizeBucket } from './brainTelemetry';
 import { brainForTask } from './context';
+import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
@@ -96,20 +97,48 @@ const BUSY = 'A brain job is running; try again later';
 /** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
 const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];
 
-/** The runner's `commit`: stages the job's output and commits it when anything changed. */
-export async function commitJobOutput(
+/** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
+export const OUTSIDE_EDIT_MESSAGE = 'Edited outside a capture';
+
+/** The job output paths git can stage: on disk, or tracked (deleted since). An adopted brain may lack some. */
+async function stageable(git: GitClient, brainDir: string): Promise<string[]> {
+  const tracked = (await git.run(brainDir, ['ls-files', '--', ...JOB_OUTPUT]))
+    .split('\n')
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const p of JOB_OUTPUT) {
+    const onDisk = await fs.stat(path.join(brainDir, ...p.split('/'))).then(
+      () => true,
+      () => false,
+    );
+    if (onDisk || tracked.some((t) => t === p || t.startsWith(`${p}/`)))
+      out.push(p);
+  }
+  return out;
+}
+
+/**
+ * The runner's `commit` (and, with OUTSIDE_EDIT_MESSAGE, its `beforeJob`): stages the job's output paths and commits
+ * them when anything changed, nothing else.
+ */
+export function commitJobOutput(
   git: GitClient,
   brainDir: string,
   message: string,
 ): Promise<void> {
-  await git.run(brainDir, ['add', '-A', '--', ...JOB_OUTPUT]);
-  const status = await git.run(brainDir, [
-    'status',
-    '--porcelain',
-    '--',
-    ...JOB_OUTPUT,
-  ]);
-  if (status.trim()) await git.run(brainDir, ['commit', '-q', '-m', message]);
+  return withBrainGit(brainDir, async () => {
+    const paths = await stageable(git, brainDir);
+    if (!paths.length) return;
+    await git.run(brainDir, ['add', '-A', '--', ...paths]);
+    const status = await git.run(brainDir, [
+      'status',
+      '--porcelain',
+      '--',
+      ...paths,
+    ]);
+    if (status.trim())
+      await git.run(brainDir, ['commit', '-q', '-m', message, '--', ...paths]);
+  });
 }
 
 const isEmptyOrMissing = async (dir: string) =>

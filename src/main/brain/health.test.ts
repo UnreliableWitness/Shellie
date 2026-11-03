@@ -68,14 +68,17 @@ describe('brainHealth', () => {
     expect(h.queuePaused).toBe('cap');
   });
 
-  it('lists wiki files edited outside a Brain: commit, and uncommitted ones', async () => {
+  it('lists wiki files edited outside a Brain: commit since the last sync, and uncommitted ones', async () => {
     await write('wiki/old.md', 'old\n');
     await commit('hand edit before');
     await write('wiki/kept.md', 'kept\n');
-    await commit('Brain: capture');
+    await commit('Brain: sync');
     await write('wiki/a.md', 'a\n');
     await write('wiki/sub/b.md', 'b\n');
     await commit('Fix a typo');
+    // A capture after an outside edit does not hide it.
+    await write('wiki/captured.md', 'by the agent\n');
+    await commit('Brain: capture sources/x.md');
     await write('wiki/c.md', 'c\n');
     await write('wiki/kept.md', 'kept, edited\n');
     await write('notes.md', 'outside wiki\n');
