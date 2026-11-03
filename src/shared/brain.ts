@@ -33,6 +33,7 @@ export const BrainWikiSchema = z.object({
   /** '/' for the wiki root, else the page path as the pages API gives it ('/Customers/Acme/Second brain'). */
   rootPath: z.string(),
 });
+export type BrainWiki = z.infer<typeof BrainWikiSchema>;
 
 export const BrainSchema = z.object({
   id: z.string().min(1),
