@@ -54,8 +54,22 @@ function resolve(fromDir: string, target: string): string {
   return parts.join('/');
 }
 
+/** Notes body only: the slide-number/header placeholders are not notes. */
+function notesOf(xml: string): string {
+  const shapes = xml.match(/<p:sp[\s>][\s\S]*?<\/p:sp>/g) ?? [];
+  const bodies = shapes.filter((s) => /<p:ph\b[^>]*\btype="body"/.test(s));
+  const chosen =
+    bodies.length > 0 ? bodies : shapes.filter((s) => !/<p:ph\b/.test(s));
+  return chosen.flatMap(paragraphsOf).join(' ');
+}
+
 export async function pptxToMarkdown(buf: Buffer): Promise<Converted> {
-  const zip = await JSZip.loadAsync(buf);
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(buf);
+  } catch (err) {
+    throw new Error('Not a valid .pptx file', { cause: err });
+  }
   const read = async (p: string) =>
     (await zip.file(p)?.async('string')) ?? null;
 
@@ -79,9 +93,7 @@ export async function pptxToMarkdown(buf: Buffer): Promise<Converted> {
     const rels = parseRels((await read(`${dir}/_rels/${file}.rels`)) ?? '');
     const notesRel = rels.find((r) => r.type.endsWith('/notesSlide'));
     const notes = notesRel
-      ? paragraphsOf((await read(resolve(dir, notesRel.target))) ?? '').join(
-          ' ',
-        )
+      ? notesOf((await read(resolve(dir, notesRel.target))) ?? '')
       : '';
     const out = [`## Slide ${i + 1}`, ...lines];
     if (notes) out.push(`_Notes:_ ${notes}`);

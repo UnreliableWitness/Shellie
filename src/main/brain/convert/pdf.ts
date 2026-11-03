@@ -14,8 +14,8 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
     verbosity: pdfjs.VerbosityLevel.ERRORS,
     useSystemFonts: true,
   });
-  const doc = await task.promise;
   try {
+    const doc = await task.promise;
     const sections: string[] = [];
     let total = 0;
     for (let n = 1; n <= doc.numPages; n++) {
@@ -42,6 +42,11 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
       needsOcr: total < OCR_THRESHOLD,
       warnings: [],
     };
+  } catch (err) {
+    if ((err as { name?: string })?.name === 'PasswordException') {
+      throw new Error('PDF is password protected', { cause: err });
+    }
+    throw new Error('Not a valid .pdf file', { cause: err });
   } finally {
     await task.destroy();
   }

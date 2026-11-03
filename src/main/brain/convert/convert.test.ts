@@ -23,9 +23,13 @@ const REL =
 const paragraphs = (lines: string[]) =>
   lines.map((l) => `<a:p><a:r><a:t>${l}</a:t></a:r></a:p>`).join('');
 
+const NUM_SHAPE =
+  '<p:sp><p:nvSpPr><p:nvPr><p:ph type="sldNum"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:fld type="slidenum"><a:t>3</a:t></a:fld></a:p></p:txBody></p:sp>';
+
 async function buildPptx(
   slides: SlideSpec[],
   withImage = false,
+  realNotes = false,
 ): Promise<Buffer> {
   const zip = new JSZip();
   // Slide files are numbered in reverse so file order differs from deck order.
@@ -61,7 +65,7 @@ async function buildPptx(
     if (s.notes) {
       zip.file(
         `ppt/notesSlides/notesSlide${n}.xml`,
-        `<p:notes ${NS_A} ${NS_P}><p:cSld><p:spTree><p:sp><p:txBody>${paragraphs([s.notes])}</p:txBody></p:sp></p:spTree></p:cSld></p:notes>`,
+        `<p:notes ${NS_A} ${NS_P}><p:cSld><p:spTree>${realNotes ? NUM_SHAPE : ''}<p:sp>${realNotes ? '<p:nvSpPr><p:nvPr><p:ph type="body"/></p:nvPr></p:nvSpPr>' : ''}<p:txBody>${paragraphs(s.notes === '-' ? [] : [s.notes])}</p:txBody></p:sp></p:spTree></p:cSld></p:notes>`,
       );
     }
   });
@@ -69,7 +73,7 @@ async function buildPptx(
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
-async function buildDocx(withImage = false): Promise<Buffer> {
+async function buildDocx(withImage = false, bookmark = false): Promise<Buffer> {
   const zip = new JSZip();
   zip.file(
     '[Content_Types].xml',
@@ -89,7 +93,7 @@ async function buildDocx(withImage = false): Promise<Buffer> {
   );
   zip.file(
     'word/document.xml',
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Project Plan</w:t></w:r></w:p><w:p><w:r><w:t>Body text.</w:t></w:r></w:p></w:body></w:document>',
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>${bookmark ? '<w:bookmarkStart w:id="0" w:name="_Toc123"/>' : ''}<w:r><w:t>Project Plan</w:t></w:r>${bookmark ? '<w:bookmarkEnd w:id="0"/>' : ''}</w:p><w:p><w:r><w:t>Body text.</w:t></w:r></w:p></w:body></w:document>`,
   );
   if (withImage) zip.file('word/media/image1.png', Buffer.from([1, 2, 3]));
   return zip.generateAsync({ type: 'nodebuffer' });
@@ -129,6 +133,22 @@ describe('pptxToMarkdown', () => {
     expect(r.warnings).toEqual([]);
   });
 
+  it('ignores the slide-number placeholder in notes', async () => {
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          { text: ['A'], notes: 'real notes' },
+          { text: ['B'], notes: '-' },
+        ],
+        false,
+        true,
+      ),
+    );
+    expect(r.markdown).toContain('_Notes:_ real notes');
+    expect(r.markdown).not.toContain('3');
+    expect(r.markdown.match(/_Notes:_/g)).toHaveLength(1);
+  });
+
   it('warns when images are dropped', async () => {
     const r = await pptxToMarkdown(await buildPptx([{ text: ['A'] }], true));
     expect(r.warnings).toContain('images dropped');
@@ -144,9 +164,30 @@ describe('docxToMarkdown', () => {
     expect(r.needsOcr).toBe(false);
   });
 
+  it('strips bookmark anchors from headings and the title', async () => {
+    const r = await docxToMarkdown(await buildDocx(false, true));
+    expect(r.markdown).not.toContain('<a');
+    expect(r.title).toBe('Project Plan');
+  });
+
   it('warns when images are dropped', async () => {
     const r = await docxToMarkdown(await buildDocx(true));
     expect(r.warnings).toContain('images dropped');
+  });
+});
+
+describe('corrupt input', () => {
+  const garbage = Buffer.from('this is not a document');
+  it('rejects garbage with readable messages', async () => {
+    await expect(pdfToMarkdown(garbage)).rejects.toThrow(
+      'Not a valid .pdf file',
+    );
+    await expect(docxToMarkdown(garbage)).rejects.toThrow(
+      'Not a valid .docx file',
+    );
+    await expect(pptxToMarkdown(garbage)).rejects.toThrow(
+      'Not a valid .pptx file',
+    );
   });
 });
 
