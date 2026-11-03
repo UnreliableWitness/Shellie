@@ -15,6 +15,7 @@ export type RefreshResult =
       changed: number;
       removed: number;
       pages: number;
+      warnings?: string[];
     }
   | { ok: false; message: string };
 
@@ -53,6 +54,15 @@ function decodeName(name: string): string {
   } catch {
     return name;
   }
+}
+
+/** Makes a decoded page name safe as one file or folder name on every platform. */
+function safeSegment(name: string): string {
+  const s = name
+    // eslint-disable-next-line no-control-regex
+    .replace(/[/\\\u0000-\u001f:?*"<>|]/g, '_')
+    .replace(/[. ]+$/, '');
+  return s === '' || s === '.' || s === '..' ? '_' : s;
 }
 
 const isFile = (p: string) =>
@@ -109,11 +119,32 @@ async function syncMirror(
     () => true,
     () => false,
   );
+  let sameRemote = false;
   if (cloned) {
+    try {
+      sameRemote =
+        (await git.run(mirror, ['remote', 'get-url', 'origin'])).trim() ===
+        wiki.gitUrl;
+    } catch {
+      sameRemote = false;
+    }
+  }
+  if (cloned && sameRemote) {
     await git.run(mirror, ['fetch', '-q', 'origin', wiki.version], { env });
     await git.run(mirror, ['reset', '-q', '--hard', `origin/${wiki.version}`], {
       env,
     });
+    // The root page or mapped path may have changed since the last refresh.
+    await git.run(
+      mirror,
+      [
+        'sparse-checkout',
+        'set',
+        '--no-cone',
+        ...sparsePatterns(wiki, rootGitItemPath),
+      ],
+      { env },
+    );
     return;
   }
   await fs.rm(mirror, { recursive: true, force: true });
@@ -193,14 +224,21 @@ export async function refreshMirror(
 
     let added = 0;
     let changed = 0;
+    const warnings: string[] = [];
     const kept = new Set<string>();
     for (const gitItemPath of found) {
       const relSegs =
         gitItemPath === rootFile
           ? [path.posix.basename(gitItemPath)]
           : segments(gitItemPath.slice(relBase.length));
-      const decoded = relSegs.map(decodeName);
+      const rawNames = relSegs.map(decodeName);
+      const decoded = rawNames.map(safeSegment);
       const rel = decoded.join('/');
+      const target = path.join(wikiRoot, ...decoded);
+      if (!path.resolve(target).startsWith(wikiRoot + path.sep)) {
+        warnings.push(`Skipped ${gitItemPath}: unsafe page name`);
+        continue;
+      }
       kept.add(rel);
       const text = await fs.readFile(
         path.join(mirror, ...segments(gitItemPath)),
@@ -209,13 +247,12 @@ export async function refreshMirror(
       const hash = sha256(text);
       const prev = existing.get(rel);
       if (prev === hash) continue;
-      const target = path.join(wikiRoot, ...decoded);
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(
         target,
         renderSource(
           {
-            title: stripMd(decoded[decoded.length - 1]),
+            title: stripMd(rawNames[rawNames.length - 1]),
             source_url: pageUrl(gitItemPath),
             ingested_at: now().toISOString(),
             content_type: 'wiki-page',
@@ -244,7 +281,14 @@ export async function refreshMirror(
         `Brain: refresh wiki mirror (+${added} ~${changed} -${removed})`,
       ]);
     }
-    return { ok: true, added, changed, removed, pages: found.length };
+    return {
+      ok: true,
+      added,
+      changed,
+      removed,
+      pages: found.length - warnings.length,
+      ...(warnings.length ? { warnings } : {}),
+    };
   } catch (e) {
     return { ok: false, message: errorMessage(e) };
   }

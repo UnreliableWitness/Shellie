@@ -184,6 +184,53 @@ describe('wiki mirror', () => {
     expect(await exists('.mirror')).toBe(false);
   });
 
+  it('sanitises page names so nothing escapes sources/wiki', async () => {
+    await put('Customers/Acme/Second-brain/..%2F..%2Fescape.md', 'x\n');
+    await put('Customers/Acme/Second-brain/A%2FB%3AC.md', 'y\n');
+    const r = await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect(r).toMatchObject({ ok: true, added: 4, pages: 4 });
+    expect(await exists('sources/wiki/Second brain/.._.._escape.md')).toBe(
+      true,
+    );
+    expect(await exists('sources/wiki/Second brain/A_B_C.md')).toBe(true);
+    expect(await exists('escape.md')).toBe(false);
+    expect(await exists('sources/escape.md')).toBe(false);
+  });
+
+  it('follows a changed root page', async () => {
+    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    await put('Customers/Acme/Other/Child.md', 'c\n');
+    const r = await refreshMirror(
+      git,
+      dir,
+      { ...wiki, rootPath: '/Customers/Acme/Other' },
+      '/Customers/Acme/Other.md',
+      auth,
+      pageUrl,
+    );
+    expect(r).toMatchObject({ ok: true, added: 2, removed: 2, pages: 2 });
+    expect(await exists('sources/wiki/Other.md')).toBe(true);
+    expect(await exists('sources/wiki/Other/Child.md')).toBe(true);
+    expect(await exists('sources/wiki/Second brain.md')).toBe(false);
+  });
+
+  it('re-clones when the wiki url changes', async () => {
+    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    const other = makeRepo('wiki2');
+    sh(other, 'checkout', '-q', '-b', 'wikiMaster');
+    await fs.mkdir(path.join(other, 'Customers/Acme'), { recursive: true });
+    commitFile(other, 'Customers/Acme/Second-brain.md', 'new\n');
+    const r = await refreshMirror(
+      git,
+      dir,
+      { ...wiki, gitUrl: other },
+      ROOT,
+      auth,
+      pageUrl,
+    );
+    expect(r).toMatchObject({ ok: true, changed: 1, removed: 1, pages: 1 });
+  });
+
   it('sparsePatterns for the wiki root and for a page', () => {
     expect(sparsePatterns({ ...wiki, rootPath: '/', mappedPath: '/' })).toEqual(
       ['/**'],
