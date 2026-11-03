@@ -32,6 +32,8 @@ export type BrainJobDeps = {
   brainDir: (brainId: string) => string;
   model: (brainId: string) => BrainModel;
   onChange: (brainId: string, jobs: BrainJob[]) => void;
+  /** Commits the job's output (wiki/, index.md, log.md, state); a throw fails the job. */
+  commit: (brainId: string, message: string) => Promise<void>;
   timeoutMs?: number;
   lockRetryMs?: number;
   now?: () => Date;
@@ -229,6 +231,10 @@ export class BrainJobRunner {
           captured: { ...s.captured, [source]: { at, sessionId } },
         }));
       }
+      await d.commit(
+        brainId,
+        `Brain: ${job.kind}${job.source ? ` ${job.source}` : ''}`,
+      );
       job.status = 'done';
     } catch (e) {
       job.status = 'failed';

@@ -30,6 +30,7 @@ import { BrainJobRunner } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { startBrainScheduler } from './main/brain/scheduler';
+import { commitJobOutput } from './main/brain/brainHandlers';
 import { telemetryEnv } from './main/usage/telemetryEnv';
 import { colorFgBg } from './main/services/claudeTheme';
 import { runWithInput } from './main/services/prSummary';
@@ -834,6 +835,11 @@ async function boot(): Promise<void> {
         return b.path;
       },
       model: (id) => brains.get(id)?.options.model ?? 'sonnet',
+      commit: async (id, message) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        await commitJobOutput(git, b.path, message);
+      },
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
         broadcast('brain:changed', { brainId });

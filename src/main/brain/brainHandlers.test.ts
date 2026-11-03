@@ -17,7 +17,12 @@ import {
   makeRepo,
 } from '../test-helpers/gitRepo';
 import { BrainStore } from './BrainStore';
-import { createBrainHandlers, type BrainHandlerDeps } from './brainHandlers';
+import {
+  commitJobOutput,
+  createBrainHandlers,
+  type BrainHandlerDeps,
+} from './brainHandlers';
+import { acquireLock, releaseLock } from './state';
 import { isBrainFolder, scaffoldBrain } from './scaffold';
 import { TEMPLATES_VERSION } from './templates';
 
@@ -252,6 +257,26 @@ describe('brain handlers', () => {
     );
   });
 
+  it("commits a job's output, so it is not an outside edit", async () => {
+    const v = await h['brain:create'](NEW);
+    await fs.writeFile(path.join(v.path, 'wiki', 'account.md'), '# A\n');
+    await fs.appendFile(path.join(v.path, 'log.md'), '- captured\n');
+    expect((await h['brain:get'](v.id)).health.outsideEdits).toEqual([
+      'wiki/account.md',
+    ]);
+    await commitJobOutput(git, v.path, 'Brain: capture sources/a.md');
+    expect((await h['brain:get'](v.id)).health.outsideEdits).toEqual([]);
+    expect((await git.run(v.path, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: capture sources/a.md',
+    );
+    // Nothing to commit: no empty commit.
+    const count = async () =>
+      (await git.run(v.path, ['rev-list', '--count', 'HEAD'])).trim();
+    const n = await count();
+    await commitJobOutput(git, v.path, 'Brain: lint');
+    expect(await count()).toBe(n);
+  });
+
   it('delete with deleteFolder removes the folder and kills the terminal', async () => {
     const v = await h['brain:create'](NEW);
     await brains.patch(v.id, {
@@ -343,6 +368,23 @@ describe('brain handlers', () => {
       // Nothing changed: no second sync.
       await h['brain:refresh'](v.id);
       expect(enqueued).toHaveLength(1);
+    });
+
+    it('refuses while a brain job holds the lock, and works after it is released', async () => {
+      const v = await h['brain:create']({ ...NEW, wiki });
+      const head = async () =>
+        (await git.run(v.path, ['rev-parse', 'HEAD'])).trim();
+      const before = await head();
+      expect(await acquireLock(v.path)).toBe(true);
+      expect(await h['brain:refresh'](v.id)).toEqual({
+        ok: false,
+        message: 'A brain job is running; try again later',
+      });
+      expect(await head()).toBe(before);
+      expect(events.some((e) => e[0] === 'brain.refresh')).toBe(false);
+      await releaseLock(v.path);
+      expect(await h['brain:refresh'](v.id)).toMatchObject({ ok: true });
+      expect(await head()).not.toBe(before);
     });
 
     it('fails when the root page is gone', async () => {

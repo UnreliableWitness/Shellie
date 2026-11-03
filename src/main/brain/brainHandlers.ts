@@ -33,6 +33,7 @@ import {
   templateDiff,
 } from './scaffold';
 import { addSource } from './sources';
+import { acquireLock, releaseLock } from './state';
 import { TEMPLATES_VERSION } from './templates';
 import { rootGitItemPath, wikiPageUrl } from './wikiAccess';
 
@@ -90,6 +91,26 @@ export type BrainHandlerDeps = {
 };
 
 const ROOT_FILES = new Set(['index.md', 'log.md', 'SCHEMA.md']);
+const BUSY = 'A brain job is running; try again later';
+
+/** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
+const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];
+
+/** The runner's `commit`: stages the job's output and commits it when anything changed. */
+export async function commitJobOutput(
+  git: GitClient,
+  brainDir: string,
+  message: string,
+): Promise<void> {
+  await git.run(brainDir, ['add', '-A', '--', ...JOB_OUTPUT]);
+  const status = await git.run(brainDir, [
+    'status',
+    '--porcelain',
+    '--',
+    ...JOB_OUTPUT,
+  ]);
+  if (status.trim()) await git.run(brainDir, ['commit', '-q', '-m', message]);
+}
 
 const isEmptyOrMissing = async (dir: string) =>
   fs.readdir(dir).then(
@@ -171,8 +192,21 @@ export function createBrainHandlers(
   const refreshing = new Map<string, Promise<RefreshResult>>();
   const refresh = async (id: string): Promise<RefreshResult> => {
     const b = brainOf(id);
+    // The mirror commits in the brain folder: never while a job runs there (the runner retries its lock).
+    let locked: boolean;
+    try {
+      locked = await acquireLock(b.path);
+    } catch (e) {
+      return { ok: false, message: (e as Error).message };
+    }
+    if (!locked) return { ok: false, message: BUSY };
     const started = Date.now();
-    const r = await mirror(b);
+    let r: RefreshResult;
+    try {
+      r = await mirror(b);
+    } finally {
+      await releaseLock(b.path).catch(() => undefined);
+    }
     d.event('brain.refresh', {
       outcome: r.ok ? 'ok' : 'failed',
       pages: pagesBucket(r.ok ? r.pages : 0),

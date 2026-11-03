@@ -23,6 +23,7 @@ let calls: {
   env?: Record<string, string>;
 }[];
 let tokens: number;
+let commits: [string, string][];
 let runners: BrainJobRunner[];
 let run: (
   cmd: Command,
@@ -55,6 +56,9 @@ function runner(over: Partial<BrainJobDeps> = {}) {
     brainDir: (id) => dirs[id],
     model: () => 'sonnet',
     onChange: () => undefined,
+    commit: async (id, message) => {
+      commits.push([id, message]);
+    },
     lockRetryMs: 5000,
     ...over,
   });
@@ -73,6 +77,7 @@ const idle = (r: BrainJobRunner, id: string) =>
 beforeEach(async () => {
   dirs = { b1: await mk('1'), b2: await mk('2') };
   calls = [];
+  commits = [];
   tokens = 0;
   runners = [];
   let n = 0;
@@ -118,6 +123,27 @@ describe('BrainJobRunner', () => {
       'sync',
       'capture',
     ]);
+    expect(commits).toEqual([
+      ['b1', 'Brain: capture sources/a.md'],
+      ['b1', 'Brain: lint'],
+      ['b1', 'Brain: sync'],
+    ]);
+  });
+
+  it('fails the job when the commit throws and releases the lock', async () => {
+    const r = runner({
+      commit: async () => {
+        throw new Error('index.lock exists');
+      },
+    });
+    r.enqueue('b1', 'capture', 'sources/a.md');
+    await idle(r, 'b1');
+    expect(r.jobs('b1')).toHaveLength(1);
+    expect(r.jobs('b1')[0]).toMatchObject({
+      status: 'failed',
+      error: 'index.lock exists',
+    });
+    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
   });
 
   it('needs a source for a capture', () => {
@@ -144,6 +170,7 @@ describe('BrainJobRunner', () => {
       status: 'failed',
       error: 'exit 1: boom',
     });
+    expect(commits).toEqual([]);
     expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
     run = async () => ok('x');
     r.enqueue('b1', 'lint');

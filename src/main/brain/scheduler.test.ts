@@ -115,21 +115,29 @@ describe('startBrainScheduler', () => {
     stop();
   });
 
-  it('keeps ticking when a refresh rejects', async () => {
+  it('backs off a failed refresh for an hour, rejected or ok: false', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const refresh = vi.fn(async () => {
-      throw new Error('offline');
+    let now = new Date(2026, 10, 3, 9, 0);
+    const refresh = vi.fn(async (id: string) => {
+      if (id === 'a') throw new Error('offline');
+      return { ok: false, message: 'unauthorized' };
     });
     const stop = startBrainScheduler({
-      brains: () => [brain({ id: 'a', wiki })],
+      brains: () => [brain({ id: 'a', wiki }), brain({ id: 'b', wiki })],
       refresh,
       digest: vi.fn(),
       running: () => false,
-      now: () => new Date(2026, 10, 3, 9, 0),
+      now: () => now,
       tick: 1000,
     });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    now = new Date(2026, 10, 3, 9, 59);
     await vi.advanceTimersByTimeAsync(1000);
     expect(refresh).toHaveBeenCalledTimes(2);
+    now = new Date(2026, 10, 3, 10, 0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(refresh.mock.calls.map((c) => c[0])).toEqual(['a', 'b', 'a', 'b']);
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
     stop();
