@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { act } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdoWiki, BrainView } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { useStore } from '../../store';
@@ -204,5 +205,75 @@ describe('BrainsSection', () => {
     expect(calls.find((c) => c.channel === 'brain:openFolder')?.args).toEqual([
       'b1',
     ]);
+  });
+
+  it('sends one delete on a double click', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const { calls } = installFakeApi({
+      'brain:list': () => [brain],
+      'brain:delete': () => gate as Promise<undefined>,
+    });
+    render(<BrainsSection />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    const confirm = screen.getByRole('button', { name: 'Delete brain' });
+    await user.dblClick(confirm);
+    expect(confirm).toBeDisabled();
+    release();
+    await waitFor(() =>
+      expect(calls.filter((c) => c.channel === 'brain:delete')).toHaveLength(1),
+    );
+  });
+
+  it('disables the toggles while an update is pending', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<BrainView>((r) => {
+      release = () => r(brain);
+    });
+    installFakeApi({
+      'brain:list': () => [brain],
+      'brain:update': () => gate,
+    });
+    render(<BrainsSection />);
+    const user = userEvent.setup();
+    const toggle = await screen.findByLabelText(
+      'Run /sync after a wiki refresh that changed pages',
+    );
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).toBeDisabled());
+    expect(screen.getByLabelText('Model')).toBeDisabled();
+    release();
+    await waitFor(() => expect(toggle).toBeEnabled());
+  });
+
+  it('queries wikis once after the project field settles', async () => {
+    const { calls } = installFakeApi({ 'brain:wikis': () => [wiki] });
+    render(<BrainsSection />);
+    await waitFor(() =>
+      expect(calls.filter((c) => c.channel === 'brain:wikis')).toHaveLength(1),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({
+        advanceTimers: (ms) => vi.advanceTimersByTime(ms),
+      });
+      const input = screen.getByLabelText('Project');
+      await user.clear(input);
+      await user.type(input, 'Foo');
+      expect(calls.filter((c) => c.channel === 'brain:wikis')).toHaveLength(1);
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.channel === 'brain:wikis').map((c) => c.args[1]),
+      ).toEqual(['Acme', 'Foo']),
+    );
   });
 });

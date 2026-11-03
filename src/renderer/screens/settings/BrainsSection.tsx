@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { BrainOptions, BrainView, BrainWiki } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
@@ -50,6 +50,12 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
   const [wiki, setWiki] = useState<BrainWiki | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The picker queries Azure DevOps for this project, so it waits until typing pauses.
+  const [settledProject, setSettledProject] = useState(connection.project);
+  useEffect(() => {
+    const t = setTimeout(() => setSettledProject(project.trim()), 400);
+    return () => clearTimeout(t);
+  }, [project]);
 
   const choose = async () => {
     try {
@@ -128,7 +134,7 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
       </div>
       <WikiRootPicker
         connectionId={connection.id}
-        project={project}
+        project={settledProject}
         value={wiki}
         onChange={setWiki}
       />
@@ -159,14 +165,20 @@ function BrainCard({ brain }: { brain: BrainView }) {
   >(null);
   const [confirming, setConfirming] = useState(false);
   const [withFolder, setWithFolder] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const run = async (action: Action, fn: () => Promise<unknown>) => {
+  /** One call at a time per card; `action` null: not counted (a read that is not the use itself). */
+  const run = async (action: Action | null, fn: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
     setError(null);
     try {
       await fn();
-      trackBrain(action);
+      if (action) trackBrain(action);
     } catch (e) {
       setError(message(e));
+    } finally {
+      setBusy(false);
     }
   };
   const update = (options: Partial<BrainOptions>) =>
@@ -199,6 +211,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
           <input
             type="checkbox"
             checked={brain.options[t.key]}
+            disabled={busy}
             onChange={(e) => void update({ [t.key]: e.target.checked })}
           />
           {t.label}
@@ -212,6 +225,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
           min={1}
           className="field"
           value={cap ?? brain.options.dailyTokenCap}
+          disabled={busy}
           onChange={(e) => setCap(e.target.value)}
           onBlur={commitCap}
         />
@@ -220,6 +234,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
           id={`${id}-model`}
           className="field"
           value={brain.options.model}
+          disabled={busy}
           onChange={(e) =>
             void update({ model: e.target.value as BrainOptions['model'] })
           }
@@ -245,7 +260,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
           type="button"
           className="btn btn-ghost btn-sm"
           onClick={() =>
-            void run('update-skills', async () =>
+            void run(null, async () =>
               setDiff(await api().invoke('brain:templateDiff', brain.id)),
             )
           }
@@ -278,6 +293,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
             <button
               type="button"
               className="btn btn-warn btn-sm"
+              disabled={busy}
               onClick={() =>
                 void run('update-skills', async () => {
                   await api().invoke(
@@ -315,6 +331,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
           <button
             type="button"
             className="btn btn-warn btn-sm"
+            disabled={busy}
             onClick={() =>
               void run('delete', () =>
                 api().invoke('brain:delete', brain.id, withFolder),

@@ -13,7 +13,7 @@ const depthOf = (path: string) =>
 /** Choose a wiki of the project and the page to mirror from ("Whole wiki" or one page and its children). */
 export function WikiRootPicker({
   connectionId,
-  project,
+  project: rawProject,
   value,
   onChange,
 }: {
@@ -23,6 +23,7 @@ export function WikiRootPicker({
   onChange: (wiki: BrainWiki | null) => void;
 }) {
   const id = useId();
+  const project = rawProject.trim();
   const [wikis, setWikis] = useState<AdoWiki[] | null>(null);
   const [wikisError, setWikisError] = useState<string | null>(null);
   const [pages, setPages] = useState<AdoWikiPage[] | null>(null);
@@ -33,7 +34,7 @@ export function WikiRootPicker({
     let live = true;
     setWikis(null);
     setWikisError(null);
-    if (!project.trim()) return;
+    if (!project) return;
     api()
       .invoke('brain:wikis', connectionId, project)
       .then(
@@ -99,7 +100,7 @@ export function WikiRootPicker({
           </option>
         ))}
       </select>
-      {wikis === null && !wikisError && project.trim() ? (
+      {wikis === null && !wikisError && project ? (
         <div className="small muted">Loading wikis…</div>
       ) : null}
       {wikisError ? (
