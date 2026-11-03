@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { groupTasks, TaskNav } from './TaskNav';
 
@@ -82,6 +83,7 @@ const tasks: TaskView[] = [
       type: 'User Story',
       title: 'Checkout: save address',
       url: null,
+      project: null,
     },
     slug: 'a',
     branch: 'feature/48213-a',
@@ -104,7 +106,13 @@ const tasks: TaskView[] = [
     id: 'c',
     repoId: 'r2',
     name: '',
-    workItem: { id: '47988', type: 'Task', title: 'Export orders', url: null },
+    workItem: {
+      id: '47988',
+      type: 'Task',
+      title: 'Export orders',
+      url: null,
+      project: null,
+    },
     slug: 'c',
     branch: 'feature/47988-c',
     worktreePath: '/w/c',
@@ -131,7 +139,13 @@ const tasks: TaskView[] = [
     id: 'd',
     repoId: 'r1',
     name: '',
-    workItem: { id: '1', type: 'Bug', title: 'Broken', url: null },
+    workItem: {
+      id: '1',
+      type: 'Bug',
+      title: 'Broken',
+      url: null,
+      project: null,
+    },
     slug: 'd',
     branch: 'bugfix/1-d',
     worktreePath: '/w/d',
@@ -177,6 +191,30 @@ describe('attention', () => {
     expect(
       screen.getByLabelText('Needs permission: approve Bash: ls'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('brains', () => {
+  it('shows one item per brain and opens its screen', async () => {
+    installFakeApi({
+      'brain:list': () => [
+        listedBrain(),
+        listedBrain({ id: 'b2', name: 'Globex' }),
+      ],
+    });
+    render(<TaskNav />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Globex' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b2',
+    });
+    expect(screen.getByRole('button', { name: 'Acme' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Globex' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 });
 

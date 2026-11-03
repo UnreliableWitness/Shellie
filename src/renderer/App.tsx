@@ -9,6 +9,7 @@ import { useTimeFocus } from './hooks/useTimeFocus';
 import { useShortcuts } from './hooks/useShortcuts';
 import { AddRepoScreen } from './screens/AddRepoScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
+import { BrainScreen } from './screens/BrainScreen';
 import { ConnectScreen } from './screens/ConnectScreen';
 import { FinishScreen } from './screens/FinishScreen';
 import { GetStartedScreen } from './screens/GetStartedScreen';
@@ -34,6 +35,8 @@ function Page() {
       return <AgentsScreen />;
     case 'sprint':
       return <SprintScreen />;
+    case 'brain':
+      return <BrainScreen key={screen.brainId} brainId={screen.brainId} />;
     case 'task':
       return <TaskScreen />;
     case 'new-task':

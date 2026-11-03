@@ -23,6 +23,21 @@ import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
+import { brainTaskId } from './shared/brain';
+import { createBrainTerminals } from './main/brain/brainTerminal';
+import { BrainStore } from './main/brain/BrainStore';
+import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
+import { ledgerToday } from './main/brain/health';
+import { jobTelemetry } from './main/brain/brainTelemetry';
+import { startBrainScheduler } from './main/brain/scheduler';
+import {
+  commitJobOutput,
+  OUTSIDE_EDIT_MESSAGE,
+} from './main/brain/brainHandlers';
+import { telemetryEnv } from './main/usage/telemetryEnv';
+import { colorFgBg } from './main/services/claudeTheme';
+import { runWithInput } from './main/services/prSummary';
+import { claudeSessionExists } from './main/services/claudeSessions';
 import {
   createHandlers,
   pruneDanglingConnectionLinks,
@@ -189,6 +204,11 @@ let stopUsage: () => void = () => {};
 let stopTime: () => void = () => {};
 let stopBudget: () => void = () => {};
 let stopLedger: () => void = () => {};
+/** Stops the brains' scheduler and job queue (on quit). */
+let stopBrains: () => void = () => {};
+/** The brain's own Claude terminal; set where the brains are wired. Its terminal counts as a Claude tab. */
+let brainTerminals: ReturnType<typeof createBrainTerminals> | undefined =
+  undefined;
 /** Time writes still in flight; the quit waits for them. */
 const timeWrites = new Set<Promise<void>>();
 /** Window focus, for active time (set once the tracker exists). */
@@ -425,10 +445,13 @@ async function boot(): Promise<void> {
       encrypt: (plain) => safeStorage.encryptString(plain),
       decrypt: (cipher) => safeStorage.decryptString(cipher),
     });
+    // The brains load before the ledger's first pass, so their records are attributed to them.
+    const brains = new BrainStore(path.join(userData, 'brains.json'));
     const [loaded, connectionsLoaded, secretsLoaded] = await Promise.all([
       store.load(),
       connections.load(),
       secrets.load(),
+      brains.load(),
     ]);
     // Once per install: installs that already have repositories skip the first-run page and keep their tabs.
     const migrated = migrateOnboarding(
@@ -484,6 +507,7 @@ async function boot(): Promise<void> {
     sensitive = () =>
       sensitiveValues({
         repos: repos.list(),
+        brains: brains.list(),
         tasks: store.state.tasks,
         connections: connections.list(),
         username,
@@ -612,6 +636,14 @@ async function boot(): Promise<void> {
               kind: def.kind,
             };
         }
+        const brain = brainTerminals?.ownerOf(id);
+        if (brain)
+          return {
+            taskId: brainTaskId(brain.id),
+            taskTitle: brain.name,
+            label: brain.terminal?.label ?? brain.name,
+            kind: 'claude',
+          };
         return null;
       },
       notifyOnDone: () => settings.get().notifyOnDone,
@@ -754,6 +786,14 @@ async function boot(): Promise<void> {
               .records(id)
               .filter((r) => r.tool === 'claude-code')
               .map((r) => r.sessionId),
+          brains.list().map((b) => ({
+            id: b.id,
+            organization:
+              connections.list().find((c) => c.id === b.connectionId)
+                ?.organizationUrl ?? '',
+            project: b.project,
+            path: b.path,
+          })),
         ),
       isBillable: (taskId, sessionId) => usage.isBillable(taskId, sessionId),
       // The email saved in Settings › Cost server; null when not connected.
@@ -767,6 +807,72 @@ async function boot(): Promise<void> {
       ledger.stop();
       sender.stop();
     };
+    // Brains: headless skill runs per brain, the brain's Claude terminal, and the daily refresh and weekly digest.
+    const brainEnv = (id: string) =>
+      telemetryEnv(
+        brainTaskId(id),
+        settings.get().receiverPort,
+        usageDir,
+        'brain',
+      );
+    const brainToday = (id: string) => ledgerToday(ledgerStore.all(), id);
+    const brainJobEvents = jobTelemetry((name, props) =>
+      telemetry.event(name, props),
+    );
+    const brainRunner = new BrainJobRunner({
+      platform,
+      run: runWithInput,
+      env: (id) => brainJobEnv(id, brainEnv(id)),
+      tokensToday: (id) => brainToday(id).tokens,
+      cap: (id) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        return b.options.dailyTokenCap;
+      },
+      brainDir: (id) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        return b.path;
+      },
+      model: (id) => brains.get(id)?.options.model ?? 'sonnet',
+      commit: async (id, message) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        await commitJobOutput(git, b.path, message);
+      },
+      beforeJob: async (id) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE);
+      },
+      onChange: (brainId, jobs) => {
+        brainJobEvents(jobs);
+        broadcast('brain:changed', { brainId });
+      },
+    });
+    // The scheduler starts with the window; the runner stops on quit either way.
+    let stopBrainScheduler = () => {};
+    stopBrains = () => {
+      stopBrainScheduler();
+      brainRunner.stop();
+    };
+    brainTerminals = createBrainTerminals({
+      brains,
+      terminals,
+      platform,
+      env: (id) => ({ ...brainEnv(id), COLORFGBG: colorFgBg(scheme()) }),
+      themeFile: () => {
+        try {
+          return claudeSettingsFile(path.join(userData, 'claude'), {
+            theme: claudeThemeFor(readClaudeTheme(), scheme()),
+          });
+        } catch (e) {
+          console.error('[brain] could not write the Claude theme file', e);
+          return null;
+        }
+      },
+      sessionExists: claudeSessionExists,
+    });
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
     // Agent tabs that stop right after starting (a missing CLI, an invalid OpenCode config) say why (#109).
     const terminalFailures = new TerminalFailures({
@@ -775,7 +881,7 @@ async function boot(): Promise<void> {
       kindOf: (id) => {
         for (const t of store.state.tasks)
           for (const d of t.terminals) if (d.id === id) return d.kind;
-        return undefined;
+        return brainTerminals?.ownerOf(id) ? 'claude' : undefined;
       },
       // Read at each call: telemetry is replaced once its client is set up.
       telemetry: {
@@ -784,6 +890,13 @@ async function boot(): Promise<void> {
       },
     });
     const handlers = createHandlers({
+      brainTerminals,
+      brain: {
+        store: brains,
+        runner: brainRunner,
+        ledgerToday: brainToday,
+        userData,
+      },
       terminalFailures,
       budget,
       costServer: {
@@ -1056,6 +1169,17 @@ async function boot(): Promise<void> {
       budget.start();
       ledger.start();
       sender.start();
+      stopBrainScheduler = startBrainScheduler({
+        brains: () => brains.list(),
+        refresh: (id) => handlers['brain:refresh'](id),
+        digest: (id) => {
+          brainRunner.enqueue(id, 'digest');
+          void brains
+            .patch(id, { lastDigestAt: new Date().toISOString() })
+            .catch((err) => console.error('[brain] lastDigestAt', err));
+        },
+        running: (id) => brainRunner.running(id),
+      });
       const warnings = [
         loaded.recovered &&
           `state.json was unreadable and was moved to ${path.basename(loaded.backup ?? '')}. Starting empty.`,
@@ -1218,6 +1342,7 @@ app.on('before-quit', () => {
   stopUsage();
   stopBudget();
   stopLedger();
+  stopBrains();
   updates?.stop();
 });
 

@@ -19,7 +19,13 @@ const task: TaskView = {
   id: 'a',
   repoId: 'r1',
   name: '',
-  workItem: { id: '48213', type: 'Bug', title: 'Broken checkout', url: null },
+  workItem: {
+    id: '48213',
+    type: 'Bug',
+    title: 'Broken checkout',
+    url: null,
+    project: null,
+  },
   slug: 'a',
   branch: 'bugfix/48213-broken-checkout',
   worktreePath: '/w/a',
@@ -105,6 +111,7 @@ describe('App', () => {
       expect(calls.map((c) => c.channel).sort()).toEqual([
         'attention:get',
         'attention:view',
+        'brain:list',
         'connections:list',
         'repos:list',
         'settings:get',

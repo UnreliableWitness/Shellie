@@ -104,6 +104,23 @@ const defaults: FakeHandlers = {
   'time:focus': () => undefined,
   'attention:view': () => undefined,
   'attention:get': () => ({}),
+  'brain:list': () => [],
+  'brain:forTask': () => null,
+  'brain:pickFolder': () => null,
+  'brain:wikis': () => [],
+  'brain:wikiPages': () => [],
+  'brain:addFiles': () => [],
+  'brain:sources': () => [],
+  'brain:files': () => [],
+  'brain:read': () => ({ text: '' }),
+  'brain:asset': () => '',
+  'brain:addText': () => ({ ok: false, reason: 'error', message: 'fake' }),
+  'brain:templateDiff': () => [],
+  'brain:refresh': () => ({ ok: false, message: 'No wiki' }),
+  'brain:delete': () => undefined,
+  'brain:resumeQueue': () => undefined,
+  'brain:updateTemplates': () => undefined,
+  'brain:openFolder': () => undefined,
   'time:task': (taskId) => emptyTime(taskId),
   'time:sprint': () => ({}),
   'docs:list': () => ({ files: [] }),
@@ -282,6 +299,7 @@ export function installFakeApi(overrides: FakeHandlers = {}) {
       listeners.set(event, set);
       return () => set.delete(listener as (p: unknown) => void);
     },
+    pathForFile: (file) => (file as { path?: string }).path ?? file.name,
     track: (message) => {
       tracked.push(message);
     },

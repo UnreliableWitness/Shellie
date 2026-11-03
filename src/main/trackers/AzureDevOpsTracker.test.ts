@@ -20,6 +20,8 @@ const table: [keyof Tracker, keyof AdoClient, unknown[]][] = [
   ['itemEstimate', 'workItemEstimate', [7]],
   ['updateItemFields', 'updateWorkItemFields', [7, { f: 1 }]],
   ['repositoryId', 'repositoryId', ['P', 'repo']],
+  ['wikis', 'wikis', ['P']],
+  ['wikiPages', 'wikiPages', ['P', 'w1']],
   ['findActivePullRequest', 'findActivePullRequest', ['P', 'r', 'b']],
   ['createPullRequest', 'createPullRequest', ['P', 'r', { title: 't' }]],
   ['pullRequest', 'pullRequest', ['P', 'r', 7]],

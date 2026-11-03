@@ -16,6 +16,7 @@ const item = (id: string, state: string) => ({
   iterationPath: 'Shellie\\Sprint 1',
   assignedTo: 'Me',
   url: 'u',
+  project: null,
   remainingWork: null,
   originalEstimate: 2,
   completedWork: null,

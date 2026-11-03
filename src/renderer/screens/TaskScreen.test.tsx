@@ -11,9 +11,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskView } from '../../shared/types';
 import { CHANGES_TAB, useStore } from '../store';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { Shell } from '../App';
 import { invalidateRepoConfig } from '../hooks/useRepoConfig';
+import { brainTerminalOpenedOnStart } from '../components/TerminalTabs';
 
 const mounts = vi.hoisted(() => ({ count: 0 }));
 
@@ -22,15 +24,23 @@ vi.mock('../components/TerminalView', async () => {
   return {
     TerminalView: ({
       terminalId,
+      taskId,
       active,
     }: {
       terminalId: string;
+      taskId?: string;
       active: boolean;
     }) => {
       useEffect(() => {
         mounts.count++;
       }, []);
-      return <div data-testid={`term-${terminalId}`} data-active={active} />;
+      return (
+        <div
+          data-testid={`term-${terminalId}`}
+          data-task={taskId}
+          data-active={active}
+        />
+      );
     },
   };
 });
@@ -48,6 +58,7 @@ const task: TaskView = {
     type: 'User Story',
     title: 'Checkout: allow saving a delivery address',
     url: null,
+    project: null,
   },
   slug: 'a',
   branch: 'feature/48213-save-delivery-address',
@@ -436,7 +447,13 @@ describe('TaskScreen', () => {
     const second: TaskView = {
       ...task,
       id: 'b',
-      workItem: { id: '2', type: 'Bug', title: 'Second task', url: null },
+      workItem: {
+        id: '2',
+        type: 'Bug',
+        title: 'Second task',
+        url: null,
+        project: null,
+      },
       terminals: [{ id: 'c2', kind: 'claude', label: 'Claude Code' }],
     };
     useStore.setState({ tasks: [task, second] });
@@ -843,6 +860,250 @@ describe('tabs and focus', () => {
     fireEvent(term, ev);
     expect(ev.defaultPrevented).toBe(true);
     expect(useStore.getState().activeTab('a')).toBe('docs');
+  });
+
+  it('shows a Brain tab with the wiki when the task has a brain', async () => {
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => listedBrain(),
+        'brain:files': () => [
+          { path: 'wiki/a.md', name: 'a.md', changed: null },
+        ],
+      },
+    );
+    render(<Shell />);
+    const tab = await screen.findByRole('tab', { name: /Brain/ });
+    expect(tab).toHaveAttribute('title', expect.stringContaining('Shift+B'));
+    await userEvent.click(tab);
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('Acme')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        channel: 'brain:files',
+        args: ['b1', 'wiki'],
+      }),
+    );
+    // The body lives in the page area, not among the tab buttons.
+    expect(
+      within(screen.getByRole('tablist')).queryByText('Open brain'),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Open brain' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b1',
+    });
+  });
+
+  it('the Brain tab shows the index, filters pages and adds dropped files', async () => {
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => listedBrain(),
+        'brain:read': (_id, rel) => ({
+          text: rel === 'index.md' ? '# Acme index\n\n- Scope of work' : '',
+        }),
+        'brain:files': () => [
+          { path: 'wiki/scope.md', name: 'scope.md', changed: null },
+          { path: 'wiki/account.md', name: 'account.md', changed: null },
+        ],
+        'brain:addFiles': () => [{ ok: true, path: 'sources/x.md' }],
+      },
+    );
+    render(<Shell />);
+    await userEvent.click(await screen.findByRole('tab', { name: /^Brain$/ }));
+    expect(
+      await screen.findByRole('heading', { name: 'Acme index' }),
+    ).toBeInTheDocument();
+    expect(calls).toContainEqual({
+      channel: 'brain:read',
+      args: ['b1', 'index.md'],
+    });
+    expect(
+      await screen.findByRole('button', { name: 'wiki/account.md' }),
+    ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Filter pages'), 'SCO');
+    expect(
+      screen.queryByRole('button', { name: 'wiki/account.md' }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'wiki/scope.md' }),
+    ).toBeInTheDocument();
+    const file = Object.assign(new File(['x'], 'notes.vtt'), {
+      path: '/dl/notes.vtt',
+    });
+    fireEvent.drop(screen.getByLabelText(/Acme brain, drop files/), {
+      dataTransfer: { files: [file] },
+    });
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        channel: 'brain:addFiles',
+        args: ['b1', [{ path: '/dl/notes.vtt', type: 'transcript' }]],
+      }),
+    );
+  });
+
+  it('has no Brain tab without a brain', async () => {
+    const { calls } = setup();
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'brain:forTask')).toBe(true),
+    );
+    expect(screen.queryByRole('tab', { name: /Brain/ })).toBeNull();
+  });
+
+  it('opens the Brain tab with Mod+Shift+B only when there is a brain', async () => {
+    setup({}, { 'brain:forTask': () => listedBrain() });
+    render(<Shell />);
+    const term = await screen.findByTestId('term-c1');
+    const ev = createEvent.keyDown(term, {
+      key: 'B',
+      code: 'KeyB',
+      shiftKey: true,
+      ctrlKey: true,
+      metaKey: true,
+    });
+    fireEvent(term, ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await waitFor(() =>
+      expect(useStore.getState().activeTab('a')).toBe('brain'),
+    );
+  });
+
+  it('the Brain terminal entry opens the brain terminal and selects its tab', async () => {
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => listedBrain(),
+        'brain:terminal': () => ({ id: 'bt1', kind: 'claude', label: 'Brain' }),
+      },
+    );
+    render(<Shell />);
+    await screen.findByRole('tab', { name: /Brain/ });
+    await userEvent.click(screen.getByRole('button', { name: 'New terminal' }));
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /Brain terminal/ }),
+    );
+    expect(calls).toContainEqual({ channel: 'brain:terminal', args: ['b1'] });
+    expect(calls.some((c) => c.channel === 'terminals:open')).toBe(false);
+    const tab = await screen.findByRole('tab', { name: 'Acme brain' });
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('term-bt1')).toHaveAttribute(
+      'data-task',
+      'brain:b1',
+    );
+    expect(screen.getByTestId('term-bt1')).toHaveAttribute(
+      'data-active',
+      'true',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close Acme brain' }),
+    );
+    expect(screen.queryByRole('tab', { name: 'Acme brain' })).toBeNull();
+  });
+
+  it('opens the brain terminal once when the brain asks for it on start', async () => {
+    brainTerminalOpenedOnStart.clear();
+    const brain = listedBrain();
+    brain.options.openBrainTerminalOnStart = true;
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => brain,
+        'brain:terminal': () => ({ id: 'bt1', kind: 'claude', label: 'Brain' }),
+      },
+    );
+    const { unmount } = render(<Shell />);
+    expect(
+      await screen.findByRole('tab', { name: 'Acme brain' }),
+    ).toHaveAttribute('aria-selected', 'false');
+    expect(calls).toContainEqual({ channel: 'brain:terminal', args: ['b1'] });
+    unmount();
+    // Again in this app session: not opened a second time.
+    render(<Shell />);
+    await screen.findByRole('tab', { name: /^Brain$/ });
+    expect(calls.filter((c) => c.channel === 'brain:terminal')).toHaveLength(1);
+    expect(screen.queryByRole('tab', { name: 'Acme brain' })).toBeNull();
+  });
+
+  it('does not open the brain terminal on start when the option is off', async () => {
+    brainTerminalOpenedOnStart.clear();
+    const { calls } = setup({}, { 'brain:forTask': () => listedBrain() });
+    render(<Shell />);
+    await screen.findByRole('tab', { name: /^Brain$/ });
+    expect(calls.some((c) => c.channel === 'brain:terminal')).toBe(false);
+  });
+
+  it('keeps the Brain tab when a refetch fails, drops it when the answer is null', async () => {
+    let answer: () => unknown = () => listedBrain();
+    const { emit } = setup({}, { 'brain:forTask': () => answer() as never });
+    render(<Shell />);
+    await userEvent.click(await screen.findByRole('tab', { name: /Brain/ }));
+    expect(useStore.getState().activeTab('a')).toBe('brain');
+    answer = () => {
+      throw new Error('boom');
+    };
+    act(() => emit('brain:changed', { brainId: 'b1' } as never));
+    await new Promise((r) => setTimeout(r, 350));
+    expect(screen.getByRole('tab', { name: /Brain/ })).toBeInTheDocument();
+    answer = () => null;
+    act(() => emit('brain:changed', { brainId: 'b1' } as never));
+    await waitFor(() =>
+      expect(screen.queryByRole('tab', { name: /Brain/ })).toBeNull(),
+    );
+    expect(screen.getByRole('tab', { name: /Claude Code/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('hides the Brain tab and falls back when the worktree is missing', async () => {
+    setup({ worktreeMissing: true }, { 'brain:forTask': () => listedBrain() });
+    useStore.setState({ tabByTask: { a: 'brain' } });
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    expect(screen.queryByRole('tab', { name: /Brain/ })).toBeNull();
+    expect(useStore.getState().activeTab('a')).toBe('brain');
+    expect(screen.getByRole('tab', { name: /Claude Code/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('closing the brain terminal tab only detaches it, and the menu brings it back', async () => {
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => listedBrain(),
+        'brain:terminal': () => ({ id: 'bt1', kind: 'claude', label: 'Brain' }),
+      },
+    );
+    render(<Shell />);
+    await screen.findByRole('tab', { name: /Brain/ });
+    const openIt = async () => {
+      await userEvent.click(
+        screen.getByRole('button', { name: 'New terminal' }),
+      );
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: /Brain terminal/ }),
+      );
+    };
+    await openIt();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Close Acme brain' }),
+    );
+    expect(calls.some((c) => c.channel === 'terminals:kill')).toBe(false);
+    expect(screen.queryByRole('tab', { name: 'Acme brain' })).toBeNull();
+    expect(screen.getByRole('tab', { name: /Claude Code/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await openIt();
+    expect(calls.filter((c) => c.channel === 'brain:terminal')).toHaveLength(2);
+    expect(
+      await screen.findByRole('tab', { name: 'Acme brain' }),
+    ).toHaveAttribute('aria-selected', 'true');
   });
 
   it('falls back to Usage when a task has no terminals', async () => {

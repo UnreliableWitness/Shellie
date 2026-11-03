@@ -36,6 +36,7 @@ const item = (
   iterationPath,
   assignedTo: 'Me',
   url: `https://x/${id}`,
+  project: null,
   remainingWork: null,
   originalEstimate: null,
   completedWork: null,

@@ -14,12 +14,14 @@ const story = {
   type: 'User Story' as const,
   title: 'Show estimated delivery date on product page',
   url: null,
+  project: null,
 };
 const bug = {
   id: '48227',
   type: 'Bug' as const,
   title: 'Coupon code field ignores trailing spaces',
   url: null,
+  project: null,
 };
 
 describe('slugify', () => {
@@ -52,12 +54,24 @@ describe('branchType', () => {
     expect(branchType(null)).toBe('feature');
   });
   it('treats Basic-process types as features', () => {
-    expect(branchType({ id: '1', type: 'Issue', title: 't', url: null })).toBe(
-      'feature',
-    );
-    expect(branchType({ id: '1', type: 'Epic', title: 't', url: null })).toBe(
-      'feature',
-    );
+    expect(
+      branchType({
+        id: '1',
+        type: 'Issue',
+        title: 't',
+        url: null,
+        project: null,
+      }),
+    ).toBe('feature');
+    expect(
+      branchType({
+        id: '1',
+        type: 'Epic',
+        title: 't',
+        url: null,
+        project: null,
+      }),
+    ).toBe('feature');
   });
 });
 

@@ -10,7 +10,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { Task } from '../../shared/types';
+import type { CreateTaskInput, Task } from '../../shared/types';
 import {
   spawnFailure,
   type TerminalFailure,
@@ -30,7 +30,12 @@ import {
   writeLineCmd,
 } from '../test-helpers/shell';
 import { createHandlers, type Services } from './handlers';
-import { allTerminals, harness } from './handlersHarness';
+import {
+  allTerminals,
+  brainServices,
+  harness,
+  routeHealthyOrg,
+} from './handlersHarness';
 
 /** The file's config without any repo overrides. */
 const loadShellieConfig = (p: string) =>
@@ -1340,5 +1345,165 @@ describe('handlers: reopen a finished task', () => {
       'Nothing to reopen: every repo of this task was removed without changes',
     );
     expect(hx.store.state.tasks[0].status).toBe('done');
+  });
+});
+
+describe('handlers: the brain at setup', () => {
+  const recording = () => {
+    const base = testPlatform();
+    const calls: { prompt: string | null; flags: string[] }[] = [];
+    const platform = {
+      ...base,
+      claudeCommand: (prompt: string | null, flags: string[] = []) => {
+        calls.push({ prompt, flags });
+        return base.runCommand(echoCmd('claude'));
+      },
+    };
+    return { platform, calls };
+  };
+
+  /** A repo linked to a connection whose work item lives in project Acme Project. */
+  async function brainSetup() {
+    const { platform, calls } = recording();
+    const b = await brainServices();
+    const hx = await harness(fakeCrypto(), { platform, brain: b.brain });
+    routeHealthyOrg(hx.server);
+    const c = await hx.h['connections:save']({
+      organizationUrl: `${hx.server.url}/unreliablewitness`,
+      project: 'Shellie',
+      pat: 'p',
+    });
+    await hx.h['repos:setConnection'](hx.added.id, c.id);
+    await hx.services.repos.setWorkItemOnStart(hx.added.id, {
+      moveToInProgress: false,
+      assignToMe: false,
+      stateOverrides: {},
+    });
+    vi.spyOn(
+      hx.services.trackers.client(c.id),
+      'workItemDetails',
+    ).mockResolvedValue({
+      fields: {
+        'System.Title': 'Show estimated delivery date',
+        'System.TeamProject': 'Acme Project',
+      },
+      url: null,
+      links: [],
+      comments: [],
+    });
+    const create = async (over: Partial<CreateTaskInput> = {}) => {
+      const done = hx.setupDone();
+      const t = await hx.h['tasks:create'](
+        hx.input({ openShell: false, startClaude: true, ...over }),
+      );
+      await done;
+      const state = await hx.h['tasks:setupState'](t.id);
+      const md = readFileSync(
+        path.join(t.worktreePath, '.shellie', 'task.md'),
+        'utf8',
+      );
+      return { t, state, md };
+    };
+    return { hx, b, c, calls, create };
+  }
+
+  it('setup with a brain appends the Context section and passes --add-dir', async () => {
+    const { b, c, calls, create, hx } = await brainSetup();
+    const brain = await b.add({
+      connectionId: c.id,
+      project: 'Acme Project',
+      index: '# Index\n\n- [Scope](wiki/scope.md)\n',
+    });
+    const { t, state, md } = await create();
+    expect(md).toContain(
+      `## Context: Acme\nThe project's brain is at ${brain.path}. Read-only for this task: read pages, do not edit them.`,
+    );
+    expect(md).toContain('- [Scope](wiki/scope.md)');
+    const step = state?.steps.find((s) => s.def.kind === 'brain');
+    expect(step).toMatchObject({
+      status: 'done',
+      def: { label: 'Brain context', detail: 'Acme' },
+    });
+    // The project learned from the work item is stored on the task.
+    expect(hx.store.state.tasks[0].workItem?.project).toBe('Acme Project');
+    const flags = calls.at(-1)!.flags;
+    const at = flags.indexOf('--add-dir');
+    expect(flags.slice(at, at + 2)).toEqual(['--add-dir', brain.path]);
+    await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('names the brain in the recorded summary when the work item project is known', async () => {
+    const { b, c, create, hx } = await brainSetup();
+    await b.add({ connectionId: c.id, project: 'Acme Project' });
+    const known = await create({
+      workItem: { ...hx.input().workItem!, project: 'Acme Project' },
+    });
+    expect(known.t.setup.summary?.brain).toBe('Acme');
+    await hx.terminals.killAllForTask(known.t.id);
+  });
+
+  it('setup without a brain is unchanged', async () => {
+    const { b, c, calls, create, hx } = await brainSetup();
+    // A brain of another project does not count.
+    await b.add({ connectionId: c.id, project: 'Other' });
+    const { t, state, md } = await create();
+    expect(md).not.toContain('## Context');
+    expect(state?.steps.map((s) => s.def.kind)).not.toContain('brain');
+    expect(calls.at(-1)!.flags).not.toContain('--add-dir');
+    await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('a task without a work item gets no brain, also when its connection project has one', async () => {
+    const { b, c, calls, create, hx } = await brainSetup();
+    await b.add({ connectionId: c.id, project: 'Shellie' });
+    const { t, state, md } = await create({
+      workItem: null,
+      name: 'Loose task',
+    });
+    expect(md).not.toContain('## Context');
+    expect(state?.steps.map((s) => s.def.kind)).not.toContain('brain');
+    expect(calls.at(-1)!.flags).not.toContain('--add-dir');
+    expect(await hx.h['brain:forTask'](t.id)).toBeNull();
+    await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('leaves out what the brain options turn off', async () => {
+    const { b, c, calls, create, hx } = await brainSetup();
+    await b.add({
+      connectionId: c.id,
+      project: 'Acme Project',
+      options: { contextInTaskMd: false, addDirForClaude: false },
+    });
+    const { t, state, md } = await create();
+    expect(md).not.toContain('## Context');
+    expect(state?.steps.map((s) => s.def.kind)).not.toContain('brain');
+    expect(calls.at(-1)!.flags).not.toContain('--add-dir');
+    await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('a wiki that cannot be refreshed is a warning; the context is still added', async () => {
+    const { b, c, create, hx } = await brainSetup();
+    await b.add({
+      connectionId: c.id,
+      project: 'Acme Project',
+      index: '# Index\n',
+      wiki: {
+        wikiId: 'w1',
+        wikiName: 'Acme.wiki',
+        type: 'projectWiki',
+        repositoryId: 'r1',
+        gitUrl: `${hx.server.url}/unreliablewitness/Acme/_git/Acme.wiki`,
+        version: 'wikiMaster',
+        mappedPath: '/',
+        rootPath: '/',
+      },
+    });
+    const { t, state, md } = await create();
+    expect(state?.steps.find((s) => s.def.kind === 'brain')).toMatchObject({
+      status: 'warn',
+      detail: expect.stringMatching(/^brain not refreshed: /),
+    });
+    expect(md).toContain('## Context: Acme');
+    await hx.terminals.killAllForTask(t.id);
   });
 });

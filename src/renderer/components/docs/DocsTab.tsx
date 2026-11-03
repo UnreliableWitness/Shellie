@@ -101,6 +101,10 @@ function DocsPane({
   const [listCollapsed, setListCollapsed] = useState(readListCollapsed);
   const [current, setCurrent] = useState<string | null>(null);
   const [doc, setDoc] = useState<Doc | null>(null);
+  const asset = useCallback(
+    (path: string) => api().invoke('docs:asset', tid, path),
+    [tid],
+  );
   const [view, setView] = useState<DocView>(() => readDocState(tid).view);
   const [highlight, setHighlight] = useState<{
     line: number;
@@ -541,7 +545,7 @@ function DocsPane({
           onScroll={onScroll}
         >
           <DocsBody
-            taskId={tid}
+            asset={asset}
             empty={
               mode === 'all'
                 ? files !== null && files.length === 0

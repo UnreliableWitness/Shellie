@@ -315,6 +315,7 @@ describe('AdoClient reads', () => {
         iterationPath: 'Shellie\\Sprint 1',
         assignedTo: 'Dries Hoebeke',
         url: 'https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/12',
+        project: 'Shellie',
       },
       {
         id: '7',
@@ -325,6 +326,7 @@ describe('AdoClient reads', () => {
         iterationPath: 'Shellie\\Sprint 1',
         assignedTo: null,
         url: `${server.url}/unreliablewitness/Shellie/_workitems/edit/7`,
+        project: 'Shellie',
       },
     ]);
     const wiql = server.requests.find((r) => r.method === 'POST');
@@ -1561,5 +1563,178 @@ describe('Home calls', () => {
     await expect(
       client.activePullRequests('Shellie', { reviewerId: 'me-1' }),
     ).rejects.toThrow(CODE_READ_DENIED);
+  });
+
+  describe('wiki', () => {
+    it('wikis lists both kinds with their git url', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis', {
+        body: {
+          value: [
+            {
+              id: 'w1',
+              name: 'P.wiki',
+              type: 'projectWiki',
+              repositoryId: 'w1',
+              mappedPath: '/',
+              versions: [{ version: 'wikiMaster' }],
+              remoteUrl: 'https://dev.azure.com/x/P/_wiki/wikis/w1',
+            },
+            {
+              id: 'w2',
+              name: 'docs',
+              type: 'codeWiki',
+              repositoryId: 'r9',
+              mappedPath: '/docs',
+              versions: [{ version: 'main' }],
+            },
+          ],
+        },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/w1', {
+        body: { remoteUrl: 'A' },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/r9', {
+        body: { remoteUrl: 'B' },
+      });
+      expect(await client.wikis('P')).toEqual([
+        {
+          id: 'w1',
+          name: 'P.wiki',
+          type: 'projectWiki',
+          repositoryId: 'w1',
+          version: 'wikiMaster',
+          mappedPath: '/',
+          gitUrl: 'A',
+        },
+        {
+          id: 'w2',
+          name: 'docs',
+          type: 'codeWiki',
+          repositoryId: 'r9',
+          version: 'main',
+          mappedPath: '/docs',
+          gitUrl: 'B',
+        },
+      ]);
+    });
+    it('wikis defaults the version and skips a wiki whose repository lookup fails', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis', {
+        body: {
+          value: [
+            {
+              id: 'w1',
+              name: 'P.wiki',
+              type: 'projectWiki',
+              repositoryId: 'w1',
+              mappedPath: '/',
+              versions: [],
+            },
+            {
+              id: 'w2',
+              name: 'docs',
+              type: 'codeWiki',
+              repositoryId: 'r9',
+              mappedPath: '/docs',
+              versions: [],
+            },
+            {
+              id: 'w3',
+              name: 'gone',
+              type: 'codeWiki',
+              repositoryId: 'r10',
+              mappedPath: '/',
+              versions: [{ version: 'main' }],
+            },
+          ],
+        },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/w1', {
+        body: { remoteUrl: 'A' },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/r9', {
+        body: { remoteUrl: 'B' },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/r10', {
+        status: 500,
+        body: {},
+      });
+      const wikis = await client.wikis('P');
+      expect(wikis.map((w) => [w.id, w.version, w.gitUrl])).toEqual([
+        ['w1', 'wikiMaster', 'A'],
+        ['w2', 'main', 'B'],
+      ]);
+    });
+    it('wikis lists nothing when the project has no wikis', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis', {
+        body: {},
+      });
+      expect(await client.wikis('P')).toEqual([]);
+    });
+    it('wikis reports a missing Code scope instead of an empty list', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis', {
+        body: {
+          value: [
+            {
+              id: 'w1',
+              name: 'P.wiki',
+              type: 'projectWiki',
+              repositoryId: 'w1',
+              versions: [],
+            },
+          ],
+        },
+      });
+      server.route('GET', '/unreliablewitness/P/_apis/git/repositories/w1', {
+        status: 401,
+      });
+      await expect(client.wikis('P')).rejects.toThrow(CODE_READ_DENIED);
+    });
+    it('wikiPages flattens the tree depth-first without the root', async () => {
+      server.route('GET', '/unreliablewitness/P/_apis/wiki/wikis/w1/pages', {
+        body: {
+          path: '/',
+          gitItemPath: '/',
+          isParentPage: true,
+          subPages: [
+            {
+              path: '/Customers',
+              gitItemPath: '/Customers.md',
+              isParentPage: true,
+              subPages: [
+                {
+                  path: '/Customers/Acme',
+                  gitItemPath: '/Customers/Acme.md',
+                  isParentPage: true,
+                  subPages: [
+                    {
+                      path: '/Customers/Acme/Second brain',
+                      gitItemPath: '/Customers/Acme/Second-brain.md',
+                    },
+                  ],
+                },
+              ],
+            },
+            { path: '/Home', gitItemPath: '/Home.md' },
+          ],
+        },
+      });
+      expect(await client.wikiPages('P', 'w1')).toEqual([
+        { path: '/Customers', gitItemPath: '/Customers.md', isParent: true },
+        {
+          path: '/Customers/Acme',
+          gitItemPath: '/Customers/Acme.md',
+          isParent: true,
+        },
+        {
+          path: '/Customers/Acme/Second brain',
+          gitItemPath: '/Customers/Acme/Second-brain.md',
+          isParent: false,
+        },
+        { path: '/Home', gitItemPath: '/Home.md', isParent: false },
+      ]);
+      expect(server.requests.at(-1)!.path).toBe(
+        '/unreliablewitness/P/_apis/wiki/wikis/w1/pages?path=/&recursionLevel=full&api-version=7.1',
+      );
+    });
   });
 });

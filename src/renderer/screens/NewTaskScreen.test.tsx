@@ -141,6 +141,7 @@ describe('NewTaskScreen', () => {
         type: 'User Story',
         title: 'Delivery date',
         url: null,
+        project: null,
       },
       branch: 'feature/48231-delivery-date',
       copy: true,
@@ -405,6 +406,7 @@ describe('NewTaskScreen', () => {
       type: 'Bug',
       title: 'Broken checkout',
       url: 'https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/12',
+      project: null,
     };
     render(<NewTaskScreen initial={{ workItem, repoId: 'r2' }} />);
     expect(screen.getByLabelText('Repo')).toHaveValue('r2');
@@ -451,6 +453,7 @@ describe('NewTaskScreen', () => {
           iterationPath: 'Shellie\\Sprint 1',
           assignedTo: null,
           url: 'https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/12',
+          project: null,
         },
       ],
       'tasks:create': () => ({ id: 't9' }) as never,
@@ -582,6 +585,7 @@ describe('NewTaskScreen', () => {
       type: 'Bug',
       title: 'Broken checkout',
       url: 'u',
+      project: null,
     };
     render(<NewTaskScreen initial={{ workItem, repoId: 'r1' }} />);
     await userEvent.selectOptions(screen.getByLabelText('Repo'), 'api');
@@ -611,6 +615,7 @@ describe('NewTaskScreen', () => {
           iterationPath: 'p',
           assignedTo: null,
           url: 'https://dev.azure.com/o/p/_workitems/edit/12',
+          project: null,
         },
       ],
     });

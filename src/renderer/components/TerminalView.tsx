@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
+import { brainIdOf } from '../../shared/brain';
 import type { RestartOptions } from '../../shared/ipc';
 import type { LeakState } from '../../shared/secrets';
 import type { TerminalFailure } from '../../shared/terminalFailure';
@@ -161,9 +162,11 @@ export function TerminalView({
       if (build) t.options.windowsPty = terminalOptions(build).windowsPty;
       t.open(el);
       loadRenderer(t);
-      links = t.registerLinkProvider(
-        createLinkProvider(t, taskId, { workspaceId }),
-      );
+      // A brain's terminal has no repo to resolve links against.
+      if (!brainIdOf(taskId))
+        links = t.registerLinkProvider(
+          createLinkProvider(t, taskId, { workspaceId }),
+        );
       observer.observe(el);
       sendSize.current();
       // xterm answers colour queries only once open; the scheme may also have changed while this view was not

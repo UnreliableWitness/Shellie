@@ -33,6 +33,11 @@ describe('telemetryEnv', () => {
       'shellie.task.id=t1',
     );
   });
+  it('tags a brain source', () => {
+    expect(
+      telemetryEnv('brain:b1', 1, '/u', 'brain').OTEL_RESOURCE_ATTRIBUTES,
+    ).toBe('shellie.task.id=brain:b1,shellie.source=brain');
+  });
   it('never turns on prompt or content capture', () => {
     const keys = Object.keys(telemetryEnv('t', 1, '/u'));
     for (const k of [

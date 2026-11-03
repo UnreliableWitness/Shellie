@@ -21,6 +21,8 @@ export interface Tracker {
   itemEstimate: AdoClient['workItemEstimate'];
   updateItemFields: AdoClient['updateWorkItemFields'];
   repositoryId: AdoClient['repositoryId'];
+  wikis: AdoClient['wikis'];
+  wikiPages: AdoClient['wikiPages'];
   findActivePullRequest: AdoClient['findActivePullRequest'];
   createPullRequest: AdoClient['createPullRequest'];
   pullRequest: AdoClient['pullRequest'];

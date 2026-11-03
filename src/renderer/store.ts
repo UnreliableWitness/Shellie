@@ -25,10 +25,11 @@ import {
 export const USAGE_TAB = 'usage';
 export const DOCS_TAB = 'docs';
 export const CHANGES_TAB = 'changes';
+export const BRAIN_TAB = 'brain';
 /** Tab ids of HTML files opened in a tab start with this. */
 export const VIEW_PREFIX = 'view:';
 /** Tabs that are not a terminal: always valid. */
-const FIXED_TABS = new Set([USAGE_TAB, DOCS_TAB, CHANGES_TAB]);
+const FIXED_TABS = new Set([USAGE_TAB, DOCS_TAB, CHANGES_TAB, BRAIN_TAB]);
 
 /** An HTML file shown in a tab of the task (in memory only, gone after a relaunch). */
 export type HtmlView = {
@@ -70,6 +71,8 @@ export type Screen =
   /** The Agents step as a page (from Get started; Settings shows the same section inline). */
   | { kind: 'agents'; from: 'settings' | 'get-started' }
   | { kind: 'sprint' }
+  /** A brain: the local knowledge folder of one Azure DevOps project. */
+  | { kind: 'brain'; brainId: string }
   | { kind: 'task' }
   | { kind: 'new-task'; workItem?: WorkItemRef; repoId?: string }
   | { kind: 'setup'; taskId: string }

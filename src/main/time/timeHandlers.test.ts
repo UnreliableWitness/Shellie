@@ -13,7 +13,13 @@ const NOW = Date.parse('2026-10-16T12:00:00Z');
 const task = (over: Partial<Task> & Pick<Task, 'id'>): Task => ({
   repoId: 'r1',
   name: '',
-  workItem: { id: '12', type: 'Task', title: 'Twelve', url: null },
+  workItem: {
+    id: '12',
+    type: 'Task',
+    title: 'Twelve',
+    url: null,
+    project: null,
+  },
   slug: over.id,
   branch: `b-${over.id}`,
   worktreePath: `/wt/${over.id}`,

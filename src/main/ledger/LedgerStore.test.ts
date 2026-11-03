@@ -82,6 +82,23 @@ describe('LedgerStore', () => {
     expect(s.dirty(2)).toHaveLength(2);
   });
 
+  it('never lists brain records as dirty', async () => {
+    const s = new LedgerStore(dir);
+    await s.load();
+    const brain = rec('br:a', {
+      attribution: {
+        level: 'brain',
+        brainId: 'b1',
+        organization: 'o',
+        project: 'p',
+      },
+      billable: false,
+    });
+    await s.upsert([brain, rec('cc:a')]);
+    expect(s.dirty(500).map((r) => r.id)).toEqual(['cc:a']);
+    expect(s.dirtyCount()).toBe(1);
+  });
+
   it('keeps sent state across reloads', async () => {
     const s = new LedgerStore(dir);
     await s.load();

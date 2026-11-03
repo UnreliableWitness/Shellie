@@ -1,0 +1,139 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { GitClient } from '../services/GitClient';
+import {
+  applyTemplates,
+  isBrainFolder,
+  scaffoldBrain,
+  templateDiff,
+} from './scaffold';
+import { TEMPLATES_VERSION, templateFiles } from './templates';
+
+describe('brain scaffold', () => {
+  let root: string;
+  let dir: string;
+  const git = new GitClient();
+
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-brain-')),
+    );
+    dir = path.join(root, 'acme', 'brain');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('scaffolds a brain with templates and a first commit', async () => {
+    await scaffoldBrain(git, dir, 'Acme');
+    expect(await isBrainFolder(dir)).toBe(true);
+    expect(await fs.readFile(path.join(dir, 'index.md'), 'utf8')).toContain(
+      '# Acme brain',
+    );
+    expect(
+      (await git.run(dir, ['log', '--oneline'])).trim().split('\n'),
+    ).toHaveLength(1);
+    expect(
+      await fs.readFile(path.join(dir, '.claude/settings.json'), 'utf8'),
+    ).toContain('Edit(sources/**)');
+    await fs.stat(path.join(dir, 'sources/.gitkeep'));
+    await fs.stat(path.join(dir, 'wiki/.gitkeep'));
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    expect(await git.run(dir, ['branch', '--show-current'])).toBe('main\n');
+  });
+
+  it('never writes a CLAUDE.md', async () => {
+    await scaffoldBrain(git, dir, 'Acme');
+    await expect(fs.stat(path.join(dir, 'CLAUDE.md'))).rejects.toThrow();
+    expect(templateFiles('Acme').map((f) => f.path)).not.toContain('CLAUDE.md');
+  });
+
+  it('keeps each skill short, describes when to use it and ignores lock and mirror', () => {
+    const files = templateFiles('Acme');
+    const skills = files.filter((f) => f.path.endsWith('SKILL.md'));
+    expect(skills).toHaveLength(4);
+    for (const s of skills) {
+      expect(s.content.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
+      expect(s.content).toMatch(/^---\ndescription: .+\n---\n/);
+      expect(s.content).toContain('SCHEMA.md');
+    }
+    const ignore = files.find((f) => f.path === '.gitignore')!.content;
+    expect(ignore).toContain('brain/lock');
+    expect(ignore).toContain('.mirror/');
+    const capture = skills.find((s) => s.path.includes('capture'))!.content;
+    expect(capture).not.toMatch(/captured\[/);
+  });
+
+  it('names sources/wiki/ as the wiki copy and lets the skills read git history', () => {
+    const files = templateFiles('Acme');
+    const text = (p: string) => files.find((f) => f.path === p)!.content;
+    for (const f of files.filter((x) => x.path !== '.gitignore'))
+      expect(f.content).not.toContain('.mirror');
+    expect(text('SCHEMA.md')).toContain('`sources/wiki/`');
+    const sync = text('.claude/skills/sync/SKILL.md');
+    expect(sync).toContain(
+      'git diff --stat <lastSyncCommit> HEAD -- sources/ wiki/',
+    );
+    expect(sync).toContain('sources/wiki/');
+    const lint = text('.claude/skills/lint/SKILL.md');
+    expect(lint).toMatch(/uncaptured.*not under `sources\/wiki\/`.*captured/);
+    const settings = JSON.parse(text('.claude/settings.json')) as {
+      permissions: { allow: string[]; deny: string[] };
+    };
+    expect(settings.permissions.allow).toEqual([
+      'Bash(git diff:*)',
+      'Bash(git log:*)',
+      'Bash(git show:*)',
+      'Bash(git rev-parse:*)',
+      'Bash(git status:*)',
+    ]);
+    expect(settings.permissions.deny).toContain('Edit(sources/**)');
+  });
+
+  it('is not a brain folder when skills are missing', async () => {
+    await fs.mkdir(dir, { recursive: true });
+    expect(await isBrainFolder(dir)).toBe(false);
+  });
+
+  it('leaves index.md, log.md and state.json to the brain after scaffolding', async () => {
+    await scaffoldBrain(git, dir, 'Acme');
+    const state = path.join(dir, 'brain/state.json');
+    await fs.writeFile(state, '{"schemaVersion":1,"lastSyncCommit":"abc"}\n');
+    await fs.writeFile(path.join(dir, 'log.md'), '# Log\n\n- entry\n');
+    await fs.rm(path.join(dir, 'index.md'));
+    const paths = (await templateDiff(dir, 'Acme')).map((d) => d.path);
+    for (const p of ['index.md', 'log.md', 'brain/state.json'])
+      expect(paths).not.toContain(p);
+    await applyTemplates(git, dir, 'Acme', ['brain/state.json', 'log.md']);
+    expect(await fs.readFile(state, 'utf8')).toContain('abc');
+    expect(await fs.readFile(path.join(dir, 'log.md'), 'utf8')).toContain(
+      'entry',
+    );
+  });
+
+  it('templateDiff reports a changed skill and applyTemplates restores it', async () => {
+    await scaffoldBrain(git, dir, 'Acme');
+    const skill = '.claude/skills/lint/SKILL.md';
+    await fs.writeFile(path.join(dir, skill), 'edited\n');
+    const gone = '.claude/skills/sync/SKILL.md';
+    await fs.rm(path.join(dir, gone));
+    const diff = await templateDiff(dir, 'Acme');
+    expect(diff.find((d) => d.path === skill)?.status).toBe('changed');
+    expect(diff.find((d) => d.path === gone)?.status).toBe('missing');
+    expect(diff.filter((d) => d.status === 'same').length).toBe(
+      diff.length - 2,
+    );
+
+    await applyTemplates(git, dir, 'Acme', [skill, gone]);
+    expect(
+      (await templateDiff(dir, 'Acme')).every((d) => d.status === 'same'),
+    ).toBe(true);
+    const log = (await git.run(dir, ['log', '--format=%s'])).trim().split('\n');
+    expect(log).toEqual([
+      `Brain: update skills to v${TEMPLATES_VERSION}`,
+      'Brain created',
+    ]);
+  });
+});

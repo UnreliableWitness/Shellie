@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { BudgetRecord } from '../../shared/budget';
 import type { CostRecord } from '../../shared/ledger';
 import type { Connection, Repo, Task } from '../../shared/types';
-import { attribute, attributionContext, merge } from './attribute';
+import {
+  attribute,
+  attributionContext,
+  isBrainRecord,
+  merge,
+  raises,
+} from './attribute';
 
 const conn = (id: string, org: string, project: string) =>
   ({ id, organizationUrl: org, project }) as Connection;
@@ -305,5 +311,89 @@ describe('merge', () => {
     });
     // A priced copy is never replaced by an unpriced one.
     expect(merge(priced, unpriced).costEur).toBe(1.84);
+  });
+});
+
+describe('brain attribution', () => {
+  const c = conn('c1', 'https://dev.azure.com/acme', 'Acme');
+  const brains = [
+    {
+      id: 'b1',
+      organization: c.organizationUrl,
+      project: 'Acme',
+      path: '/brains/acme',
+    },
+  ];
+  it('attributes a brain record to the brain', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    expect(attribute(rec({ taskId: 'brain:b1' }), ctx)).toEqual({
+      level: 'brain',
+      brainId: 'b1',
+      organization: c.organizationUrl,
+      project: 'Acme',
+    });
+  });
+  it('attributes a transcript record by cwd inside the brain folder', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    expect(attribute(rec({ cwd: '/brains/acme/wiki' }), ctx)).toMatchObject({
+      level: 'brain',
+      brainId: 'b1',
+    });
+    expect(attribute(rec({ cwd: '/brains/other' }), ctx)).toEqual({
+      level: 'none',
+    });
+  });
+  it('a task inside a brain folder keeps its usage (by session or task id); a brain: id still wins', () => {
+    const t = task({
+      id: 't1',
+      connectionId: 'c1',
+      worktreePath: '/brains/acme/work/t1',
+      terminals: [{ id: 'a', kind: 'claude', label: 'C', sessionId: 'S1' }],
+    });
+    const ctx = attributionContext([t], [], [c], () => [], brains);
+    const bySession = rec({ sessionId: 'S1', cwd: '/brains/acme/work/t1' });
+    expect(attribute(bySession, ctx)).toMatchObject({
+      level: 'task',
+      taskId: 't1',
+    });
+    expect(isBrainRecord(bySession, ctx)).toBe(false);
+    const byTaskId = rec({ taskId: 't1', cwd: '/brains/acme/work/t1' });
+    expect(attribute(byTaskId, ctx)).toMatchObject({ level: 'task' });
+    expect(isBrainRecord(byTaskId, ctx)).toBe(false);
+    // An unknown session in the brain folder is the brain's.
+    const other = rec({ sessionId: 'X', cwd: '/brains/acme/work/t1' });
+    expect(attribute(other, ctx)).toMatchObject({ level: 'brain' });
+    expect(isBrainRecord(other, ctx)).toBe(true);
+    const brainRun = rec({ taskId: 'brain:b1', sessionId: 'S1' });
+    expect(attribute(brainRun, ctx)).toMatchObject({
+      level: 'brain',
+      brainId: 'b1',
+    });
+    expect(isBrainRecord(brainRun, ctx)).toBe(true);
+  });
+  it('an unknown brain id falls back to none', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    expect(attribute(rec({ taskId: 'brain:zzz' }), ctx)).toEqual({
+      level: 'none',
+    });
+  });
+  it('brain level is frozen like task', () => {
+    const b = {
+      level: 'brain' as const,
+      brainId: 'b1',
+      organization: 'o',
+      project: 'p',
+    };
+    expect(raises(b, { level: 'none' })).toBe(false);
+    expect(
+      raises(b, { level: 'repo', organization: 'o', project: 'p', repo: 'r' }),
+    ).toBe(false);
+    expect(raises({ level: 'none' }, b)).toBe(true);
+    expect(
+      raises(
+        { level: 'repo', organization: null, project: null, repo: 'r' },
+        b,
+      ),
+    ).toBe(true);
   });
 });

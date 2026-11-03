@@ -15,6 +15,7 @@ const task: TaskView = {
     type: 'User Story',
     title: 'Show estimated delivery date',
     url: null,
+    project: null,
   },
   slug: '48231-show',
   branch: 'feature/48231-show',
@@ -433,6 +434,7 @@ describe('SetupScreen', () => {
       run: [],
       workItem: { move: 'Active', assign: true },
       editor: null,
+      brain: null,
     };
     const withSummary = (over: Partial<TaskView> = {}): TaskView => ({
       ...task,

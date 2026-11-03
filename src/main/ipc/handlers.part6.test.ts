@@ -1388,3 +1388,39 @@ describe('handlers: discard a task (#124)', () => {
     expect(hx.store.state.tasks).toEqual([]);
   });
 });
+
+describe('handlers: brain terminals', () => {
+  const stub = (owns: boolean) => ({
+    restart: vi.fn(async () => owns),
+    kill: vi.fn(async () => owns),
+  });
+
+  it('terminals:restart is handled by the brain that owns the id', async () => {
+    const brainTerminals = stub(true);
+    const hx = await harness(fakeCrypto(), {
+      brainTerminals: brainTerminals as unknown as Services['brainTerminals'],
+    });
+    await hx.h['terminals:restart']('brain-b1');
+    expect(brainTerminals.restart).toHaveBeenCalledWith('brain-b1');
+  });
+
+  it('terminals:kill is handled by the brain that owns the id', async () => {
+    const brainTerminals = stub(true);
+    const hx = await harness(fakeCrypto(), {
+      brainTerminals: brainTerminals as unknown as Services['brainTerminals'],
+    });
+    await hx.h['terminals:kill']('brain-b1');
+    expect(brainTerminals.kill).toHaveBeenCalledWith('brain-b1');
+  });
+
+  it('falls through to the tasks when no brain owns the id', async () => {
+    const brainTerminals = stub(false);
+    const hx = await harness(fakeCrypto(), {
+      brainTerminals: brainTerminals as unknown as Services['brainTerminals'],
+    });
+    await expect(hx.h['terminals:restart']('nope')).rejects.toThrow(
+      'Unknown terminal nope',
+    );
+    expect(brainTerminals.restart).toHaveBeenCalledWith('nope');
+  });
+});

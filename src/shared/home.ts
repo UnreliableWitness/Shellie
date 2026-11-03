@@ -37,6 +37,7 @@ export const HomeItemSchema = z.object({
   iterationPath: z.string(),
   assignedTo: z.string().nullable(),
   url: z.string(),
+  project: z.string().nullable().default(null),
   remainingWork: z.number().nullable(),
   originalEstimate: z.number().nullable(),
   completedWork: z.number().nullable(),

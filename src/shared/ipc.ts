@@ -1,3 +1,15 @@
+import type {
+  AddSourceResult,
+  AdoWiki,
+  AdoWikiPage,
+  BrainJob,
+  BrainOptions,
+  BrainSourceRow,
+  BrainView,
+  BrainWiki,
+  RefreshResult,
+  SourceType,
+} from './brain';
 import type { ColorScheme } from './theme';
 import type {
   DiscoverResult,
@@ -532,6 +544,98 @@ export type Channels = {
   /** The terminal tab on screen (null: no task page), so main does not flag what the developer is looking at. */
   'attention:view': { args: [view: AttentionView]; result: void };
   'attention:get': { args: []; result: AttentionSnapshot };
+  /** Brains: one local git folder per Azure DevOps project (see docs/changes, the brain notes). */
+  'brain:list': { args: []; result: BrainView[] };
+  'brain:get': { args: [brainId: string]; result: BrainView };
+  /** The brain of the task's connection and work item project, null when there is none. */
+  'brain:forTask': { args: [taskId: string]; result: BrainView | null };
+  /** `path` null: `<userData>/brains/<id>`; an existing brain folder is adopted (its skills show as changed). */
+  'brain:create': {
+    args: [
+      input: {
+        name: string;
+        connectionId: string;
+        project: string;
+        path: string | null;
+        wiki: BrainWiki | null;
+      },
+    ];
+    result: BrainView;
+  };
+  'brain:update': {
+    args: [
+      brainId: string,
+      patch: {
+        name?: string;
+        wiki?: BrainWiki | null;
+        options?: Partial<BrainOptions>;
+      },
+    ];
+    result: BrainView;
+  };
+  'brain:delete': {
+    args: [brainId: string, deleteFolder: boolean];
+    result: void;
+  };
+  'brain:pickFolder': { args: []; result: string | null };
+  'brain:wikis': {
+    args: [connectionId: string, project: string];
+    result: AdoWiki[];
+  };
+  'brain:wikiPages': {
+    args: [connectionId: string, project: string, wikiId: string];
+    result: AdoWikiPage[];
+  };
+  /** Each file that is added is queued as a capture. */
+  'brain:addFiles': {
+    args: [brainId: string, files: { path: string; type: SourceType }[]];
+    result: AddSourceResult[];
+  };
+  'brain:addText': {
+    args: [brainId: string, text: string, title: string, type: SourceType];
+    result: AddSourceResult;
+  };
+  /** Mirrors the wiki; queues a sync when `syncAfterRefresh` is on and pages changed. */
+  'brain:refresh': { args: [brainId: string]; result: RefreshResult };
+  'brain:run': {
+    args: [
+      brainId: string,
+      kind: 'lint' | 'digest' | 'sync' | 'capture',
+      source?: string,
+    ];
+    result: BrainJob;
+  };
+  'brain:resumeQueue': { args: [brainId: string]; result: void };
+  /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
+  'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
+  /** Markdown files of the brain: under wiki/ or sources/, or root: index.md, log.md, SCHEMA.md. */
+  'brain:files': {
+    args: [brainId: string, dir: 'wiki' | 'sources' | 'root'];
+    result: DocFile[];
+  };
+  'brain:read': {
+    args: [brainId: string, rel: string];
+    result: { text: string };
+  };
+  /** An image of the brain as a data URL. */
+  'brain:asset': { args: [brainId: string, rel: string]; result: string };
+  /**
+   * Shows the brain's Claude terminal. `resumeSession` other than the running one restarts it on that session;
+   * `prompt` is sent: as the first message of a new process, or typed and submitted into a running one.
+   */
+  'brain:terminal': {
+    args: [brainId: string, resumeSession?: string | null, prompt?: string];
+    result: TerminalDef;
+  };
+  'brain:templateDiff': {
+    args: [brainId: string];
+    result: { path: string; status: 'same' | 'changed' | 'missing' }[];
+  };
+  'brain:updateTemplates': {
+    args: [brainId: string, paths: string[]];
+    result: void;
+  };
+  'brain:openFolder': { args: [brainId: string]; result: void };
 };
 
 /** Push events from main to the renderer. */
@@ -574,6 +678,8 @@ export type Events = {
   'budget:open': Record<string, never>;
   /** The main window entered or left full screen (also sent on every load). */
   'window:fullScreen': boolean;
+  /** A brain's store entry, jobs, state, files or mirror changed; the renderer fetches `brain:get` again. */
+  'brain:changed': { brainId: string };
 };
 
 /** `version` is null when the release name holds none. */
@@ -608,6 +714,8 @@ export type ShellieApi = {
     event: K,
     listener: (payload: Events[K]) => void,
   ): () => void;
+  /** The real path of a file dropped on the window (Electron hides it from the File itself). */
+  pathForFile(file: File): string;
   /** Fire-and-forget app telemetry; main validates, scrubs and drops it when the user opted out. */
   track(message: RendererTelemetry): void;
   /** How the window draws its title bar, so the header keeps room for the window controls (#49). */

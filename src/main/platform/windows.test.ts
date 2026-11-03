@@ -195,6 +195,33 @@ describe('windowsPlatform', () => {
     });
   });
 
+  it('passes a first message last: an argument to claude.exe, an env var through a shim', () => {
+    expect(
+      make({ claude: 'C:\\bin\\claude.exe' }).claudeCommand(
+        null,
+        ['--session-id', 'abc'],
+        undefined,
+        'What is "in scope"?',
+      ).args,
+    ).toEqual(['--session-id', 'abc', 'What is "in scope"?']);
+    expect(
+      make({ claude: 'C:\\npm\\claude.cmd' }).claudeCommand(
+        'ctx',
+        ['--session-id', 'abc'],
+        undefined,
+        'What is "in scope"?',
+      ),
+    ).toMatchObject({
+      args: expect.arrayContaining([
+        "& claude '--session-id' 'abc' '--append-system-prompt' $env:SHELLIE_CLAUDE_PROMPT $env:SHELLIE_CLAUDE_FIRST_MESSAGE",
+      ]),
+      env: {
+        SHELLIE_CLAUDE_PROMPT: 'ctx',
+        SHELLIE_CLAUDE_FIRST_MESSAGE: "What is 'in scope'?",
+      },
+    });
+  });
+
   it('passes session flags before the prompt to claude.exe and a shim', () => {
     expect(
       make({ claude: 'C:\\bin\\claude.exe' }).claudeCommand('go', [

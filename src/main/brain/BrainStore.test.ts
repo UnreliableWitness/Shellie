@@ -1,0 +1,56 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BrainSchema, type Brain } from '../../shared/brain';
+import { BrainStore } from './BrainStore';
+
+let dir: string;
+let file: string;
+beforeEach(async () => {
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'brain-store-'));
+  file = path.join(dir, 'brains.json');
+});
+afterEach(async () => {
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+const brain = (id: string, project: string): Brain =>
+  BrainSchema.parse({
+    id,
+    name: project,
+    connectionId: 'c1',
+    project,
+    path: `/x/${id}`,
+    createdAt: 't',
+  });
+
+describe('BrainStore', () => {
+  it('adds, patches, finds by project and removes', async () => {
+    const s = new BrainStore(file);
+    await s.load();
+    await s.add(brain('b1', 'Acme'));
+    await s.add(brain('b2', 'Beta'));
+    expect(s.forProject('c1', 'Acme').map((b) => b.id)).toEqual(['b1']);
+    expect(s.get('b2')?.project).toBe('Beta');
+    const patched = await s.patch('b1', { name: 'Renamed' });
+    expect(patched.name).toBe('Renamed');
+
+    const again = new BrainStore(file);
+    await again.load();
+    expect(again.get('b1')?.name).toBe('Renamed');
+
+    await s.remove('b1');
+    expect(s.list()).toHaveLength(1);
+  });
+  it('loads an empty list when the file is missing', async () => {
+    const s = new BrainStore(file);
+    await s.load();
+    expect(s.list()).toEqual([]);
+  });
+  it('patch rejects an unknown id', async () => {
+    const s = new BrainStore(file);
+    await s.load();
+    await expect(s.patch('nope', { name: 'x' })).rejects.toThrow(/nope/);
+  });
+});

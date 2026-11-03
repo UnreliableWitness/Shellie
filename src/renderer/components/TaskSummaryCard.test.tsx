@@ -16,6 +16,7 @@ const summary: SetupSummary = {
   run: ['npm run dev'],
   workItem: { move: 'Doing', assign: true },
   editor: 'VS Code',
+  brain: null,
 };
 
 /** A line of the card by its label (the label text, not an accessible name, so form labels do not clash). */
@@ -46,6 +47,22 @@ describe('TaskSummaryCard', () => {
     expect(line('Run')).toHaveTextContent('npm run dev');
     expect(line('Work item')).toHaveTextContent('Move to Doing, assign to me');
     expect(line('Editor')).toHaveTextContent('VS Code');
+  });
+
+  it('shows the brain row, with a link to the brain settings', async () => {
+    const { rerender } = render(
+      <TaskSummaryCard summary={summary} repoId="r1" />,
+    );
+    expect(line('Brain')).toHaveTextContent('None for this project');
+    rerender(
+      <TaskSummaryCard summary={{ ...summary, brain: 'Acme' }} repoId="r1" />,
+    );
+    expect(line('Brain')).toHaveTextContent('Acme');
+    await userEvent.click(within(line('Brain')).getByText('Edit'));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      section: 'brains',
+    });
   });
 
   it('says unchanged when the work item is left alone', () => {

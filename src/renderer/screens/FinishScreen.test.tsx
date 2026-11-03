@@ -14,6 +14,7 @@ import type {
 } from '../../shared/types';
 import { readPrChoice, readPushChoice, writePrChoice } from '../uiPrefs';
 import { CHANGES_TAB, useStore } from '../store';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { emptyTime, emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { clearPrDrafts, FinishScreen } from './FinishScreen';
 
@@ -26,6 +27,7 @@ const task: TaskView = {
     type: 'User Story',
     title: 'Checkout: allow saving a delivery address',
     url: null,
+    project: null,
   },
   slug: 'a',
   branch: 'feature/48213-save-delivery-address',
@@ -151,6 +153,55 @@ describe('FinishScreen', () => {
     );
     expect(useStore.getState().screen).toEqual({ kind: 'task' });
     expect(useStore.getState().selectedTaskId).toBe('a');
+  });
+
+  it('sends captureTaskMd when the brain option is ticked', async () => {
+    const { calls } = installFakeApi({
+      'tasks:finishChecks': () => clean,
+      'tasks:finish': () => undefined,
+      'brain:forTask': () => listedBrain(),
+    });
+    render(<FinishScreen taskId="a" />);
+    await userEvent.click(
+      await screen.findByLabelText('Capture task.md into the brain'),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Finish and clean up' }),
+    );
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        channel: 'tasks:finish',
+        args: ['a', expect.objectContaining({ captureTaskMd: true })],
+      }),
+    );
+  });
+
+  it('leaves captureTaskMd out by default', async () => {
+    const { calls } = installFakeApi({
+      'tasks:finishChecks': () => clean,
+      'tasks:finish': () => undefined,
+      'brain:forTask': () => listedBrain(),
+    });
+    render(<FinishScreen taskId="a" />);
+    expect(
+      await screen.findByLabelText('Capture task.md into the brain'),
+    ).not.toBeChecked();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Finish and clean up' }),
+    );
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'tasks:finish')).toBe(true),
+    );
+    expect(
+      JSON.stringify(calls.find((c) => c.channel === 'tasks:finish')?.args),
+    ).not.toContain('captureTaskMd');
+  });
+
+  it('hides the brain option when the task has no brain', async () => {
+    installFakeApi({ 'tasks:finishChecks': () => clean });
+    render(<FinishScreen taskId="a" />);
+    await screen.findByLabelText(/Delete local branch/);
+    expect(screen.queryByLabelText(/into the brain/)).toBeNull();
   });
 
   it('does not move the user to the Done page when they left the Finish page while it ran', async () => {
@@ -1004,6 +1055,7 @@ describe('FinishScreen pull request failure with unpushed commits', () => {
           iterationPath: 'i',
           assignedTo: null,
           url: 'u',
+          project: null,
           originalEstimate: 5,
           remainingWork: 1,
           completedWork: 2,

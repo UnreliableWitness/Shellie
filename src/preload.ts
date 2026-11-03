@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { EVENT_PREFIX, type ShellieApi } from './shared/ipc';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
 import { titleBarKind } from './shared/titleBar';
@@ -26,6 +26,7 @@ const api: ShellieApi = {
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
+  pathForFile: (file) => webUtils.getPathForFile(file),
   track: (message) => ipcRenderer.send(TELEMETRY_CHANNEL, message),
   titleBar: titleBarKind(process.platform),
 };

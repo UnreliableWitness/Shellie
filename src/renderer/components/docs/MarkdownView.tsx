@@ -1,5 +1,6 @@
 import { Copy16Regular } from '@fluentui/react-icons';
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -13,7 +14,6 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
 import remarkGfm from 'remark-gfm';
-import { api } from '../../api';
 import { openWeb, resolveRelative } from '../../docs/linkify';
 import { rehypeLines } from '../../docs/rehypeLines';
 import { MermaidBlock } from './MermaidBlock';
@@ -54,27 +54,25 @@ function textOf(node: ReactNode): string {
 }
 
 function LocalImage({
-  taskId,
+  asset,
   path,
   alt,
 }: {
-  taskId: string;
+  asset: (path: string) => Promise<string>;
   path: string;
   alt: string;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    api()
-      .invoke('docs:asset', taskId, path)
-      .then(
-        (s) => live && setSrc(s),
-        () => live && setSrc(null),
-      );
+    asset(path).then(
+      (s) => live && setSrc(s),
+      () => live && setSrc(null),
+    );
     return () => {
       live = false;
     };
-  }, [taskId, path]);
+  }, [asset, path]);
   return src ? (
     <img src={src} alt={alt} />
   ) : (
@@ -83,20 +81,23 @@ function LocalImage({
 }
 
 export function MarkdownView({
-  taskId,
+  asset,
   path,
   text,
   onOpenDoc,
   onOpenFile,
 }: {
-  taskId: string;
+  /** Loads a relative image as a data URL (a task's `docs:asset`, a brain's `brain:asset`). */
+  asset: (path: string) => Promise<string>;
   path: string;
   text: string;
   onOpenDoc(path: string, anchor?: string): void;
   onOpenFile(path: string): void;
 }) {
-  const cb = useRef({ onOpenDoc, onOpenFile });
-  cb.current = { onOpenDoc, onOpenFile };
+  const cb = useRef({ onOpenDoc, onOpenFile, asset });
+  cb.current = { onOpenDoc, onOpenFile, asset };
+  // Callers may pass a new function each render; images must not refetch for that.
+  const loadAsset = useCallback((p: string) => cb.current.asset(p), []);
   // Stable element types: new component functions would remount every MermaidBlock and LocalImage.
   const components = useMemo<Components>(
     () => ({
@@ -148,7 +149,7 @@ export function MarkdownView({
           );
         const target = resolveRelative(path, s);
         return target ? (
-          <LocalImage taskId={taskId} path={target} alt={alt} />
+          <LocalImage asset={loadAsset} path={target} alt={alt} />
         ) : (
           <span className="muted">{alt}</span>
         );
@@ -176,7 +177,7 @@ export function MarkdownView({
         );
       },
     }),
-    [path, taskId],
+    [path, loadAsset],
   );
   return (
     <article className="doc-md">

@@ -293,6 +293,7 @@ function Row({
                 type: w.type,
                 title: w.title,
                 url: w.url,
+                project: w.project ?? null,
               };
               if (chooseRepo) return go({ kind: 'new-task', workItem, repoId });
               setStarting(true);

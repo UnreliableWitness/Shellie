@@ -2,6 +2,7 @@ import type { BudgetRecord } from '../../shared/budget';
 import { tokensOf } from '../../shared/budget';
 import type { Attribution, CostRecord } from '../../shared/ledger';
 import { LEVEL_RANK } from '../../shared/ledger';
+import { brainIdOf } from '../../shared/brain';
 import type { Connection, Repo, Task } from '../../shared/types';
 import { taskWorkspaces } from '../../shared/workspaces';
 import { isInside } from '../paths';
@@ -24,6 +25,14 @@ type RepoCtx = {
   paths: string[];
 };
 
+export type BrainCtx = {
+  id: string;
+  organization: string;
+  project: string;
+  /** The brain folder: transcripts of its Claude runs carry a cwd inside it. */
+  path: string;
+};
+
 /** What attribution needs from the tasks, repos and connections, built once per pass. `key` changes when any of it does. */
 export type AttributionContext = {
   key: string;
@@ -31,6 +40,7 @@ export type AttributionContext = {
   byId: Map<string, TaskCtx>;
   bySession: Map<string, TaskCtx>;
   repos: RepoCtx[];
+  brains: Map<string, BrainCtx>;
 };
 
 const workItemNumber = (id: string | undefined): number | null => {
@@ -44,6 +54,8 @@ export function attributionContext(
   connections: Connection[],
   /** Claude sessions the usage store (OTLP) has for a task: `claude` typed in a shell, a resume with a new id. */
   usageSessions: (taskId: string) => Iterable<string> = () => [],
+  /** Brains (a folder per Azure DevOps project); their usage is attributed to the brain, never billable. */
+  brains: BrainCtx[] = [],
 ): AttributionContext {
   const repoById = new Map(repos.map((r) => [r.id, r]));
   const connById = new Map(connections.map((c) => [c.id, c]));
@@ -108,11 +120,12 @@ export function attributionContext(
   const bySession = new Map<string, TaskCtx>();
   for (const t of taskCtx) for (const s of t.sessions) bySession.set(s, t);
   return {
-    key: JSON.stringify([taskCtx, repoCtx]),
+    key: JSON.stringify([taskCtx, repoCtx, brains]),
     tasks: taskCtx,
     byId: new Map(taskCtx.map((t) => [t.id, t])),
     bySession,
     repos: repoCtx,
+    brains: new Map(brains.map((b) => [b.id, b])),
   };
 }
 
@@ -156,13 +169,53 @@ export function taskOf(
   return best ? { t: best.t, repo: best.repo } : null;
 }
 
-/** Task (see taskOf), else repo by folder, else none. */
+/** A known brain by the record's `brain:` task id. */
+function brainById(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
+  const id = brainIdOf(r.taskId);
+  return (id === null ? undefined : ctx.brains.get(id)) ?? null;
+}
+
+/** The known brain whose folder holds the record's cwd (longest path wins). */
+function brainByCwd(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
+  const cwd = r.cwd;
+  if (!cwd) return null;
+  let best: BrainCtx | null = null;
+  for (const b of ctx.brains.values())
+    if (isInside(b.path, cwd) && (!best || b.path.length > best.path.length))
+      best = b;
+  return best;
+}
+
+/**
+ * Whether a record is brain usage, also when its brain is unknown (deleted, not loaded yet): such a record is never
+ * billable. A record of a task (by id or session) is the task's, also when its cwd is inside a brain folder.
+ */
+export function isBrainRecord(
+  r: BudgetRecord,
+  ctx: AttributionContext,
+): boolean {
+  if (brainIdOf(r.taskId) !== null) return true;
+  return !taskOf(r, ctx) && brainByCwd(r, ctx) !== null;
+}
+
+const brainAttribution = (b: BrainCtx): Attribution => ({
+  level: 'brain',
+  brainId: b.id,
+  organization: b.organization,
+  project: b.project,
+});
+
+/** A `brain:` task id, else task (see taskOf), else brain by folder, else repo by folder, else none. */
 export function attribute(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): Attribution {
+  const byId = brainById(r, ctx);
+  if (byId) return brainAttribution(byId);
   const task = taskOf(r, ctx);
   if (task) return forTask(task.t, task.repo, ctx);
+  const byCwd = brainByCwd(r, ctx);
+  if (byCwd) return brainAttribution(byCwd);
   const cwd = r.cwd;
   if (!cwd) return { level: 'none' };
   let repo: { r: RepoCtx; len: number } | null = null;
@@ -180,9 +233,9 @@ export function attribute(
   return { level: 'none' };
 }
 
-/** Whether `next` may replace the stored attribution `prev`: only a higher level, or a repo that got its connection. Task level is frozen. */
+/** Whether `next` may replace the stored attribution `prev`: only a higher level, or a repo that got its connection. Task and brain level are frozen. */
 export function raises(prev: Attribution, next: Attribution): boolean {
-  if (prev.level === 'task') return false;
+  if (prev.level === 'task' || prev.level === 'brain') return false;
   if (LEVEL_RANK[next.level] > LEVEL_RANK[prev.level]) return true;
   return (
     prev.level === 'repo' &&
@@ -193,7 +246,7 @@ export function raises(prev: Attribution, next: Attribution): boolean {
 }
 
 /**
- * The stored version and a new one of the same request: attribution never goes down (and is frozen at task), the
+ * The stored version and a new one of the same request: attribution never goes down (and is frozen at task or brain), the
  * larger token copy wins, billable is the new one's. An unpriced stored copy takes the new copy's price when the
  * tokens are the same (a Shellie update brought a rate for its model).
  */

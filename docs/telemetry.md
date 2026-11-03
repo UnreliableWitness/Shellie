@@ -26,17 +26,18 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 
 | Name | Properties / measurements |
 | --- | --- |
-| Screen views (page views) | `sprint`, `task`, `new-task`, `setup`, `finish`, `settings`, `home`, `add-repo`, `connect`, `get-started`, `agents`, `secrets`, `secrets-import` |
+| Screen views (page views) | `sprint`, `brain`, `task`, `new-task`, `setup`, `finish`, `settings`, `home`, `add-repo`, `connect`, `get-started`, `agents`, `secrets`, `secrets-import` |
 | `app.started` | splash on/off; counts of repos, open tasks, connections; whether the usage receiver listens; boot step timings (see Performance) |
 | `app.quit` | session length in minutes |
 | `home.refreshed` | the Home page's data was rebuilt; number of connections, number that failed; duration in ms |
 | `home.failed` | a connection failed in a Home rebuild; `kind` (`unauthorized`, `unreachable`, `timeout`, `step`) |
 | `home.clicked` | a click on Home; `band` (`task`, `up-next`, `review`, `team-review`, `my-pr`, `sprint`, `stats-period`, `budget-month`, `budget-settings`) |
+| `brain.screen.action` | a button or drop on a Brain page; `action` (`refresh`, `lint`, `digest`, `ask`, `drop`, `paste`, `resolve`, `resume`, `retry`, `continue`, `capture` (a source captured from the inbox list), `terminal` (Open terminal, or from a task its brain terminal), `close-terminal`, and from a task: `tab`, `capture-option`); never names, paths or content |
 | `budget.alert` | a budget alert fired (main); `vendor` (`claude`, `copilot`), `kind` (`at80`, `forecastOver`, `at100`) |
 | `costServer.connected`, `costServer.disconnected` | Settings › Cost server saved or forgot a connection; none (never the address, email or key) |
 | `costServer.connectFailed` | Settings › Cost server's test of a connection failed; `kind` (`network`, `auth`, `server`, `rejected`) |
 | `costServer.sendFailed` | sending ledger records (or the hourly hello) to the cost server failed; `kind` (as above), `status` (HTTP status, 0 without one) |
-| `ledger.records` | the cost ledger's record counts, at most once per local day; `claudeCode`, `opencode`, `copilotCli` (by tool), `task`, `repo`, `none` (by attribution); counts only, no amounts or names |
+| `ledger.records` | the cost ledger's record counts, at most once per local day; `claudeCode`, `opencode`, `copilotCli` (by tool), `task`, `repo`, `brain`, `none` (by attribution); counts only, no amounts or names |
 | `onboarding.shown` | the Get started page opened; none |
 | `onboarding.dismissed` | Skip for now on Get started, or Dismiss on its Home band; `repos`, `connections` (counts) |
 | `onboarding.step` | a step of first-run setup was left; `step` (`agents`, `connect`, `repository`), `outcome` (`continued`, `skipped`, `back`) |
@@ -91,6 +92,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `settings.copyEntries` | measurements: count per `copy:` entry state (`present`, `missing`, `holdsSecrets`, `notIgnored`, `outside`) and `suggestions`; no names or paths |
 | `settings.scope` | the Settings scope tab chosen (`user` or `repo`), by the tab or the other scope's results link |
 | `settings.search` | a Settings search, sent once the box has been still for 1 s; measurement `results`: matching settings in the current scope. Never the query |
+| `settings.brain` | `action`: `create`, `update`, `delete`, `update-skills` or `open-folder`; never names, paths or wikis |
 | `workItems.search` | picker scope (`sprint` or `mine`); whether search text was typed (not the text) |
 | `secrets.discovered` | Shellie looked for a repo's secrets (the import page opened); measurements only: `values` found, `secretLike`, `unassigned` (no environment from the file or profile name), `skipped` (names that cannot be environment variables), and the number of values per source kind (`dotenv`, `appsettings`, `launchSettings`, `userSecrets`, `vscode`, `compose`, `localSettings`, `secretsFolder`, `other`). Never a name, value, path or source |
 | `secrets.imported` | an import saved values; `environments`: the environments it saved values for, from the fixed four (`development`, `test`, `uat`, `production`, comma-separated); `rewriteWorktreeCopies`; measurements `values`, `worktreesRewritten`, `filesChanged` (main-checkout files the import took the keys out of) |
@@ -102,6 +104,11 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `repo.added`, `repo.removed`, `repo.connectionLinked`, `connection.saved`, `connection.removed` | counts or linked/unlinked only; `repo.added` also has `wroteConfig` (true when Shellie wrote `.shellie.yml`) |
 | `connection.probeFailed` | the Connect page's Test failed: `status`, the HTTP status Azure DevOps answered with (0 when it could not be reached); never the URL, organization or token |
 | `repo.inspected` | a folder was inspected for adding: `remote` (`azure-devops`, `github`, `other` or `none`), `lockfile` (`npm`, `pnpm`, `yarn` or `none`), and `linked`, `dotnet`, `devScript`, `apm`, `existingConfig`, `secrets` (whether discovery found a secret-like value) (booleans); never paths, URLs, names or values |
+| `brain.created` | a brain was created or an existing brain folder adopted; `wiki` (whether a wiki mirror was chosen). Never the brain's name, path or project |
+| `brain.source.added` | a file or pasted text was added to a brain; `type` (`sow`, `deck`, `doc`, `transcript`, `note`, `task`, `wiki-page`), `format` (`pdf`, `docx`, `pptx`, `vtt`, `md`, `txt`, `other`, or `text` for pasted text), `sizeKb` (`<10`, `10-100`, `100-1000`, `>1000`), `outcome` (`ok`, `unsupported`, `duplicate`, `needs-ocr`, `error`). Never the file name or content |
+| `brain.job` | a brain's headless skill run finished; `kind` (`capture`, `sync`, `lint`, `digest`), `outcome` (`ok`, `failed`), `ms` (duration) |
+| `brain.refresh` | a brain's wiki mirror was refreshed (the button or the daily refresh); `outcome` (`ok`, `failed`), `pages` (`0`, `1-10`, `11-100`, `>100`), `ms` (duration). Never a page name or URL |
+| `brain.deleted` | a brain was removed; `folder` (whether its folder was deleted too) |
 
 ## Errors
 

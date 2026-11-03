@@ -42,7 +42,7 @@ export function darwinPlatform(env: NodeJS.ProcessEnv): Platform {
       args: ['-l', 'JavaScript', '-e', CLONE_DIR, src, dest],
     }),
     // A repo's own command is the user's shell text, so it is not quoted; Shellie's flags are.
-    claudeCommand: (context, flags = [], base) =>
+    claudeCommand: (context, flags = [], base, prompt) =>
       login([
         '-c',
         [
@@ -50,6 +50,7 @@ export function darwinPlatform(env: NodeJS.ProcessEnv): Platform {
           ...[
             ...flags,
             ...(context === null ? [] : ['--append-system-prompt', context]),
+            ...(prompt ? [prompt] : []),
           ].map(shellQuote),
         ].join(' '),
       ]),

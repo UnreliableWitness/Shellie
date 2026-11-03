@@ -202,6 +202,72 @@ describe('SetupRunner: work item step', () => {
   });
 });
 
+describe('SetupRunner: brain step', () => {
+  const BRAIN = { id: 'b1', name: 'Acme', path: '/brains/acme' };
+  const stepEvents = (events: SetupEvent[], index: number) =>
+    events.filter((e) => e.type === 'step' && e.index === index);
+
+  it('planSteps puts the brain step after task-file', () => {
+    const steps = planSteps(
+      plan('/r', { brain: BRAIN, apmTargets: ['claude'], commands: ['x'] }),
+    );
+    expect(steps.map((s) => s.kind)).toEqual([
+      'fetch',
+      'worktree',
+      'task-file',
+      'brain',
+      'apm',
+      'terminals',
+    ]);
+    expect(steps[3]).toEqual({
+      kind: 'brain',
+      label: 'Brain context',
+      detail: 'Acme',
+    });
+    expect(planSteps(plan('/r')).map((s) => s.kind)).not.toContain('brain');
+  });
+
+  it('runs the hook after task.md is written and ends done with its detail', async () => {
+    const repo = makeRepo();
+    const p = plan(repo, { brain: BRAIN });
+    const { events, onEvent } = collect();
+    let taskMdThere = false;
+    const result = await runner.run(p, {
+      onEvent,
+      startTerminals: async () => {},
+      brainContext: async () => {
+        taskMdThere = existsSync(
+          path.join(p.worktreePath, '.shellie', 'task.md'),
+        );
+        return { detail: 'context from Acme' };
+      },
+    });
+    expect(result).toEqual({ ok: true });
+    expect(taskMdThere).toBe(true);
+    expect(stepEvents(events, 3).at(-1)).toMatchObject({
+      status: 'done',
+      detail: 'context from Acme',
+    });
+  });
+
+  it('turns a throwing hook into a warn, and setup goes on', async () => {
+    const repo = makeRepo();
+    const { events, onEvent } = collect();
+    const result = await runner.run(plan(repo, { brain: BRAIN }), {
+      onEvent,
+      startTerminals: async () => {},
+      brainContext: async () => {
+        throw new Error('index.md is missing');
+      },
+    });
+    expect(result).toEqual({ ok: true });
+    expect(stepEvents(events, 3).at(-1)).toMatchObject({
+      status: 'warn',
+      detail: 'index.md is missing',
+    });
+  });
+});
+
 describe('SetupRunner', () => {
   it('creates the worktree, copies files, writes the task file and starts terminals with the setup commands', async () => {
     const repo = makeRepo();

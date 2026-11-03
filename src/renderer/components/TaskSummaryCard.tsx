@@ -206,6 +206,11 @@ export function TaskSummaryCard({
             edit('Work item', 'repo-workitems'),
           )}
           {row(
+            'Brain',
+            <span>{summary.brain ?? 'None for this project'}</span>,
+            edit('Brain', 'brains', true),
+          )}
+          {row(
             'Editor',
             <span>{summary.editor ?? 'Chosen by Shellie'}</span>,
             edit('Editor', 'repo-editor'),
