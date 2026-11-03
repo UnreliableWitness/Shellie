@@ -59,27 +59,42 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
     });
   };
 
+  // An open in flight, so a double click or effect does not spawn twice.
+  const opening = new Map<string, Promise<TerminalDef>>();
+
+  const open = async (
+    brainId: string,
+    resumeSession?: string | null,
+  ): Promise<TerminalDef> => {
+    const brain = d.brains.get(brainId);
+    if (!brain) throw new Error(`Unknown brain ${brainId}`);
+    const stored = brainTerminalDef(brain);
+    if (brain.terminal && d.terminals.isRunning(stored.id)) return stored;
+    const sessionId = resumeSession || stored.sessionId || randomUUID();
+    const resume = Boolean(resumeSession || stored.sessionId);
+    const def: TerminalDef = { ...stored, sessionId };
+    await d.brains.patch(brainId, { terminal: def });
+    // An exited process stays in the manager until it is killed.
+    if (d.terminals.has(def.id)) await d.terminals.kill(def.id);
+    await spawn(brain, def, resume);
+    return def;
+  };
+
   return {
-    async open(
-      brainId: string,
-      resumeSession?: string | null,
-    ): Promise<TerminalDef> {
-      const brain = d.brains.get(brainId);
-      if (!brain) throw new Error(`Unknown brain ${brainId}`);
-      const stored = brainTerminalDef(brain);
-      if (brain.terminal && d.terminals.isRunning(stored.id)) return stored;
-      const sessionId = resumeSession || stored.sessionId || randomUUID();
-      const resume = Boolean(resumeSession || stored.sessionId);
-      const def: TerminalDef = { ...stored, sessionId };
-      await d.brains.patch(brainId, { terminal: def });
-      await spawn(brain, def, resume);
-      return def;
+    open(brainId: string, resumeSession?: string | null) {
+      const pending = opening.get(brainId);
+      if (pending) return pending;
+      const p = open(brainId, resumeSession).finally(() =>
+        opening.delete(brainId),
+      );
+      opening.set(brainId, p);
+      return p;
     },
     ownerOf,
     async restart(terminalId: string): Promise<boolean> {
       const brain = ownerOf(terminalId);
       if (!brain?.terminal) return false;
-      if (d.terminals.isRunning(terminalId)) await d.terminals.kill(terminalId);
+      if (d.terminals.has(terminalId)) await d.terminals.kill(terminalId);
       await spawn(brain, brain.terminal, true);
       return true;
     },

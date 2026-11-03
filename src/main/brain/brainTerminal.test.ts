@@ -13,6 +13,7 @@ let dir: string;
 let store: BrainStore;
 let spawned: SpawnOptions[];
 let running: Set<string>;
+let exited: Set<string>;
 let killed: string[];
 
 beforeEach(async () => {
@@ -32,6 +33,7 @@ beforeEach(async () => {
   spawned = [];
   killed = [];
   running = new Set();
+  exited = new Set();
 });
 afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
@@ -40,13 +42,17 @@ afterEach(async () => {
 const make = (exists = true) => {
   const terminals = {
     spawn: (o: SpawnOptions) => {
+      if (running.has(o.id) || exited.has(o.id))
+        throw new Error(`Terminal ${o.id} already exists`);
       spawned.push(o);
       running.add(o.id);
     },
     isRunning: (id: string) => running.has(id),
+    has: (id: string) => running.has(id) || exited.has(id),
     kill: async (id: string) => {
       killed.push(id);
       running.delete(id);
+      exited.delete(id);
     },
   } as unknown as TerminalManager;
   return createBrainTerminals({
@@ -119,6 +125,28 @@ describe('createBrainTerminals', () => {
     expect(spawned).toHaveLength(2);
     expect(line(spawned[1])).toContain('--resume');
     expect(line(spawned[1])).toContain(def.sessionId);
+  });
+
+  it('reopens and restarts a terminal whose process exited', async () => {
+    const bt = make();
+    const def = await bt.open('b1');
+    running.delete('brain-b1');
+    exited.add('brain-b1');
+    await bt.open('b1');
+    expect(spawned).toHaveLength(2);
+    expect(line(spawned[1])).toContain('--resume');
+    expect(line(spawned[1])).toContain(def.sessionId);
+    running.delete('brain-b1');
+    exited.add('brain-b1');
+    expect(await bt.restart('brain-b1')).toBe(true);
+    expect(spawned).toHaveLength(3);
+  });
+
+  it('spawns once for two concurrent opens', async () => {
+    const bt = make();
+    const [a, b] = await Promise.all([bt.open('b1'), bt.open('b1')]);
+    expect(spawned).toHaveLength(1);
+    expect(a).toEqual(b);
   });
 
   it('kill stops a brain terminal only', async () => {
