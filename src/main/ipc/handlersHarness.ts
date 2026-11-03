@@ -2,9 +2,18 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, expect } from 'vitest';
+import { afterAll, expect, vi } from 'vitest';
 import type { Events } from '../../shared/ipc';
+import {
+  BrainSchema,
+  type Brain,
+  type BrainJob,
+  type BrainJobKind,
+  type BrainWiki,
+} from '../../shared/brain';
 import type { CreateTaskInput, SetupEvent } from '../../shared/types';
+import { BrainStore } from '../brain/BrainStore';
+import { scaffoldBrain } from '../brain/scaffold';
 import { TrackerRegistry } from '../trackers/TrackerRegistry';
 import { ConnectionStore, type TokenCrypto } from '../services/ConnectionStore';
 import { SecretStore } from '../secrets/SecretStore';
@@ -194,6 +203,7 @@ export async function harness(
       type: 'User Story',
       title: 'Show estimated delivery date',
       url: null,
+      project: null,
     },
     branch: 'feature/48231-show-estimated-delivery-date',
     copy: true,
@@ -255,6 +265,71 @@ export function expectTerminalsKept(
   const listed = store.state.tasks.find((t) => t.id === taskId)?.terminals;
   expect(listed).toHaveLength(count);
   for (const def of listed ?? []) expect(terminals.has(def.id)).toBe(true);
+}
+
+/** Brain services for `harness(…, { brain })`: a store in a temp folder and a runner whose `enqueue` is a spy. */
+export async function brainServices() {
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'shellie-brains-'));
+  connDirs.push(userData);
+  const store = new BrainStore(path.join(userData, 'brains.json'));
+  await store.load();
+  const enqueue = vi.fn(
+    (
+      brainId: string,
+      kind: BrainJobKind,
+      source?: string | null,
+    ): BrainJob => ({
+      id: 'job-1',
+      brainId,
+      kind,
+      source: source ?? null,
+      status: 'queued',
+      startedAt: null,
+      endedAt: null,
+      sessionId: null,
+      result: null,
+      error: null,
+    }),
+  );
+  const brain: NonNullable<Services['brain']> = {
+    store,
+    runner: {
+      enqueue,
+      jobs: () => [],
+      running: () => false,
+      resume: () => undefined,
+    },
+    ledgerToday: () => ({ tokens: 0, costEur: 0 }),
+    userData,
+  };
+  /** Scaffolds a brain folder (with `index` as its index.md) and stores the brain. */
+  const add = async (b: {
+    connectionId: string;
+    project: string;
+    name?: string;
+    index?: string;
+    wiki?: BrainWiki;
+    options?: Partial<Brain['options']>;
+  }): Promise<Brain> => {
+    const name = b.name ?? 'Acme';
+    const dir = path.join(userData, name);
+    await scaffoldBrain(new GitClient(), dir, name);
+    if (b.index !== undefined)
+      writeFileSync(path.join(dir, 'index.md'), b.index);
+    const brain = BrainSchema.parse({
+      id: `brain-${name}`,
+      name,
+      connectionId: b.connectionId,
+      project: b.project,
+      path: dir,
+      wiki: b.wiki ?? null,
+      options: b.options ?? {},
+      createdAt: '2026-11-03T09:00:00.000Z',
+    });
+    await store.add(brain);
+    return brain;
+  };
+  return { brain, store, enqueue, add };
 }
 
 export function routeHealthyOrg(server: AdoServer, org = 'unreliablewitness') {

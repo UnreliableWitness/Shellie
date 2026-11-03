@@ -59,6 +59,8 @@ export function buildSetupSummary(args: {
   start: StartSettings;
   types: WorkItemTypeMeta[] | null;
   editor: EditorPrefs;
+  /** The name of the project's brain whose context task.md gets; null when none (or not known yet). */
+  brain: string | null;
 }): SetupSummary {
   const { workItem, start } = args;
   const editorId =
@@ -80,5 +82,6 @@ export function buildSetupSummary(args: {
         }
       : null,
     editor: editorId ? EDITOR_LABELS[editorId] : null,
+    brain: args.brain,
   };
 }

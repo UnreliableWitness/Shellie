@@ -14,6 +14,8 @@ export const WorkItemRefSchema = z.object({
   type: z.string().min(1),
   title: z.string().min(1),
   url: z.string().nullable().default(null),
+  /** The Azure DevOps project the item lives in; null on refs from before it was stored, or typed by hand. */
+  project: z.string().nullable().default(null),
 });
 export type WorkItemRef = z.infer<typeof WorkItemRefSchema>;
 
@@ -76,6 +78,8 @@ export const SetupSummarySchema = z.object({
     .nullable(),
   /** The chosen editor's label; null when Shellie picks one. */
   editor: z.string().nullable(),
+  /** The name of the project's brain whose context task.md gets; null when none. */
+  brain: z.string().nullable().default(null),
 });
 export type SetupSummary = z.infer<typeof SetupSummarySchema>;
 
@@ -359,6 +363,8 @@ export type FinishOptions = {
   prSummaries?: Record<string, string>;
   /** Single repo: push even when the branch holds a stored secret's value, or could not be checked (confirmed). */
   confirmLeak?: boolean;
+  /** Copy the task's .shellie/task.md into its project's brain as a source and capture it. */
+  captureTaskMd?: boolean;
 };
 
 export type GitFile = { status: string; path: string };
@@ -455,7 +461,9 @@ export type SetupStepKind =
   /** A setup command run by the setup itself; only a reopened extra workspace's commands (the home's go to its Setup tab). */
   | 'command'
   | 'terminals'
-  | 'work-item';
+  | 'work-item'
+  /** The project's brain: its index appended to task.md. */
+  | 'brain';
 export type SetupStepDef = {
   kind: SetupStepKind;
   label: string;
@@ -567,6 +575,8 @@ export type WorkItemSummary = {
   iterationPath: string;
   assignedTo: string | null;
   url: string;
+  /** The Azure DevOps project the item lives in. */
+  project: string | null;
 };
 
 export type WorkItemSearch = { scope: 'sprint' | 'mine'; text: string };

@@ -17,6 +17,7 @@ const task: TaskView = {
     type: 'Issue',
     title: 'Checkout: allow saving a delivery address',
     url: null,
+    project: null,
   },
   slug: 's',
   branch: 'feature/48213-save-delivery-address',

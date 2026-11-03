@@ -315,6 +315,7 @@ describe('AdoClient reads', () => {
         iterationPath: 'Shellie\\Sprint 1',
         assignedTo: 'Dries Hoebeke',
         url: 'https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/12',
+        project: 'Shellie',
       },
       {
         id: '7',
@@ -325,6 +326,7 @@ describe('AdoClient reads', () => {
         iterationPath: 'Shellie\\Sprint 1',
         assignedTo: null,
         url: `${server.url}/unreliablewitness/Shellie/_workitems/edit/7`,
+        project: 'Shellie',
       },
     ]);
     const wiql = server.requests.find((r) => r.method === 'POST');

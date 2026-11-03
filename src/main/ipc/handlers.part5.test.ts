@@ -747,6 +747,7 @@ describe('handlers: task setup summary', () => {
       run: ['npm run dev'],
       workItem: { move: 'Doing', assign: false },
       editor: 'VS Code',
+      brain: null,
     });
     // Recorded once: a setting changed after creation applies to the next task.
     await h['repos:setOverride'](added.id, 'copy', ['.env.local']);

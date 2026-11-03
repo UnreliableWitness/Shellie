@@ -48,6 +48,8 @@ export type SetupPlan = {
   skipHome?: boolean;
   /** Reopen: the task's other repos whose worktrees are made again, each with its own copies and setup commands. */
   extraRestores?: ExtraRestore[];
+  /** The project's brain whose index task.md gets (the `brainContext` hook); absent for none. */
+  brain?: { id: string; name: string; path: string };
 };
 
 export type ExtraRestore = {
@@ -75,6 +77,8 @@ export type SetupHooks = {
   onBaseSha?(sha: string): Promise<void>;
   /** Moves the task's work item and assigns it; a thrown error becomes a warning. */
   updateWorkItem?: () => Promise<{ detail: string; warn: boolean }>;
+  /** Appends the brain's context to task.md; a thrown error becomes a warning. */
+  brainContext?: () => Promise<{ detail: string; warn?: boolean }>;
   fromStep?: number;
 };
 
@@ -124,6 +128,12 @@ export function planSteps(plan: SetupPlan): SetupStepDef[] {
       label: 'Write task file',
       detail: '.shellie/task.md',
     });
+    if (plan.brain)
+      steps.push({
+        kind: 'brain',
+        label: 'Brain context',
+        detail: plan.brain.name,
+      });
     if (plan.apmTargets && plan.apmTargets.length > 0)
       steps.push({
         kind: 'apm',
@@ -383,6 +393,18 @@ export class SetupRunner {
         await ensureExcluded(this.git, plan.repoPath, '.shellie/');
         log('wrote .shellie/task.md');
         return;
+      case 'brain': {
+        if (!hooks.brainContext) return { detail: 'Skipped' };
+        try {
+          const r = await hooks.brainContext();
+          log(r.detail);
+          return r;
+        } catch (e) {
+          const detail = errorMessage(e);
+          log(detail);
+          return { detail, warn: true };
+        }
+      }
       case 'apm':
         return this.installAgentPackages(plan, log);
       case 'terminals': {

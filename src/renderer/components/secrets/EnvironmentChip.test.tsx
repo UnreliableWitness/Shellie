@@ -19,6 +19,7 @@ const task = (over: Partial<TaskView> = {}): TaskView => ({
     type: 'Bug',
     title: 'Refund fails for split payments',
     url: null,
+    project: null,
   },
   slug: '51077-refund',
   branch: 'bugfix/51077-refund',

@@ -228,10 +228,8 @@ export function createBrainHandlers(
       const task = d.task(taskId);
       const connectionId = taskConnectionId(task, d.repos());
       if (!connectionId) return null;
-      // The work item's own project arrives with the next schema change; until then, the connection's.
-      const project =
-        (task.workItem as { project?: string | null } | null)?.project ??
-        connectionProject(connectionId);
+      // The work item's own project; the connection's for tasks without one (or from before it was stored).
+      const project = task.workItem?.project ?? connectionProject(connectionId);
       const b = brainForTask(d.brains, connectionId, project);
       return b ? view(b) : null;
     },

@@ -182,7 +182,13 @@ export function NewTaskScreen({
       mode === 'pick'
         ? picked
         : mode === 'typed' && (id.trim() || title.trim())
-          ? { id: id.trim(), type, title: title.trim(), url: null }
+          ? {
+              id: id.trim(),
+              type,
+              title: title.trim(),
+              url: null,
+              project: null,
+            }
           : null,
     [mode, picked, id, type, title],
   );
@@ -232,6 +238,8 @@ export function NewTaskScreen({
           start: repo.workItemOnStart,
           types: typeMeta ? [typeMeta] : null,
           editor: editorPrefs,
+          // Main fills it in when the task is created.
+          brain: null,
         })
       : null;
 

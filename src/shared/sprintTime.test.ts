@@ -12,6 +12,7 @@ const item = (id: string, over: Partial<SprintItem> = {}): SprintItem => ({
   iterationPath: 'Shellie\\Sprint 1',
   assignedTo: null,
   url: '',
+  project: null,
   remainingWork: null,
   originalEstimate: null,
   completedWork: null,

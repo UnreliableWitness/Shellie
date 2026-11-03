@@ -15,6 +15,7 @@ const item = (id: number): SprintItem => ({
   iterationPath: 'Shellie\\Sprint 1',
   assignedTo: null,
   url: `https://example/${id}`,
+  project: null,
   remainingWork: null,
   originalEstimate: null,
   completedWork: null,

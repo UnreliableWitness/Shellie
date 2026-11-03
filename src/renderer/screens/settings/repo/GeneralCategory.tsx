@@ -15,6 +15,7 @@ const EXAMPLE = {
     type: 'User Story',
     title: 'Add login page',
     url: null,
+    project: null,
   },
   name: '',
 };

@@ -15,6 +15,7 @@ const task: TaskView = {
     type: 'User Story',
     title: 'Checkout: allow saving a delivery address',
     url: null,
+    project: null,
   },
   slug: 'a',
   branch: 'feature/48213-save-delivery-address',

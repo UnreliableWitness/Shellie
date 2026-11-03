@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {
   ENVIRONMENT_LABEL,
@@ -81,6 +82,7 @@ import type {
   TaskView,
   TerminalDef,
   WorkItemDetails,
+  WorkItemRef,
   WorkItemTypeMeta,
   WorkspaceAction,
   WorkspaceCheck,
@@ -202,6 +204,15 @@ import type { createBrainTerminals } from '../brain/brainTerminal';
 import { BrainStore } from '../brain/BrainStore';
 import { createBrainHandlers, type BrainRunner } from '../brain/brainHandlers';
 import { mirrorAuthFor } from '../brain/wikiAccess';
+import {
+  appendContext,
+  appendLog,
+  brainForTask,
+  closeLine,
+  contextSection,
+} from '../brain/context';
+import { addSource } from '../brain/sources';
+import type { Brain } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 
 export type Services = {
@@ -737,6 +748,63 @@ export function createHandlers(s: Services): Handlers {
   const patchTask = (id: string, patch: Partial<Task>) =>
     mutateTask(id, (t) => Object.assign(t, patch));
 
+  const brain = s.brain ?? {
+    store: new BrainStore(path.join(s.usageDir, 'brains.json')),
+    runner: {
+      enqueue: () => {
+        throw new Error('Brain jobs are not available here');
+      },
+      jobs: () => [],
+      running: () => false,
+      resume: () => undefined,
+    },
+    ledgerToday: () => ({ tokens: 0, costEur: 0 }),
+    userData: s.usageDir,
+  };
+  const brainHandlers = createBrainHandlers({
+    brains: brain.store,
+    git: s.git,
+    runner: brain.runner,
+    terminals: s.brainTerminals,
+    mirrorAuth: mirrorAuthFor((id) => s.connections.token(id)),
+    tracker: (id) => s.trackers.tracker(id),
+    connections: s.connections,
+    task: taskById,
+    repos: () => s.repos.list(),
+    ledgerToday: brain.ledgerToday,
+    broadcast: s.broadcast,
+    pickFolder: s.pickFolder,
+    openPath: s.openPath ?? (async () => ''),
+    userData: brain.userData,
+    remember: (values) => s.rememberSensitive?.(values),
+    event: (n, p) => tel.event(n, p),
+  });
+  /** The brain a new task's summary names: by the work item's project when it is known (no network). */
+  const summaryBrain = (
+    connectionId: string | null,
+    workItem: WorkItemRef | null,
+  ): string | null => {
+    const b = brainForTask(
+      brain.store,
+      connectionId,
+      workItem?.project ?? null,
+    );
+    return b?.options.contextInTaskMd ? b.name : null;
+  };
+  /** The brain of a task's work item project (else its connection's), from what is stored; no network. */
+  const taskBrain = (task: Task): Brain | null => {
+    const connectionId = taskConnectionId(task, s.repos.list());
+    if (!connectionId) return null;
+    let project = task.workItem?.project ?? null;
+    if (!project)
+      try {
+        project = s.connections.get(connectionId).project;
+      } catch {
+        return null;
+      }
+    return brainForTask(brain.store, connectionId, project);
+  };
+
   /** Finished tasks' worktree folders a process still held at Finish, retried until they are gone (#115). */
   const cleanup = new WorktreeCleanup({
     git: s.git,
@@ -1035,6 +1103,9 @@ export function createHandlers(s: Services): Handlers {
         // A folder removed by hand would make Claude refuse to start.
         .filter((w) => w.worktreePath !== cwd && existsSync(w.worktreePath))
         .flatMap((w) => ['--add-dir', w.worktreePath]);
+      const b = taskBrain(task);
+      if (b?.options.addDirForClaude && existsSync(b.path))
+        dirs.push('--add-dir', b.path);
       const themeFile =
         s.claudeThemeSettings?.(denyRulesFor(denyPaths)) ?? null;
       const theme = themeFile ? ['--settings', themeFile] : [];
@@ -1690,10 +1761,126 @@ export function createHandlers(s: Services): Handlers {
     }
   };
 
+  /**
+   * The brain whose context task.md gets: of the work item's project (as Azure DevOps says, else as stored, else
+   * the connection's). A project learned from Azure DevOps is stored on the task's work item.
+   */
+  const setupBrain = async (
+    task: Task,
+    repo: Repo,
+    details: WorkItemDetails | undefined,
+  ): Promise<SetupPlan['brain']> => {
+    const connectionId = taskConnectionId(task, [repo]);
+    if (!connectionId) return undefined;
+    const learned = details?.fields['System.TeamProject'];
+    if (
+      typeof learned === 'string' &&
+      learned &&
+      task.workItem &&
+      task.workItem.project !== learned
+    )
+      await mutateTask(task.id, (t) => {
+        if (t.workItem) t.workItem.project = learned;
+      });
+    let project =
+      (typeof learned === 'string' && learned) ||
+      task.workItem?.project ||
+      null;
+    if (!project)
+      try {
+        project = s.connections.get(connectionId).project;
+      } catch {
+        return undefined;
+      }
+    const b = brainForTask(brain.store, connectionId, project);
+    return b?.options.contextInTaskMd
+      ? { id: b.id, name: b.name, path: b.path }
+      : undefined;
+  };
+
+  /**
+   * Finish, before the worktrees go: the task's close line in its brain's log.md and, when asked, its task.md
+   * added as a source and captured. A brain that fails is logged; it never fails the finish.
+   */
+  const brainAtFinish = async (
+    task: Task,
+    options: FinishOptions,
+    link: string,
+  ) => {
+    const b = taskBrain(task);
+    if (!b) return;
+    const taskMd = path.join(task.worktreePath, '.shellie', 'task.md');
+    if (options.captureTaskMd && (await pathExists(taskMd))) {
+      // A copy named after the task, so the source's name says which task it was.
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-task-'));
+      try {
+        const file = path.join(tmp, `${task.slug}-task.md`);
+        await fs.copyFile(taskMd, file);
+        const r = await addSource(s.git, b.path, { file }, 'task');
+        if (r.ok) brain.runner.enqueue(b.id, 'capture', r.path);
+        else console.error('[brain] task.md not added at finish:', r.message);
+      } catch (e) {
+        console.error('[brain] task.md not captured at finish', e);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    try {
+      await appendLog(
+        s.git,
+        b.path,
+        closeLine(
+          new Date(now()),
+          task.workItem?.id ?? null,
+          task.workItem?.title ?? task.name,
+          link,
+        ),
+      );
+    } catch (e) {
+      console.error('[brain] close line not logged at finish', e);
+    }
+  };
+
+  /** The brain's index appended to task.md, after refreshing its wiki mirror (a failed or slow refresh only warns). */
+  const BRAIN_REFRESH_TIMEOUT_MS = 8_000;
+  const brainContext = async (
+    b: NonNullable<SetupPlan['brain']>,
+    worktreePath: string,
+  ): Promise<{ detail: string; warn: boolean }> => {
+    let detail = `context from ${b.name}`;
+    let warn = false;
+    if (brain.store.get(b.id)?.wiki) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const r = await Promise.race([
+        brainHandlers['brain:refresh'](b.id).catch((e: unknown) => ({
+          ok: false as const,
+          message: errorMessage(e),
+        })),
+        new Promise<{ ok: false; message: string }>((resolve) => {
+          timer = setTimeout(
+            () => resolve({ ok: false, message: 'timed out' }),
+            BRAIN_REFRESH_TIMEOUT_MS,
+          );
+        }),
+      ]).finally(() => clearTimeout(timer));
+      if (!r.ok) {
+        detail = `brain not refreshed: ${r.message}`;
+        warn = true;
+      }
+    }
+    const indexMd = await fs.readFile(path.join(b.path, 'index.md'), 'utf8');
+    await appendContext(
+      path.join(worktreePath, '.shellie', 'task.md'),
+      contextSection(b.name, b.path, indexMd),
+    );
+    return { detail, warn };
+  };
+
   const buildPlan = async (task: Task): Promise<SetupPlan> => {
     const repo = s.repos.get(task.repoId);
     const config = await s.loadConfig(repo.path);
     const details = await workItemDetails(task, repo);
+    const brainOfTask = await setupBrain(task, repo, details);
     const reopening = isReopening(task);
     const defs = reopening ? restoredTerminals(task) : initialTerminals(task);
     const hasApm =
@@ -1748,6 +1935,7 @@ export function createHandlers(s: Services): Handlers {
             extraRestores: await extraRestores(task),
           }
         : {}),
+      ...(brainOfTask ? { brain: brainOfTask } : {}),
     };
   };
 
@@ -1811,6 +1999,8 @@ export function createHandlers(s: Services): Handlers {
             ...task,
             environment: live.environment,
             environmentUntil: live.environmentUntil,
+            // With the project setup learned, for the brain's --add-dir.
+            workItem: live.workItem,
           };
           const setupTab = commands.length > 0 ? [setupTerminal(commands)] : [];
           if (isReopening(cur)) {
@@ -1870,6 +2060,11 @@ export function createHandlers(s: Services): Handlers {
             throw e;
           }
         },
+        ...(plan.brain
+          ? {
+              brainContext: () => brainContext(plan.brain!, plan.worktreePath),
+            }
+          : {}),
       });
       if (result.ok && isReopening(task))
         await endReopen(taskId, {
@@ -2456,6 +2651,11 @@ export function createHandlers(s: Services): Handlers {
         }
         finishResults.set(taskId, results);
         if (failures.length > 0) throw new Error(failures.join('; '));
+        const prUrl =
+          results.find((r) => r.workspaceId === HOME_ID)?.pullRequest?.url ??
+          results.find((r) => r.pullRequest)?.pullRequest?.url ??
+          taskById(taskId).pullRequest?.url;
+        await brainAtFinish(task, options, prUrl ?? task.branch);
 
         // Summaries first: a cleanup that fails midway must not lose what the branches did.
         await s.store.update((st) => {
@@ -2528,39 +2728,8 @@ export function createHandlers(s: Services): Handlers {
       s.expiryTimers,
     );
 
-  const brain = s.brain ?? {
-    store: new BrainStore(path.join(s.usageDir, 'brains.json')),
-    runner: {
-      enqueue: () => {
-        throw new Error('Brain jobs are not available here');
-      },
-      jobs: () => [],
-      running: () => false,
-      resume: () => undefined,
-    },
-    ledgerToday: () => ({ tokens: 0, costEur: 0 }),
-    userData: s.usageDir,
-  };
-
   return {
-    ...createBrainHandlers({
-      brains: brain.store,
-      git: s.git,
-      runner: brain.runner,
-      terminals: s.brainTerminals,
-      mirrorAuth: mirrorAuthFor((id) => s.connections.token(id)),
-      tracker: (id) => s.trackers.tracker(id),
-      connections: s.connections,
-      task: taskById,
-      repos: () => s.repos.list(),
-      ledgerToday: brain.ledgerToday,
-      broadcast: s.broadcast,
-      pickFolder: s.pickFolder,
-      openPath: s.openPath ?? (async () => ''),
-      userData: brain.userData,
-      remember: (values) => s.rememberSensitive?.(values),
-      event: (n, p) => tel.event(n, p),
-    }),
+    ...brainHandlers,
     ...createDocsHandlers({
       taskById,
       git: s.git,
@@ -2742,6 +2911,7 @@ export function createHandlers(s: Services): Handlers {
             ? (typesKnown.get(repo.connectionId) ?? null)
             : null,
           editor: s.settings.get().editor,
+          brain: summaryBrain(repo.connectionId, input.workItem),
         });
       } catch {
         // The summary is for display; a config that cannot be read now shows up in setup itself.
@@ -3182,6 +3352,11 @@ export function createHandlers(s: Services): Handlers {
           }
           void s.openExternal(pullRequest.url).catch(() => undefined);
         }
+        await brainAtFinish(
+          task,
+          options,
+          taskById(taskId).pullRequest?.url ?? task.branch,
+        );
         // A terminal running in the folder blocks its removal on Windows (and a terminal without its
         // folder is useless), so removing the worktree closes the terminals even when that was unticked.
         const killTerminals = options.closeTerminals || options.removeWorktree;

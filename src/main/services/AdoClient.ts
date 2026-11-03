@@ -477,6 +477,8 @@ export class AdoClient {
       url:
         html ??
         `${this.organizationUrl}/${encodeURIComponent(project)}/_workitems/edit/${w.id}`,
+      // Every query here is scoped to the project (`[System.TeamProject] = @project`).
+      project,
     };
   }
 

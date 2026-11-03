@@ -33,7 +33,13 @@ describe('startTaskFor', () => {
     });
     await startTaskFor(
       'r1',
-      { id: '5', type: 'Task', title: 'Store the address', url: null },
+      {
+        id: '5',
+        type: 'Task',
+        title: 'Store the address',
+        url: null,
+        project: null,
+      },
       vi.fn(),
     );
     expect(
@@ -54,7 +60,13 @@ describe('startTaskFor', () => {
     });
     await startTaskFor(
       'r1',
-      { id: '5', type: 'Task', title: 'Store the address', url: null },
+      {
+        id: '5',
+        type: 'Task',
+        title: 'Store the address',
+        url: null,
+        project: null,
+      },
       vi.fn(),
     );
     expect(
@@ -71,7 +83,13 @@ describe('startTaskFor', () => {
       });
       await startTaskFor(
         'r1',
-        { id: '5', type: 'Task', title: 'Store the address', url: null },
+        {
+          id: '5',
+          type: 'Task',
+          title: 'Store the address',
+          url: null,
+          project: null,
+        },
         vi.fn(),
       );
       const input = calls.find((c) => c.channel === 'tasks:create')
@@ -92,7 +110,13 @@ describe('startTaskFor', () => {
     const notify = vi.fn();
     const task = await startTaskFor(
       'r1',
-      { id: '5', type: 'Task', title: 'Store the address', url: null },
+      {
+        id: '5',
+        type: 'Task',
+        title: 'Store the address',
+        url: null,
+        project: null,
+      },
       notify,
     );
     expect(task).toBeUndefined();

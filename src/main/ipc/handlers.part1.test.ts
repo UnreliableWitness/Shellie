@@ -708,7 +708,13 @@ describe('handlers: create task', () => {
         startClaude: false,
         openOpencode: true,
         openShell: false,
-        workItem: { id: '2', type: 'Bug', title: 'other', url: null },
+        workItem: {
+          id: '2',
+          type: 'Bug',
+          title: 'other',
+          url: null,
+          project: null,
+        },
         branch: 'bug/2-other',
       }),
     );
@@ -739,7 +745,13 @@ describe('handlers: create task', () => {
     const b = await h['tasks:create'](
       input({
         startClaude: true,
-        workItem: { id: '2', type: 'Bug', title: 'other', url: null },
+        workItem: {
+          id: '2',
+          type: 'Bug',
+          title: 'other',
+          url: null,
+          project: null,
+        },
         branch: 'bug/2-other',
       }),
     );
@@ -766,7 +778,13 @@ describe('handlers: create task', () => {
     await expect(
       h['tasks:create'](
         input({
-          workItem: { id: '1', type: 'Bug', title: 'other', url: null },
+          workItem: {
+            id: '1',
+            type: 'Bug',
+            title: 'other',
+            url: null,
+            project: null,
+          },
         }),
       ),
     ).rejects.toThrow(/already exists/);

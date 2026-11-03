@@ -55,6 +55,7 @@ const snapshot: HomeSnapshot = {
               iterationPath: 'Shellie\\S1',
               assignedTo: 'Me',
               url: 'u',
+              project: null,
               remainingWork: null,
               originalEstimate: null,
               completedWork: null,
@@ -152,7 +153,13 @@ describe('TasksBand', () => {
     );
     expect(useStore.getState().screen).toEqual({
       kind: 'new-task',
-      workItem: { id: '7', type: 'Issue', title: 'Reset mail', url: 'u' },
+      workItem: {
+        id: '7',
+        type: 'Issue',
+        title: 'Reset mail',
+        url: 'u',
+        project: null,
+      },
       repoId: 'r1',
     });
     expect(calls.some((c) => c.channel === 'tasks:create')).toBe(false);

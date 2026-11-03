@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ConnectionsFileSchema, StateSchema, WorkItemRefSchema } from './types';
+import {
+  ConnectionsFileSchema,
+  SetupSummarySchema,
+  StateSchema,
+  WorkItemRefSchema,
+} from './types';
 
 describe('StateSchema', () => {
   it('reads a repo saved with miacYmlFound', () => {
@@ -69,7 +74,22 @@ describe('WorkItemRefSchema', () => {
   it('accepts any type string and defaults url to null', () => {
     expect(
       WorkItemRefSchema.parse({ id: '7', type: 'Issue', title: 'x' }),
-    ).toEqual({ id: '7', type: 'Issue', title: 'x', url: null });
+    ).toEqual({ id: '7', type: 'Issue', title: 'x', url: null, project: null });
+  });
+  it('WorkItemRef without project still parses', () => {
+    expect(
+      WorkItemRefSchema.parse({ id: '1', type: 'Bug', title: 't' }).project,
+    ).toBeNull();
+  });
+  it('keeps the project when given', () => {
+    expect(
+      WorkItemRefSchema.parse({
+        id: '1',
+        type: 'Bug',
+        title: 't',
+        project: 'Acme',
+      }).project,
+    ).toBe('Acme');
   });
   it('keeps a url when given', () => {
     expect(
@@ -80,6 +100,24 @@ describe('WorkItemRefSchema', () => {
         url: 'https://dev.azure.com/o/p/_workitems/edit/7',
       }).url,
     ).toContain('/edit/7');
+  });
+});
+
+describe('SetupSummarySchema', () => {
+  it('defaults brain to null on summaries from before it was recorded', () => {
+    expect(
+      SetupSummarySchema.parse({
+        branch: 'b',
+        base: 'main',
+        copy: [],
+        commands: [],
+        apm: null,
+        tabs: [],
+        run: [],
+        workItem: null,
+        editor: null,
+      }).brain,
+    ).toBeNull();
   });
 });
 

@@ -146,7 +146,13 @@ export function WorkItemPicker({
               aria-pressed={selectedId === w.id}
               title={w.areaPath}
               onClick={() =>
-                onPick({ id: w.id, type: w.type, title: w.title, url: w.url })
+                onPick({
+                  id: w.id,
+                  type: w.type,
+                  title: w.title,
+                  url: w.url,
+                  project: w.project ?? null,
+                })
               }
             >
               <WorkItemTypeIcon type={w.type} connectionId={connectionId} />

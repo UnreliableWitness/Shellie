@@ -16,6 +16,7 @@ const summary: SetupSummary = {
   run: ['npm run dev'],
   workItem: { move: 'Doing', assign: true },
   editor: 'VS Code',
+  brain: null,
 };
 
 /** A line of the card by its label (the label text, not an accessible name, so form labels do not clash). */

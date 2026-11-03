@@ -100,6 +100,7 @@ function UpNextRow({
             type: item.type,
             title: item.title,
             url: item.url,
+            project: item.project ?? null,
           };
           // Several repos share the project: New task asks which one.
           if (linked.length > 1)

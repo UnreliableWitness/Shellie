@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -25,6 +26,7 @@ import {
   harness,
   expectTerminalsKept,
   linkedTask,
+  brainServices,
 } from './handlersHarness';
 
 describe('handlers: finish with a pull request', () => {
@@ -622,6 +624,95 @@ describe('handlers: finish with a pull request', () => {
   });
 });
 
+describe('handlers: finish with a brain', () => {
+  const ISO = '\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z';
+  const finish = {
+    closeTerminals: true,
+    removeWorktree: true,
+    deleteBranch: true,
+  };
+
+  async function brainTask() {
+    const b = await brainServices();
+    const hx = await harness(fakeCrypto(), { brain: b.brain });
+    const c = await hx.connections.save({
+      organizationUrl: 'https://dev.azure.com/contoso',
+      project: 'P',
+      pat: 'p',
+    });
+    await hx.h['repos:setConnection'](hx.added.id, c.id);
+    // The work item cannot be read here, so the task's project is the connection's.
+    vi.spyOn(
+      hx.services.trackers.client(c.id),
+      'workItemDetails',
+    ).mockRejectedValue(new Error('offline'));
+    const done = hx.setupDone();
+    const t = await hx.h['tasks:create'](hx.input({ openShell: false }));
+    await done;
+    const brain = await b.add({ connectionId: c.id, project: 'P' });
+    const log = () => readFileSync(path.join(brain.path, 'log.md'), 'utf8');
+    const sources = () =>
+      readdirSync(path.join(brain.path, 'sources')).filter((f) =>
+        f.endsWith('.md'),
+      );
+    return { ...hx, b, c, t, brain, log, sources };
+  }
+
+  it('finish logs the close line and captures task.md when asked', async () => {
+    const hx = await brainTask();
+    const taskMd = readFileSync(
+      path.join(hx.t.worktreePath, '.shellie', 'task.md'),
+      'utf8',
+    );
+    await hx.h['tasks:finish'](hx.t.id, { ...finish, captureTaskMd: true });
+    expect(hx.store.state.tasks[0].status).toBe('done');
+    expect(hx.log()).toMatch(
+      new RegExp(
+        `^# Log\\n\\n- ${ISO} task #48231 closed: Show estimated delivery date \\(${hx.t.branch}\\)\\n`,
+      ),
+    );
+    expect(
+      (
+        await hx.services.git.run(hx.brain.path, ['log', '-1', '--format=%s'])
+      ).trim(),
+    ).toBe('Brain: task closed');
+    const [source] = hx.sources();
+    expect(source).toMatch(/task-md\.md$|task\.md$/);
+    const text = readFileSync(
+      path.join(hx.brain.path, 'sources', source),
+      'utf8',
+    );
+    expect(text).toContain('content_type: task');
+    expect(text).toContain(taskMd.split('\n')[0]);
+    expect(hx.b.enqueue).toHaveBeenCalledWith(
+      hx.brain.id,
+      'capture',
+      `sources/${source}`,
+    );
+    expect(existsSync(hx.t.worktreePath)).toBe(false);
+  });
+
+  it('only logs the close line when task.md is not captured', async () => {
+    const hx = await brainTask();
+    await hx.h['tasks:finish'](hx.t.id, finish);
+    expect(hx.log()).toContain(
+      `task #48231 closed: Show estimated delivery date (${hx.t.branch})`,
+    );
+    expect(hx.sources()).toEqual([]);
+    expect(hx.b.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('a brain that fails never fails the finish', async () => {
+    const hx = await brainTask();
+    rmSync(hx.brain.path, { recursive: true, force: true });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await hx.h['tasks:finish'](hx.t.id, { ...finish, captureTaskMd: true });
+    expect(hx.store.state.tasks[0].status).toBe('done');
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+});
+
 describe('handlers: task-level connection', () => {
   it('stores the repo connection on the task when it is created', async () => {
     const hx = await harness();
@@ -672,8 +763,9 @@ describe('handlers: finish every workspace of a task', () => {
   async function multiHarness(
     extras: { name: string; org?: string }[],
     over: Partial<CreateTaskInput> = {},
+    services: Partial<Services> = {},
   ) {
-    const hx = await harness();
+    const hx = await harness(fakeCrypto(), services);
     commitFile(hx.repo, '.gitignore', '.env\n');
     addOrigin(hx.repo);
     const c = await hx.connections.save({
@@ -803,6 +895,33 @@ describe('handlers: finish every workspace of a task', () => {
       reason: null,
       target: 'main',
     });
+  });
+
+  it('logs the close line with the home PR and captures task.md in the brain', async () => {
+    const b = await brainServices();
+    const hx = await multiHarness([{ name: 'api' }], {}, { brain: b.brain });
+    const brain = await b.add({ connectionId: hx.c.id, project: 'P' });
+    commitFile(hx.t.worktreePath, 'web.txt', 'w\n', 'Web change');
+    await hx.h['tasks:finish'](hx.t.id, {
+      ...opts,
+      captureTaskMd: true,
+      workspaces: [
+        { workspaceId: 'home', action: 'pr' },
+        { workspaceId: hx.ids[0], action: 'keep' },
+      ],
+    });
+    expect(hx.store.state.tasks[0].status).toBe('done');
+    const pr = hx.store.state.tasks[0].pullRequest;
+    expect(pr).not.toBeNull();
+    const log = readFileSync(path.join(brain.path, 'log.md'), 'utf8');
+    expect(log).toContain(
+      `task #48231 closed: Show estimated delivery date (${pr!.url})`,
+    );
+    expect(b.enqueue).toHaveBeenCalledWith(
+      brain.id,
+      'capture',
+      expect.stringMatching(/^sources\//),
+    );
   });
 
   it('books the Time spent once and writes it once for a multi-repo Finish', async () => {
@@ -1329,6 +1448,7 @@ describe('handlers: finish every workspace of a task', () => {
         type: 'User Story',
         title: 'Show estimated delivery date',
         url: 'https://dev.azure.com/contoso/P/_workitems/edit/48231',
+        project: null,
       },
     });
     commitFile(hx.repos[0].wt, 'docs.txt', 'a\n', 'Docs change');

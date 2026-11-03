@@ -15,6 +15,7 @@ const item = (id: string, title: string, type = 'Issue'): WorkItemSummary => ({
   iterationPath: 'Shellie\\Sprint 1',
   assignedTo: null,
   url: `https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/${id}`,
+  project: 'Shellie',
 });
 
 beforeEach(() => useStore.setState({ notices: [] }));
@@ -154,6 +155,7 @@ describe('WorkItemPicker', () => {
       type: 'Issue',
       title: 'Save address',
       url: 'https://dev.azure.com/unreliablewitness/Shellie/_workitems/edit/12',
+      project: 'Shellie',
     });
   });
 

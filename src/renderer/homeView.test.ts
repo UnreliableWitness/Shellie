@@ -38,6 +38,7 @@ const hi = (id: string, state = 'To Do'): HomeItem => ({
   iterationPath: 'P\\S1',
   assignedTo: 'Me',
   url: `https://x/${id}`,
+  project: null,
   remainingWork: null,
   originalEstimate: null,
   completedWork: null,
