@@ -89,7 +89,12 @@ export class BrainJobRunner {
   }
 
   private changed(brainId: string) {
-    this.deps.onChange(brainId, [...this.lane(brainId).list]);
+    try {
+      this.deps.onChange(brainId, [...this.lane(brainId).list]);
+    } catch (e) {
+      // A listener (an IPC send to a closed window) must never break the queue.
+      console.error('brain onChange failed', e);
+    }
   }
 
   enqueue(
@@ -167,13 +172,23 @@ export class BrainJobRunner {
     job: BrainJob,
   ): Promise<void> {
     const d = this.deps;
-    const dir = d.brainDir(brainId);
     const done = () => {
       l.queue = l.queue.filter((j) => j !== job);
     };
-    if (d.tokensToday(brainId) >= d.cap(brainId)) {
-      job.status = 'paused';
-      l.paused = true;
+    let dir: string;
+    try {
+      dir = d.brainDir(brainId);
+      if (d.tokensToday(brainId) >= d.cap(brainId)) {
+        job.status = 'paused';
+        l.paused = true;
+        this.changed(brainId);
+        return;
+      }
+    } catch (e) {
+      job.status = 'failed';
+      job.error = (e as Error).message;
+      job.endedAt = this.now().toISOString();
+      done();
       this.changed(brainId);
       return;
     }
@@ -190,10 +205,10 @@ export class BrainJobRunner {
       }, d.lockRetryMs ?? 5000);
       return;
     }
-    job.status = 'running';
-    job.startedAt = this.now().toISOString();
-    this.changed(brainId);
     try {
+      job.status = 'running';
+      job.startedAt = this.now().toISOString();
+      this.changed(brainId);
       const stdout = await d.run(
         d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
         {

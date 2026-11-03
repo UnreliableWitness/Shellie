@@ -1,17 +1,17 @@
-import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Command } from '../platform/Platform';
-import { BrainJobRunner, type BrainJobDeps } from './jobs';
-import { acquireLock, readState } from './state';
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Command } from "../platform/Platform";
+import { BrainJobRunner, type BrainJobDeps } from "./jobs";
+import { acquireLock, readState } from "./state";
 
 const ok = (id: string) =>
   JSON.stringify({
-    type: 'result',
-    subtype: 'success',
-    result: 'ok',
+    type: "result",
+    subtype: "success",
+    result: "ok",
     session_id: id,
   });
 
@@ -31,8 +31,8 @@ let run: (
 
 async function mk(name: string) {
   const d = await mkdtemp(path.join(tmpdir(), `brain-jobs-${name}-`));
-  await mkdir(path.join(d, 'brain'));
-  await writeFile(path.join(d, 'brain', 'state.json'), '{"schemaVersion":1}');
+  await mkdir(path.join(d, "brain"));
+  await writeFile(path.join(d, "brain", "state.json"), '{"schemaVersion":1}');
   return d;
 }
 
@@ -40,7 +40,7 @@ function runner(over: Partial<BrainJobDeps> = {}) {
   const r = new BrainJobRunner({
     platform: {
       claudeCommand: (_c, flags) => ({
-        command: 'claude',
+        command: "claude",
         args: flags ?? [],
         env: {},
       }),
@@ -48,12 +48,12 @@ function runner(over: Partial<BrainJobDeps> = {}) {
     run: ((cmd, o) => {
       calls.push({ cmd, cwd: o.cwd, input: o.input, env: o.env });
       return run(cmd, o);
-    }) as BrainJobDeps['run'],
+    }) as BrainJobDeps["run"],
     env: (id) => ({ BRAIN: id }),
     tokensToday: () => tokens,
     cap: () => 500_000,
     brainDir: (id) => dirs[id],
-    model: () => 'sonnet',
+    model: () => "sonnet",
     onChange: () => undefined,
     lockRetryMs: 5000,
     ...over,
@@ -66,12 +66,12 @@ const idle = (r: BrainJobRunner, id: string) =>
   vi.waitFor(() => {
     expect(r.running(id)).toBe(false);
     expect(
-      r.jobs(id).every((j) => j.status !== 'queued' && j.status !== 'running'),
+      r.jobs(id).every((j) => j.status !== "queued" && j.status !== "running"),
     ).toBe(true);
   });
 
 beforeEach(async () => {
-  dirs = { b1: await mk('1'), b2: await mk('2') };
+  dirs = { b1: await mk("1"), b2: await mk("2") };
   calls = [];
   tokens = 0;
   runners = [];
@@ -86,128 +86,173 @@ afterEach(async () => {
   );
 });
 
-describe('BrainJobRunner', () => {
-  it('runs a capture then an auto lint, in order, with the right prompt and flags', async () => {
+describe("BrainJobRunner", () => {
+  it("runs a capture then an auto lint, in order, with the right prompt and flags", async () => {
     const r = runner();
-    r.enqueue('b1', 'capture', 'sources/a.md');
-    r.enqueue('b1', 'sync');
+    r.enqueue("b1", "capture", "sources/a.md");
+    r.enqueue("b1", "sync");
     await vi.waitFor(() => expect(calls).toHaveLength(3));
-    await idle(r, 'b1');
+    await idle(r, "b1");
     expect(calls.map((c) => c.input)).toEqual([
-      '/capture sources/a.md',
-      '/lint',
-      '/sync',
+      "/capture sources/a.md",
+      "/lint",
+      "/sync",
     ]);
     expect(calls[0].cmd.args).toEqual([
-      '-p',
-      '--output-format',
-      'json',
-      '--model',
-      'sonnet',
-      '--permission-mode',
-      'acceptEdits',
-      '--strict-mcp-config',
+      "-p",
+      "--output-format",
+      "json",
+      "--model",
+      "sonnet",
+      "--permission-mode",
+      "acceptEdits",
+      "--strict-mcp-config",
     ]);
     expect(calls[0].cwd).toBe(dirs.b1);
-    expect(calls[0].env).toEqual({ BRAIN: 'b1' });
+    expect(calls[0].env).toEqual({ BRAIN: "b1" });
     expect(
-      (await readState(dirs.b1)).state?.captured['sources/a.md']?.sessionId,
-    ).toBe('sess-1');
-    expect(r.jobs('b1').map((j) => j.kind)).toEqual([
-      'lint',
-      'sync',
-      'capture',
+      (await readState(dirs.b1)).state?.captured["sources/a.md"]?.sessionId,
+    ).toBe("sess-1");
+    expect(r.jobs("b1").map((j) => j.kind)).toEqual([
+      "lint",
+      "sync",
+      "capture",
     ]);
   });
 
-  it('needs a source for a capture', () => {
-    expect(() => runner().enqueue('b1', 'capture')).toThrow();
+  it("needs a source for a capture", () => {
+    expect(() => runner().enqueue("b1", "capture")).toThrow();
   });
 
-  it('parses the last JSON line', async () => {
-    run = async () => `profile noise\n${ok('s')}`;
+  it("parses the last JSON line", async () => {
+    run = async () => `profile noise\n${ok("s")}`;
     const r = runner();
-    r.enqueue('b1', 'sync');
-    await idle(r, 'b1');
-    const j = r.jobs('b1')[0];
-    expect([j.status, j.result, j.sessionId]).toEqual(['done', 'ok', 's']);
+    r.enqueue("b1", "sync");
+    await idle(r, "b1");
+    const j = r.jobs("b1")[0];
+    expect([j.status, j.result, j.sessionId]).toEqual(["done", "ok", "s"]);
   });
 
-  it('releases the lock when the job fails and carries on', async () => {
+  it("releases the lock when the job fails and carries on", async () => {
     run = async () => {
-      throw new Error('exit 1: boom');
+      throw new Error("exit 1: boom");
     };
     const r = runner();
-    r.enqueue('b1', 'sync');
-    await idle(r, 'b1');
-    expect(r.jobs('b1')[0]).toMatchObject({
-      status: 'failed',
-      error: 'exit 1: boom',
+    r.enqueue("b1", "sync");
+    await idle(r, "b1");
+    expect(r.jobs("b1")[0]).toMatchObject({
+      status: "failed",
+      error: "exit 1: boom",
     });
-    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
-    run = async () => ok('x');
-    r.enqueue('b1', 'lint');
-    await idle(r, 'b1');
-    expect(r.jobs('b1')[0].status).toBe('done');
+    expect(existsSync(path.join(dirs.b1, "brain", "lock"))).toBe(false);
+    run = async () => ok("x");
+    r.enqueue("b1", "lint");
+    await idle(r, "b1");
+    expect(r.jobs("b1")[0].status).toBe("done");
   });
 
-  it('pauses at the cap and resumes', async () => {
+  it("pauses at the cap and resumes", async () => {
     tokens = 600_000;
     const r = runner();
-    r.enqueue('b1', 'sync');
-    await idle(r, 'b1');
-    expect(r.jobs('b1')[0].status).toBe('paused');
+    r.enqueue("b1", "sync");
+    await idle(r, "b1");
+    expect(r.jobs("b1")[0].status).toBe("paused");
     expect(calls).toHaveLength(0);
     tokens = 0;
-    r.resume('b1');
-    await vi.waitFor(() => expect(r.jobs('b1')[0].status).toBe('done'));
+    r.resume("b1");
+    await vi.waitFor(() => expect(r.jobs("b1")[0].status).toBe("done"));
     expect(calls).toHaveLength(1);
   });
 
-  it('does not run two jobs of one brain at once but runs two brains in parallel', async () => {
+  it("does not run two jobs of one brain at once but runs two brains in parallel", async () => {
     const gates: (() => void)[] = [];
-    run = () => new Promise((res) => gates.push(() => res(ok('s'))));
+    run = () => new Promise((res) => gates.push(() => res(ok("s"))));
     const r = runner();
-    r.enqueue('b1', 'sync');
-    r.enqueue('b1', 'lint');
-    r.enqueue('b2', 'sync');
+    r.enqueue("b1", "sync");
+    r.enqueue("b1", "lint");
+    r.enqueue("b2", "sync");
     await vi.waitFor(() => expect(gates).toHaveLength(2));
     expect(calls.map((c) => c.cwd).sort()).toEqual([dirs.b1, dirs.b2].sort());
-    expect(r.running('b1')).toBe(true);
+    expect(r.running("b1")).toBe(true);
     gates[0]();
     gates[1]();
     await vi.waitFor(() => expect(gates).toHaveLength(3));
     gates[2]();
-    await idle(r, 'b1');
-    await idle(r, 'b2');
+    await idle(r, "b1");
+    await idle(r, "b2");
   });
 
-  it('retries after 5 s when the lock is held', async () => {
+  it("retries after 5 s when the lock is held", async () => {
     await acquireLock(dirs.b1);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const r = runner();
-    r.enqueue('b1', 'sync');
+    r.enqueue("b1", "sync");
+    // Let the first lock attempt (real file I/O) fail and arm the retry timer.
+    for (let i = 0; i < 20; i++) await new Promise((res) => setImmediate(res));
     await vi.advanceTimersByTimeAsync(4000);
     expect(calls).toHaveLength(0);
-    const { releaseLock } = await import('./state');
+    const { releaseLock } = await import("./state");
     await releaseLock(dirs.b1);
     await vi.advanceTimersByTimeAsync(1000);
     vi.useRealTimers();
-    await vi.waitFor(() => expect(r.jobs('b1')[0].status).toBe('done'));
+    await vi.waitFor(() => expect(r.jobs("b1")[0].status).toBe("done"));
     expect(calls).toHaveLength(1);
   });
 
-  it('keeps at most 50 jobs, newest first', async () => {
+  it("keeps at most 50 jobs, newest first", async () => {
     const r = runner();
-    for (let i = 0; i < 55; i++) r.enqueue('b1', 'sync');
-    await idle(r, 'b1');
-    expect(r.jobs('b1')).toHaveLength(50);
+    for (let i = 0; i < 55; i++) r.enqueue("b1", "sync");
+    await idle(r, "b1");
+    expect(r.jobs("b1")).toHaveLength(50);
   });
 
-  it('does not start jobs after stop', async () => {
+  it("survives an onChange that throws while running", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let thrown = false;
+    const r = runner({
+      onChange: (_id, jobs) => {
+        if (!thrown && jobs[0]?.status === "running") {
+          thrown = true;
+          throw new Error("window destroyed");
+        }
+      },
+    });
+    r.enqueue("b1", "sync");
+    r.enqueue("b1", "lint");
+    await idle(r, "b1");
+    expect(thrown).toBe(true);
+    expect(r.jobs("b1").map((j) => j.status)).toEqual(["done", "done"]);
+    expect(existsSync(path.join(dirs.b1, "brain", "lock"))).toBe(false);
+    err.mockRestore();
+  });
+
+  it("fails a job when tokensToday throws and still runs the next one", async () => {
+    let boom = true;
+    const r = runner({
+      tokensToday: () => {
+        if (boom) {
+          boom = false;
+          throw new Error("ledger unavailable");
+        }
+        return 0;
+      },
+    });
+    r.enqueue("b1", "sync");
+    r.enqueue("b1", "lint");
+    await idle(r, "b1");
+    const [lint, sync] = r.jobs("b1");
+    expect(sync).toMatchObject({
+      status: "failed",
+      error: "ledger unavailable",
+    });
+    expect(lint.status).toBe("done");
+    expect(calls.map((c) => c.input)).toEqual(["/lint"]);
+  });
+
+  it("does not start jobs after stop", async () => {
     const r = runner();
     r.stop();
-    r.enqueue('b1', 'sync');
+    r.enqueue("b1", "sync");
     await new Promise((res) => setTimeout(res, 20));
     expect(calls).toHaveLength(0);
   });
