@@ -66,6 +66,32 @@ describe('brain scaffold', () => {
     expect(capture).not.toMatch(/captured\[/);
   });
 
+  it('names sources/wiki/ as the wiki copy and lets the skills read git history', () => {
+    const files = templateFiles('Acme');
+    const text = (p: string) => files.find((f) => f.path === p)!.content;
+    for (const f of files.filter((x) => x.path !== '.gitignore'))
+      expect(f.content).not.toContain('.mirror');
+    expect(text('SCHEMA.md')).toContain('`sources/wiki/`');
+    const sync = text('.claude/skills/sync/SKILL.md');
+    expect(sync).toContain(
+      'git diff --stat <lastSyncCommit> HEAD -- sources/ wiki/',
+    );
+    expect(sync).toContain('sources/wiki/');
+    const lint = text('.claude/skills/lint/SKILL.md');
+    expect(lint).toMatch(/uncaptured.*not under `sources\/wiki\/`.*captured/);
+    const settings = JSON.parse(text('.claude/settings.json')) as {
+      permissions: { allow: string[]; deny: string[] };
+    };
+    expect(settings.permissions.allow).toEqual([
+      'Bash(git diff:*)',
+      'Bash(git log:*)',
+      'Bash(git show:*)',
+      'Bash(git rev-parse:*)',
+      'Bash(git status:*)',
+    ]);
+    expect(settings.permissions.deny).toContain('Edit(sources/**)');
+  });
+
   it('is not a brain folder when skills are missing', async () => {
     await fs.mkdir(dir, { recursive: true });
     expect(await isBrainFolder(dir)).toBe(false);

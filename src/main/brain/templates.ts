@@ -15,7 +15,7 @@ This file is the contract for everything that writes in this brain. Read it firs
 
 ## Layers
 
-- \`sources/\`: raw material (converted documents, transcripts, notes, task files). Never edited, by anyone or any skill. The \`.mirror/\` folder holds a read-only copy of the Azure DevOps wiki.
+- \`sources/\`: raw material (converted documents, transcripts, notes, task files). Never edited, by anyone or any skill. \`sources/wiki/\` is Shellie's copy of the chosen Azure DevOps wiki pages, refreshed in place; git history shows what changed.
 - \`wiki/\`: the curated pages. Skills and humans both edit here.
 - \`index.md\`: the entry point. Lists every top-level page with a one-line summary.
 - \`log.md\`: history of what the skills did, newest first.
@@ -116,8 +116,8 @@ description: Use after sources/ or the wiki mirror changed, or after people edit
 Bring the wiki in line with what changed since the last sync.
 
 1. Read \`SCHEMA.md\`. Follow it for every step.
-2. Read \`brain/state.json\`. \`lastSyncCommit\` is the starting point; if it is null, use the first commit.
-3. Run \`git diff <lastSyncCommit> HEAD --stat\`, then read the diffs for \`sources/\` (including \`.mirror/\`) and \`wiki/\`.
+2. Read \`brain/state.json\`. \`lastSyncCommit\` is the starting point; if it is null, use the first commit (\`git log --max-parents=0 --format=%H\`).
+3. Run \`git diff --stat <lastSyncCommit> HEAD -- sources/ wiki/\` to list what changed in \`sources/\` (including the wiki mirror in \`sources/wiki/\`) and in \`wiki/\`. Read each change with \`git diff <lastSyncCommit> HEAD -- <path>\`. \`git log --format='%h %s' <lastSyncCommit>..HEAD -- wiki/\` tells human edits (commits not starting with \`Brain:\`) from the skills' own.
 4. For each changed source, update the pages that cite it. Re-read the source; do not guess from the diff.
 5. For each human edit in \`wiki/\`, keep it. Fix links, \`index.md\` and other pages around it. If it contradicts a source, add a note to the takeaways instead of reverting it.
 6. If a source contradicts a \`scope-*\` page, leave the page as it is and report it in the takeaways.
@@ -140,7 +140,7 @@ Check the wiki, incrementally.
    - \`contradiction\`: two pages that disagree on a fact.
    - \`scope-change\`: a source that contradicts a \`scope-*\` page.
    - \`stale\`: a page older than a source it cites.
-   - \`uncaptured\`: a file in \`sources/\` that no page cites and \`log.md\` does not mention.
+   - \`uncaptured\`: a \`.md\` file in \`sources/\`, not under \`sources/wiki/\`, that is not a key of \`captured\` in \`brain/state.json\`.
 4. Do not fix pages. Only report.
 5. Write \`brain/state.json\`: read it first, replace \`findings\` with the findings for the pages you checked plus earlier ones for pages you did not check, set \`lastLintAt\` to now (ISO timestamp), and keep every other field unchanged.
    Each finding is \`{ "kind", "page", "detail", "at" }\`.
@@ -169,6 +169,13 @@ Write the weekly digest.
 const SETTINGS = `${JSON.stringify(
   {
     permissions: {
+      allow: [
+        'Bash(git diff:*)',
+        'Bash(git log:*)',
+        'Bash(git show:*)',
+        'Bash(git rev-parse:*)',
+        'Bash(git status:*)',
+      ],
       deny: [
         'Edit(sources/**)',
         'Write(sources/**)',
