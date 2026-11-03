@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { BudgetRecord } from '../../shared/budget';
 import type { CostRecord } from '../../shared/ledger';
 import type { Connection, Repo, Task } from '../../shared/types';
-import { attribute, attributionContext, merge, raises } from './attribute';
+import {
+  attribute,
+  attributionContext,
+  isBrainRecord,
+  merge,
+  raises,
+} from './attribute';
 
 const conn = (id: string, org: string, project: string) =>
   ({ id, organizationUrl: org, project }) as Connection;
@@ -336,6 +342,34 @@ describe('brain attribution', () => {
     expect(attribute(rec({ cwd: '/brains/other' }), ctx)).toEqual({
       level: 'none',
     });
+  });
+  it('a task inside a brain folder keeps its usage (by session or task id); a brain: id still wins', () => {
+    const t = task({
+      id: 't1',
+      connectionId: 'c1',
+      worktreePath: '/brains/acme/work/t1',
+      terminals: [{ id: 'a', kind: 'claude', label: 'C', sessionId: 'S1' }],
+    });
+    const ctx = attributionContext([t], [], [c], () => [], brains);
+    const bySession = rec({ sessionId: 'S1', cwd: '/brains/acme/work/t1' });
+    expect(attribute(bySession, ctx)).toMatchObject({
+      level: 'task',
+      taskId: 't1',
+    });
+    expect(isBrainRecord(bySession, ctx)).toBe(false);
+    const byTaskId = rec({ taskId: 't1', cwd: '/brains/acme/work/t1' });
+    expect(attribute(byTaskId, ctx)).toMatchObject({ level: 'task' });
+    expect(isBrainRecord(byTaskId, ctx)).toBe(false);
+    // An unknown session in the brain folder is the brain's.
+    const other = rec({ sessionId: 'X', cwd: '/brains/acme/work/t1' });
+    expect(attribute(other, ctx)).toMatchObject({ level: 'brain' });
+    expect(isBrainRecord(other, ctx)).toBe(true);
+    const brainRun = rec({ taskId: 'brain:b1', sessionId: 'S1' });
+    expect(attribute(brainRun, ctx)).toMatchObject({
+      level: 'brain',
+      brainId: 'b1',
+    });
+    expect(isBrainRecord(brainRun, ctx)).toBe(true);
   });
   it('an unknown brain id falls back to none', () => {
     const ctx = attributionContext([], [], [c], () => [], brains);

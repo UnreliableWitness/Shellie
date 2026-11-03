@@ -169,11 +169,14 @@ export function taskOf(
   return best ? { t: best.t, repo: best.repo } : null;
 }
 
-/** The known brain a record belongs to: by its `brain:` task id, else by a cwd inside the brain folder (longest path wins). */
-function brainOf(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
+/** A known brain by the record's `brain:` task id. */
+function brainById(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
   const id = brainIdOf(r.taskId);
-  const byId = id === null ? undefined : ctx.brains.get(id);
-  if (byId) return byId;
+  return (id === null ? undefined : ctx.brains.get(id)) ?? null;
+}
+
+/** The known brain whose folder holds the record's cwd (longest path wins). */
+function brainByCwd(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
   const cwd = r.cwd;
   if (!cwd) return null;
   let best: BrainCtx | null = null;
@@ -183,29 +186,36 @@ function brainOf(r: BudgetRecord, ctx: AttributionContext): BrainCtx | null {
   return best;
 }
 
-/** Whether a record is brain usage, also when its brain is unknown (deleted, not loaded yet): such a record is never billable. */
+/**
+ * Whether a record is brain usage, also when its brain is unknown (deleted, not loaded yet): such a record is never
+ * billable. A record of a task (by id or session) is the task's, also when its cwd is inside a brain folder.
+ */
 export function isBrainRecord(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): boolean {
-  return brainIdOf(r.taskId) !== null || brainOf(r, ctx) !== null;
+  if (brainIdOf(r.taskId) !== null) return true;
+  return !taskOf(r, ctx) && brainByCwd(r, ctx) !== null;
 }
 
-/** Task (see taskOf), else repo by folder, else none. */
+const brainAttribution = (b: BrainCtx): Attribution => ({
+  level: 'brain',
+  brainId: b.id,
+  organization: b.organization,
+  project: b.project,
+});
+
+/** A `brain:` task id, else task (see taskOf), else brain by folder, else repo by folder, else none. */
 export function attribute(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): Attribution {
-  const brain = brainOf(r, ctx);
-  if (brain)
-    return {
-      level: 'brain',
-      brainId: brain.id,
-      organization: brain.organization,
-      project: brain.project,
-    };
+  const byId = brainById(r, ctx);
+  if (byId) return brainAttribution(byId);
   const task = taskOf(r, ctx);
   if (task) return forTask(task.t, task.repo, ctx);
+  const byCwd = brainByCwd(r, ctx);
+  if (byCwd) return brainAttribution(byCwd);
   const cwd = r.cwd;
   if (!cwd) return { level: 'none' };
   let repo: { r: RepoCtx; len: number } | null = null;
