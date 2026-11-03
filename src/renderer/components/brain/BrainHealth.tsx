@@ -22,18 +22,13 @@ export function BrainHealth({
 
   const resolve = async (f: (typeof findings)[number]) => {
     trackBrain('resolve');
-    const def = await openBrainTerminal(brain.id, notify);
-    if (!def) return;
-    onTerminal?.(def);
-    await tryInvoke(
-      () =>
-        api().invoke(
-          'terminals:write',
-          def.id,
-          `resolve: ${f.kind} on ${f.page}: ${f.detail}\n`,
-        ),
+    const def = await openBrainTerminal(
+      brain.id,
       notify,
+      null,
+      `resolve: ${f.kind} on ${f.page}: ${f.detail}`,
     );
+    if (def) onTerminal?.(def);
   };
   const resume = () => {
     trackBrain('resume');

@@ -94,6 +94,9 @@ function useUnseen<K extends 'docs:changed' | 'usage:changed'>(
 
 const NO_VIEWS: HtmlView[] = [];
 
+/** Tasks whose brain terminal was opened for `openBrainTerminalOnStart` in this app session: once per task. */
+export const brainTerminalOpenedOnStart = new Set<string>();
+
 const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) ?? p;
 
 /**
@@ -273,6 +276,20 @@ export function TerminalTabs({
     setBrainTerm(def);
     setTab(task.id, def.id);
   };
+  // A ready task whose brain asks for it gets the brain terminal in its tab bar, once per app session (not selected).
+  const autoOpen = brainShown && !!brain?.options.openBrainTerminalOnStart;
+  useEffect(() => {
+    if (!autoOpen || !brain || brainTerm) return;
+    if (brainTerminalOpenedOnStart.has(task.id)) return;
+    brainTerminalOpenedOnStart.add(task.id);
+    void tryInvoke(() => api().invoke('brain:terminal', brain.id), notify).then(
+      (def) => {
+        if (def) setBrainTerm((cur) => cur ?? def);
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once the task, its brain and the option are known
+  }, [autoOpen, brain?.id, task.id]);
+
   // Closing only detaches the tab: the terminal belongs to the brain and stays on its page (never killed here).
   const closeBrainTerminal = () => {
     setBrainTerm(null);

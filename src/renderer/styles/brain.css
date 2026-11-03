@@ -107,6 +107,20 @@
   min-height: 200px;
   border-radius: var(--radius-card);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.brain-terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bg-card);
+}
+.brain-terminal > :last-child {
+  flex: 1;
+  min-height: 0;
 }
 
 /* The Brain tab of a task: a header line above the wiki. */

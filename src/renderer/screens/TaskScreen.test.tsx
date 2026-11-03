@@ -15,6 +15,7 @@ import { brainView } from '../test-helpers/brainFixture';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { Shell } from '../App';
 import { invalidateRepoConfig } from '../hooks/useRepoConfig';
+import { brainTerminalOpenedOnStart } from '../components/TerminalTabs';
 
 const mounts = vi.hoisted(() => ({ count: 0 }));
 
@@ -952,6 +953,38 @@ describe('tabs and focus', () => {
       screen.getByRole('button', { name: 'Close Acme brain' }),
     );
     expect(screen.queryByRole('tab', { name: 'Acme brain' })).toBeNull();
+  });
+
+  it('opens the brain terminal once when the brain asks for it on start', async () => {
+    brainTerminalOpenedOnStart.clear();
+    const brain = brainView();
+    brain.options.openBrainTerminalOnStart = true;
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => brain,
+        'brain:terminal': () => ({ id: 'bt1', kind: 'claude', label: 'Brain' }),
+      },
+    );
+    const { unmount } = render(<Shell />);
+    expect(
+      await screen.findByRole('tab', { name: 'Acme brain' }),
+    ).toHaveAttribute('aria-selected', 'false');
+    expect(calls).toContainEqual({ channel: 'brain:terminal', args: ['b1'] });
+    unmount();
+    // Again in this app session: not opened a second time.
+    render(<Shell />);
+    await screen.findByRole('tab', { name: /^Brain$/ });
+    expect(calls.filter((c) => c.channel === 'brain:terminal')).toHaveLength(1);
+    expect(screen.queryByRole('tab', { name: 'Acme brain' })).toBeNull();
+  });
+
+  it('does not open the brain terminal on start when the option is off', async () => {
+    brainTerminalOpenedOnStart.clear();
+    const { calls } = setup({}, { 'brain:forTask': () => brainView() });
+    render(<Shell />);
+    await screen.findByRole('tab', { name: /^Brain$/ });
+    expect(calls.some((c) => c.channel === 'brain:terminal')).toBe(false);
   });
 
   it('keeps the Brain tab when a refetch fails, drops it when the answer is null', async () => {

@@ -131,6 +131,12 @@ describe('darwinPlatform', () => {
       args: ['-l', '-c', "exec claude '--continue'"],
     });
   });
+  it('passes a first message last, quoted', () => {
+    expect(
+      p.claudeCommand(null, ['--resume', 'abc'], undefined, "Fix it's link")
+        .args,
+    ).toEqual(['-l', '-c', "exec claude '--resume' 'abc' 'Fix it'\\''s link'"]);
+  });
   it("runs the repo's own claude command as shell text, with Shellie's flags quoted after it", () => {
     expect(
       p.claudeCommand(

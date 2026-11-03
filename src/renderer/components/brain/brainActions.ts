@@ -16,7 +16,9 @@ export type BrainAction =
   /** From a task: the Brain tab opened, a brain terminal opened, the Finish option ticked. */
   | 'tab'
   | 'terminal'
-  | 'capture-option';
+  | 'capture-option'
+  /** The Brain page's terminal closed (killed). */
+  | 'close-terminal';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>
@@ -24,16 +26,22 @@ export const trackBrain = (action: BrainAction) =>
 
 type Notify = (level: 'error', message: string) => void;
 
-/** Starts (or resumes) the brain's terminal; the caller shows it. */
+/**
+ * Starts (or resumes) the brain's terminal; the caller shows it. `prompt` is submitted to Claude by main: the first
+ * message of a new process, or typed into the running one.
+ */
 export const openBrainTerminal = (
   brainId: string,
   notify: Notify,
   resumeSession?: string | null,
+  prompt?: string,
 ): Promise<TerminalDef | undefined> =>
   tryInvoke(
     () =>
-      resumeSession
-        ? api().invoke('brain:terminal', brainId, resumeSession)
-        : api().invoke('brain:terminal', brainId),
+      prompt
+        ? api().invoke('brain:terminal', brainId, resumeSession ?? null, prompt)
+        : resumeSession
+          ? api().invoke('brain:terminal', brainId, resumeSession)
+          : api().invoke('brain:terminal', brainId),
     notify,
   );

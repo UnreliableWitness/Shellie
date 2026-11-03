@@ -616,8 +616,12 @@ export type Channels = {
   };
   /** An image of the brain as a data URL. */
   'brain:asset': { args: [brainId: string, rel: string]; result: string };
+  /**
+   * Shows the brain's Claude terminal. `resumeSession` other than the running one restarts it on that session;
+   * `prompt` is sent: as the first message of a new process, or typed and submitted into a running one.
+   */
   'brain:terminal': {
-    args: [brainId: string, resumeSession?: string | null];
+    args: [brainId: string, resumeSession?: string | null, prompt?: string];
     result: TerminalDef;
   };
   'brain:templateDiff': {

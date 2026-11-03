@@ -15,6 +15,7 @@ let spawned: SpawnOptions[];
 let running: Set<string>;
 let exited: Set<string>;
 let killed: string[];
+let written: [string, string][];
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'brain-terminal-'));
@@ -32,6 +33,7 @@ beforeEach(async () => {
   );
   spawned = [];
   killed = [];
+  written = [];
   running = new Set();
   exited = new Set();
 });
@@ -54,6 +56,7 @@ const make = (exists = true) => {
       running.delete(id);
       exited.delete(id);
     },
+    write: (id: string, data: string) => written.push([id, data]),
   } as unknown as TerminalManager;
   return createBrainTerminals({
     brains: store,
@@ -62,6 +65,7 @@ const make = (exists = true) => {
     env: (id) => ({ SHELLIE_TEST: id }),
     themeFile: () => null,
     sessionExists: () => exists,
+    wait: async () => undefined,
   });
 };
 
@@ -115,6 +119,42 @@ describe('createBrainTerminals', () => {
     expect(def.sessionId).toBe('old');
     expect(line(spawned[0])).toContain('--resume');
     expect(line(spawned[0])).toContain('old');
+  });
+
+  it('replaces a running terminal on another session with one resuming it', async () => {
+    const bt = make();
+    await bt.open('b1', 'A');
+    const def = await bt.open('b1', 'B');
+    expect(killed).toEqual(['brain-b1']);
+    expect(spawned).toHaveLength(2);
+    // Quoted for the shell, or plain arguments to claude.exe.
+    expect(line(spawned[1])).toMatch(/'?--resume'? '?B'?/);
+    expect(def.sessionId).toBe('B');
+    expect(store.get('b1')?.terminal?.sessionId).toBe('B');
+    // The same session again: the running terminal stays.
+    await bt.open('b1', 'B');
+    expect(spawned).toHaveLength(2);
+  });
+
+  it('starts a fresh terminal with the prompt as its first message', async () => {
+    const bt = make();
+    await bt.open('b1', 'A', 'Why is the scope page stale?');
+    expect(written).toEqual([]);
+    const o = spawned[0];
+    expect(line(o) + JSON.stringify(o.env)).toContain(
+      'Why is the scope page stale?',
+    );
+  });
+
+  it('types the prompt into a running terminal, then Enter', async () => {
+    const bt = make();
+    await bt.open('b1');
+    await bt.open('b1', null, 'What did we agree?');
+    expect(spawned).toHaveLength(1);
+    expect(written).toEqual([
+      ['brain-b1', 'What did we agree?'],
+      ['brain-b1', '\r'],
+    ]);
   });
 
   it('restart resumes the stored session', async () => {

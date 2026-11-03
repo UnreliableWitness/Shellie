@@ -64,15 +64,21 @@ export function BrainScreen({ brainId }: { brainId: string }) {
     const q = question.trim();
     if (!q) return;
     trackBrain('ask');
-    const def = await openBrainTerminal(brain.id, notify);
+    const def = await openBrainTerminal(brain.id, notify, null, q);
     if (!def) return;
     setTerminal(def);
     setQuestion('');
     setAsking(false);
-    await tryInvoke(
-      () => api().invoke('terminals:write', def.id, `${q}\n`),
-      notify,
-    );
+  };
+  const openTerminal = async () => {
+    trackBrain('terminal');
+    const def = await openBrainTerminal(brain.id, notify);
+    if (def) setTerminal(def);
+  };
+  const closeTerminal = async (id: string) => {
+    trackBrain('close-terminal');
+    setTerminal(null);
+    await tryInvoke(() => api().invoke('terminals:kill', id), notify);
   };
 
   return (
@@ -112,6 +118,13 @@ export function BrainScreen({ brainId }: { brainId: string }) {
             >
               Ask
             </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void openTerminal()}
+            >
+              Open terminal
+            </button>
           </>
         }
       />
@@ -150,6 +163,16 @@ export function BrainScreen({ brainId }: { brainId: string }) {
         {tab === 'log' && <BrainLog brainId={brain.id} />}
         {terminal && (
           <div className="brain-terminal">
+            <div className="brain-terminal-bar">
+              <span className="small muted">{terminal.label}</span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => void closeTerminal(terminal.id)}
+              >
+                Close
+              </button>
+            </div>
             <TerminalView
               key={terminal.id}
               terminalId={terminal.id}

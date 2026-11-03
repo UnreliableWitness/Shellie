@@ -393,10 +393,10 @@ export function createBrainHandlers(
       text: (await readDoc(brainOf(id).path, rel)).text,
     }),
     'brain:asset': async (id, rel) => readAsset(brainOf(id).path, rel),
-    'brain:terminal': async (id, resumeSession) => {
+    'brain:terminal': async (id, resumeSession, prompt) => {
       brainOf(id);
       if (!d.terminals) throw new Error('Brain terminals are not available');
-      return d.terminals.open(id, resumeSession);
+      return d.terminals.open(id, resumeSession, prompt);
     },
     'brain:templateDiff': async (id) => {
       const b = brainOf(id);

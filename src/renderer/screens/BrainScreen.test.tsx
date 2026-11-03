@@ -82,7 +82,7 @@ describe('BrainScreen', () => {
     );
   });
 
-  it('Ask opens the brain terminal and writes the question', async () => {
+  it('Ask sends the question with the terminal open, not by writing to it', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ask' }));
@@ -94,14 +94,32 @@ describe('BrainScreen', () => {
     expect(await screen.findByTestId('terminal')).toHaveTextContent(
       'brain:b1/bt1',
     );
-    expect(a.calls).toContainEqual({ channel: 'brain:terminal', args: ['b1'] });
     expect(a.calls).toContainEqual({
-      channel: 'terminals:write',
-      args: ['bt1', 'who owns billing?\n'],
+      channel: 'brain:terminal',
+      args: ['b1', null, 'who owns billing?'],
+    });
+    expect(names(a)).not.toContain('terminals:write');
+  });
+
+  it('Open terminal shows the brain terminal; Close kills it', async () => {
+    const a = setup(brainView(), { 'terminals:kill': () => undefined });
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Open terminal' }),
+    );
+    expect(await screen.findByTestId('terminal')).toHaveTextContent(
+      'brain:b1/bt1',
+    );
+    expect(a.calls).toContainEqual({ channel: 'brain:terminal', args: ['b1'] });
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByTestId('terminal')).not.toBeInTheDocument();
+    expect(a.calls).toContainEqual({
+      channel: 'terminals:kill',
+      args: ['bt1'],
     });
   });
 
-  it('Resolve in terminal writes a resolve line', async () => {
+  it('Resolve in terminal sends a resolve prompt', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);
     const [first] = await screen.findAllByRole('button', {
@@ -110,11 +128,12 @@ describe('BrainScreen', () => {
     await userEvent.click(first);
     await waitFor(() =>
       expect(a.calls).toContainEqual({
-        channel: 'terminals:write',
-        args: ['bt1', 'resolve: orphan on wiki/a.md: nothing links here\n'],
+        channel: 'brain:terminal',
+        args: ['b1', null, 'resolve: orphan on wiki/a.md: nothing links here'],
       }),
     );
-    expect(screen.getByTestId('terminal')).toBeInTheDocument();
+    expect(await screen.findByTestId('terminal')).toBeInTheDocument();
+    expect(names(a)).not.toContain('terminals:write');
   });
 
   it('shows the cap pause and resumes the queue', async () => {

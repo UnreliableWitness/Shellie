@@ -101,23 +101,32 @@ export function windowsPlatform(
     flags: string[],
     promptEnv: string | null = null,
     base?: string,
+    /** A positional argument after everything else (Claude's first message), passed like `promptEnv`. */
+    positional: string | null = null,
   ): Command => {
     const own = base?.trim();
     const found = own ? null : deps.which(name);
+    const texts = [promptEnv, positional];
     if (found && found.toLowerCase().endsWith('.exe'))
       return {
         command: found,
-        args: promptEnv === null ? flags : [...flags, promptEnv],
+        args: [...flags, ...texts.filter((t) => t !== null)],
       };
     // Not on PATH, or an npm shim: the same command line either way, so a missing tool fails in PowerShell
     // with the flags it was given ("not recognized") instead of a bare name that drops them.
     const line = [`& ${own || name}`, ...flags.map(psQuote)];
-    if (promptEnv !== null)
-      return {
-        ...ps([...line, '$env:SHELLIE_CLAUDE_PROMPT'].join(' ')),
-        env: { SHELLIE_CLAUDE_PROMPT: shimSafePrompt(promptEnv) },
-      };
-    return ps(line.join(' '));
+    const env: Record<string, string> = {};
+    if (promptEnv !== null) {
+      line.push('$env:SHELLIE_CLAUDE_PROMPT');
+      env.SHELLIE_CLAUDE_PROMPT = shimSafePrompt(promptEnv);
+    }
+    if (positional !== null) {
+      line.push('$env:SHELLIE_CLAUDE_FIRST_MESSAGE');
+      env.SHELLIE_CLAUDE_FIRST_MESSAGE = shimSafePrompt(positional);
+    }
+    return Object.keys(env).length
+      ? { ...ps(line.join(' ')), env }
+      : ps(line.join(' '));
   };
 
   return {
@@ -149,12 +158,13 @@ export function windowsPlatform(
           .join('\n'),
       ),
     // The context is the value of the last flag, so it can travel in the env var like any prompt.
-    claudeCommand: (context, flags = [], base) =>
+    claudeCommand: (context, flags = [], base, prompt) =>
       tool(
         'claude',
         context === null ? flags : [...flags, '--append-system-prompt'],
         context,
         base,
+        prompt || null,
       ),
     probeCommand: (name) =>
       ps(`(Get-Command ${name} -ErrorAction Stop).Source; & ${name} --version`),
