@@ -1,7 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { GitClient } from '../services/GitClient';
-import { TEMPLATES_VERSION, templateFiles } from './templates';
+import {
+  managedTemplateFiles,
+  TEMPLATES_VERSION,
+  templateFiles,
+} from './templates';
 
 const SKILLS = ['capture', 'sync', 'lint', 'digest'];
 
@@ -58,7 +62,7 @@ export async function templateDiff(
   name: string,
 ): Promise<{ path: string; status: 'same' | 'changed' | 'missing' }[]> {
   return Promise.all(
-    templateFiles(name).map(async (f) => {
+    managedTemplateFiles(name).map(async (f) => {
       try {
         const current = await fs.readFile(abs(dir, f.path), 'utf8');
         return {
@@ -73,7 +77,7 @@ export async function templateDiff(
   );
 }
 
-/** Overwrite the given template paths and commit. Paths that are not templates are ignored. */
+/** Overwrite the given managed template paths and commit. Other paths (seeded files, anything else) are ignored. */
 export async function applyTemplates(
   git: GitClient,
   dir: string,
@@ -81,7 +85,7 @@ export async function applyTemplates(
   paths: string[],
 ): Promise<void> {
   const wanted = new Set(paths);
-  const files = templateFiles(name).filter((f) => wanted.has(f.path));
+  const files = managedTemplateFiles(name).filter((f) => wanted.has(f.path));
   await writeAll(dir, files);
   await git.run(dir, ['add', '-A', '--', ...files.map((f) => f.path)]);
   await git.run(dir, [

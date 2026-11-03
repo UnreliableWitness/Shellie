@@ -71,19 +71,36 @@ describe('brain scaffold', () => {
     expect(await isBrainFolder(dir)).toBe(false);
   });
 
+  it('leaves index.md, log.md and state.json to the brain after scaffolding', async () => {
+    await scaffoldBrain(git, dir, 'Acme');
+    const state = path.join(dir, 'brain/state.json');
+    await fs.writeFile(state, '{"schemaVersion":1,"lastSyncCommit":"abc"}\n');
+    await fs.writeFile(path.join(dir, 'log.md'), '# Log\n\n- entry\n');
+    await fs.rm(path.join(dir, 'index.md'));
+    const paths = (await templateDiff(dir, 'Acme')).map((d) => d.path);
+    for (const p of ['index.md', 'log.md', 'brain/state.json'])
+      expect(paths).not.toContain(p);
+    await applyTemplates(git, dir, 'Acme', ['brain/state.json', 'log.md']);
+    expect(await fs.readFile(state, 'utf8')).toContain('abc');
+    expect(await fs.readFile(path.join(dir, 'log.md'), 'utf8')).toContain(
+      'entry',
+    );
+  });
+
   it('templateDiff reports a changed skill and applyTemplates restores it', async () => {
     await scaffoldBrain(git, dir, 'Acme');
     const skill = '.claude/skills/lint/SKILL.md';
     await fs.writeFile(path.join(dir, skill), 'edited\n');
-    await fs.rm(path.join(dir, 'log.md'));
+    const gone = '.claude/skills/sync/SKILL.md';
+    await fs.rm(path.join(dir, gone));
     const diff = await templateDiff(dir, 'Acme');
     expect(diff.find((d) => d.path === skill)?.status).toBe('changed');
-    expect(diff.find((d) => d.path === 'log.md')?.status).toBe('missing');
+    expect(diff.find((d) => d.path === gone)?.status).toBe('missing');
     expect(diff.filter((d) => d.status === 'same').length).toBe(
       diff.length - 2,
     );
 
-    await applyTemplates(git, dir, 'Acme', [skill, 'log.md']);
+    await applyTemplates(git, dir, 'Acme', [skill, gone]);
     expect(
       (await templateDiff(dir, 'Acme')).every((d) => d.status === 'same'),
     ).toBe(true);

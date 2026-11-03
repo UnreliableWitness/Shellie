@@ -2,7 +2,12 @@
 export const TEMPLATES_VERSION = 1;
 
 /** `path` is relative to the brain folder, with forward slashes. */
-export type TemplateFile = { path: string; content: string };
+export type TemplateFile = {
+  path: string;
+  content: string;
+  /** Managed files are kept in step with the app (diffed and updated); seeded ones are written once at scaffold time and are the brain's own afterwards. */
+  managed: boolean;
+};
 
 const SCHEMA = `# Schema
 
@@ -176,18 +181,34 @@ const SETTINGS = `${JSON.stringify(
   2,
 )}\n`;
 
-/** Every file a brain is made of; the content never depends on anything but the brain's name. */
+/** Every file a brain starts from. Content depends only on the brain's name. */
 export function templateFiles(brainName: string): TemplateFile[] {
   return [
-    { path: 'SCHEMA.md', content: SCHEMA },
-    { path: 'index.md', content: `# ${brainName} brain\n\n(no pages yet)\n` },
-    { path: 'log.md', content: '# Log\n\n' },
-    { path: 'brain/state.json', content: '{"schemaVersion":1}\n' },
-    { path: '.claude/settings.json', content: SETTINGS },
-    { path: '.claude/skills/capture/SKILL.md', content: CAPTURE },
-    { path: '.claude/skills/sync/SKILL.md', content: SYNC },
-    { path: '.claude/skills/lint/SKILL.md', content: LINT },
-    { path: '.claude/skills/digest/SKILL.md', content: DIGEST },
-    { path: '.gitignore', content: 'brain/lock\n.mirror/\n' },
+    { path: 'SCHEMA.md', content: SCHEMA, managed: true },
+    {
+      path: 'index.md',
+      content: `# ${brainName} brain\n\n(no pages yet)\n`,
+      managed: false,
+    },
+    { path: 'log.md', content: '# Log\n\n', managed: false },
+    {
+      path: 'brain/state.json',
+      content: '{"schemaVersion":1}\n',
+      managed: false,
+    },
+    { path: '.claude/settings.json', content: SETTINGS, managed: true },
+    {
+      path: '.claude/skills/capture/SKILL.md',
+      content: CAPTURE,
+      managed: true,
+    },
+    { path: '.claude/skills/sync/SKILL.md', content: SYNC, managed: true },
+    { path: '.claude/skills/lint/SKILL.md', content: LINT, managed: true },
+    { path: '.claude/skills/digest/SKILL.md', content: DIGEST, managed: true },
+    { path: '.gitignore', content: 'brain/lock\n.mirror/\n', managed: true },
   ];
 }
+
+/** The files templateDiff and applyTemplates cover. */
+export const managedTemplateFiles = (brainName: string): TemplateFile[] =>
+  templateFiles(brainName).filter((f) => f.managed);
