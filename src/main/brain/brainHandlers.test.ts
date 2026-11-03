@@ -226,11 +226,16 @@ describe('brain handlers', () => {
         repoId: 'r1',
         workItem: { project: 'Acme' },
       },
+      { id: 't4', connectionId: 'c1', repoId: 'r1', workItem: {} },
     ] as unknown as Task[];
     expect((await h['brain:forTask']('t1'))?.id).toBe(v.id);
-    // No project on the work item: the connection's project (Default), which has no brain.
-    expect(await h['brain:forTask']('t2')).toBeNull();
     expect(await h['brain:forTask']('t3')).toBeNull();
+    // A work item without a stored project (older refs): the connection's project.
+    expect(await h['brain:forTask']('t4')).toBeNull();
+    const d = await h['brain:create']({ ...NEW, project: 'Default' });
+    expect((await h['brain:forTask']('t4'))?.id).toBe(d.id);
+    // No work item: no brain, also when the connection's project has one.
+    expect(await h['brain:forTask']('t2')).toBeNull();
   });
 
   it('read refuses a path outside the brain and lists files', async () => {

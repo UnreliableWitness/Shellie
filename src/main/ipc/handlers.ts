@@ -208,6 +208,7 @@ import {
   appendContext,
   appendLog,
   brainForTask,
+  withoutContext,
   closeLine,
   contextSection,
 } from '../brain/context';
@@ -791,11 +792,15 @@ export function createHandlers(s: Services): Handlers {
     );
     return b?.options.contextInTaskMd ? b.name : null;
   };
-  /** The brain of a task's work item project (else its connection's), from what is stored; no network. */
+  /**
+   * The brain of a task's work item project (else its connection's, for refs from before the project was stored),
+   * from what is stored; no network. A task without a work item has none.
+   */
   const taskBrain = (task: Task): Brain | null => {
+    if (!task.workItem) return null;
     const connectionId = taskConnectionId(task, s.repos.list());
     if (!connectionId) return null;
-    let project = task.workItem?.project ?? null;
+    let project = task.workItem.project ?? null;
     if (!project)
       try {
         project = s.connections.get(connectionId).project;
@@ -1763,20 +1768,21 @@ export function createHandlers(s: Services): Handlers {
 
   /**
    * The brain whose context task.md gets: of the work item's project (as Azure DevOps says, else as stored, else
-   * the connection's). A project learned from Azure DevOps is stored on the task's work item.
+   * the connection's). A project learned from Azure DevOps is stored on the task's work item. A task without a work
+   * item has none.
    */
   const setupBrain = async (
     task: Task,
     repo: Repo,
     details: WorkItemDetails | undefined,
   ): Promise<SetupPlan['brain']> => {
+    if (!task.workItem) return undefined;
     const connectionId = taskConnectionId(task, [repo]);
     if (!connectionId) return undefined;
     const learned = details?.fields['System.TeamProject'];
     if (
       typeof learned === 'string' &&
       learned &&
-      task.workItem &&
       task.workItem.project !== learned
     )
       await mutateTask(task.id, (t) => {
@@ -1784,7 +1790,7 @@ export function createHandlers(s: Services): Handlers {
       });
     let project =
       (typeof learned === 'string' && learned) ||
-      task.workItem?.project ||
+      task.workItem.project ||
       null;
     if (!project)
       try {
@@ -1815,7 +1821,10 @@ export function createHandlers(s: Services): Handlers {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-task-'));
       try {
         const file = path.join(tmp, `${task.slug}-task.md`);
-        await fs.copyFile(taskMd, file);
+        await fs.writeFile(
+          file,
+          withoutContext(await fs.readFile(taskMd, 'utf8')),
+        );
         const r = await addSource(s.git, b.path, { file }, 'task');
         if (r.ok) brain.runner.enqueue(b.id, 'capture', r.path);
         else console.error('[brain] task.md not added at finish:', r.message);

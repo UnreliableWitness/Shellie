@@ -1,5 +1,6 @@
 // handlers tests, part 4 of 6 (split so CI can run them on several machines at once).
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdtempSync,
@@ -690,6 +691,25 @@ describe('handlers: finish with a brain', () => {
       `sources/${source}`,
     );
     expect(existsSync(hx.t.worktreePath)).toBe(false);
+  });
+
+  it('captures task.md without its Context section', async () => {
+    const hx = await brainTask();
+    const file = path.join(hx.t.worktreePath, '.shellie', 'task.md');
+    const own = readFileSync(file, 'utf8');
+    appendFileSync(
+      file,
+      '\n## Context: Acme\nThe project\'s brain is at /x.\n\n- [Scope](wiki/scope.md)\n',
+    );
+    await hx.h['tasks:finish'](hx.t.id, { ...finish, captureTaskMd: true });
+    const [source] = hx.sources();
+    const text = readFileSync(
+      path.join(hx.brain.path, 'sources', source),
+      'utf8',
+    );
+    expect(text).toContain(own.trim().split('\n').at(-1));
+    expect(text).not.toContain('## Context');
+    expect(text).not.toContain('wiki/scope.md');
   });
 
   it('only logs the close line when task.md is not captured', async () => {

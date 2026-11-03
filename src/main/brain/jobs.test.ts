@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../platform/Platform';
-import { BrainJobRunner, type BrainJobDeps } from './jobs';
+import { BrainJobRunner, brainJobEnv, type BrainJobDeps } from './jobs';
 import { acquireLock, readState } from './state';
 
 const ok = (id: string) =>
@@ -282,5 +282,15 @@ describe('BrainJobRunner', () => {
     r.enqueue('b1', 'sync');
     await new Promise((res) => setTimeout(res, 20));
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('brainJobEnv', () => {
+  it("adds the brain's pseudo task id and brain id to the telemetry env", () => {
+    expect(brainJobEnv('b1', { OTEL: 'x' })).toEqual({
+      OTEL: 'x',
+      SHELLIE_TASK_ID: 'brain:b1',
+      SHELLIE_BRAIN_ID: 'b1',
+    });
   });
 });

@@ -27,6 +27,12 @@ export function contextSection(
   ].join('\n');
 }
 
+/** task.md without its Context section (from the `## Context:` heading to the end), so a brain never re-ingests its own index. */
+export function withoutContext(taskMd: string): string {
+  const at = taskMd.search(/^## Context:/m);
+  return at < 0 ? taskMd : taskMd.slice(0, at).replace(/\s+$/, '') + '\n';
+}
+
 /** Appends the section to task.md, after a blank line. */
 export async function appendContext(
   taskMdPath: string,

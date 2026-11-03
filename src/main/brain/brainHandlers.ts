@@ -226,10 +226,12 @@ export function createBrainHandlers(
     'brain:get': async (id) => view(brainOf(id)),
     'brain:forTask': async (taskId) => {
       const task = d.task(taskId);
+      // A task without a work item gets no brain.
+      if (!task.workItem) return null;
       const connectionId = taskConnectionId(task, d.repos());
       if (!connectionId) return null;
-      // The work item's own project; the connection's for tasks without one (or from before it was stored).
-      const project = task.workItem?.project ?? connectionProject(connectionId);
+      // The work item's own project; the connection's for refs from before it was stored.
+      const project = task.workItem.project ?? connectionProject(connectionId);
       const b = brainForTask(d.brains, connectionId, project);
       return b ? view(b) : null;
     },

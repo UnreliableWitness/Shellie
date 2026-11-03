@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { BrainJob, BrainJobKind, BrainModel } from '../../shared/brain';
+import {
+  brainTaskId,
+  type BrainJob,
+  type BrainJobKind,
+  type BrainModel,
+} from '../../shared/brain';
 import type { Platform } from '../platform/Platform';
 import {
   claudeResultWithSession,
@@ -20,6 +25,18 @@ export function brainJobFlags(model: BrainModel): string[] {
     'acceptEdits',
     '--strict-mcp-config',
   ];
+}
+
+/** A headless job's own variables on top of the telemetry env: the brain's pseudo task id, as a brain terminal has. */
+export function brainJobEnv(
+  brainId: string,
+  base: Record<string, string>,
+): Record<string, string> {
+  return {
+    ...base,
+    SHELLIE_TASK_ID: brainTaskId(brainId),
+    SHELLIE_BRAIN_ID: brainId,
+  };
 }
 
 export type BrainJobDeps = {

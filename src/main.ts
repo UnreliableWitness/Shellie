@@ -26,7 +26,7 @@ import type { Task } from './shared/types';
 import { brainTaskId } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { BrainStore } from './main/brain/BrainStore';
-import { BrainJobRunner } from './main/brain/jobs';
+import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { startBrainScheduler } from './main/brain/scheduler';
@@ -819,7 +819,7 @@ async function boot(): Promise<void> {
     const brainRunner = new BrainJobRunner({
       platform,
       run: runWithInput,
-      env: brainEnv,
+      env: (id) => brainJobEnv(id, brainEnv(id)),
       tokensToday: (id) => brainToday(id).tokens,
       cap: (id) => {
         const b = brains.get(id);
