@@ -9,9 +9,12 @@ import { DocsBody, type Doc } from '../docs/DocsBody';
 export function BrainFiles({
   brainId,
   dir,
+  filter = '',
 }: {
   brainId: string;
   dir: 'wiki' | 'sources' | 'root';
+  /** Only files whose path contains this (any case). */
+  filter?: string;
 }) {
   const [files, setFiles] = useState<DocFile[] | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
@@ -56,13 +59,21 @@ export function BrainFiles({
     [brainId],
   );
 
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? files?.filter((f) => f.path.toLowerCase().includes(needle))
+    : files;
+
   return (
     <div className="brain-files">
       <aside className="docs-list" aria-label="Files">
         {files?.length === 0 && (
           <p className="docs-list-empty muted small">No files yet.</p>
         )}
-        {files?.map((f) => (
+        {!!files?.length && shown?.length === 0 && (
+          <p className="docs-list-empty muted small">No file matches.</p>
+        )}
+        {shown?.map((f) => (
           <button
             key={f.path}
             type="button"

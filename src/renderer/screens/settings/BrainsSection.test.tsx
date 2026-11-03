@@ -51,6 +51,7 @@ const brain = {
     openBrainTerminalOnStart: false,
     model: 'sonnet',
   },
+  health: null,
   jobs: [],
 } as unknown as BrainView;
 
@@ -105,6 +106,17 @@ describe('BrainsSection', () => {
         }),
       ),
     );
+  });
+
+  it('disables the wiki picker until the typed project settles', async () => {
+    installFakeApi({ 'brain:wikis': () => [wiki] });
+    render(<BrainsSection />);
+    const user = userEvent.setup();
+    const picker = await screen.findByLabelText('Wiki');
+    await waitFor(() => expect(picker).toBeEnabled());
+    await user.type(screen.getByLabelText('Project'), ' Two');
+    expect(screen.getByLabelText('Wiki')).toBeDisabled();
+    await waitFor(() => expect(screen.getByLabelText('Wiki')).toBeEnabled());
   });
 
   it('picks a folder and shows a wikis error', async () => {

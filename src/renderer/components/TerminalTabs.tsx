@@ -34,7 +34,7 @@ import {
 } from '../store';
 import { AttentionDot } from './AttentionDot';
 import { trackBrain } from './brain/brainActions';
-import { BrainFiles } from './brain/BrainFiles';
+import { BrainTab } from './brain/BrainTab';
 import { DocsTab } from './docs/DocsTab';
 import { HtmlViewTab } from './HtmlViewTab';
 import {
@@ -564,19 +564,7 @@ export function TerminalTabs({
           ready &&
           !task.worktreeMissing && <ChangesTab task={task} />}
         {visible && active === BRAIN_TAB && brain && brainShown && (
-          <div className="brain-tab">
-            <div className="brain-tab-head">
-              <strong>{brain.name}</strong>
-              <button
-                type="button"
-                className="link small"
-                onClick={() => go({ kind: 'brain', brainId: brain.id })}
-              >
-                Open brain
-              </button>
-            </div>
-            <BrainFiles brainId={brain.id} dir="wiki" />
-          </div>
+          <BrainTab brain={brain} />
         )}
         {views.map(
           (v) =>

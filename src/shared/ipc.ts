@@ -4,6 +4,7 @@ import type {
   AdoWikiPage,
   BrainJob,
   BrainOptions,
+  BrainSourceRow,
   BrainView,
   BrainWiki,
   RefreshResult,
@@ -605,6 +606,8 @@ export type Channels = {
     result: BrainJob;
   };
   'brain:resumeQueue': { args: [brainId: string]; result: void };
+  /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
+  'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
   /** Markdown files of the brain: under wiki/ or sources/, or root: index.md, log.md, SCHEMA.md. */
   'brain:files': {
     args: [brainId: string, dir: 'wiki' | 'sources' | 'root'];

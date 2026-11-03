@@ -18,7 +18,7 @@ export function BrainHealth({
 }) {
   const notify = useStore((s) => s.notify);
   const h = brain.health;
-  const findings = h.state?.findings ?? [];
+  const findings = h?.state?.findings ?? [];
 
   const resolve = async (f: (typeof findings)[number]) => {
     trackBrain('resolve');
@@ -34,6 +34,15 @@ export function BrainHealth({
     trackBrain('resume');
     void tryInvoke(() => api().invoke('brain:resumeQueue', brain.id), notify);
   };
+
+  // Only brain:get carries health; a view from a list has none.
+  if (!h)
+    return (
+      <section className="brain-card" aria-labelledby="brain-health-h">
+        <h2 id="brain-health-h">Health</h2>
+        <p className="muted small">Loading</p>
+      </section>
+    );
 
   return (
     <section className="brain-card" aria-labelledby="brain-health-h">

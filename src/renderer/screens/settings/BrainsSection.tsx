@@ -137,6 +137,7 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
         project={settledProject}
         value={wiki}
         onChange={setWiki}
+        disabled={settledProject !== project.trim()}
       />
       {error ? (
         <div className="conn-status-bad" role="alert">

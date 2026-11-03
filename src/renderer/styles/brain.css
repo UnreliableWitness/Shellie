@@ -142,3 +142,19 @@
   flex: 1;
   max-height: none;
 }
+.brain-tab.is-over {
+  outline: 1px dashed var(--accent);
+  outline-offset: -4px;
+  background: var(--bg-hover);
+}
+.brain-tab-index {
+  flex: none;
+  max-height: 30%;
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
+}
+.brain-takeaways p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}

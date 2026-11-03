@@ -33,8 +33,8 @@ import {
   scaffoldBrain,
   templateDiff,
 } from './scaffold';
-import { addSource } from './sources';
-import { acquireLock, releaseLock } from './state';
+import { addSource, listSources } from './sources';
+import { acquireLock, readState, releaseLock } from './state';
 import { TEMPLATES_VERSION } from './templates';
 import { rootGitItemPath, wikiPageUrl } from './wikiAccess';
 
@@ -53,6 +53,7 @@ export type BrainChannels =
   | 'brain:refresh'
   | 'brain:run'
   | 'brain:resumeQueue'
+  | 'brain:sources'
   | 'brain:files'
   | 'brain:read'
   | 'brain:asset'
@@ -173,12 +174,15 @@ export function createBrainHandlers(
       return null;
     }
   };
-  const view = async (b: Brain): Promise<BrainView> => {
+  /** Health costs git calls, a ledger scan and reading every source: only for `brain:get`. */
+  const view = async (b: Brain, withHealth = false): Promise<BrainView> => {
     const jobs = d.runner.jobs(b.id);
     const paused = jobs.some((j) => j.status === 'paused');
     return {
       ...b,
-      health: await brainHealth(b.path, d.git, d.ledgerToday(b.id), paused),
+      health: withHealth
+        ? await brainHealth(b.path, d.git, d.ledgerToday(b.id), paused)
+        : null,
       jobs,
     };
   };
@@ -251,8 +255,8 @@ export function createBrainHandlers(
   };
 
   return {
-    'brain:list': async () => Promise.all(d.brains.list().map(view)),
-    'brain:get': async (id) => view(brainOf(id)),
+    'brain:list': async () => Promise.all(d.brains.list().map((b) => view(b))),
+    'brain:get': async (id) => view(brainOf(id), true),
     'brain:forTask': async (taskId) => {
       const task = d.task(taskId);
       // A task without a work item gets no brain.
@@ -377,6 +381,10 @@ export function createBrainHandlers(
     'brain:resumeQueue': async (id) => {
       brainOf(id);
       d.runner.resume(id);
+    },
+    'brain:sources': async (id) => {
+      const b = brainOf(id);
+      return listSources(b.path, (await readState(b.path)).state);
     },
     'brain:files': async (id, dir) => {
       const b = brainOf(id);

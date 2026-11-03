@@ -118,4 +118,68 @@ describe('BrainInbox', () => {
       }),
     );
   });
+
+  it('lists uncaptured sources (not the wiki mirror) with Capture', async () => {
+    const a = installFakeApi({
+      'brain:sources': () => [
+        {
+          path: 'sources/2026-11-02-sow.md',
+          type: 'sow',
+          ingestedAt: '2026-11-02T10:00:00.000Z',
+          captured: false,
+          original: null,
+        },
+        {
+          path: 'sources/2026-11-01-kickoff.md',
+          type: 'transcript',
+          ingestedAt: '2026-11-01T10:00:00.000Z',
+          captured: true,
+          original: null,
+        },
+        {
+          path: 'sources/wiki/Home.md',
+          type: 'wiki-page',
+          ingestedAt: '2026-11-01T10:00:00.000Z',
+          captured: false,
+          original: null,
+        },
+      ],
+      'brain:run': () => brainJob({ status: 'queued' }),
+    });
+    render(<BrainInbox brain={brainView()} />);
+    const list = await screen.findByRole('list', {
+      name: 'Sources to capture',
+    });
+    expect(list).toHaveTextContent('sources/2026-11-02-sow.md');
+    expect(list).not.toHaveTextContent('kickoff');
+    expect(list).not.toHaveTextContent('Home.md');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Capture sources/2026-11-02-sow.md' }),
+    );
+    expect(a.calls).toContainEqual({
+      channel: 'brain:run',
+      args: ['b1', 'capture', 'sources/2026-11-02-sow.md'],
+    });
+  });
+
+  it('offers no Retry on a paused job and shows takeaways of a done one', async () => {
+    installFakeApi({});
+    const brain = brainView({
+      jobs: [
+        brainJob({ id: 'p', status: 'paused', error: null }),
+        brainJob({
+          id: 'd',
+          status: 'done',
+          error: null,
+          result: '- The SOW fixes the delivery date',
+        }),
+      ],
+    });
+    render(<BrainInbox brain={brain} />);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.getByText('Takeaways')).toBeInTheDocument();
+    expect(
+      screen.getByText('- The SOW fixes the delivery date'),
+    ).toBeInTheDocument();
+  });
 });

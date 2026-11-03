@@ -129,7 +129,11 @@ export type BrainHealth = {
   costEurToday: number;
   tokensToday: number;
 };
-export type BrainView = Brain & { health: BrainHealth; jobs: BrainJob[] };
+/** `health` (git, the ledger and the sources read) only from `brain:get`; null from the lists and the other channels. */
+export type BrainView = Brain & {
+  health: BrainHealth | null;
+  jobs: BrainJob[];
+};
 
 /** A wiki of an Azure DevOps project (REST `_apis/wiki/wikis`). */
 export type AdoWiki = {

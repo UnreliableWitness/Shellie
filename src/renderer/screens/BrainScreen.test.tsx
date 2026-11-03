@@ -138,7 +138,7 @@ describe('BrainScreen', () => {
 
   it('shows the cap pause and resumes the queue', async () => {
     const paused = brainView();
-    paused.health.queuePaused = 'cap';
+    paused.health!.queuePaused = 'cap';
     const a = setup(paused);
     render(<BrainScreen brainId="b1" />);
     expect(await screen.findByText(/paused/i)).toBeInTheDocument();

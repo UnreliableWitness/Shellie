@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskView } from '../../shared/types';
 import { CHANGES_TAB, useStore } from '../store';
-import { brainView } from '../test-helpers/brainFixture';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
 import { Shell } from '../App';
 import { invalidateRepoConfig } from '../hooks/useRepoConfig';
@@ -866,7 +866,7 @@ describe('tabs and focus', () => {
     const { calls } = setup(
       {},
       {
-        'brain:forTask': () => brainView(),
+        'brain:forTask': () => listedBrain(),
         'brain:files': () => [
           { path: 'wiki/a.md', name: 'a.md', changed: null },
         ],
@@ -895,6 +895,54 @@ describe('tabs and focus', () => {
     });
   });
 
+  it('the Brain tab shows the index, filters pages and adds dropped files', async () => {
+    const { calls } = setup(
+      {},
+      {
+        'brain:forTask': () => listedBrain(),
+        'brain:read': (_id, rel) => ({
+          text: rel === 'index.md' ? '# Acme index\n\n- Scope of work' : '',
+        }),
+        'brain:files': () => [
+          { path: 'wiki/scope.md', name: 'scope.md', changed: null },
+          { path: 'wiki/account.md', name: 'account.md', changed: null },
+        ],
+        'brain:addFiles': () => [{ ok: true, path: 'sources/x.md' }],
+      },
+    );
+    render(<Shell />);
+    await userEvent.click(await screen.findByRole('tab', { name: /^Brain$/ }));
+    expect(
+      await screen.findByRole('heading', { name: 'Acme index' }),
+    ).toBeInTheDocument();
+    expect(calls).toContainEqual({
+      channel: 'brain:read',
+      args: ['b1', 'index.md'],
+    });
+    expect(
+      await screen.findByRole('button', { name: 'wiki/account.md' }),
+    ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Filter pages'), 'SCO');
+    expect(
+      screen.queryByRole('button', { name: 'wiki/account.md' }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'wiki/scope.md' }),
+    ).toBeInTheDocument();
+    const file = Object.assign(new File(['x'], 'notes.vtt'), {
+      path: '/dl/notes.vtt',
+    });
+    fireEvent.drop(screen.getByLabelText(/Acme brain, drop files/), {
+      dataTransfer: { files: [file] },
+    });
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        channel: 'brain:addFiles',
+        args: ['b1', [{ path: '/dl/notes.vtt', type: 'transcript' }]],
+      }),
+    );
+  });
+
   it('has no Brain tab without a brain', async () => {
     const { calls } = setup();
     render(<Shell />);
@@ -906,7 +954,7 @@ describe('tabs and focus', () => {
   });
 
   it('opens the Brain tab with Mod+Shift+B only when there is a brain', async () => {
-    setup({}, { 'brain:forTask': () => brainView() });
+    setup({}, { 'brain:forTask': () => listedBrain() });
     render(<Shell />);
     const term = await screen.findByTestId('term-c1');
     const ev = createEvent.keyDown(term, {
@@ -927,7 +975,7 @@ describe('tabs and focus', () => {
     const { calls } = setup(
       {},
       {
-        'brain:forTask': () => brainView(),
+        'brain:forTask': () => listedBrain(),
         'brain:terminal': () => ({ id: 'bt1', kind: 'claude', label: 'Brain' }),
       },
     );
@@ -957,7 +1005,7 @@ describe('tabs and focus', () => {
 
   it('opens the brain terminal once when the brain asks for it on start', async () => {
     brainTerminalOpenedOnStart.clear();
-    const brain = brainView();
+    const brain = listedBrain();
     brain.options.openBrainTerminalOnStart = true;
     const { calls } = setup(
       {},
@@ -981,14 +1029,14 @@ describe('tabs and focus', () => {
 
   it('does not open the brain terminal on start when the option is off', async () => {
     brainTerminalOpenedOnStart.clear();
-    const { calls } = setup({}, { 'brain:forTask': () => brainView() });
+    const { calls } = setup({}, { 'brain:forTask': () => listedBrain() });
     render(<Shell />);
     await screen.findByRole('tab', { name: /^Brain$/ });
     expect(calls.some((c) => c.channel === 'brain:terminal')).toBe(false);
   });
 
   it('keeps the Brain tab when a refetch fails, drops it when the answer is null', async () => {
-    let answer: () => unknown = () => brainView();
+    let answer: () => unknown = () => listedBrain();
     const { emit } = setup({}, { 'brain:forTask': () => answer() as never });
     render(<Shell />);
     await userEvent.click(await screen.findByRole('tab', { name: /Brain/ }));
@@ -1011,7 +1059,7 @@ describe('tabs and focus', () => {
   });
 
   it('hides the Brain tab and falls back when the worktree is missing', async () => {
-    setup({ worktreeMissing: true }, { 'brain:forTask': () => brainView() });
+    setup({ worktreeMissing: true }, { 'brain:forTask': () => listedBrain() });
     useStore.setState({ tabByTask: { a: 'brain' } });
     render(<Shell />);
     await screen.findByTestId('term-c1');
@@ -1027,7 +1075,7 @@ describe('tabs and focus', () => {
     const { calls } = setup(
       {},
       {
-        'brain:forTask': () => brainView(),
+        'brain:forTask': () => listedBrain(),
         'brain:terminal': () => ({ id: 'bt1', kind: 'claude', label: 'Brain' }),
       },
     );

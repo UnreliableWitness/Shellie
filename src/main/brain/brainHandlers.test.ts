@@ -141,9 +141,13 @@ describe('brain handlers', () => {
     expect(v.path).toBe(path.join(userData, 'brains', v.id));
     expect(await isBrainFolder(v.path)).toBe(true);
     expect(v.templatesVersion).toBe(TEMPLATES_VERSION);
-    expect(v.health.outsideEdits).toEqual([]);
+    expect(v.health).toBeNull();
+    expect((await h['brain:get'](v.id)).health?.outsideEdits).toEqual([]);
     expect(v.jobs).toEqual([]);
-    expect((await h['brain:list']()).map((b) => b.id)).toEqual([v.id]);
+    const listed = await h['brain:list']();
+    expect(listed.map((b) => b.id)).toEqual([v.id]);
+    // Lists carry no health (no git, ledger or source reads).
+    expect(listed[0].health).toBeNull();
     expect(broadcasts.at(-1)).toEqual(['brain:changed', { brainId: v.id }]);
     expect(events).toContainEqual(['brain.created', { wiki: false }]);
     expect(remembered).toEqual(expect.arrayContaining(['Acme', v.path]));
@@ -233,6 +237,7 @@ describe('brain handlers', () => {
       { id: 't4', connectionId: 'c1', repoId: 'r1', workItem: {} },
     ] as unknown as Task[];
     expect((await h['brain:forTask']('t1'))?.id).toBe(v.id);
+    expect((await h['brain:forTask']('t1'))?.health).toBeNull();
     expect(await h['brain:forTask']('t3')).toBeNull();
     // A work item without a stored project (older refs): the connection's project.
     expect(await h['brain:forTask']('t4')).toBeNull();
@@ -240,6 +245,15 @@ describe('brain handlers', () => {
     expect((await h['brain:forTask']('t4'))?.id).toBe(d.id);
     // No work item: no brain, also when the connection's project has one.
     expect(await h['brain:forTask']('t2')).toBeNull();
+  });
+
+  it('sources lists the brain sources with their captured state', async () => {
+    const v = await h['brain:create'](NEW);
+    const r = await h['brain:addText'](v.id, 'Notes', 'Kick-off', 'note');
+    if (!r.ok) throw new Error('add failed');
+    expect(await h['brain:sources'](v.id)).toEqual([
+      expect.objectContaining({ path: r.path, type: 'note', captured: false }),
+    ]);
   });
 
   it('read refuses a path outside the brain and lists files', async () => {
@@ -272,11 +286,11 @@ describe('brain handlers', () => {
     const v = await h['brain:create'](NEW);
     await fs.writeFile(path.join(v.path, 'wiki', 'account.md'), '# A\n');
     await fs.appendFile(path.join(v.path, 'log.md'), '- captured\n');
-    expect((await h['brain:get'](v.id)).health.outsideEdits).toEqual([
+    expect((await h['brain:get'](v.id)).health?.outsideEdits).toEqual([
       'wiki/account.md',
     ]);
     await commitJobOutput(git, v.path, 'Brain: capture sources/a.md');
-    expect((await h['brain:get'](v.id)).health.outsideEdits).toEqual([]);
+    expect((await h['brain:get'](v.id)).health?.outsideEdits).toEqual([]);
     expect((await git.run(v.path, ['log', '-1', '--format=%s'])).trim()).toBe(
       'Brain: capture sources/a.md',
     );
@@ -295,7 +309,7 @@ describe('brain handlers', () => {
     // The job writes its own page and commits.
     await fs.writeFile(path.join(v.path, 'wiki', 'agent.md'), '# Agent\n');
     await commitJobOutput(git, v.path, 'Brain: capture sources/a.md');
-    expect((await h['brain:get'](v.id)).health.outsideEdits).toEqual([
+    expect((await h['brain:get'](v.id)).health?.outsideEdits).toEqual([
       'wiki/by-hand.md',
     ]);
     const subjects = (await git.run(v.path, ['log', '--format=%s', '-2']))

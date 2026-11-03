@@ -54,6 +54,10 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   ...over,
 });
 
+/** A brain as `brain:list` and `brain:forTask` answer: without health (only `brain:get` has it). */
+export const listedBrain = (over: Partial<BrainView> = {}): BrainView =>
+  brainView({ health: null, ...over });
+
 export const brainJob = (over: Partial<BrainJob> = {}): BrainJob => ({
   id: 'j1',
   brainId: 'b1',

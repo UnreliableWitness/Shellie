@@ -13,6 +13,8 @@ export type BrainAction =
   | 'resume'
   | 'retry'
   | 'continue'
+  /** A source captured from the inbox's list. */
+  | 'capture'
   /** From a task: the Brain tab opened, a brain terminal opened, the Finish option ticked. */
   | 'tab'
   | 'terminal'

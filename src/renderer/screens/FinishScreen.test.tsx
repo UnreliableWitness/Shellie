@@ -14,7 +14,7 @@ import type {
 } from '../../shared/types';
 import { readPrChoice, readPushChoice, writePrChoice } from '../uiPrefs';
 import { CHANGES_TAB, useStore } from '../store';
-import { brainView } from '../test-helpers/brainFixture';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { emptyTime, emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { clearPrDrafts, FinishScreen } from './FinishScreen';
 
@@ -159,7 +159,7 @@ describe('FinishScreen', () => {
     const { calls } = installFakeApi({
       'tasks:finishChecks': () => clean,
       'tasks:finish': () => undefined,
-      'brain:forTask': () => brainView(),
+      'brain:forTask': () => listedBrain(),
     });
     render(<FinishScreen taskId="a" />);
     await userEvent.click(
@@ -180,7 +180,7 @@ describe('FinishScreen', () => {
     const { calls } = installFakeApi({
       'tasks:finishChecks': () => clean,
       'tasks:finish': () => undefined,
-      'brain:forTask': () => brainView(),
+      'brain:forTask': () => listedBrain(),
     });
     render(<FinishScreen taskId="a" />);
     expect(

@@ -16,11 +16,14 @@ export function WikiRootPicker({
   project: rawProject,
   value,
   onChange,
+  disabled = false,
 }: {
   connectionId: string;
   project: string;
   value: BrainWiki | null;
   onChange: (wiki: BrainWiki | null) => void;
+  /** While the project is still being typed: its wikis are not the ones shown. */
+  disabled?: boolean;
 }) {
   const id = useId();
   const project = rawProject.trim();
@@ -83,7 +86,7 @@ export function WikiRootPicker({
         id={`${id}-wiki`}
         className="field"
         value={wikiId ?? ''}
-        disabled={wikis === null && !value}
+        disabled={disabled || (wikis === null && !value)}
         onChange={(e) => {
           const w = wikis?.find((x) => x.id === e.target.value);
           if (w) choose(w, '/');
@@ -115,6 +118,7 @@ export function WikiRootPicker({
             id={`${id}-page`}
             className="field"
             value={value?.rootPath ?? '/'}
+            disabled={disabled}
             onChange={(e) => choose(selected, e.target.value)}
           >
             <option value="/">Whole wiki</option>

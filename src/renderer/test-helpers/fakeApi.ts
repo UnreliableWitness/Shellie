@@ -110,6 +110,7 @@ const defaults: FakeHandlers = {
   'brain:wikis': () => [],
   'brain:wikiPages': () => [],
   'brain:addFiles': () => [],
+  'brain:sources': () => [],
   'brain:files': () => [],
   'brain:read': () => ({ text: '' }),
   'brain:asset': () => '',

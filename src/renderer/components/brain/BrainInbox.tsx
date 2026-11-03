@@ -1,19 +1,20 @@
-import { useState, type DragEvent } from 'react';
-import type { BrainJob, BrainView, SourceType } from '../../../shared/brain';
-import type { AddSourceResult } from '../../../shared/brain';
+import { useCallback, useEffect, useState } from 'react';
+import type {
+  BrainJob,
+  BrainSourceRow,
+  BrainView,
+  SourceType,
+} from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
+import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
+import { useBrainDrop } from './useBrainDrop';
 
-/** The same rule as main's `guessSourceType`: by extension, not by content. */
-export const guessType = (name: string): SourceType =>
-  /\.vtt$/i.test(name) ? 'transcript' : /\.pptx$/i.test(name) ? 'deck' : 'doc';
+export { guessType } from './useBrainDrop';
 
 const TYPES: SourceType[] = ['doc', 'note', 'transcript', 'deck', 'sow'];
-
-const failures = (results: AddSourceResult[]) =>
-  results.flatMap((r) => (r.ok ? [] : [r.message]));
 
 const newestFirst = (jobs: BrainJob[]) =>
   [...jobs].sort((a, b) =>
@@ -53,11 +54,18 @@ function JobRow({
           {job.source && <span className="muted"> {job.source}</span>}
         </span>
         {job.error && <span className="brain-error small">{job.error}</span>}
+        {job.status === 'done' && job.result && (
+          <details className="brain-takeaways small">
+            <summary>Takeaways</summary>
+            <p>{job.result}</p>
+          </details>
+        )}
       </div>
       <span className={`brain-status brain-status-${job.status} small`}>
         {job.status}
       </span>
-      {(job.status === 'failed' || job.status === 'paused') && (
+      {/* A paused job runs again on Resume (Health); only a failed one is retried. */}
+      {job.status === 'failed' && (
         <button type="button" className="btn btn-sm" onClick={retry}>
           Retry
         </button>
@@ -75,6 +83,59 @@ function JobRow({
   );
 }
 
+/** Sources not captured yet (the wiki mirror's pages are synced, not captured), each with a Capture button. */
+function SourcesToCapture({ brain }: { brain: BrainView }) {
+  const notify = useStore((s) => s.notify);
+  const [rows, setRows] = useState<BrainSourceRow[]>([]);
+  const load = useCallback(() => {
+    api()
+      .invoke('brain:sources', brain.id)
+      .then(setRows, () => undefined);
+  }, [brain.id]);
+  useEffect(load, [load]);
+  useBrainChanged(brain.id, load);
+  const pending = rows.filter(
+    (r) => !r.captured && !r.path.startsWith('sources/wiki/'),
+  );
+  if (pending.length === 0) return null;
+  // A capture already queued or running for the source is not offered again.
+  const queued = new Set(
+    brain.jobs
+      .filter((j) => j.status === 'queued' || j.status === 'running')
+      .map((j) => j.source),
+  );
+  const capture = (path: string) => {
+    trackBrain('capture');
+    void tryInvoke(
+      () => api().invoke('brain:run', brain.id, 'capture', path),
+      notify,
+    );
+  };
+  return (
+    <>
+      <h3>Sources to capture</h3>
+      <ul className="list brain-uncaptured" aria-label="Sources to capture">
+        {pending.map((r) => (
+          <li key={r.path} className="list-row">
+            <span className="grow">
+              {r.path} <span className="muted small">{r.type}</span>
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-label={`Capture ${r.path}`}
+              disabled={queued.has(r.path)}
+              onClick={() => capture(r.path)}
+            >
+              Capture
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 /** What goes into the brain: dropped files, pasted text, and the capture jobs they queue. */
 export function BrainInbox({
   brain,
@@ -84,30 +145,13 @@ export function BrainInbox({
   onTerminal?: (def: TerminalDef) => void;
 }) {
   const notify = useStore((s) => s.notify);
-  const [over, setOver] = useState(false);
-  const [problems, setProblems] = useState<string[]>([]);
+  const { over, problems, setProblems, addFiles, dropProps } = useBrainDrop(
+    brain.id,
+  );
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [type, setType] = useState<SourceType>('note');
 
-  const addFiles = async (files: File[]) => {
-    if (files.length === 0) return;
-    trackBrain('drop');
-    const rows = files.map((f) => ({
-      path: api().pathForFile(f),
-      type: guessType(f.name),
-    }));
-    const results = await tryInvoke(
-      () => api().invoke('brain:addFiles', brain.id, rows),
-      notify,
-    );
-    setProblems(results ? failures(results) : []);
-  };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    void addFiles(Array.from(e.dataTransfer.files));
-  };
   const paste = async () => {
     trackBrain('paste');
     const result = await tryInvoke(
@@ -128,12 +172,7 @@ export function BrainInbox({
       <div
         data-dropzone
         className={over ? 'brain-drop is-over' : 'brain-drop'}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setOver(true);
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={onDrop}
+        {...dropProps}
       >
         <span>Drop files here</span>
         <label className="btn btn-sm">
@@ -198,6 +237,7 @@ export function BrainInbox({
           ))}
         </ul>
       )}
+      <SourcesToCapture brain={brain} />
       {brain.jobs.length === 0 ? (
         <p className="muted small">No jobs yet.</p>
       ) : (
