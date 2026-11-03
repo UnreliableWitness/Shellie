@@ -55,7 +55,8 @@ export function useTaskBrain(taskId: string): BrainView | null {
   const load = useCallback(() => {
     api()
       .invoke('brain:forTask', taskId)
-      .then(setBrain, () => setBrain(null));
+      // A failed refetch keeps what was shown; only a successful answer (null: no brain) clears it.
+      .then(setBrain, () => undefined);
   }, [taskId]);
   useEffect(load, [load]);
   useBrainChanged(brain?.id ?? null, load);

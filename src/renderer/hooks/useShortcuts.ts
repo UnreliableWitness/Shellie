@@ -29,7 +29,8 @@ export function useShortcuts(): void {
       } else if (e.shiftKey && e.code === 'KeyB') {
         const task = tasks.find((t) => t.id === selectedTaskId);
         if (screen.kind !== 'task' || !task || task.status !== 'ready') return;
-        // The tab exists only for a task with a brain.
+        // The tab exists only for a task with a brain (and a worktree, like Docs).
+        if (task.worktreeMissing) return;
         api()
           .invoke('brain:forTask', task.id)
           .then(

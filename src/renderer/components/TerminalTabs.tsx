@@ -182,7 +182,15 @@ export function TerminalTabs({
     (s) => brainTerm !== null && s.tabByTask[task.id] === brainTerm.id,
   );
   const stored = useStore((s) => s.activeTab(task.id));
-  const active = brainTermShown && brainTerm ? brainTerm.id : stored;
+  // The Brain tab is hidden when the task has no brain (or no worktree); then it cannot stay the active one.
+  const brainShown =
+    !!brain && task.status === 'ready' && !task.worktreeMissing;
+  const active =
+    brainTermShown && brainTerm
+      ? brainTerm.id
+      : stored === BRAIN_TAB && !brainShown
+        ? (task.terminals[0]?.id ?? USAGE_TAB)
+        : stored;
   const setTab = useStore((s) => s.setTab);
   const attention = useStore((s) => s.attention);
   // Same rule as the shell: Focus chrome only for a ready task.
@@ -265,6 +273,7 @@ export function TerminalTabs({
     setBrainTerm(def);
     setTab(task.id, def.id);
   };
+  // Closing only detaches the tab: the terminal belongs to the brain and stays on its page (never killed here).
   const closeBrainTerminal = () => {
     setBrainTerm(null);
     if (brainTermShown) setTab(task.id, task.terminals[0]?.id ?? USAGE_TAB);
@@ -347,7 +356,7 @@ export function TerminalTabs({
                 ) : null}
               </button>
             )}
-            {brain && ready && !task.worktreeMissing && (
+            {brainShown && (
               <button
                 type="button"
                 role="tab"
@@ -397,21 +406,6 @@ export function TerminalTabs({
                 </button>
               </span>
             ))}
-            {visible && active === BRAIN_TAB && brain && (
-              <div className="brain-tab">
-                <div className="brain-tab-head">
-                  <strong>{brain.name}</strong>
-                  <button
-                    type="button"
-                    className="link small"
-                    onClick={() => go({ kind: 'brain', brainId: brain.id })}
-                  >
-                    Open brain
-                  </button>
-                </div>
-                <BrainFiles brainId={brain.id} dir="wiki" />
-              </div>
-            )}
             {views.map((v) => (
               <span key={v.id} className="term-tab">
                 <button
@@ -552,6 +546,21 @@ export function TerminalTabs({
           active === CHANGES_TAB &&
           ready &&
           !task.worktreeMissing && <ChangesTab task={task} />}
+        {visible && active === BRAIN_TAB && brain && brainShown && (
+          <div className="brain-tab">
+            <div className="brain-tab-head">
+              <strong>{brain.name}</strong>
+              <button
+                type="button"
+                className="link small"
+                onClick={() => go({ kind: 'brain', brainId: brain.id })}
+              >
+                Open brain
+              </button>
+            </div>
+            <BrainFiles brainId={brain.id} dir="wiki" />
+          </div>
+        )}
         {views.map(
           (v) =>
             visible &&
