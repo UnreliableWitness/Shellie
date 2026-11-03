@@ -112,6 +112,7 @@ function fakeTerminal(selection: string) {
       sel = '';
     }),
     paste: vi.fn(),
+    input: vi.fn(),
   };
   const press = (k: KeyLike) => {
     const e = { ...k, preventDefault: vi.fn() };
@@ -152,14 +153,51 @@ describe('attachClipboardKeys', () => {
     await vi.waitFor(() => expect(t.paste).toHaveBeenCalledWith('pasted text'));
   });
 
-  it('pastes nothing for an empty clipboard', async () => {
+  it('pastes text with Ctrl+V and does not send ^V', async () => {
+    const { t, press } = fakeTerminal('');
+    const c = clip('abc');
+    attachClipboardKeys(t, false, c);
+    press(ctrl('v'));
+    await vi.waitFor(() => expect(t.paste).toHaveBeenCalledWith('abc'));
+    expect(t.input).not.toHaveBeenCalled();
+  });
+
+  it('sends ^V to the program when the clipboard has no text (an image), so it can paste it', async () => {
     const { t, press } = fakeTerminal('');
     const c = clip('');
     attachClipboardKeys(t, false, c);
-    press(ctrl('v'));
-    await Promise.resolve();
-    await Promise.resolve();
+    expect(press(ctrl('v'))).toEqual({ result: false, prevented: true });
+    await vi.waitFor(() => expect(t.input).toHaveBeenCalledWith('\x16', true));
     expect(t.paste).not.toHaveBeenCalled();
+  });
+
+  it('sends ^V when reading the clipboard fails', async () => {
+    const { t, press } = fakeTerminal('');
+    const c = {
+      readText: vi.fn(async () => {
+        throw new Error('no text');
+      }),
+      writeText: vi.fn(async () => undefined),
+    };
+    attachClipboardKeys(t, false, c);
+    press(ctrl('v'));
+    await vi.waitFor(() => expect(t.input).toHaveBeenCalledWith('\x16', true));
+    expect(t.paste).not.toHaveBeenCalled();
+  });
+
+  it('pastes nothing for an empty clipboard with Ctrl+Shift+V or Cmd+V', async () => {
+    for (const [k, mac] of [
+      [ctrl('V', { shiftKey: true }), false],
+      [cmd('v'), true],
+    ] as const) {
+      const { t, press } = fakeTerminal('');
+      attachClipboardKeys(t, mac, clip(''));
+      press(k);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(t.paste).not.toHaveBeenCalled();
+      expect(t.input).not.toHaveBeenCalled();
+    }
   });
 
   it('cut copies and clears, since terminal output cannot be deleted', () => {
