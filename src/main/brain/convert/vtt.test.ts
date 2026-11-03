@@ -15,7 +15,7 @@ describe('vttToMarkdown', () => {
   it('handles cues without voice tags, settings, notes and overlapping duplicates', () => {
     const md = vttToMarkdown(
       [
-        '﻿WEBVTT',
+        '\uFEFFWEBVTT',
         '',
         'NOTE a comment',
         '',
@@ -47,5 +47,35 @@ describe('vttToMarkdown', () => {
     expect(
       vttToMarkdown('WEBVTT\n\n01:05.000 --> 01:07.000\n<v A>x\n'),
     ).toContain('## 00:01:05');
+  });
+
+  it('keeps identical text from different speakers and non-overlapping repeats', () => {
+    const md = vttToMarkdown(
+      'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Alice>Yes.\n\n00:00:02.000 --> 00:00:03.000\n<v Bob>Yes.\n\n00:00:05.000 --> 00:00:06.000\n<v Bob>Yes.\n',
+    );
+    expect(md).toBe('## 00:00:01\n\n**Alice:** Yes.\n\n**Bob:** Yes. Yes.\n');
+  });
+
+  it('drops an overlapping identical cue from the same speaker', () => {
+    const md = vttToMarkdown(
+      'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Alice>Okay.\n\n00:00:02.000 --> 00:00:05.000\n<v Alice>Okay.\n',
+    );
+    expect(md).toBe('## 00:00:01\n\n**Alice:** Okay.\n');
+  });
+
+  it('keeps untagged cues as separate plain lines', () => {
+    const md = vttToMarkdown(
+      'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\none\n\n00:00:03.000 --> 00:00:04.000\ntwo\n',
+    );
+    expect(md).toBe('## 00:00:01\n\none\n\ntwo\n');
+  });
+
+  it('labels every speaker in a multi-voice cue and overlapping tagged cues', () => {
+    const md = vttToMarkdown(
+      'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Alice>Hi\n<v Bob>Hello\n\n00:00:03.000 --> 00:00:06.000\n<v Bob>Hello\n<v Alice>Bye\n',
+    );
+    expect(md).toBe(
+      '## 00:00:01\n\n**Alice:** Hi\n\n**Bob:** Hello\n\n**Alice:** Bye\n',
+    );
   });
 });

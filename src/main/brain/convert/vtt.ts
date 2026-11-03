@@ -1,9 +1,29 @@
 const TIMING =
-  /^((?:\d+:)?\d{1,2}:\d{2})\.\d{3}\s+-->\s+(?:\d+:)?\d{1,2}:\d{2}\.\d{3}/;
+  /^((?:\d+:)?\d{1,2}:\d{2})\.(\d{3})\s+-->\s+((?:\d+:)?\d{1,2}:\d{2})\.(\d{3})/;
 
-function toSeconds(stamp: string): number {
+function toSeconds(stamp: string, ms: string): number {
   const parts = stamp.split(':').map(Number);
-  return parts.reduce((acc, p) => acc * 60 + p, 0);
+  return parts.reduce((acc, p) => acc * 60 + p, 0) + Number(ms) / 1000;
+}
+
+type Segment = { speaker: string | null; text: string };
+
+function clean(s: string): string {
+  return s
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Splits a cue payload into one segment per `<v Speaker>` run. */
+function segmentsOf(raw: string): Segment[] {
+  const out: Segment[] = [];
+  for (const part of raw.split(/(?=<v[\s.])/)) {
+    const voice = /^<v(?:\.[^\s>]*)?\s+([^>]+)>/.exec(part);
+    const text = clean(part);
+    if (text) out.push({ speaker: voice ? voice[1].trim() : null, text });
+  }
+  return out;
 }
 
 function pad(n: number): string {
@@ -17,49 +37,48 @@ function hms(total: number): string {
 /** Converts WebVTT to markdown: a time heading per minute, one line per speaker turn. */
 export function vttToMarkdown(text: string): string {
   const blocks = text
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .split(/\r?\n\s*\r?\n/)
     .map((b) => b.split(/\r?\n/));
 
   const out: string[] = [];
   let lastHeading = -Infinity;
-  let prevSpeaker: string | null | undefined;
-  let prevText = '';
-  let canMerge = false;
+  let prev: Segment | null = null; // last emitted line, for merging
+  let prevSegs: Segment[] = [];
+  let prevEnd = -Infinity;
 
   for (const lines of blocks) {
     const i = lines.findIndex((l) => TIMING.test(l));
     if (i < 0) continue; // header, NOTE, STYLE, REGION
-    const start = toSeconds(TIMING.exec(lines[i])![1]);
-    const raw = lines
-      .slice(i + 1)
-      .join(' ')
-      .trim();
-    const voice = /^<v(?:\.[^\s>]*)?\s+([^>]+)>/.exec(raw);
-    const speaker = voice ? voice[1].trim() : null;
-    const body = raw
-      .replace(/<[^>]*>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!body) continue;
-    if (body === prevText) continue; // overlapping duplicate
+    const m = TIMING.exec(lines[i])!;
+    const start = toSeconds(m[1], m[2]);
+    const end = toSeconds(m[3], m[4]);
+    const overlaps = start < prevEnd;
+    const segs = segmentsOf(lines.slice(i + 1).join(' ')).filter(
+      (s) =>
+        !(
+          overlaps &&
+          prevSegs.some((p) => p.speaker === s.speaker && p.text === s.text)
+        ),
+    );
+    prevSegs = segmentsOf(lines.slice(i + 1).join(' '));
+    prevEnd = end;
+    if (segs.length === 0) continue;
 
-    const heading = start - lastHeading >= 60;
-    if (heading) {
-      lastHeading = start;
-      out.push(`## ${hms(start)}`);
-      canMerge = false;
+    const whole = Math.floor(start);
+    if (start - lastHeading >= 60) {
+      lastHeading = whole;
+      out.push(`## ${hms(whole)}`);
+      prev = null;
     }
-    if (canMerge && speaker === prevSpeaker && speaker !== null) {
-      out[out.length - 1] += ` ${body}`;
-    } else if (canMerge && speaker === null && prevSpeaker === null) {
-      out[out.length - 1] += ` ${body}`;
-    } else {
-      out.push(speaker ? `**${speaker}:** ${body}` : body);
+    for (const seg of segs) {
+      if (prev && seg.speaker !== null && seg.speaker === prev.speaker) {
+        out[out.length - 1] += ` ${seg.text}`;
+      } else {
+        out.push(seg.speaker ? `**${seg.speaker}:** ${seg.text}` : seg.text);
+      }
+      prev = seg;
     }
-    canMerge = true;
-    prevSpeaker = speaker;
-    prevText = body;
   }
   return out.join('\n\n') + (out.length ? '\n' : '');
 }
