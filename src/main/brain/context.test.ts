@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitClient } from '../services/GitClient';
 import {
   appendContext,
@@ -11,6 +12,7 @@ import {
   contextSection,
 } from './context';
 import { scaffoldBrain } from './scaffold';
+import { acquireLock, releaseLock } from './state';
 
 describe('brain context', () => {
   it('contextSection caps index.md at 150 lines', () => {
@@ -91,6 +93,52 @@ describe('brain context', () => {
         'Brain: task closed',
       );
       expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    });
+
+    it('serialises concurrent close lines: both kept, newest first, two commits', async () => {
+      const dir = path.join(root, 'brain');
+      await scaffoldBrain(git, dir, 'Acme');
+      const count = async () =>
+        Number((await git.run(dir, ['rev-list', '--count', 'HEAD'])).trim());
+      const before = await count();
+      await Promise.all([
+        appendLog(git, dir, '- first'),
+        appendLog(git, dir, '- second'),
+      ]);
+      expect(await fs.readFile(path.join(dir, 'log.md'), 'utf8')).toBe(
+        '# Log\n\n- second\n- first\n',
+      );
+      expect((await count()) - before).toBe(2);
+      // The lock is released afterwards.
+      expect(existsSync(path.join(dir, 'brain', 'lock'))).toBe(false);
+    });
+
+    it('writes nothing while a job holds the lock past the wait', async () => {
+      const dir = path.join(root, 'brain');
+      await scaffoldBrain(git, dir, 'Acme');
+      expect(await acquireLock(dir)).toBe(true);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await appendLog(git, dir, '- blocked', { waitMs: 50, pollMs: 10 });
+        expect(await fs.readFile(path.join(dir, 'log.md'), 'utf8')).toBe(
+          '# Log\n\n',
+        );
+        expect(error).toHaveBeenCalled();
+      } finally {
+        error.mockRestore();
+        await releaseLock(dir);
+      }
+    });
+
+    it('keeps the blank line under a CRLF heading', async () => {
+      const dir = path.join(root, 'brain');
+      await scaffoldBrain(git, dir, 'Acme');
+      await fs.writeFile(path.join(dir, 'log.md'), '# Log\r\n\r\n- old\r\n');
+      await appendLog(git, dir, '- new');
+      const lines = (await fs.readFile(path.join(dir, 'log.md'), 'utf8')).split(
+        /\r?\n/,
+      );
+      expect(lines.slice(0, 4)).toEqual(['# Log', '', '- new', '- old']);
     });
   });
 });

@@ -18,7 +18,7 @@ This file is the contract for everything that writes in this brain. Read it firs
 - \`sources/\`: raw material (converted documents, transcripts, notes, task files). Never edited, by anyone or any skill. The \`.mirror/\` folder holds a read-only copy of the Azure DevOps wiki.
 - \`wiki/\`: the curated pages. Skills and humans both edit here.
 - \`index.md\`: the entry point. Lists every top-level page with a one-line summary.
-- \`log.md\`: append-only history of what the skills did.
+- \`log.md\`: history of what the skills did, newest first.
 - \`brain/state.json\`: machine state, described below.
 
 ## Page types
@@ -56,7 +56,7 @@ The summary is repeated as the first paragraph under the title. Set \`last_updat
 
 ## Log format
 
-Append one line per action to \`log.md\`:
+Insert one line per action into \`log.md\`, right after the \`# Log\` heading (newest first):
 
 \`\`\`
 - <ISO timestamp> <skill> <source or ''> → pages: a, b; takeaway: …
@@ -104,7 +104,7 @@ Capture the source named in the argument into the wiki.
    - Link every new page from \`index.md\` or a parent page.
    - If the source contradicts a \`scope-*\` page, leave the page as it is and tell the user in the takeaways (lint records the finding).
 4. Update \`index.md\` so each new or changed page has its one-line summary.
-5. Append one line to \`log.md\` in the schema's format.
+5. Insert one line into \`log.md\` right after the \`# Log\` heading (newest first), in the schema's format.
 6. Do not touch \`brain/state.json\`: Shellie records captures itself.
 7. Do not edit anything in \`sources/\`. Do not create a \`CLAUDE.md\`.
 8. End by printing the takeaways: 3 to 6 bullets, plus the pages you touched.
@@ -121,7 +121,7 @@ Bring the wiki in line with what changed since the last sync.
 4. For each changed source, update the pages that cite it. Re-read the source; do not guess from the diff.
 5. For each human edit in \`wiki/\`, keep it. Fix links, \`index.md\` and other pages around it. If it contradicts a source, add a note to the takeaways instead of reverting it.
 6. If a source contradicts a \`scope-*\` page, leave the page as it is and report it in the takeaways.
-7. Update \`index.md\`. Append one line to \`log.md\` in the schema's format.
+7. Update \`index.md\`. Insert one line into \`log.md\` right after the \`# Log\` heading (newest first), in the schema's format.
 8. Write \`lastSyncCommit\` in \`brain/state.json\` (the current \`git rev-parse HEAD\`). Read the file first and write it back with every other field unchanged.
 9. Do not edit anything in \`sources/\`. Do not create a \`CLAUDE.md\`.
 10. End by printing what changed.
@@ -144,7 +144,7 @@ Check the wiki, incrementally.
 4. Do not fix pages. Only report.
 5. Write \`brain/state.json\`: read it first, replace \`findings\` with the findings for the pages you checked plus earlier ones for pages you did not check, set \`lastLintAt\` to now (ISO timestamp), and keep every other field unchanged.
    Each finding is \`{ "kind", "page", "detail", "at" }\`.
-6. Append one summary line to \`log.md\` in the schema's format.
+6. Insert one summary line into \`log.md\` right after the \`# Log\` heading (newest first), in the schema's format.
 7. Do not edit anything in \`sources/\`. Do not create a \`CLAUDE.md\`.
 8. End by printing the number of findings per kind.
 `;
@@ -161,7 +161,7 @@ Write the weekly digest.
    - Cite the pages and sources with markdown links.
    - Follow the schema's rules on people, quotes and rates.
 5. Link the new page from \`index.md\`.
-6. Append one line to \`log.md\` in the schema's format.
+6. Insert one line into \`log.md\` right after the \`# Log\` heading (newest first), in the schema's format.
 7. Do not touch \`brain/state.json\`. Do not edit anything in \`sources/\`. Do not create a \`CLAUDE.md\`.
 8. End by printing the digest's summary.
 `;
