@@ -30,6 +30,8 @@ export class AzureDevOpsTracker implements Tracker {
     this.client.updateWorkItemFields(...a);
   repositoryId: Tracker['repositoryId'] = (...a) =>
     this.client.repositoryId(...a);
+  wikis: Tracker['wikis'] = (...a) => this.client.wikis(...a);
+  wikiPages: Tracker['wikiPages'] = (...a) => this.client.wikiPages(...a);
   findActivePullRequest: Tracker['findActivePullRequest'] = (...a) =>
     this.client.findActivePullRequest(...a);
   createPullRequest: Tracker['createPullRequest'] = (...a) =>

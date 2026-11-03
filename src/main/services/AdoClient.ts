@@ -95,6 +95,29 @@ export const CODE_READ_DENIED =
 export const CODE_WRITE_DENIED =
   'The token cannot create pull requests (needs Code: Read & write)';
 
+export type AdoWiki = {
+  id: string;
+  name: string;
+  type: 'projectWiki' | 'codeWiki';
+  repositoryId: string;
+  version: string;
+  mappedPath: string;
+  gitUrl: string;
+};
+
+export type AdoWikiPage = {
+  path: string;
+  gitItemPath: string;
+  isParent: boolean;
+};
+
+type RawWikiPage = {
+  path: string;
+  gitItemPath: string;
+  isParentPage?: boolean;
+  subPages?: RawWikiPage[];
+};
+
 export type RawPr = {
   pullRequestId: number;
   status: 'active' | 'completed' | 'abandoned';
@@ -788,6 +811,65 @@ export class AdoClient {
       { code: true },
     );
     return data.id;
+  }
+
+  async wikis(project: string): Promise<AdoWiki[]> {
+    const base = `/${encodeURIComponent(project)}/_apis`;
+    const list = await this.request<{
+      value: {
+        id: string;
+        name: string;
+        type: AdoWiki['type'];
+        repositoryId: string;
+        mappedPath?: string;
+        versions?: { version: string }[];
+      }[];
+    }>(`${base}/wiki/wikis?${API}`);
+    const out: AdoWiki[] = [];
+    for (const w of list.value) {
+      let gitUrl: string;
+      try {
+        const repo = await this.request<{ remoteUrl: string }>(
+          `${base}/git/repositories/${encodeURIComponent(w.repositoryId)}?${API}`,
+          {},
+          { code: true },
+        );
+        gitUrl = repo.remoteUrl;
+      } catch {
+        continue;
+      }
+      out.push({
+        id: w.id,
+        name: w.name,
+        type: w.type,
+        repositoryId: w.repositoryId,
+        version:
+          w.versions?.[0]?.version ??
+          (w.type === 'projectWiki' ? 'wikiMaster' : 'main'),
+        mappedPath: w.mappedPath ?? '/',
+        gitUrl,
+      });
+    }
+    return out;
+  }
+
+  async wikiPages(project: string, wikiId: string): Promise<AdoWikiPage[]> {
+    const root = await this.request<RawWikiPage>(
+      `/${encodeURIComponent(project)}/_apis/wiki/wikis/${encodeURIComponent(wikiId)}/pages?path=/&recursionLevel=full&${API}`,
+    );
+    const out: AdoWikiPage[] = [];
+    const walk = (pages: RawWikiPage[] | undefined) => {
+      for (const p of pages ?? []) {
+        out.push({
+          path: p.path,
+          gitItemPath: p.gitItemPath,
+          isParent: p.isParentPage === true,
+        });
+        walk(p.subPages);
+      }
+    };
+    walk(root.subPages);
+    return out;
   }
 
   async findActivePullRequest(
