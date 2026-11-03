@@ -5,6 +5,7 @@
 @import './usage.css';
 @import './secrets.css';
 @import './docs.css';
+@import './brain.css';
 
 * {
   box-sizing: border-box;

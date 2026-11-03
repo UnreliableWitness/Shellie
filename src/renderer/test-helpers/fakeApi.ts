@@ -298,6 +298,7 @@ export function installFakeApi(overrides: FakeHandlers = {}) {
       listeners.set(event, set);
       return () => set.delete(listener as (p: unknown) => void);
     },
+    pathForFile: (file) => (file as { path?: string }).path ?? file.name,
     track: (message) => {
       tracked.push(message);
     },

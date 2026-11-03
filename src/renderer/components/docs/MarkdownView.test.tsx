@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { api as shellie } from '../../api';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import mermaid from 'mermaid';
 import { MarkdownView } from './MarkdownView';
@@ -35,7 +36,7 @@ const view = (text: string, over = {}) => {
   });
   render(
     <MarkdownView
-      taskId="t"
+      asset={(p) => shellie().invoke('docs:asset', 't', p)}
       path="docs/a.md"
       text={text}
       onOpenDoc={onOpenDoc}
@@ -56,7 +57,7 @@ describe('MarkdownView', () => {
   it('does not render raw HTML', () => {
     const { container } = render(
       <MarkdownView
-        taskId="t"
+        asset={(p) => shellie().invoke('docs:asset', 't', p)}
         path="a.md"
         text={'<img src=x onerror=alert(1)><script>x</script>'}
         onOpenDoc={() => {}}
@@ -125,7 +126,7 @@ describe('MarkdownView', () => {
     const text = '![local](img/a.png)\n\n```mermaid\ngraph TD; A-->B\n```\n';
     const mk = (f: () => void) => (
       <MarkdownView
-        taskId="t"
+        asset={(p) => shellie().invoke('docs:asset', 't', p)}
         path="docs/a.md"
         text={text}
         onOpenDoc={f}

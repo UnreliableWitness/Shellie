@@ -70,6 +70,8 @@ export type Screen =
   /** The Agents step as a page (from Get started; Settings shows the same section inline). */
   | { kind: 'agents'; from: 'settings' | 'get-started' }
   | { kind: 'sprint' }
+  /** A brain: the local knowledge folder of one Azure DevOps project. */
+  | { kind: 'brain'; brainId: string }
   | { kind: 'task' }
   | { kind: 'new-task'; workItem?: WorkItemRef; repoId?: string }
   | { kind: 'setup'; taskId: string }

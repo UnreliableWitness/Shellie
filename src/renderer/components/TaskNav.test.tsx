@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
+import { brainView } from '../test-helpers/brainFixture';
 import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { groupTasks, TaskNav } from './TaskNav';
 
@@ -190,6 +191,30 @@ describe('attention', () => {
     expect(
       screen.getByLabelText('Needs permission: approve Bash: ls'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('brains', () => {
+  it('shows one item per brain and opens its screen', async () => {
+    installFakeApi({
+      'brain:list': () => [
+        brainView(),
+        brainView({ id: 'b2', name: 'Globex' }),
+      ],
+    });
+    render(<TaskNav />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Globex' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b2',
+    });
+    expect(screen.getByRole('button', { name: 'Acme' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Globex' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 });
 

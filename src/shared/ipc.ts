@@ -707,6 +707,8 @@ export type ShellieApi = {
     event: K,
     listener: (payload: Events[K]) => void,
   ): () => void;
+  /** The real path of a file dropped on the window (Electron hides it from the File itself). */
+  pathForFile(file: File): string;
   /** Fire-and-forget app telemetry; main validates, scrubs and drops it when the user opted out. */
   track(message: RendererTelemetry): void;
   /** How the window draws its title bar, so the header keeps room for the window controls (#49). */

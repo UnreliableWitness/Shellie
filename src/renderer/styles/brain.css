@@ -1,0 +1,110 @@
+/* Brain page: inbox and health side by side, then files, then the brain terminal. `.page-body` scrolls (pinned nav). */
+.brain-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 32px 32px;
+}
+.brain-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.brain-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.brain-card h2,
+.brain-card h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.brain-card h3 {
+  font-size: 14px;
+}
+.brain-drop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.brain-drop.is-over {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.brain-paste {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.brain-paste textarea {
+  grid-column: 1 / -1;
+  resize: vertical;
+}
+.brain-paste .btn {
+  justify-self: start;
+}
+.brain-ask {
+  display: flex;
+  gap: 8px;
+}
+.brain-ask .field {
+  flex: 1;
+}
+.brain-pause {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+}
+.brain-error,
+.brain-problems {
+  color: var(--red);
+  margin: 0;
+}
+.brain-problems {
+  padding-left: 16px;
+}
+.brain-status-failed {
+  color: var(--red);
+}
+.brain-status-done {
+  color: var(--green);
+}
+.brain-files {
+  display: flex;
+  min-height: 280px;
+  max-height: 480px;
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.brain-doc {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 0 16px;
+}
+.brain-terminal {
+  height: 360px;
+  min-height: 200px;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}

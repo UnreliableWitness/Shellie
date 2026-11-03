@@ -11,7 +11,7 @@ export type Doc = {
 
 /** The document area: empty, loading, error and too-large states, else the rendered or source view. */
 export function DocsBody({
-  taskId,
+  asset,
   empty,
   doc,
   current,
@@ -22,7 +22,7 @@ export function DocsBody({
   onOpenDoc,
   onOpenFile,
 }: {
-  taskId: string;
+  asset: (path: string) => Promise<string>;
   /** The empty-state text, or null when there is something to show. */
   empty: string | null;
   doc: Doc | null;
@@ -68,7 +68,7 @@ export function DocsBody({
     <SourceView text={doc.text} highlightLine={highlight} />
   ) : (
     <MarkdownView
-      taskId={taskId}
+      asset={asset}
       path={doc.path}
       text={doc.text}
       onOpenDoc={onOpenDoc}

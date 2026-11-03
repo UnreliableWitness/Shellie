@@ -1,6 +1,7 @@
 import {
   Add16Regular,
   Add20Regular,
+  Brain20Regular,
   ArrowSprint20Regular,
   CheckmarkCircle16Regular,
   CheckmarkCircle20Regular,
@@ -26,6 +27,7 @@ import type { Repo, TaskStatus, TaskView } from '../../shared/types';
 import { activeHome, activeWorkspaces } from '../../shared/workspaces';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
+import { useBrains } from '../hooks/useBrains';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { activeConnection, useStore, useTaskConnectionId } from '../store';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
@@ -491,6 +493,8 @@ export function TaskNav() {
   const [showDone, setShowDone] = useState(false);
   const { open, done } = groupTasks(tasks, repos);
   const rail = navCollapsed;
+  const brains = useBrains();
+  const screen = useStore((s) => s.screen);
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }
     : connection.status === 'ok'
@@ -523,6 +527,16 @@ export function TaskNav() {
         current={screenKind === 'sprint'}
         onClick={() => go({ kind: 'sprint' })}
       />
+      {brains.map((b) => (
+        <NavItem
+          key={b.id}
+          icon={<Brain20Regular aria-hidden="true" />}
+          label={b.name}
+          rail={rail}
+          current={screen.kind === 'brain' && screen.brainId === b.id}
+          onClick={() => go({ kind: 'brain', brainId: b.id })}
+        />
+      ))}
       <div className="leftnav-scroll">
         <TasksHead rail={rail} />
         {open.map(({ repo, tasks: list }) => (

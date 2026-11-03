@@ -111,6 +111,7 @@ describe('App', () => {
       expect(calls.map((c) => c.channel).sort()).toEqual([
         'attention:get',
         'attention:view',
+        'brain:list',
         'connections:list',
         'repos:list',
         'settings:get',
