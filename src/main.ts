@@ -23,6 +23,8 @@ import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
+import { brainTaskId } from './shared/brain';
+import type { createBrainTerminals } from './main/brain/brainTerminal';
 import {
   createHandlers,
   pruneDanglingConnectionLinks,
@@ -189,6 +191,9 @@ let stopUsage: () => void = () => {};
 let stopTime: () => void = () => {};
 let stopBudget: () => void = () => {};
 let stopLedger: () => void = () => {};
+/** The brain's own Claude terminal; set where the brains are wired. Its terminal counts as a Claude tab. */
+let brainTerminals: ReturnType<typeof createBrainTerminals> | undefined =
+  undefined;
 /** Time writes still in flight; the quit waits for them. */
 const timeWrites = new Set<Promise<void>>();
 /** Window focus, for active time (set once the tracker exists). */
@@ -612,6 +617,14 @@ async function boot(): Promise<void> {
               kind: def.kind,
             };
         }
+        const brain = brainTerminals?.ownerOf(id);
+        if (brain)
+          return {
+            taskId: brainTaskId(brain.id),
+            taskTitle: brain.name,
+            label: brain.terminal?.label ?? brain.name,
+            kind: 'claude',
+          };
         return null;
       },
       notifyOnDone: () => settings.get().notifyOnDone,
@@ -776,7 +789,7 @@ async function boot(): Promise<void> {
       kindOf: (id) => {
         for (const t of store.state.tasks)
           for (const d of t.terminals) if (d.id === id) return d.kind;
-        return undefined;
+        return brainTerminals?.ownerOf(id) ? 'claude' : undefined;
       },
       // Read at each call: telemetry is replaced once its client is set up.
       telemetry: {

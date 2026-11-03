@@ -198,9 +198,12 @@ import type { TerminalFailures } from '../services/TerminalFailures';
 import { removeWorkspace, WorktreeCleanup } from '../services/worktreeCleanup';
 import type { TimeBooking } from '../../shared/time';
 import { errorMessage } from '../../shared/errors';
+import type { createBrainTerminals } from '../brain/brainTerminal';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 
 export type Services = {
+  /** The brain's own Claude terminal (main); absent in most tests. */
+  brainTerminals?: ReturnType<typeof createBrainTerminals>;
   /** What needs the developer's attention (main); absent in tests. */
   attention?: Pick<AttentionHub, 'setView' | 'snapshot'>;
   /**
@@ -3397,6 +3400,10 @@ export function createHandlers(s: Services): Handlers {
     'terminals:resize': async (id, cols, rows) =>
       s.terminals.resize(id, cols, rows),
     'terminals:kill': async (id) => {
+      if (await s.brainTerminals?.kill(id)) {
+        leakWatch.forget(id);
+        return;
+      }
       s.terminals.kill(id);
       s.runs?.tabGone(id);
       runArgs.delete(id);
@@ -3413,6 +3420,11 @@ export function createHandlers(s: Services): Handlers {
       if (def) tel.event('terminal.closed', { kind: def.kind });
     },
     'terminals:restart': async (id, options = {}) => {
+      if (await s.brainTerminals?.restart(id)) {
+        leakWatch.forget(id);
+        s.terminalFailures?.clear(id);
+        return;
+      }
       // A new process: what showed up in the old one, and its pause, go.
       leakWatch.forget(id);
       // A `shellie run` it served ends: the agent is not told about a process it did not start.
