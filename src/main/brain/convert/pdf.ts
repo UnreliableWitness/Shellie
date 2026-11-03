@@ -4,6 +4,10 @@ const OCR_THRESHOLD = 20;
 
 export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  // Once bundled there is no pdf.worker.mjs file next to the main bundle for the
+  // in-process "fake worker" to load, so hand pdf.js the worker module directly.
+  const g = globalThis as { pdfjsWorker?: unknown };
+  g.pdfjsWorker ??= await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
   // Copy: pdf.js takes ownership of (detaches) the buffer it is given.
   const task = pdfjs.getDocument({
     data: new Uint8Array(buf),
