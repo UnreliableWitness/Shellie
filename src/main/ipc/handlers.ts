@@ -199,11 +199,24 @@ import { removeWorkspace, WorktreeCleanup } from '../services/worktreeCleanup';
 import type { TimeBooking } from '../../shared/time';
 import { errorMessage } from '../../shared/errors';
 import type { createBrainTerminals } from '../brain/brainTerminal';
+import { BrainStore } from '../brain/BrainStore';
+import { createBrainHandlers, type BrainRunner } from '../brain/brainHandlers';
+import { mirrorAuthFor } from '../brain/wikiAccess';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 
 export type Services = {
   /** The brain's own Claude terminal (main); absent in most tests. */
   brainTerminals?: ReturnType<typeof createBrainTerminals>;
+  /**
+   * The brains (main: `<userData>/brains.json`), their job queue and today's ledger total per brain; absent in
+   * tests, where an empty store under usageDir stands in and jobs cannot be queued.
+   */
+  brain?: {
+    store: BrainStore;
+    runner: BrainRunner;
+    ledgerToday: (brainId: string) => { tokens: number; costEur: number };
+    userData: string;
+  };
   /** What needs the developer's attention (main); absent in tests. */
   attention?: Pick<AttentionHub, 'setView' | 'snapshot'>;
   /**
@@ -2515,7 +2528,39 @@ export function createHandlers(s: Services): Handlers {
       s.expiryTimers,
     );
 
+  const brain = s.brain ?? {
+    store: new BrainStore(path.join(s.usageDir, 'brains.json')),
+    runner: {
+      enqueue: () => {
+        throw new Error('Brain jobs are not available here');
+      },
+      jobs: () => [],
+      running: () => false,
+      resume: () => undefined,
+    },
+    ledgerToday: () => ({ tokens: 0, costEur: 0 }),
+    userData: s.usageDir,
+  };
+
   return {
+    ...createBrainHandlers({
+      brains: brain.store,
+      git: s.git,
+      runner: brain.runner,
+      terminals: s.brainTerminals,
+      mirrorAuth: mirrorAuthFor((id) => s.connections.token(id)),
+      tracker: (id) => s.trackers.tracker(id),
+      connections: s.connections,
+      task: taskById,
+      repos: () => s.repos.list(),
+      ledgerToday: brain.ledgerToday,
+      broadcast: s.broadcast,
+      pickFolder: s.pickFolder,
+      openPath: s.openPath ?? (async () => ''),
+      userData: brain.userData,
+      remember: (values) => s.rememberSensitive?.(values),
+      event: (n, p) => tel.event(n, p),
+    }),
     ...createDocsHandlers({
       taskById,
       git: s.git,

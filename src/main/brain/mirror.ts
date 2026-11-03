@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { BrainWiki } from '../../shared/brain';
+import type { BrainWiki, RefreshResult } from '../../shared/brain';
 import { errorMessage } from '../../shared/errors';
 import type { GitClient } from '../services/GitClient';
 import { parseSourceFrontmatter, renderSource, sha256 } from './sourceFile';
@@ -8,16 +8,7 @@ import { parseSourceFrontmatter, renderSource, sha256 } from './sourceFile';
 /** Env for git (the auth header), built by the caller from the connection's PAT. */
 export type MirrorAuth = () => Promise<Record<string, string>>;
 
-export type RefreshResult =
-  | {
-      ok: true;
-      added: number;
-      changed: number;
-      removed: number;
-      pages: number;
-      warnings?: string[];
-    }
-  | { ok: false; message: string };
+export type { RefreshResult };
 
 const WIKI_DIR = 'sources/wiki';
 
@@ -48,7 +39,7 @@ export function sparsePatterns(
 }
 
 /** Wiki file or folder name to page name: '-' is a space, then percent-decoding. */
-function decodeName(name: string): string {
+export function decodeName(name: string): string {
   try {
     return decodeURIComponent(name.replace(/-/g, ' '));
   } catch {

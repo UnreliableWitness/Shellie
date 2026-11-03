@@ -22,6 +22,7 @@ export const BrainOptionsSchema = z.object({
   openBrainTerminalOnStart: z.boolean().default(false),
   model: BrainModelSchema.default('sonnet'),
 });
+export type BrainOptions = z.infer<typeof BrainOptionsSchema>;
 
 export const BrainWikiSchema = z.object({
   wikiId: z.string(),
@@ -129,3 +130,39 @@ export type BrainHealth = {
   tokensToday: number;
 };
 export type BrainView = Brain & { health: BrainHealth; jobs: BrainJob[] };
+
+/** A wiki of an Azure DevOps project (REST `_apis/wiki/wikis`). */
+export type AdoWiki = {
+  id: string;
+  name: string;
+  type: 'projectWiki' | 'codeWiki';
+  repositoryId: string;
+  version: string;
+  mappedPath: string;
+  gitUrl: string;
+};
+
+export type AdoWikiPage = {
+  path: string;
+  gitItemPath: string;
+  isParent: boolean;
+};
+
+export type AddSourceResult =
+  | { ok: true; path: string }
+  | {
+      ok: false;
+      reason: 'unsupported' | 'duplicate' | 'needs-ocr' | 'error';
+      message: string;
+    };
+
+export type RefreshResult =
+  | {
+      ok: true;
+      added: number;
+      changed: number;
+      removed: number;
+      pages: number;
+      warnings?: string[];
+    }
+  | { ok: false; message: string };

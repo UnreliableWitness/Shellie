@@ -24,7 +24,16 @@ import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId } from './shared/brain';
-import type { createBrainTerminals } from './main/brain/brainTerminal';
+import { createBrainTerminals } from './main/brain/brainTerminal';
+import { BrainStore } from './main/brain/BrainStore';
+import { BrainJobRunner } from './main/brain/jobs';
+import { ledgerToday } from './main/brain/health';
+import { jobTelemetry } from './main/brain/brainTelemetry';
+import { startBrainScheduler } from './main/brain/scheduler';
+import { telemetryEnv } from './main/usage/telemetryEnv';
+import { colorFgBg } from './main/services/claudeTheme';
+import { runWithInput } from './main/services/prSummary';
+import { claudeSessionExists } from './main/services/claudeSessions';
 import {
   createHandlers,
   pruneDanglingConnectionLinks,
@@ -191,6 +200,8 @@ let stopUsage: () => void = () => {};
 let stopTime: () => void = () => {};
 let stopBudget: () => void = () => {};
 let stopLedger: () => void = () => {};
+/** Stops the brains' scheduler and job queue (on quit). */
+let stopBrains: () => void = () => {};
 /** The brain's own Claude terminal; set where the brains are wired. Its terminal counts as a Claude tab. */
 let brainTerminals: ReturnType<typeof createBrainTerminals> | undefined =
   undefined;
@@ -430,10 +441,13 @@ async function boot(): Promise<void> {
       encrypt: (plain) => safeStorage.encryptString(plain),
       decrypt: (cipher) => safeStorage.decryptString(cipher),
     });
+    // The brains load before the ledger's first pass, so their records are attributed to them.
+    const brains = new BrainStore(path.join(userData, 'brains.json'));
     const [loaded, connectionsLoaded, secretsLoaded] = await Promise.all([
       store.load(),
       connections.load(),
       secrets.load(),
+      brains.load(),
     ]);
     // Once per install: installs that already have repositories skip the first-run page and keep their tabs.
     const migrated = migrateOnboarding(
@@ -486,6 +500,10 @@ async function boot(): Promise<void> {
     })();
     // Learned at run time: an Azure Repos remote's project and repo can differ from anything stored.
     const learned = new Set<string>();
+    for (const b of brains.list()) {
+      learned.add(b.name);
+      learned.add(b.path);
+    }
     sensitive = () =>
       sensitiveValues({
         repos: repos.list(),
@@ -767,7 +785,14 @@ async function boot(): Promise<void> {
               .records(id)
               .filter((r) => r.tool === 'claude-code')
               .map((r) => r.sessionId),
-          [],
+          brains.list().map((b) => ({
+            id: b.id,
+            organization:
+              connections.list().find((c) => c.id === b.connectionId)
+                ?.organizationUrl ?? '',
+            project: b.project,
+            path: b.path,
+          })),
         ),
       isBillable: (taskId, sessionId) => usage.isBillable(taskId, sessionId),
       // The email saved in Settings › Cost server; null when not connected.
@@ -781,6 +806,62 @@ async function boot(): Promise<void> {
       ledger.stop();
       sender.stop();
     };
+    // Brains: headless skill runs per brain, the brain's Claude terminal, and the daily refresh and weekly digest.
+    const brainEnv = (id: string) =>
+      telemetryEnv(
+        brainTaskId(id),
+        settings.get().receiverPort,
+        usageDir,
+        'brain',
+      );
+    const brainToday = (id: string) => ledgerToday(ledgerStore.all(), id);
+    const brainJobEvents = jobTelemetry((name, props) =>
+      telemetry.event(name, props),
+    );
+    const brainRunner = new BrainJobRunner({
+      platform,
+      run: runWithInput,
+      env: brainEnv,
+      tokensToday: (id) => brainToday(id).tokens,
+      cap: (id) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        return b.options.dailyTokenCap;
+      },
+      brainDir: (id) => {
+        const b = brains.get(id);
+        if (!b) throw new Error(`Unknown brain ${id}`);
+        return b.path;
+      },
+      model: (id) => brains.get(id)?.options.model ?? 'sonnet',
+      onChange: (brainId, jobs) => {
+        brainJobEvents(jobs);
+        broadcast('brain:changed', { brainId });
+      },
+    });
+    // The scheduler starts with the window; the runner stops on quit either way.
+    let stopBrainScheduler = () => {};
+    stopBrains = () => {
+      stopBrainScheduler();
+      brainRunner.stop();
+    };
+    brainTerminals = createBrainTerminals({
+      brains,
+      terminals,
+      platform,
+      env: (id) => ({ ...brainEnv(id), COLORFGBG: colorFgBg(scheme()) }),
+      themeFile: () => {
+        try {
+          return claudeSettingsFile(path.join(userData, 'claude'), {
+            theme: claudeThemeFor(readClaudeTheme(), scheme()),
+          });
+        } catch (e) {
+          console.error('[brain] could not write the Claude theme file', e);
+          return null;
+        }
+      },
+      sessionExists: claudeSessionExists,
+    });
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
     // Agent tabs that stop right after starting (a missing CLI, an invalid OpenCode config) say why (#109).
     const terminalFailures = new TerminalFailures({
@@ -798,6 +879,13 @@ async function boot(): Promise<void> {
       },
     });
     const handlers = createHandlers({
+      brainTerminals,
+      brain: {
+        store: brains,
+        runner: brainRunner,
+        ledgerToday: brainToday,
+        userData,
+      },
       terminalFailures,
       budget,
       costServer: {
@@ -1070,6 +1158,17 @@ async function boot(): Promise<void> {
       budget.start();
       ledger.start();
       sender.start();
+      stopBrainScheduler = startBrainScheduler({
+        brains: () => brains.list(),
+        refresh: (id) => handlers['brain:refresh'](id),
+        digest: (id) => {
+          brainRunner.enqueue(id, 'digest');
+          void brains
+            .patch(id, { lastDigestAt: new Date().toISOString() })
+            .catch((err) => console.error('[brain] lastDigestAt', err));
+        },
+        running: (id) => brainRunner.running(id),
+      });
       const warnings = [
         loaded.recovered &&
           `state.json was unreadable and was moved to ${path.basename(loaded.backup ?? '')}. Starting empty.`,
@@ -1232,6 +1331,7 @@ app.on('before-quit', () => {
   stopUsage();
   stopBudget();
   stopLedger();
+  stopBrains();
   updates?.stop();
 });
 

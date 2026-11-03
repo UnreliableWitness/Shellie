@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  AddSourceResult,
   BrainSourceRow,
   BrainState,
   SourceType,
@@ -18,13 +19,7 @@ import {
 export type AddSourceInput =
   | { file: string }
   | { text: string; title: string; url?: string };
-export type AddSourceResult =
-  | { ok: true; path: string }
-  | {
-      ok: false;
-      reason: 'unsupported' | 'duplicate' | 'needs-ocr' | 'error';
-      message: string;
-    };
+export type { AddSourceResult };
 
 type SourceEntry = {
   path: string;

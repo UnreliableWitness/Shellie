@@ -1,3 +1,4 @@
+import type { AdoWiki, AdoWikiPage } from '../../shared/brain';
 import { buildSprintTree, type SprintRelation } from '../../shared/sprintTree';
 import type {
   Sprint,
@@ -95,21 +96,7 @@ export const CODE_READ_DENIED =
 export const CODE_WRITE_DENIED =
   'The token cannot create pull requests (needs Code: Read & write)';
 
-export type AdoWiki = {
-  id: string;
-  name: string;
-  type: 'projectWiki' | 'codeWiki';
-  repositoryId: string;
-  version: string;
-  mappedPath: string;
-  gitUrl: string;
-};
-
-export type AdoWikiPage = {
-  path: string;
-  gitItemPath: string;
-  isParent: boolean;
-};
+export type { AdoWiki, AdoWikiPage };
 
 type RawWikiPage = {
   path: string;
