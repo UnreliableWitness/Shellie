@@ -276,6 +276,16 @@ describe('TaskScreen', () => {
     expect(screen.getByRole('button', { name: 'New terminal' })).toHaveFocus();
   });
 
+  it('keeps the + button outside the scrolling tab row, so it stays in view (#215)', async () => {
+    installFakeApi({ 'repos:config': () => config });
+    const { container } = render(<Shell />);
+    const add = await screen.findByRole('button', { name: 'New terminal' });
+    expect(
+      screen.getByRole('tablist', { name: 'Terminals' }),
+    ).not.toContainElement(add);
+    expect(container.querySelector('.taskbar')).toContainElement(add);
+  });
+
   it('closes a terminal tab with its close button or a middle click', async () => {
     const { calls } = installFakeApi({
       'repos:config': () => config,
@@ -714,7 +724,9 @@ describe('tabs and focus', () => {
     expect(finish()[0]).toHaveClass('btn-primary');
     expect(
       within(
-        screen.getByRole('tablist', { name: 'Terminals' }).parentElement!,
+        screen
+          .getByRole('tablist', { name: 'Terminals' })
+          .closest<HTMLElement>('.taskbar')!,
       ).getByRole('button', { name: 'Finish task' }),
     ).toBe(finish()[0]);
     // Focus with the rail: the rail has it.
@@ -871,7 +883,7 @@ describe('tabs and focus', () => {
     const tabs = await screen.findByRole('tablist', { name: 'Terminals' });
     expect(document.querySelector('header.headerbar')).not.toBeNull();
     expect(tabs.querySelector('.tabrow-brand')).toBeNull();
-    const row = tabs.parentElement!;
+    const row = tabs.closest<HTMLElement>('.taskbar')!;
     expect(
       within(row).queryByRole('button', { name: 'Exit focus' }),
     ).toBeNull();
@@ -895,7 +907,9 @@ describe('tabs and focus', () => {
     const tabs = await screen.findByRole('tablist', { name: 'Terminals' });
     expect(tabs.querySelector('.tabrow-brand')).not.toBeNull();
     expect(
-      within(tabs.parentElement!).getByRole('button', { name: 'Exit focus' }),
+      within(tabs.closest<HTMLElement>('.taskbar')!).getByRole('button', {
+        name: 'Exit focus',
+      }),
     ).toBeVisible();
   });
 
