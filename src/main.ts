@@ -501,13 +501,10 @@ async function boot(): Promise<void> {
     })();
     // Learned at run time: an Azure Repos remote's project and repo can differ from anything stored.
     const learned = new Set<string>();
-    for (const b of brains.list()) {
-      learned.add(b.name);
-      learned.add(b.path);
-    }
     sensitive = () =>
       sensitiveValues({
         repos: repos.list(),
+        brains: brains.list(),
         tasks: store.state.tasks,
         connections: connections.list(),
         username,

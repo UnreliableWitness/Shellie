@@ -159,6 +159,16 @@ describe('changedKeys and sensitiveValues', () => {
       'c',
     ]);
   });
+  it('collects brain names and paths', () => {
+    const v = sensitiveValues({
+      repos: [],
+      tasks: [],
+      connections: [],
+      brains: [{ name: 'Acme', path: '/b' }],
+    });
+    expect(v).toContain('Acme');
+    expect(v).toContain('/b');
+  });
   it('collects repo, task, work item and connection identifiers', () => {
     const v = sensitiveValues({
       repos: [{ name: 'webshop', path: '/src/webshop' }],

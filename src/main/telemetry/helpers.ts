@@ -168,12 +168,15 @@ export function sensitiveValues(src: {
     project: string;
     user: string | null;
   }[];
+  /** Brains: their names and folders can name a customer. */
+  brains?: { name: string; path: string }[];
   username?: string;
   /** Values learned at run time, such as the project and repo of an Azure Repos remote. */
   extra?: Iterable<string>;
 }): string[] {
   const out: string[] = [];
   for (const r of src.repos) out.push(r.name, r.path);
+  for (const b of src.brains ?? []) out.push(b.name, b.path);
   for (const t of src.tasks) {
     out.push(t.name, t.branch, t.slug, t.worktreePath);
     if (t.workItem) out.push(t.workItem.title);
