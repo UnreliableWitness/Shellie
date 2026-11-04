@@ -221,6 +221,11 @@ describe('after review', () => {
     expect(headingText('`code` _em_ ~~x~~ **b**')).toBe('code em x b');
     expect(headingText('snake_case_name')).toBe('snake_case_name');
     expect(headingText('`a_b` call')).toBe('a_b call');
+    expect(headingText('"quoted _x_"')).toBe('"quoted x"');
+    expect(headingText('Q&A: _why_?')).toBe('Q&A: why?');
+    expect(headingText('__init__ and snake__double')).toBe(
+      'init and snake__double',
+    );
     expect(headingText('![pic](p.png) Diagram')).toBe(' Diagram');
     expect(headingText('The `api` [link](x) **bold**')).toBe(
       'The api link bold',
