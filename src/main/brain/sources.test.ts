@@ -454,7 +454,7 @@ describe('secret scan at drop time', () => {
       ok: false,
       reason: 'secret',
       message:
-        'Looks like it holds a GitHub token (line 3); remove it and add the file again',
+        'looks like it holds a GitHub token (line 3); remove it and add it again',
     });
     const file = path.join(root, 'conn.md');
     await fs.writeFile(

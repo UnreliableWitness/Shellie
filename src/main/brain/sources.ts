@@ -131,7 +131,19 @@ export async function addSource(
   // A credential never lands in the brain: git would keep it for good.
   const secrets = findSecrets(body);
   if (secrets.length)
-    return { ok: false, reason: 'secret', message: secretMessage(secrets) };
+    return {
+      ok: false,
+      reason: 'secret',
+      message: secretMessage(
+        secrets,
+        'file' in input
+          ? {
+              name: path.basename(input.file),
+              converted: !/\.(md|txt)$/i.test(input.file),
+            }
+          : undefined,
+      ),
+    };
 
   // Duplicate check, name choice and commit in one go per brain: concurrent adds never take the same name.
   return withBrainGit(brainDir, () =>

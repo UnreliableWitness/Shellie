@@ -152,7 +152,11 @@ export function parsePage(relPath: string, text: string): WikiPage {
     summary: str(data?.summary),
     lastUpdated: dateStr(data?.last_updated),
     sources: data ? stringList(data.sources) : null,
-    confidence: str(data?.confidence),
+    // A number (`confidence: 3`) is kept as text so the check can say it is not high, medium or low.
+    confidence:
+      typeof data?.confidence === 'number'
+        ? String(data.confidence)
+        : str(data?.confidence),
     verified: dateStr(data?.verified),
     links: linkTargets(body),
     heading,

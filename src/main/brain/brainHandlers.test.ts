@@ -26,6 +26,7 @@ import {
   type BrainHandlerDeps,
 } from './brainHandlers';
 import { acquireLock, releaseLock } from './state';
+import { brainHealth } from './health';
 import { isBrainFolder, scaffoldBrain } from './scaffold';
 import { TEMPLATES_VERSION } from './templates';
 
@@ -618,5 +619,36 @@ describe('verifyPage', () => {
     await expect(
       verifyPage(git, dir, 'wiki/../SCHEMA.md', new Date()),
     ).rejects.toThrow(/under wiki/);
+    // A dotted name is a name; a dot segment normalises away.
+    await fs.writeFile(
+      path.join(dir, 'wiki', 'a..b.md'),
+      '---\ntitle: AB\n---\n',
+    );
+    await verifyPage(git, dir, 'wiki/./a..b.md', new Date(2026, 10, 4));
+    expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: verified wiki/a..b.md',
+    );
+  });
+
+  it('commits a hand edit of the page as an outside edit first, and skips a repeat on the same day', async () => {
+    const page = path.join(dir, 'wiki', 'account.md');
+    await fs.writeFile(page, '---\ntitle: Acme\n---\n\nOld.\n');
+    await git.run(dir, ['add', '-A']);
+    await git.run(dir, ['commit', '-q', '-m', 'Brain: sync']);
+    await fs.writeFile(page, '---\ntitle: Acme\n---\n\nEdited by hand.\n');
+    await verifyPage(git, dir, 'wiki/account.md', new Date(2026, 10, 4));
+    const subjects = (await git.run(dir, ['log', '--format=%s', '-3']))
+      .trim()
+      .split('\n');
+    expect(subjects).toEqual([
+      'Brain: verified wiki/account.md',
+      OUTSIDE_EDIT_MESSAGE,
+      'Brain: sync',
+    ]);
+    const h = await brainHealth(dir, git, { tokens: 0, costEur: 0 }, false);
+    expect(h.outsideEdits).toEqual(['wiki/account.md']);
+    const head = (await git.run(dir, ['rev-parse', 'HEAD'])).trim();
+    await verifyPage(git, dir, 'wiki/account.md', new Date(2026, 10, 4));
+    expect((await git.run(dir, ['rev-parse', 'HEAD'])).trim()).toBe(head);
   });
 });

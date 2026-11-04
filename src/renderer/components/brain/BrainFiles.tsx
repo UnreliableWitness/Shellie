@@ -4,13 +4,21 @@ import type { DocFile } from '../../../shared/types';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
+import { useStore } from '../../store';
 import { DocsBody, type Doc } from '../docs/DocsBody';
 
 /** A frontmatter field of a page's text, as written. */
 const field = (text: string, name: string): string | null => {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-  const m = fm && new RegExp(`^${name}:\\s*(.+?)\\s*$`, 'm').exec(fm[1]);
-  return m ? m[1].replace(/^["']|["']$/g, '') : null;
+  const m =
+    fm && new RegExp(`^${name}:[ \\t]*(.*?)[ \\t]*\\r?$`, 'm').exec(fm[1]);
+  if (!m) return null;
+  // Quotes and a trailing comment off; a date keeps its day only.
+  const v = m[1]
+    .replace(/\s+#.*$/, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+  return v ? (/^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : v) : null;
 };
 
 /** When a person last checked the page, and the button to say they just did. Only a person writes `verified`. */
@@ -53,6 +61,7 @@ export function BrainFiles({
   /** Only files whose path contains this (any case). */
   filter?: string;
 }) {
+  const notify = useStore((s) => s.notify);
   const [files, setFiles] = useState<DocFile[] | null>(null);
   /** For the sources list: what each file holds, by path. */
   const [rows, setRows] = useState<Map<string, BrainSourceRow>>(new Map());
@@ -146,7 +155,7 @@ export function BrainFiles({
                 .invoke('brain:verify', brainId, current)
                 .then(
                   () => read(current),
-                  () => undefined,
+                  (e: unknown) => notify('error', errorMessage(e)),
                 )
             }
           />

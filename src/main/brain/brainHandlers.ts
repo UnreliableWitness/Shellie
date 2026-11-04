@@ -180,6 +180,7 @@ const localDate = (d: Date) =>
 /**
  * Writes today's local date as the page's `verified` (replacing an earlier one) and commits the page alone as
  * `Brain: verified <page>`. Only a wiki page with frontmatter; the value comes from the clock, never from a skill.
+ * An uncommitted edit of the page is committed first as an outside edit, so Health and /sync still see it.
  */
 export async function verifyPage(
   git: GitClient,
@@ -187,19 +188,34 @@ export async function verifyPage(
   page: string,
   now: Date,
 ): Promise<string> {
-  const rel = page.replace(/\\/g, '/');
-  if (!/^wiki\/[^/].*\.md$/.test(rel) || rel.includes('..'))
+  const rel = path.posix.normalize(page.replace(/\\/g, '/'));
+  if (!/^wiki\/.+\.md$/.test(rel) || rel.startsWith('wiki/../'))
     throw new Error('Only a page under wiki/ can be verified');
   const file = path.join(brainDir, ...rel.split('/'));
-  const text = await fs.readFile(file, 'utf8');
-  const m = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(text);
-  if (!m) throw new Error('The page has no frontmatter');
-  const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const day = localDate(now);
-  const lines = m[1].split(/\r?\n/).filter((l) => !/^verified:/.test(l));
-  lines.push(`verified: ${day}`);
-  const next = `---${eol}${lines.join(eol)}${eol}---${m[2]}${text.slice(m[0].length)}`;
-  await withBrainGit(brainDir, async () => {
+  return withBrainGit(brainDir, async () => {
+    const text = await fs.readFile(file, 'utf8');
+    const m = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(text);
+    if (!m) throw new Error('The page has no frontmatter');
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const lines = m[1].split(/\r?\n/).filter((l) => !/^verified:/.test(l));
+    lines.push(`verified: ${day}`);
+    const next = `---${eol}${lines.join(eol)}${eol}---${m[2]}${text.slice(m[0].length)}`;
+    if (next === text) return day;
+    const dirty = (
+      await git.run(brainDir, ['status', '--porcelain', '--', rel])
+    ).trim();
+    if (dirty) {
+      await git.run(brainDir, ['add', '--', rel]);
+      await git.run(brainDir, [
+        'commit',
+        '-q',
+        '-m',
+        OUTSIDE_EDIT_MESSAGE,
+        '--',
+        rel,
+      ]);
+    }
     await fs.writeFile(file, next, 'utf8');
     await git.run(brainDir, ['add', '--', rel]);
     await git.run(brainDir, [
@@ -210,8 +226,8 @@ export async function verifyPage(
       '--',
       rel,
     ]);
+    return day;
   });
-  return day;
 }
 
 const isEmptyOrMissing = async (dir: string) =>
@@ -511,6 +527,8 @@ export function createBrainHandlers(
     }),
     'brain:verify': async (id, page) => {
       const b = brainOf(id);
+      // A running skill may be halfway through the page: the person would verify text they never saw.
+      if (d.runner.running(id)) throw new Error(BUSY);
       const verified = await verifyPage(d.git, b.path, page, now());
       d.event('brain.screen.action', { action: 'verify' });
       changed(id);
