@@ -26,7 +26,8 @@ const clip = (s: string, n: number) =>
  */
 const oneLine = (s: string) =>
   s
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')
     .replace(/[[\]\\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();

@@ -12,7 +12,8 @@ const isUrl = (target: string) => /^[a-z][a-z0-9+.-]*:/i.test(target);
 
 /** A link target as a repo-relative path (forward slashes, no fragment, decoded), or null when it is not a local path. */
 export function localTarget(fromPage: string, target: string): string | null {
-  const t = target.trim();
+  // Backslashes are separators on the release target: normalise them before the `..` check.
+  const t = target.trim().replace(/\\/g, '/');
   if (!t || t.startsWith('#') || isUrl(t)) return null;
   let p = t.split('#')[0].split('?')[0];
   try {
@@ -28,10 +29,12 @@ export function localTarget(fromPage: string, target: string): string | null {
   return joined.replace(/\/+$/, '');
 }
 
-const DAY = /^\d{4}-\d{2}-\d{2}/;
+const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?!\d)/;
 const pad = (n: number) => String(n).padStart(2, '0');
 /** The local day of a timestamp: `last_updated` is the writer's local day, `ingested_at` a UTC instant. */
 export function localDay(iso: string): string {
+  // A bare date is already a day, not an instant.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

@@ -138,3 +138,17 @@ describe('fences and dates after review', () => {
     ).toBe('2026-11-03');
   });
 });
+
+describe('fences after the second review', () => {
+  it('closes a fence only with a marker at least as long and bare', () => {
+    expect(linkTargets('````\n```\n[in](a.md)\n````\n[out](b.md)\n')).toEqual([
+      'b.md',
+    ]);
+    expect(
+      linkTargets('```\n[in](a.md)\n```js\n[in2](c.md)\n```\n[out](b.md)\n'),
+    ).toEqual(['b.md']);
+    expect(linkTargets('```\n[in](a.md)\n```   \n[out](b.md)\n')).toEqual([
+      'b.md',
+    ]);
+  });
+});

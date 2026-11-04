@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { BrainSourceRow } from '../../shared/brain';
-import { checkBrain, citedSources, localTarget } from './check';
+import { checkBrain, citedSources, localDay, localTarget } from './check';
 import { parsePage, readPages } from './pages';
 
 const row = (
@@ -112,8 +112,9 @@ describe('checkBrain', () => {
     await write('sources/d.md', 'd');
     const out = await run(
       [
-        row('sources/k.md', '2026-11-02T12:00:00Z'),
-        row('sources/d.md', '2026-11-03T12:00:00Z'),
+        // Local noon, so the local day is the same in every time zone the test runs in.
+        row('sources/k.md', new Date(2026, 10, 2, 12).toISOString()),
+        row('sources/d.md', new Date(2026, 10, 3, 12).toISOString()),
       ],
       null,
     );
@@ -221,7 +222,7 @@ describe('checkBrain after review', () => {
     );
     const out = await run([
       row('sources/k.md', localMidnight.toISOString()),
-      row('sources/c d.md', '2026-11-03T12:00:00Z'),
+      row('sources/c d.md', new Date(2026, 10, 3, 12).toISOString()),
     ]);
     expect(out.map((f) => [f.kind, f.page, f.detail])).toEqual([
       [
@@ -246,5 +247,40 @@ describe('checkBrain after review', () => {
       ['sources/a.md'],
     );
     expect(out.map((f) => f.page)).toEqual(['sources/b.md']);
+  });
+});
+
+describe('after the second review', () => {
+  it('normalises backslashes before the outside-the-brain check and validates the day', () => {
+    expect(localTarget('wiki/a.md', '..\\..\\..\\etc\\hosts')).toBe(
+      '../../etc/hosts',
+    );
+    expect(localTarget('wiki/a.md', 'sub\\page.md')).toBe('wiki/sub/page.md');
+    expect(localDay('2026-11-04')).toBe('2026-11-04');
+    expect(localDay(new Date(2026, 10, 4, 23, 30).toISOString())).toBe(
+      '2026-11-04',
+    );
+  });
+
+  it('rejects an out-of-range last_updated', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-check3-'));
+    try {
+      await fs.mkdir(path.join(dir, 'wiki'));
+      await fs.writeFile(
+        path.join(dir, 'wiki', 'a.md'),
+        '---\ntitle: A\nsummary: s\nsources: [sources/k.md]\nlast_updated: 2026-13-45\n---\n',
+      );
+      const out = await checkBrain({
+        brainDir: dir,
+        pages: await readPages(dir),
+        sources: [],
+        indexMd: null,
+      });
+      expect(out.map((f) => f.detail)).toEqual([
+        'last_updated is not a date (yyyy-mm-dd): 2026-13-45',
+      ]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

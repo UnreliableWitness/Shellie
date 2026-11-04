@@ -86,13 +86,23 @@ const stringList = (v: unknown): string[] | null => {
 /** The lines of a body outside fenced code blocks. */
 export function outsideFences(text: string): string[] {
   const out: string[] = [];
-  // The marker that opened the block is the one that closes it: a ~~~ inside a backtick fence is content.
+  // A block closes only with its own marker: same character, at least as long, nothing after it.
   let fence: string | null = null;
   for (const line of text.split(/\r?\n/)) {
-    const m = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (m && (fence === null || m[1][0] === fence[0])) {
-      fence = fence === null ? m[1] : null;
-      continue;
+    const m = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (m) {
+      if (fence === null) {
+        fence = m[1];
+        continue;
+      }
+      if (
+        m[1][0] === fence[0] &&
+        m[1].length >= fence.length &&
+        m[2].trim() === ''
+      ) {
+        fence = null;
+        continue;
+      }
     }
     if (fence === null) out.push(line);
   }

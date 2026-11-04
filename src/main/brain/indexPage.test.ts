@@ -181,3 +181,15 @@ describe('renderIndex after review', () => {
     expect(indexIntro('# T\n\n+ item\n').intro).toEqual([]);
   });
 });
+
+describe('summaries after the second review', () => {
+  it('reduces links with parentheses in the target and reference links to text', () => {
+    const p = page(
+      'a.md',
+      'title: A\nsummary: "See [f](f(1).md) and [r][ref]."',
+    );
+    expect(renderIndex('T', [], [p])).toContain(
+      '- [A](wiki/a.md): See f and r.',
+    );
+  });
+});
