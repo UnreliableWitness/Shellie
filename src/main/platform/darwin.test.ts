@@ -21,6 +21,16 @@ describe('darwinPlatform', () => {
     );
   });
   const p = darwinPlatform({ SHELL: '/bin/zsh' });
+  it('converts TIFF, BMP and GIF pictures with sips, not EMF', () => {
+    const p = darwinPlatform({});
+    expect(p.rasterizeCommand?.('/t/a.tiff', '/t/a.png')).toEqual({
+      command: 'sips',
+      args: ['-s', 'format', 'png', '/t/a.tiff', '--out', '/t/a.png'],
+    });
+    expect(p.rasterizeCommand?.('/t/a.BMP', '/t/a.png')).not.toBeNull();
+    expect(p.rasterizeCommand?.('/t/a.emf', '/t/a.png')).toBeNull();
+  });
+
   it('opens a login shell for interactive tabs', () => {
     expect(p.interactiveShell()).toEqual({ command: '/bin/zsh', args: ['-l'] });
     expect(p.shellLabel).toBe('zsh');

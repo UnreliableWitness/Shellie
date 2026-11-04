@@ -203,6 +203,7 @@ import { errorMessage } from '../../shared/errors';
 import type { createBrainTerminals } from '../brain/brainTerminal';
 import { BrainStore } from '../brain/BrainStore';
 import { createBrainHandlers, type BrainRunner } from '../brain/brainHandlers';
+import { createRasterizer } from '../brain/convert/raster';
 import { mirrorAuthFor } from '../brain/wikiAccess';
 import {
   appendContext,
@@ -764,6 +765,7 @@ export function createHandlers(s: Services): Handlers {
   };
   const brainHandlers = createBrainHandlers({
     brains: brain.store,
+    rasterize: createRasterizer({ platform: s.platform, run: runWithInput }),
     git: s.git,
     runner: brain.runner,
     terminals: s.brainTerminals,

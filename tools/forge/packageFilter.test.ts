@@ -34,6 +34,35 @@ describe('keepInPackage', () => {
     expect(win('/node_modules/node-pty/lib/terminal.test.js')).toBe(false);
   });
 
+  it('keeps @napi-rs/canvas and the binding package of the target only', () => {
+    expect(win('/node_modules/@napi-rs')).toBe(true);
+    expect(win('/node_modules/@napi-rs/canvas')).toBe(true);
+    expect(win('/node_modules/@napi-rs/canvas/package.json')).toBe(true);
+    expect(win('/node_modules/@napi-rs/canvas/index.js')).toBe(true);
+    expect(win('/node_modules/@napi-rs/canvas/load-image.js')).toBe(true);
+    expect(win('/node_modules/@napi-rs/canvas/index.d.ts')).toBe(false);
+    expect(win('/node_modules/@napi-rs/canvas/README.md')).toBe(false);
+    expect(win('/node_modules/@napi-rs/canvas-win32-x64-msvc')).toBe(true);
+    expect(
+      win(
+        '/node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node',
+      ),
+    ).toBe(true);
+    expect(
+      win('/node_modules/@napi-rs/canvas-win32-x64-msvc/package.json'),
+    ).toBe(true);
+    expect(win('/node_modules/@napi-rs/canvas-win32-x64-msvc/README.md')).toBe(
+      false,
+    );
+    expect(win('/node_modules/@napi-rs/canvas-darwin-arm64')).toBe(false);
+    expect(mac('/node_modules/@napi-rs/canvas-darwin-arm64')).toBe(true);
+    expect(
+      mac('/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node'),
+    ).toBe(true);
+    expect(mac('/node_modules/@napi-rs/canvas-win32-x64-msvc')).toBe(false);
+    expect(win('/node_modules/@napi-rs/other')).toBe(false);
+  });
+
   it('drops node-pty build sources so Forge does not try to rebuild it', () => {
     expect(win('/node_modules/node-pty/binding.gyp')).toBe(false);
     expect(win('/node_modules/node-pty/src')).toBe(false);

@@ -4,10 +4,15 @@ import { docxToMarkdown } from './docx';
 import { drawioToMarkdown } from './drawio';
 import { pdfToMarkdown } from './pdf';
 import { pptxToMarkdown } from './pptx';
-import { firstHeading, type Converted } from './types';
+import { firstHeading, type ConvertOptions, type Converted } from './types';
 import { vttToMarkdown } from './vtt';
 
-export type { Converted, ConvertedImage } from './types';
+export type {
+  ConvertOptions,
+  Converted,
+  ConvertedImage,
+  Rasterize,
+} from './types';
 export { ASSETS_PLACEHOLDER } from './types';
 export { docxToMarkdown, pdfToMarkdown, pptxToMarkdown };
 
@@ -23,14 +28,15 @@ function plain(markdown: string): Converted {
 
 export async function convertFile(
   absPath: string,
+  opts: ConvertOptions = {},
 ): Promise<Converted | 'unsupported'> {
   switch (path.extname(absPath).toLowerCase()) {
     case '.pdf':
-      return pdfToMarkdown(await fs.readFile(absPath));
+      return pdfToMarkdown(await fs.readFile(absPath), opts);
     case '.docx':
-      return docxToMarkdown(await fs.readFile(absPath));
+      return docxToMarkdown(await fs.readFile(absPath), opts);
     case '.pptx':
-      return pptxToMarkdown(await fs.readFile(absPath));
+      return pptxToMarkdown(await fs.readFile(absPath), opts);
     case '.drawio':
       return drawioToMarkdown(await fs.readFile(absPath, 'utf8'));
     case '.vtt':
