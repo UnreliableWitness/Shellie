@@ -219,6 +219,14 @@ describe('convertFile', () => {
       const r = await convertFile(vtt);
       expect(r).not.toBe('unsupported');
       if (r !== 'unsupported') expect(r.markdown).toContain('Hi there');
+      const drawio = path.join(dir, 'n.drawio');
+      await fs.writeFile(
+        drawio,
+        '<mxfile><diagram name="Flow"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="a" value="Start" vertex="1" parent="1"/></root></mxGraphModel></diagram></mxfile>',
+      );
+      const d = await convertFile(drawio);
+      expect(d).not.toBe('unsupported');
+      if (d !== 'unsupported') expect(d.markdown).toContain('n1["Start"]');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
