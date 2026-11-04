@@ -119,6 +119,32 @@ describe('BrainScreen', () => {
     });
   });
 
+  it('Capture on an uncaptured finding queues a capture job, no terminal', async () => {
+    const view = brainView();
+    view.health!.findings = [
+      {
+        kind: 'uncaptured',
+        page: 'sources/2026-11-04-deck.md',
+        detail: 'not captured yet',
+        at: '2026-11-04T10:00:00.000Z',
+      },
+    ];
+    const a = setup(view);
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'Capture sources/2026-11-04-deck.md',
+      }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:run',
+        args: ['b1', 'capture', 'sources/2026-11-04-deck.md'],
+      }),
+    );
+    expect(names(a)).not.toContain('brain:terminal');
+  });
+
   it('Resolve in terminal sends a resolve prompt', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);
@@ -129,7 +155,11 @@ describe('BrainScreen', () => {
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:terminal',
-        args: ['b1', null, 'resolve: orphan on wiki/a.md: nothing links here'],
+        args: [
+          'b1',
+          null,
+          'resolve: broken-link on wiki/a.md: ../sources/gone.md does not exist',
+        ],
       }),
     );
     expect(await screen.findByTestId('terminal')).toBeInTheDocument();

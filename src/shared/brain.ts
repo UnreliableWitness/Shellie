@@ -69,6 +69,26 @@ export const SourceTypeSchema = z.enum([
 ]);
 export type SourceType = z.infer<typeof SourceTypeSchema>;
 
+/**
+ * A finding on a page: Shellie finds `broken-link`, `stale`, `uncaptured` and `frontmatter` itself on every Health
+ * read; `/lint` writes `contradiction` and `scope-change` into state. `orphan` is a kind older lints wrote.
+ */
+export const BrainFindingSchema = z.object({
+  kind: z.enum([
+    'contradiction',
+    'orphan',
+    'broken-link',
+    'stale',
+    'uncaptured',
+    'scope-change',
+    'frontmatter',
+  ]),
+  page: z.string(),
+  detail: z.string(),
+  at: z.string(),
+});
+export type BrainFinding = z.infer<typeof BrainFindingSchema>;
+
 export const BrainStateSchema = z.object({
   schemaVersion: z.literal(1).default(1),
   lastSyncCommit: z.string().nullable().default(null),
@@ -79,23 +99,7 @@ export const BrainStateSchema = z.object({
       z.object({ at: z.string(), sessionId: z.string().nullable() }),
     )
     .default({}),
-  findings: z
-    .array(
-      z.object({
-        kind: z.enum([
-          'contradiction',
-          'orphan',
-          'broken-link',
-          'stale',
-          'uncaptured',
-          'scope-change',
-        ]),
-        page: z.string(),
-        detail: z.string(),
-        at: z.string(),
-      }),
-    )
-    .default([]),
+  findings: z.array(BrainFindingSchema).default([]),
 });
 export type BrainState = z.infer<typeof BrainStateSchema>;
 
@@ -124,6 +128,10 @@ export type BrainSourceRow = {
 export type BrainHealth = {
   state: BrainState | null;
   stateError: string | null;
+  /** Shellie's own findings (computed now), then the lint's from state (`contradiction`, `scope-change`). */
+  findings: BrainFinding[];
+  /** Pages under wiki/. */
+  pages: number;
   uncaptured: number;
   mirrorPages: number;
   outsideEdits: string[];
