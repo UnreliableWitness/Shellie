@@ -28,13 +28,24 @@ export function localTarget(fromPage: string, target: string): string | null {
   return joined.replace(/\/+$/, '');
 }
 
-const day = (iso: string) => iso.slice(0, 10);
+const DAY = /^\d{4}-\d{2}-\d{2}/;
+const pad = (n: number) => String(n).padStart(2, '0');
+/** The local day of a timestamp: `last_updated` is the writer's local day, `ingested_at` a UTC instant. */
+export function localDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 /** The sources a page cites: its `sources` frontmatter entries and its links into sources/, repo-relative. */
 export function citedSources(page: WikiPage): string[] {
   const out = new Set<string>();
   for (const s of page.sources ?? []) {
-    const rel = s.startsWith('sources/') ? s : localTarget(page.path, s);
+    // A `sources/…` entry is root-relative; anything else relative to the page.
+    const rel = localTarget(
+      s.startsWith('sources/') ? 'index.md' : page.path,
+      s,
+    );
     if (rel?.startsWith('sources/')) out.add(rel);
   }
   for (const l of page.links) {
@@ -50,6 +61,8 @@ export type CheckInput = {
   sources: BrainSourceRow[];
   /** index.md's text, or null when the file is missing. */
   indexMd: string | null;
+  /** Sources with a capture queued or running: not uncaptured, a job is on it. */
+  inFlight?: string[];
 };
 
 /**
@@ -57,7 +70,7 @@ export type CheckInput = {
  * frontmatter gaps. Contradictions and scope changes stay with /lint.
  */
 export async function checkBrain(
-  { brainDir, pages, sources, indexMd }: CheckInput,
+  { brainDir, pages, sources, indexMd, inFlight = [] }: CheckInput,
   now: Date = new Date(),
 ): Promise<BrainFinding[]> {
   const at = now.toISOString();
@@ -89,7 +102,11 @@ export async function checkBrain(
       const rel = localTarget(page, t);
       if (!rel || seen.has(rel)) continue;
       seen.add(rel);
-      if (!(await has(rel))) add('broken-link', page, `${t} does not exist`);
+      // Never look outside the brain folder.
+      if (rel === '..' || rel.startsWith('../'))
+        add('broken-link', page, `${t} points outside the brain`);
+      else if (!(await has(rel)))
+        add('broken-link', page, `${t} does not exist`);
     }
   }
 
@@ -107,20 +124,31 @@ export async function checkBrain(
     if (missing.length)
       add('frontmatter', p.path, `missing ${missing.join(', ')}`);
     if (!p.lastUpdated) continue;
-    const updated = day(p.lastUpdated);
+    if (!DAY.test(p.lastUpdated)) {
+      add(
+        'frontmatter',
+        p.path,
+        `last_updated is not a date (yyyy-mm-dd): ${p.lastUpdated}`,
+      );
+      continue;
+    }
+    const updated = p.lastUpdated.slice(0, 10);
     for (const s of citedSources(p)) {
       const when = ingested.get(s);
-      if (when && day(when) > updated)
+      if (!when) continue;
+      const ingestedDay = localDay(when);
+      if (ingestedDay > updated)
         add(
           'stale',
           p.path,
-          `updated ${updated}, cites ${s} ingested ${day(when)}`,
+          `updated ${updated}, cites ${s} ingested ${ingestedDay}`,
         );
     }
   }
 
+  const busy = new Set(inFlight);
   for (const s of sources)
-    if (!s.captured && !s.path.startsWith('sources/wiki/'))
+    if (!s.captured && !busy.has(s.path) && !s.path.startsWith('sources/wiki/'))
       add('uncaptured', s.path, 'not captured yet');
 
   return out;

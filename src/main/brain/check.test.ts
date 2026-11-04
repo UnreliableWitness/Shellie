@@ -112,8 +112,8 @@ describe('checkBrain', () => {
     await write('sources/d.md', 'd');
     const out = await run(
       [
-        row('sources/k.md', '2026-11-02T23:00:00Z'),
-        row('sources/d.md', '2026-11-03T01:00:00Z'),
+        row('sources/k.md', '2026-11-02T12:00:00Z'),
+        row('sources/d.md', '2026-11-03T12:00:00Z'),
       ],
       null,
     );
@@ -161,5 +161,90 @@ describe('checkBrain', () => {
         at: now.toISOString(),
       },
     ]);
+  });
+});
+
+describe('checkBrain after review', () => {
+  let dir: string;
+  const now = new Date('2026-11-04T10:00:00Z');
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-check2-'));
+    await fs.mkdir(path.join(dir, 'wiki'), { recursive: true });
+    await fs.mkdir(path.join(dir, 'sources'), { recursive: true });
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  const write = (rel: string, text: string) =>
+    fs.writeFile(path.join(dir, ...rel.split('/')), text);
+  const run = async (sources: BrainSourceRow[], inFlight?: string[]) =>
+    checkBrain(
+      {
+        brainDir: dir,
+        pages: await readPages(dir),
+        sources,
+        indexMd: null,
+        inFlight,
+      },
+      now,
+    );
+
+  it('reports a link that points outside the brain without looking there', async () => {
+    await write(
+      'wiki/esc.md',
+      '---\ntitle: E\nsummary: s\nsources: [sources/k.md]\n---\n[up](../../../../../../etc/hosts) [root](/etc/hosts)\n',
+    );
+    const out = await run([]);
+    expect(out.map((f) => f.detail)).toEqual([
+      '../../../../../../etc/hosts points outside the brain',
+      '/etc/hosts does not exist',
+    ]);
+  });
+
+  it('compares the local day of ingested_at and rejects last_updated that is not a date', async () => {
+    const offset = -now.getTimezoneOffset();
+    // Local midnight of 2026-11-04, as a UTC instant: same local day as the page.
+    const localMidnight = new Date(
+      Date.UTC(2026, 10, 4, 0, 0) - offset * 60_000,
+    );
+    await write(
+      'wiki/a.md',
+      '---\ntitle: A\nsummary: s\nsources: [sources/k.md]\nlast_updated: 2026-11-04\n---\n',
+    );
+    await write(
+      'wiki/b.md',
+      '---\ntitle: B\nsummary: s\nsources: [sources/k.md]\nlast_updated: 04/11/2026\n---\n',
+    );
+    await write(
+      'wiki/c.md',
+      '---\ntitle: C\nsummary: s\nsources: ["sources/c%20d.md#p1"]\nlast_updated: 2026-11-01\n---\n',
+    );
+    const out = await run([
+      row('sources/k.md', localMidnight.toISOString()),
+      row('sources/c d.md', '2026-11-03T12:00:00Z'),
+    ]);
+    expect(out.map((f) => [f.kind, f.page, f.detail])).toEqual([
+      [
+        'frontmatter',
+        'wiki/b.md',
+        'last_updated is not a date (yyyy-mm-dd): 04/11/2026',
+      ],
+      [
+        'stale',
+        'wiki/c.md',
+        'updated 2026-11-01, cites sources/c d.md ingested 2026-11-03',
+      ],
+    ]);
+  });
+
+  it('leaves out sources with a capture in flight', async () => {
+    const out = await run(
+      [
+        row('sources/a.md', '2026-11-01T00:00:00Z', false),
+        row('sources/b.md', '2026-11-01T00:00:00Z', false),
+      ],
+      ['sources/a.md'],
+    );
+    expect(out.map((f) => f.page)).toEqual(['sources/b.md']);
   });
 });

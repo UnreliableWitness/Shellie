@@ -157,17 +157,10 @@ export async function refreshIndex(
   brainDir: string,
   brainName: string,
 ): Promise<boolean> {
-  if (!(await rebuildIndex(brainDir, brainName))) return false;
-  await withBrainGit(brainDir, async () => {
+  // Under the git queue like a job's commit, so the two rebuilds never interleave.
+  return withBrainGit(brainDir, async () => {
+    if (!(await rebuildIndex(brainDir, brainName))) return false;
     await git.run(brainDir, ['add', '--', 'index.md']);
-    // A job that started meanwhile may have committed the same index already.
-    const status = await git.run(brainDir, [
-      'status',
-      '--porcelain',
-      '--',
-      'index.md',
-    ]);
-    if (!status.trim()) return;
     await git.run(brainDir, [
       'commit',
       '-q',
@@ -176,8 +169,8 @@ export async function refreshIndex(
       '--',
       'index.md',
     ]);
+    return true;
   });
-  return true;
 }
 
 const isEmptyOrMissing = async (dir: string) =>
@@ -230,10 +223,25 @@ export function createBrainHandlers(
       await refreshIndex(d.git, b.path, b.name).catch((e: unknown) =>
         console.error('[brain] index not rebuilt', e),
       );
+    // A source with a capture queued or running is not "uncaptured": a job is on it.
+    const inFlight = jobs.flatMap((j) =>
+      j.kind === 'capture' &&
+      j.source &&
+      (j.status === 'queued' || j.status === 'running' || j.status === 'paused')
+        ? [j.source]
+        : [],
+    );
     return {
       ...b,
       health: withHealth
-        ? await brainHealth(b.path, d.git, d.ledgerToday(b.id), paused)
+        ? await brainHealth(
+            b.path,
+            d.git,
+            d.ledgerToday(b.id),
+            paused,
+            now(),
+            inFlight,
+          )
         : null,
       jobs,
     };

@@ -118,3 +118,23 @@ describe('readPages', () => {
     expect(await readPages(path.join(dir, 'none'))).toEqual([]);
   });
 });
+
+describe('fences and dates after review', () => {
+  it('closes a fence only with its own marker', () => {
+    const text =
+      '```\n~~~\n[a](in-backticks.md)\n```\n[b](after.md)\n~~~\n[c](in-tilde.md)\n~~~\n';
+    expect(linkTargets(text)).toEqual(['after.md']);
+  });
+
+  it('keeps the written day of a bare date and the local day of a timestamp', () => {
+    expect(
+      parsePage('wiki/a.md', '---\nlast_updated: 2026-11-03\n---\n')
+        .lastUpdated,
+    ).toBe('2026-11-03');
+    const local = new Date(2026, 10, 3, 23, 30);
+    const iso = local.toISOString();
+    expect(
+      parsePage('wiki/a.md', `---\nlast_updated: ${iso}\n---\n`).lastUpdated,
+    ).toBe('2026-11-03');
+  });
+});

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { indexIntro, rebuildIndex, renderIndex } from './indexPage';
+import { indexIntro, linkPath, rebuildIndex, renderIndex } from './indexPage';
 import { parsePage } from './pages';
 
 const page = (rel: string, fm: string, body = '') =>
@@ -131,5 +131,53 @@ describe('rebuildIndex', () => {
       '# T\r\n\r\n(no pages yet)\r\n',
     );
     expect(await rebuildIndex(dir, 'T')).toBe(false);
+  });
+});
+
+describe('renderIndex after review', () => {
+  it('reduces links in titles and summaries to text and drops brackets and backslashes', () => {
+    const pages = [
+      page(
+        'account.md',
+        'title: "Acme [x\\\\]"\nsummary: "See [scope](scope-a.md) and ![pic](../sources/d-assets/p.png)."',
+      ),
+      page(
+        'scope-a.md',
+        'title: S',
+        'Agreed in the [kickoff](../sources/k.md#p3).\n',
+      ),
+    ];
+    const out = renderIndex('T', [], pages);
+    expect(out).toContain('- [Acme x](wiki/account.md): See scope and pic.');
+    expect(out).toContain('- [S](wiki/scope-a.md): Agreed in the kickoff.');
+    expect(out).not.toContain('](scope-a.md)');
+  });
+
+  it('encodes link paths the checker and markdown can read', () => {
+    const pages = [
+      page('c#1.md', 'title: C\nsummary: s'),
+      page('q?.md', 'title: Q\nsummary: s'),
+      page('Meeting notes.md', 'title: M\nsummary: s'),
+      page('a(b.md', 'title: A\nsummary: s'),
+      page('100%.md', 'title: P\nsummary: s'),
+    ];
+    const out = renderIndex('T', [], pages);
+    expect(out).toContain('(wiki/c%231.md)');
+    expect(out).toContain('(wiki/q%3F.md)');
+    expect(out).toContain('(<wiki/Meeting notes.md>)');
+    expect(out).toContain('(<wiki/a(b.md>)');
+    expect(out).toContain('(wiki/100%25.md)');
+    expect(linkPath('wiki/<x>.md')).toBe('wiki/%3Cx%3E.md');
+  });
+
+  it('indexIntro stops at numbered lists, tables, any heading and links into wiki/', () => {
+    expect(
+      indexIntro(
+        '# T\n\nIntro.\n\n1. [A](wiki/a.md): n\n\n### Scope\n- [Old](wiki/gone.md)\n',
+      ).intro,
+    ).toEqual(['Intro.']);
+    expect(indexIntro('# T\n\n| [A](wiki/a.md) | s |\n').intro).toEqual([]);
+    expect(indexIntro('# T\n\nSee [A](wiki/a.md) first.\n').intro).toEqual([]);
+    expect(indexIntro('# T\n\n+ item\n').intro).toEqual([]);
   });
 });

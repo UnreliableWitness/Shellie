@@ -46,12 +46,33 @@ export function splitFrontmatter(text: string): {
 const str = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null;
 
-/** A date or timestamp field as a string; the yaml package parses bare dates to Date objects. */
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * A date or timestamp field as `yyyy-mm-dd…`. The yaml package parses a bare date to a Date at UTC midnight (its
+ * UTC day is the day written) and a timestamp to an instant (its local day is the writer's day).
+ */
 const dateStr = (v: unknown): string | null => {
-  if (v instanceof Date)
-    return Number.isNaN(v.getTime()) ? null : v.toISOString();
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return null;
+    const bare =
+      v.getUTCHours() === 0 &&
+      v.getUTCMinutes() === 0 &&
+      v.getUTCSeconds() === 0 &&
+      v.getUTCMilliseconds() === 0;
+    return bare
+      ? v.toISOString().slice(0, 10)
+      : `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}`;
+  }
   if (typeof v === 'number') return String(v);
-  return str(v);
+  const s = str(v);
+  // A timestamp written as a string (the default yaml schema keeps dates as strings): the writer's local day.
+  if (s && /^\d{4}-\d{2}-\d{2}[T ]\d/.test(s)) {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime()))
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  return s;
 };
 
 const stringList = (v: unknown): string[] | null => {
@@ -65,13 +86,15 @@ const stringList = (v: unknown): string[] | null => {
 /** The lines of a body outside fenced code blocks. */
 export function outsideFences(text: string): string[] {
   const out: string[] = [];
-  let fenced = false;
+  // The marker that opened the block is the one that closes it: a ~~~ inside a backtick fence is content.
+  let fence: string | null = null;
   for (const line of text.split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      fenced = !fenced;
+    const m = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (m && (fence === null || m[1][0] === fence[0])) {
+      fence = fence === null ? m[1] : null;
       continue;
     }
-    if (!fenced) out.push(line);
+    if (fence === null) out.push(line);
   }
   return out;
 }

@@ -76,6 +76,8 @@ export async function brainHealth(
   ledgerToday: { tokens: number; costEur: number },
   queuePaused: boolean,
   now: Date = new Date(),
+  /** Sources with a capture queued or running (not uncaptured). */
+  inFlight: string[] = [],
 ): Promise<BrainHealth> {
   const { state, error } = await readState(brainDir);
   const [sources, edits, pages, indexMd] = await Promise.all([
@@ -85,7 +87,7 @@ export async function brainHealth(
     fs.readFile(path.join(brainDir, 'index.md'), 'utf8').catch(() => null),
   ]);
   const own = await checkBrain(
-    { brainDir, pages, sources, indexMd },
+    { brainDir, pages, sources, indexMd, inFlight },
     now,
   ).catch(() => []);
   const mirror = sources.filter((s) => s.path.startsWith('sources/wiki/'));

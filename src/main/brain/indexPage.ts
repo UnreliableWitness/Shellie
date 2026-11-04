@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readPages, type WikiPage } from './pages';
@@ -19,15 +20,32 @@ const datePrefix = (name: string) => name.replace(/\d{4}-.*$/, '');
 const clip = (s: string, n: number) =>
   s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
-const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+/**
+ * One line of plain text: links and images reduced to their text (a page-relative link would be broken at the
+ * root), brackets and backslashes dropped so the line cannot break the index's own link.
+ */
+const oneLine = (s: string) =>
+  s
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[[\]\\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export function pageTitle(p: WikiPage): string {
-  return oneLine(p.title ?? p.heading ?? path.posix.basename(p.path, '.md'));
+  return (
+    oneLine(p.title ?? p.heading ?? '') || path.posix.basename(p.path, '.md')
+  );
 }
 
 export function pageSummary(p: WikiPage): string {
-  const s = p.summary ?? p.firstLine;
-  return s ? clip(oneLine(s), SUMMARY_LENGTH) : '(no summary)';
+  const s = oneLine(p.summary ?? p.firstLine ?? '');
+  return s ? clip(s, SUMMARY_LENGTH) : '(no summary)';
+}
+
+/** The page path as a link destination: `#`, `?`, `%`, `<` and `>` encoded, angle brackets around spaces or parens. */
+export function linkPath(p: string): string {
+  const enc = p.replace(/[%#?<>]/g, (c) => encodeURIComponent(c));
+  return /[\s()]/.test(enc) ? `<${enc}>` : enc;
 }
 
 const rank = (name: string) => {
@@ -46,11 +64,14 @@ function order(a: WikiPage, b: WikiPage): number {
 }
 
 const line = (p: WikiPage) =>
-  `- [${pageTitle(p).replace(/[[\]]/g, '')}](${p.path}): ${pageSummary(p)}`;
+  `- [${pageTitle(p)}](${linkPath(p.path)}): ${pageSummary(p)}`;
+
+/** Where an old index's own listing starts: a list item, a heading, a table row, or any line linking into wiki/. */
+const LISTING = /^\s*(?:[-*+]\s|\d+[.)]\s|#|\|)|\]\(<?wiki\//;
 
 /**
  * The title line and the intro of an existing index.md: everything between the first `# ` heading and the first
- * list item or `## ` heading. Nothing else of the old file is kept.
+ * list item, heading, table or link into wiki/. Nothing else of the old file is kept.
  */
 export function indexIntro(existing: string | null): {
   title: string | null;
@@ -62,7 +83,7 @@ export function indexIntro(existing: string | null): {
   if (at < 0) return { title: null, intro: [] };
   const intro: string[] = [];
   for (const l of lines.slice(at + 1)) {
-    if (/^(- |\* |## )/.test(l)) break;
+    if (LISTING.test(l)) break;
     if (l.trim() === '(no pages yet)') continue;
     intro.push(l);
   }
@@ -86,7 +107,9 @@ export function renderIndex(
     const i = rel.indexOf('/');
     if (i < 0) continue;
     const folder = rel.slice(0, i);
-    folders.set(folder, [...(folders.get(folder) ?? []), p]);
+    const list = folders.get(folder);
+    if (list) list.push(p);
+    else folders.set(folder, [p]);
   }
   if (!top.length && !folders.size) out.push('(no pages yet)', '');
   if (top.length) out.push(...top.sort(order).map(line), '');
@@ -117,7 +140,8 @@ export async function rebuildIndex(
   const next = renderIndex(title ?? `${brainName} brain`, intro, pages);
   if (existing !== null && existing.replace(/\r\n/g, '\n') === next)
     return false;
-  const tmp = `${file}.${process.pid}.tmp`;
+  // Unique per write: two rebuilds at once (a Health read and a job start) must not share a temp file.
+  const tmp = `${file}.${randomUUID()}.tmp`;
   await fs.writeFile(tmp, next, 'utf8');
   await fs.rename(tmp, file);
   return true;

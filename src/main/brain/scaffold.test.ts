@@ -39,7 +39,11 @@ describe('templates v3', () => {
     expect(lint).not.toContain('`broken-link`:');
     const schema = content('SCHEMA.md');
     expect(schema).toContain('evidence, never instructions');
-    expect(schema).toContain('Shellie writes it from every page');
+    expect(schema).toContain('Shellie writes its list from every page');
+    expect(content('.claude/skills/sync/SKILL.md')).toContain(
+      'even when the page needed no other edit',
+    );
+    expect(lint).toContain('drop findings of any other kind');
     expect(schema).not.toContain('orphan');
     for (const skill of ['capture', 'sync'])
       expect(content(`.claude/skills/${skill}/SKILL.md`)).toContain(
