@@ -36,45 +36,40 @@ function attr(tag: string, name: string): string | null {
 const el = (name: string) => `(?:[A-Za-z0-9_]+:)?${name}`;
 
 /**
- * Every element of the name: self-closing, or with a body that ends at the closing tag. The body scan stops
- * at the next element of the same name, so an unclosed one costs one scan to its neighbour, never to the
- * end of the part (a crafted file cannot make this quadratic).
+ * Every element of the name: self-closing, or with a body that ends at the closing tag. An open tag never
+ * runs past the next `<`, and the body scan stops at the next element of the same name, so an unclosed one
+ * costs one scan to its neighbour, never to the end of the part: a crafted file cannot make this quadratic.
  */
 function elements(name: string): RegExp {
   const n = el(name);
   return new RegExp(
-    `<${n}\\b([^>]*?)(?:/>|>((?:(?!<${n}\\b)[\\s\\S])*?)</${n}>)`,
+    `<${n}\\b([^<>]*?)(?:/>|>((?:(?!<${n}\\b)[\\s\\S])*?)</${n}>)`,
     'g',
   );
 }
 
+/** An open tag of the name, with its attributes (never past the next `<`). */
+const openTag = (name: string) => new RegExp(`<${el(name)}\\s[^<>]*>`, 'g');
+
 const CELLS = elements('c');
 const ROWS = elements('row');
 const SHARED = elements('si');
-const SHEETS = new RegExp(`<${el('sheet')}\\s[^>]*>`, 'g');
-const NUMFMTS = new RegExp(`<${el('numFmt')}\\s[^>]*>`, 'g');
-const CELLXFS = new RegExp(
-  `<${el('cellXfs')}[\\s>][\\s\\S]*?</${el('cellXfs')}>`,
-);
-const XFS = new RegExp(`<${el('xf')}\\s[^>]*/?>`, 'g');
-const VALUE = new RegExp(`<${el('v')}>([\\s\\S]*?)</${el('v')}>`);
-const TEXT = new RegExp(
-  `<${el('t')}(?:\\s[^>]*)?>([\\s\\S]*?)</${el('t')}>`,
-  'g',
-);
-const PHONETIC = new RegExp(
-  `<${el('rPh')}[\\s>][\\s\\S]*?</${el('rPh')}>`,
-  'g',
-);
+const SHEETS = openTag('sheet');
+const NUMFMTS = openTag('numFmt');
+const CELLXFS = elements('cellXfs');
+const XFS = openTag('xf');
+const VALUE = elements('v');
+const TEXT = elements('t');
+const PHONETIC = elements('rPh');
 const DATE1904 = new RegExp(
-  `<${el('workbookPr')}\\s[^>]*\\bdate1904=["'](1|true)["']`,
+  `<${el('workbookPr')}\\s[^<>]*\\bdate1904=["'](1|true)["']`,
 );
-const BLIP = /<a:blip\s[^>]*\br:embed=(?:"([^"]*)"|'([^']*)')/g;
+const BLIP = /<a:blip\s[^<>]*\br:embed=(?:"([^"]*)"|'([^']*)')/g;
 
 type Rel = { id: string; type: string; target: string; mode: string | null };
 
 function parseRels(xml: string): Rel[] {
-  return [...xml.matchAll(/<Relationship\s[^>]*>/g)].flatMap((m) => {
+  return [...xml.matchAll(/<Relationship\s[^<>]*>/g)].flatMap((m) => {
     const id = attr(m[0], 'Id');
     const type = attr(m[0], 'Type');
     const target = attr(m[0], 'Target');
@@ -101,7 +96,7 @@ const relsOf = (p: string) =>
 /** The text of a rich or plain string element: every `<t>` run joined, phonetic (furigana) runs left out. */
 const runs = (xml: string) =>
   [...xml.replace(PHONETIC, '').matchAll(TEXT)]
-    .map((m) => decode(m[1]))
+    .map((m) => decode(m[2] ?? ''))
     .join('');
 
 /** Column letters of a cell reference ("BC12" -> 54, zero based); -1 without letters. */
@@ -128,6 +123,7 @@ export function isDateFormat(code: string): boolean {
   if (/\[[hms]+\]/i.test(code)) return false;
   const bare = code
     .replace(/"[^"]*"/g, '')
+    .replace(/\\./g, '') // backslash-escaped literals (`\d\a\y\s`)
     .replace(/\[[^\]]*\]/g, '')
     .replace(/\.0+/g, ''); // fractional seconds
   return /[ymdhs]/i.test(bare) && !/[#0]/.test(bare);
@@ -141,7 +137,8 @@ function dateStyles(stylesXml: string): Set<number> {
     if (isDateFormat(attr(m[0], 'formatCode') ?? '')) custom.add(id);
   }
   const out = new Set<number>();
-  const xfs = CELLXFS.exec(stylesXml)?.[0] ?? '';
+  CELLXFS.lastIndex = 0;
+  const xfs = CELLXFS.exec(stylesXml)?.[2] ?? '';
   [...xfs.matchAll(XFS)].forEach((m, i) => {
     const id = Number(attr(m[0], 'numFmtId') ?? '0');
     if (DATE_FORMAT_IDS.has(id) || custom.has(id)) out.add(i);
@@ -279,7 +276,8 @@ export async function xlsxToMarkdown(
         let text = '';
         if (t === 'inlineStr') text = runs(body);
         else {
-          const v = VALUE.exec(body)?.[1];
+          VALUE.lastIndex = 0;
+          const v = VALUE.exec(body)?.[2];
           if (v === undefined) continue;
           if (t === 's') text = shared[Number(v)] ?? '';
           else if (t === 'b') text = v === '1' ? 'TRUE' : 'FALSE';

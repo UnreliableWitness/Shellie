@@ -24,12 +24,21 @@ const plain = (line: string) =>
     .replace(/(^|\s)[*_]+|[*_]+(?=\s|$)/g, '$1')
     .trim();
 
-/** The lines outside fenced code blocks: a `# comment` in a code sample is not a heading. */
+/**
+ * The lines outside fenced code blocks: a `# comment` in a code sample is not a heading. A fence that never
+ * closes is ignored, so it cannot hide the rest of the document.
+ */
 function outsideFences(lines: string[]): string[] {
+  const isFence = (l: string) => /^\s*```/.test(l);
+  const fences = lines.filter(isFence).length;
   const out: string[] = [];
   let fenced = false;
+  let seen = 0;
   for (const l of lines) {
-    if (/^\s*```/.test(l)) {
+    if (isFence(l)) {
+      seen++;
+      // The last fence of an odd count opens nothing.
+      if (seen === fences && fences % 2 === 1) continue;
       fenced = !fenced;
       continue;
     }
