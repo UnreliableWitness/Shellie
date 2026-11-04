@@ -102,7 +102,9 @@ describe('rasterizeInProcess', () => {
     const ico2 = Buffer.concat([ico, dib]);
     expect(bitmapSize(ico2, 'ico')).toEqual({ width: 48, height: 48 });
     // No data to read: the directory bytes (0 means 256).
-    expect(bitmapSize(Buffer.alloc(6 + 16), 'ico')).toEqual({
+    const bare = Buffer.alloc(6 + 16);
+    bare.writeUInt16LE(1, 4);
+    expect(bitmapSize(bare, 'ico')).toEqual({
       width: 256,
       height: 256,
     });
