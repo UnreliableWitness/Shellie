@@ -19,7 +19,7 @@ describe('describeContents', () => {
       '',
     ].join('\n');
     expect(describeContents(md, 1, 'pptx')).toBe(
-      '3 slides · 1 picture · 1 table: Acme platform: target architecture; Phase 1 scope; Notes: only notes',
+      '3 slides · 1 picture · 1 table: Acme platform: target architecture; Phase 1 scope',
     );
   });
 
@@ -35,7 +35,7 @@ describe('describeContents', () => {
     const md =
       '## Budget 2026\n\n| Item | EUR |\n| --- | --- |\n| Licences | 1250 |\n| Total | 1250 |\n\n## Notes\n\n_(empty sheet)_\n';
     expect(describeContents(md, 0, 'xlsx')).toBe(
-      '2 sheets · 3 rows: Budget 2026; Notes',
+      '2 sheets · 2 rows: Budget 2026; Notes',
     );
   });
 

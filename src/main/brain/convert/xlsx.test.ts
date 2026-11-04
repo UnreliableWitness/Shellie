@@ -4,6 +4,8 @@ import {
   MAX_COLS,
   MAX_ROWS,
   columnIndex,
+  isDateFormat,
+  limits,
   serialToIso,
   xlsxToMarkdown,
 } from './xlsx';
@@ -25,12 +27,12 @@ type SheetSpec = { name: string; rows: Cell[][]; picture?: boolean };
 /** A workbook from cell specs; shared strings are given as `t: 's'` with their index in `v`. */
 async function buildXlsx(
   sheets: SheetSpec[],
-  opts: { shared?: string[]; dateStyle?: boolean } = {},
+  opts: { shared?: string[]; date1904?: boolean; sharedXml?: string } = {},
 ): Promise<Buffer> {
   const zip = new JSZip();
   zip.file(
     'xl/workbook.xml',
-    `<workbook xmlns:r="r"><sheets>${sheets
+    `<workbook xmlns:r="r">${opts.date1904 ? '<workbookPr date1904="1"/>' : ''}<sheets>${sheets
       .map(
         (s, i) =>
           `<sheet name="${s.name}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`,
@@ -46,7 +48,8 @@ async function buildXlsx(
       )
       .join('')}</Relationships>`,
   );
-  if (opts.shared) {
+  if (opts.sharedXml) zip.file('xl/sharedStrings.xml', opts.sharedXml);
+  else if (opts.shared) {
     zip.file(
       'xl/sharedStrings.xml',
       `<sst>${opts.shared.map((t) => `<si><t>${t}</t></si>`).join('')}</sst>`,
@@ -215,6 +218,165 @@ describe('xlsxToMarkdown', () => {
     ).rejects.toThrow('Not a valid .xlsx file');
   });
 
+  it('keeps 15 significant digits, so ids stored as numbers survive', async () => {
+    const r = await xlsxToMarkdown(
+      await buildXlsx([
+        {
+          name: 'Ids',
+          rows: [
+            [
+              { r: 'A1', v: '5901234123457' },
+              { r: 'B1', v: '123456789012345' },
+              { r: 'C1', v: '1E+16' },
+            ],
+          ],
+        },
+      ]),
+    );
+    expect(r.markdown).toContain(
+      '| 5901234123457 | 123456789012345 | 10000000000000000 |',
+    );
+  });
+
+  it('honours the 1904 date system', async () => {
+    const r = await xlsxToMarkdown(
+      await buildXlsx(
+        [
+          {
+            name: 'S',
+            rows: [
+              [
+                { r: 'A1', s: 1, v: '0' },
+                { r: 'B1', s: 1, v: '44561' },
+              ],
+            ],
+          },
+        ],
+        {
+          date1904: true,
+        },
+      ),
+    );
+    expect(r.markdown).toContain('| 1904-01-01 | 2026-01-01 |');
+  });
+
+  it('reads prefixed elements, cells without a reference and single-quoted attributes', async () => {
+    const zip = new JSZip();
+    zip.file(
+      'xl/workbook.xml',
+      `<x:workbook xmlns:x="x" xmlns:r="r"><x:sheets><x:sheet name='Data' sheetId='1' r:id='rId1'/></x:sheets></x:workbook>`,
+    );
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      `<Relationships><Relationship Id='rId1' Type='${REL}/worksheet' Target='worksheets/sheet1.xml'/></Relationships>`,
+    );
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      `<x:worksheet xmlns:x="x"><x:sheetData><x:row><x:c t='str'><x:v>a</x:v></x:c><x:c><x:v>1</x:v></x:c><x:c r='D1'><x:v>2</x:v></x:c><x:c><x:v>3</x:v></x:c></x:row></x:sheetData></x:worksheet>`,
+    );
+    const r = await xlsxToMarkdown(
+      await zip.generateAsync({ type: 'nodebuffer' }),
+    );
+    expect(r.markdown).toContain('## Data\n\n| a | 1 |  | 2 | 3 |');
+  });
+
+  it('leaves out phonetic runs and reads a self-closing shared string entry', async () => {
+    const r = await xlsxToMarkdown(
+      await buildXlsx(
+        [
+          {
+            name: 'S',
+            rows: [
+              [
+                { r: 'A1', t: 's', v: '0' },
+                { r: 'B1', t: 's', v: '2' },
+              ],
+            ],
+          },
+        ],
+        {
+          sharedXml:
+            '<sst><si><r><t>東京</t></r><rPh sb="0" eb="2"><t>トウキョウ</t></rPh></si><si/><si><t xml:space="preserve"> after empty</t></si></sst>',
+        },
+      ),
+    );
+    expect(r.markdown).toContain('| 東京 | after empty |');
+  });
+
+  it('shows times of day, leaves durations as numbers and reads ISO date cells', async () => {
+    const r = await xlsxToMarkdown(
+      await buildXlsx([
+        {
+          name: 'T',
+          rows: [
+            [
+              { r: 'A1', s: 4, v: '0.5' },
+              { r: 'B1', t: 'd', v: '2024-03-01T00:00:00Z' },
+              { r: 'C1', s: 2, v: '45000.5' },
+            ],
+          ],
+        },
+      ]),
+    );
+    expect(r.markdown).toContain('| 12:00 | 2024-03-01 | 2023-03-15 12:00 |');
+    expect(isDateFormat('[h]:mm')).toBe(false);
+    expect(isDateFormat('yyyy-mm-dd hh:mm:ss.000')).toBe(true);
+    expect(isDateFormat('[DBNum1]#,##0')).toBe(false);
+    expect(isDateFormat('"Total" #,##0.00')).toBe(false);
+    expect(isDateFormat('h:mm')).toBe(true);
+  });
+
+  it('marks a chart sheet and refuses a part over the size limit', async () => {
+    const zip = new JSZip();
+    zip.file(
+      'xl/workbook.xml',
+      '<workbook xmlns:r="r"><sheets><sheet name="Chart" sheetId="1" r:id="rId1"/><sheet name="Data" sheetId="2" r:id="rId2"/></sheets></workbook>',
+    );
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      `<Relationships><Relationship Id="rId1" Type="${REL}/chartsheet" Target="chartsheets/sheet1.xml"/><Relationship Id="rId2" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+    );
+    zip.file('xl/chartsheets/sheet1.xml', '<chartsheet/>');
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<worksheet><sheetData><row><c r="A1" t="str"><v>x</v></c></row></sheetData></worksheet>',
+    );
+    const buf = await zip.generateAsync({ type: 'nodebuffer' });
+    const r = await xlsxToMarkdown(buf);
+    expect(r.markdown).toContain('## Chart\n\n_(chart sheet)_\n\n## Data');
+    const before = limits.partBytes;
+    limits.partBytes = 50;
+    try {
+      await expect(xlsxToMarkdown(buf)).rejects.toThrow(/too large to read/);
+    } finally {
+      limits.partBytes = before;
+    }
+  });
+
+  it('parses a sheet full of unclosed cells in linear time', async () => {
+    const cells = Array.from(
+      { length: 32_000 },
+      (_, i) => `<c r="A${i + 1}"><v>${i}</v>`,
+    ).join('');
+    const zip = new JSZip();
+    zip.file(
+      'xl/workbook.xml',
+      '<workbook xmlns:r="r"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    );
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      `<Relationships><Relationship Id="rId1" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+    );
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      `<worksheet><sheetData><row>${cells}</sheetData></worksheet>`,
+    );
+    const buf = await zip.generateAsync({ type: 'nodebuffer' });
+    const t0 = Date.now();
+    await xlsxToMarkdown(buf);
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
   it('reads column letters and Excel serial dates', () => {
     expect(columnIndex('A1')).toBe(0);
     expect(columnIndex('Z9')).toBe(25);
@@ -223,5 +385,7 @@ describe('xlsxToMarkdown', () => {
     expect(serialToIso(1)).toBe('1900-01-01');
     expect(serialToIso(46023)).toBe('2026-01-01');
     expect(serialToIso(46023.75)).toBe('2026-01-01 18:00');
+    expect(serialToIso(0.75)).toBe('18:00');
+    expect(serialToIso(0, true)).toBe('1904-01-01');
   });
 });
