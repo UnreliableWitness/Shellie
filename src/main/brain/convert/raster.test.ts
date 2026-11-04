@@ -2,7 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Command } from '../../platform/Platform';
-import { createRasterizer, loadCanvas, rasterizeInProcess } from './raster';
+import {
+  MAX_RASTER_SIDE,
+  createRasterizer,
+  loadCanvas,
+  rasterizeInProcess,
+} from './raster';
 
 const SVG = Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>',
@@ -47,6 +52,19 @@ describe('rasterizeInProcess', () => {
     expect(png).not.toBeNull();
     const img = await (await loadCanvas())!.loadImage(png!);
     expect([img.width, img.height]).toEqual([2, 2]);
+  });
+
+  it('scales a huge SVG down to the longest-side cap', async () => {
+    const huge = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20000" height="10000"><rect width="20000" height="10000" fill="#00ff00"/></svg>',
+    );
+    const png = await rasterizeInProcess(huge, 'svg');
+    expect(png).not.toBeNull();
+    const img = await (await loadCanvas())!.loadImage(png!);
+    expect([img.width, img.height]).toEqual([
+      MAX_RASTER_SIDE,
+      MAX_RASTER_SIDE / 2,
+    ]);
   });
 
   it('is null for formats it does not decode and for broken input', async () => {

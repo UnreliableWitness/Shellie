@@ -5,7 +5,9 @@ import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { convertFile } from './index';
 import { docxToMarkdown } from './docx';
+import { vi } from 'vitest';
 import { MAX_PAGE_RENDERS, pdfToMarkdown } from './pdf';
+import * as raster from './raster';
 import { decodePng } from './png';
 import { pptxToMarkdown } from './pptx';
 import { MAX_IMAGES, type Rasterize } from './types';
@@ -207,6 +209,39 @@ describe('pdfToMarkdown', () => {
     expect(r.warnings).toEqual([]);
   });
 
+  it('tells a drawing from rules, backgrounds, clips and tiny or scaled paths', async () => {
+    const r = await pdfToMarkdown(
+      await fs.readFile(fixture('drawing-edges.pdf')),
+    );
+    // p.1: a white page background, a page clip and seven rules; p.2: eight boxes under a 10× transform;
+    // p.3: eight bars under a 0.1× transform.
+    expect(r.images.map((i) => i.name)).toEqual(['p2.png']);
+    expect(r.markdown).toContain('## p.1\n\nText page with rules\n\n## p.2');
+    expect(r.markdown).toContain(
+      'Scaled diagram\n![p.2 as drawn]({{assets}}/p2.png)',
+    );
+    expect(r.markdown).toContain('## p.3\n\nTiny bars\n');
+  });
+
+  it('keeps the text and warns when a page cannot be rendered', async () => {
+    const spy = vi.spyOn(raster, 'loadCanvas').mockResolvedValue({
+      createCanvas: () => {
+        throw new Error('no skia');
+      },
+    } as unknown as Awaited<ReturnType<typeof raster.loadCanvas>>);
+    try {
+      const r = await pdfToMarkdown(await fs.readFile(fixture('drawing.pdf')));
+      expect(r.images).toEqual([]);
+      expect(r.markdown).toContain('Target architecture');
+      expect(r.warnings).toEqual([
+        'p.1: the drawing could not be rendered (no skia)',
+      ]);
+      expect(r.empty).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('renders at most the first pages with drawings and says how many were left', async () => {
     const r = await pdfToMarkdown(
       await fs.readFile(fixture('many-drawings.pdf')),
@@ -376,6 +411,61 @@ describe('pptxToMarkdown', () => {
     ]);
   });
 
+  it('marks every reference to a picture that could not be extracted', async () => {
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          {
+            text: ['A'],
+            extra: pic('rId2') + pic('rId3') + pic('rId2') + pic('rId4'),
+            rels: [
+              { id: 'rId2', type: 'image', target: '../media/image1.emf' },
+              { id: 'rId3', type: 'image', target: '../media/image2.png' },
+              { id: 'rId4', type: 'image', target: '../media/missing.png' },
+            ],
+          },
+        ],
+        {
+          media: {
+            'ppt/media/image1.emf': Buffer.from('emf'),
+            'ppt/media/image2.png': PNG,
+          },
+        },
+      ),
+    );
+    expect(r.markdown).toContain(
+      '_Picture 1 (emf) could not be extracted_\n![Slide 1 picture 2]({{assets}}/slide-1-2.png)\n_Picture 3 (emf) could not be extracted_\n',
+    );
+    // A missing media file is not a format problem: no marker.
+    expect(r.markdown).not.toContain('Picture 4');
+    expect(r.warnings).toEqual([
+      '1 picture in formats Claude cannot view (emf)',
+    ]);
+  });
+
+  it('takes a picture used as a shape fill', async () => {
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          {
+            text: ['A'],
+            extra:
+              '<p:sp><p:nvSpPr><p:cNvPr id="9" name="Box" descr="Filled box"/></p:nvSpPr><p:spPr><a:blipFill><a:blip r:embed="rId2"/></a:blipFill></p:spPr><p:txBody>' +
+              paragraphs(['Label']) +
+              '</p:txBody></p:sp>',
+            rels: [
+              { id: 'rId2', type: 'image', target: '../media/image1.png' },
+            ],
+          },
+        ],
+        { media: { 'ppt/media/image1.png': PNG } },
+      ),
+    );
+    expect(r.markdown).toContain(
+      'A\nLabel\n![Slide 1 picture 1]({{assets}}/slide-1-1.png)',
+    );
+  });
+
   it('lists the pictures of the slide layouts and master once, at the end', async () => {
     const layoutRel = (n: number) => ({
       id: 'rId7',
@@ -398,7 +488,7 @@ describe('pptxToMarkdown', () => {
         `<Relationships><Relationship Id="rId2" Type="${REL}/image" Target="../media/logo.png"/><Relationship Id="rId1" Type="${REL}/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`,
       ),
       'ppt/slideMasters/slideMaster1.xml': Buffer.from(
-        `<p:sldMaster ${NS_A} ${NS_P} ${NS_R}><p:cSld><p:spTree>${pic('rId3', 'Background')}</p:spTree></p:cSld></p:sldMaster>`,
+        `<p:sldMaster ${NS_A} ${NS_P} ${NS_R}><p:cSld><p:bg><p:bgPr><a:blipFill><a:blip r:embed="rId3"/></a:blipFill></p:bgPr></p:bg><p:spTree></p:spTree></p:cSld></p:sldMaster>`,
       ),
       'ppt/slideMasters/_rels/slideMaster1.xml.rels': Buffer.from(
         `<Relationships><Relationship Id="rId3" Type="${REL}/image" Target="../media/bg.png"/></Relationships>`,
@@ -420,7 +510,7 @@ describe('pptxToMarkdown', () => {
     ]);
     expect(
       r.markdown.endsWith(
-        '## Slide 3\nThree\n\n## Slide layouts and master\nPictures that appear on the slide layouts and master (logos, backgrounds), once each.\n![Company logo]({{assets}}/layout-1.png)\n![Background]({{assets}}/layout-2.png)\n',
+        '## Slide 3\nThree\n\n## Slide layouts and master\nPictures that appear on the slide layouts and master (logos, backgrounds), once each.\n![Company logo]({{assets}}/layout-1.png)\n![Layout picture 2]({{assets}}/layout-2.png)\n',
       ),
     ).toBe(true);
   });

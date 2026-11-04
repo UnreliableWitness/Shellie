@@ -27,6 +27,26 @@ describe('runSmoke', () => {
     expect(lines.join('\n')).toMatch(/canvas could not be loaded/);
   });
 
+  it('fails when the canvas loads but cannot encode', async () => {
+    const lines: string[] = [];
+    const ok = await runSmoke({
+      terminals: new TerminalManager(),
+      platform: testPlatform(),
+      log: (l) => lines.push(l),
+      canvas: async () =>
+        ({
+          createCanvas: () => ({
+            getContext: () => ({ fillRect: () => {} }),
+            encode: async () => Buffer.alloc(0),
+          }),
+        }) as unknown as Awaited<
+          ReturnType<typeof import('./brain/convert/raster').loadCanvas>
+        >,
+    });
+    expect(ok).toBe(false);
+    expect(lines.join('\n')).toMatch(/empty PNG/);
+  });
+
   it('fails when the command exits non-zero', async () => {
     const p = testPlatform();
     const lines: string[] = [];

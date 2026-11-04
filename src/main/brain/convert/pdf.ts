@@ -1,5 +1,5 @@
 import { encodePng, type PixelKind } from './png';
-import { loadCanvas } from './raster';
+import { canvasFactoryFor, installCanvasGlobals, loadCanvas } from './raster';
 import { ImageCollector, type ConvertOptions, type Converted } from './types';
 
 const TEXT_THRESHOLD = 20;
@@ -72,26 +72,88 @@ async function imageOf(page: Page, arg: unknown): Promise<PdfImage | null> {
 
 type OperatorList = Awaited<ReturnType<Page['getOperatorList']>>;
 
-/** Whether the page's paths add up to a drawing: enough of them, covering enough of the page. */
+/** The operator codes hasDrawing reads (pdf.js OPS). */
+export type DrawingOps = {
+  constructPath: number;
+  endPath: number;
+  save: number;
+  restore: number;
+  transform: number;
+  paintFormXObjectBegin: number;
+  paintFormXObjectEnd: number;
+};
+
+type Matrix = [number, number, number, number, number, number];
+
+const mul = (m: Matrix, n: Matrix): Matrix => [
+  m[0] * n[0] + m[1] * n[2],
+  m[0] * n[1] + m[1] * n[3],
+  m[2] * n[0] + m[3] * n[2],
+  m[2] * n[1] + m[3] * n[3],
+  m[4] * n[0] + m[5] * n[2] + n[4],
+  m[4] * n[1] + m[5] * n[3] + n[5],
+];
+
+/** A path's box in page units: its corners through the current transform. */
+function pageBox(box: ArrayLike<number>, ctm: Matrix): [number, number] {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [x, y] of [
+    [box[0], box[1]],
+    [box[2], box[1]],
+    [box[0], box[3]],
+    [box[2], box[3]],
+  ]) {
+    xs.push(ctm[0] * x + ctm[2] * y + ctm[4]);
+    ys.push(ctm[1] * x + ctm[3] * y + ctm[5]);
+  }
+  return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+}
+
+/**
+ * Whether the page's paths add up to a drawing: enough painted paths (clips do not count), covering enough
+ * of the page between them (a full-page background does not count), measured in page units through the
+ * current transform.
+ */
 export function hasDrawing(
   ops: OperatorList,
-  constructPath: number,
-  pageArea: number,
+  codes: DrawingOps,
+  pageWidth: number,
+  pageHeight: number,
 ): boolean {
+  const pageArea = pageWidth * pageHeight;
+  if (!(pageArea > 0)) return false;
   let paths = 0;
   let area = 0;
+  let ctm: Matrix = [1, 0, 0, 1, 0, 0];
+  const stack: Matrix[] = [];
   for (let i = 0; i < ops.fnArray.length; i++) {
-    if (ops.fnArray[i] !== constructPath) continue;
-    paths++;
-    // The third argument is the path's bounding box [minX, minY, maxX, maxY].
-    const box = ops.argsArray[i]?.[2] as ArrayLike<number> | undefined;
-    if (box && box.length >= 4) {
-      area += Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]);
+    const fn = ops.fnArray[i];
+    const args = ops.argsArray[i] as unknown[] | undefined;
+    if (fn === codes.save) stack.push(ctm);
+    else if (fn === codes.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === codes.transform && args && args.length >= 6) {
+      ctm = mul(args.slice(0, 6) as Matrix, ctm);
+    } else if (fn === codes.paintFormXObjectBegin) {
+      stack.push(ctm);
+      const m = args?.[0] as ArrayLike<number> | null | undefined;
+      if (m && m.length >= 6)
+        ctm = mul(Array.from(m).slice(0, 6) as Matrix, ctm);
+    } else if (fn === codes.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
+    else if (fn === codes.constructPath) {
+      // args: [painting op, path data, bounding box [minX, minY, maxX, maxY]]
+      if (args?.[0] === codes.endPath) continue; // a clip, not a drawing
+      const box = args?.[2] as ArrayLike<number> | undefined;
+      if (!box || box.length < 4) continue;
+      const [w, h] = pageBox(box, ctm);
+      const a = Math.min(w, pageWidth) * Math.min(h, pageHeight);
+      if (a / pageArea >= 0.9) continue; // the page background
+      paths++;
+      area += a;
     }
   }
   return (
     paths >= DRAWING_MIN_PATHS &&
-    pageArea > 0 &&
     Math.min(area, pageArea) / pageArea >= DRAWING_MIN_AREA
   );
 }
@@ -122,6 +184,8 @@ export async function pdfToMarkdown(
   buf: Uint8Array,
   opts: ConvertOptions = {},
 ): Promise<Converted> {
+  const canvas = await loadCanvas();
+  if (canvas) installCanvasGlobals(canvas);
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   // Once bundled there is no pdf.worker.mjs file next to the main bundle for the
   // in-process "fake worker" to load, so hand pdf.js the worker module directly.
@@ -134,7 +198,17 @@ export async function pdfToMarkdown(
     useSystemFonts: true,
     // Pixels, not bitmaps, for JPEG images.
     isOffscreenCanvasSupported: false,
+    ...(canvas ? { CanvasFactory: canvasFactoryFor(canvas) } : {}),
   });
+  const drawingOps: DrawingOps = {
+    constructPath: pdfjs.OPS.constructPath,
+    endPath: pdfjs.OPS.endPath,
+    save: pdfjs.OPS.save,
+    restore: pdfjs.OPS.restore,
+    transform: pdfjs.OPS.transform,
+    paintFormXObjectBegin: pdfjs.OPS.paintFormXObjectBegin,
+    paintFormXObjectEnd: pdfjs.OPS.paintFormXObjectEnd,
+  };
   const paintOps = new Set([
     pdfjs.OPS.paintImageXObject,
     pdfjs.OPS.paintInlineImageXObject,
@@ -170,12 +244,20 @@ export async function pdfToMarkdown(
       const view = page.getViewport({ scale: 1 });
       // A page with a drawing is shown as drawn; its own pictures are part of that render.
       let rendered = false;
-      if (hasDrawing(ops, pdfjs.OPS.constructPath, view.width * view.height)) {
+      if (hasDrawing(ops, drawingOps, view.width, view.height)) {
         if (renders >= MAX_PAGE_RENDERS) unrendered++;
         else {
-          const png = await renderPage(page);
-          if (!png) canvasMissing = true;
-          else {
+          let png: Buffer | null = null;
+          try {
+            png = await renderPage(page);
+            if (!png) canvasMissing = true;
+          } catch (e) {
+            // The text and the page's own pictures still go through.
+            images.warn(
+              `p.${n}: the drawing could not be rendered (${e instanceof Error ? e.message : String(e)})`,
+            );
+          }
+          if (png) {
             renders++;
             const ref = images.add(`p${n}.png`, png);
             if (ref) {

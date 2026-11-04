@@ -6,6 +6,8 @@ import type { Rasterize } from './types';
 
 /** Formats @napi-rs/canvas decodes itself. */
 const IN_PROCESS = new Set(['svg', 'bmp', 'ico']);
+/** Longest side of a rasterised picture: a crafted SVG must not allocate gigabytes. */
+export const MAX_RASTER_SIDE = 4000;
 
 type Canvas = typeof import('@napi-rs/canvas');
 
@@ -20,7 +22,51 @@ export function loadCanvas(): Promise<Canvas | null> {
   return canvasModule;
 }
 
-/** SVG, BMP and ICO to PNG in process. */
+/**
+ * Once the main process is bundled, pdf.js cannot `require` the canvas package itself (its createRequire is
+ * built on an import.meta.url that no longer exists), so the globals its renderer expects are set here and a
+ * canvas factory is handed to getDocument.
+ */
+export function installCanvasGlobals(canvas: Canvas): void {
+  const g = globalThis as Record<string, unknown>;
+  g.DOMMatrix ??= canvas.DOMMatrix;
+  g.Path2D ??= canvas.Path2D;
+  g.ImageData ??= canvas.ImageData;
+}
+
+type CanvasAndContext = {
+  canvas: { width: number; height: number } | null;
+  context: unknown;
+};
+
+/** pdf.js's CanvasFactory contract (create, reset, destroy, getNoAlphaContext) on the canvas package. */
+export function canvasFactoryFor(canvas: Canvas): new () => object {
+  type Ctx2d = { getContext: (kind: '2d') => unknown };
+  return class {
+    create(width: number, height: number): CanvasAndContext {
+      if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
+      const c = canvas.createCanvas(width, height);
+      return { canvas: c, context: c.getContext('2d') };
+    }
+    getNoAlphaContext(c: Ctx2d): unknown {
+      return c.getContext('2d');
+    }
+    reset(cc: CanvasAndContext, width: number, height: number): void {
+      if (!cc.canvas) throw new Error('Canvas is not specified');
+      if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
+      cc.canvas.width = width;
+      cc.canvas.height = height;
+    }
+    destroy(cc: CanvasAndContext): void {
+      if (!cc.canvas) throw new Error('Canvas is not specified');
+      cc.canvas.width = cc.canvas.height = 0;
+      cc.canvas = null;
+      cc.context = null;
+    }
+  };
+}
+
+/** SVG, BMP and ICO to PNG in process, scaled down to MAX_RASTER_SIDE when larger. */
 export async function rasterizeInProcess(
   data: Buffer,
   ext: string,
@@ -31,8 +77,14 @@ export async function rasterizeInProcess(
   try {
     const img = await canvas.loadImage(data);
     if (!(img.width > 0 && img.height > 0)) return null;
-    const c = canvas.createCanvas(img.width, img.height);
-    c.getContext('2d').drawImage(img, 0, 0);
+    const scale = Math.min(
+      1,
+      MAX_RASTER_SIDE / Math.max(img.width, img.height),
+    );
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const c = canvas.createCanvas(w, h);
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
     return Buffer.from(await c.encode('png'));
   } catch {
     return null;
