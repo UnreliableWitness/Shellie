@@ -339,9 +339,16 @@ export async function removeSource(
   await withBrainGit(brainDir, async () => {
     // The state must be writable before anything is deleted: a broken state.json stops the removal, not halfway.
     const { error } = await readState(brainDir);
-    if (error) throw new Error(error);
+    if (error && !error.includes('ENOENT')) throw new Error(error);
     // Only paths git tracks can be staged as deletions; a file never committed just goes.
-    const trackedFiles = (await git.run(brainDir, ['ls-files', '--', ...paths]))
+    const trackedFiles = (
+      await git.run(brainDir, [
+        '--literal-pathspecs',
+        'ls-files',
+        '--',
+        ...paths,
+      ])
+    )
       .split('\n')
       .filter(Boolean);
     for (const p of paths)
@@ -354,8 +361,15 @@ export async function removeSource(
       return { ...s, captured };
     });
     const staged = [...trackedFiles, 'brain/state.json'];
-    await git.run(brainDir, ['add', '-A', '--', ...staged]);
     await git.run(brainDir, [
+      '--literal-pathspecs',
+      'add',
+      '-A',
+      '--',
+      ...staged,
+    ]);
+    await git.run(brainDir, [
+      '--literal-pathspecs',
       'commit',
       '-q',
       '-m',

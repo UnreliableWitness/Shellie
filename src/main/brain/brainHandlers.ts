@@ -211,11 +211,18 @@ export async function verifyPage(
     const current = /^verified:[ \t]*(.*?)[ \t]*$/m.exec(m[1])?.[1];
     if (next === text || current === day) return day;
     const dirty = (
-      await git.run(brainDir, ['status', '--porcelain', '--', rel])
+      await git.run(brainDir, [
+        '--literal-pathspecs',
+        'status',
+        '--porcelain',
+        '--',
+        rel,
+      ])
     ).trim();
     if (dirty) {
-      await git.run(brainDir, ['add', '--', rel]);
+      await git.run(brainDir, ['--literal-pathspecs', 'add', '--', rel]);
       await git.run(brainDir, [
+        '--literal-pathspecs',
         'commit',
         '-q',
         '-m',
@@ -225,8 +232,9 @@ export async function verifyPage(
       ]);
     }
     await fs.writeFile(file, next, 'utf8');
-    await git.run(brainDir, ['add', '--', rel]);
+    await git.run(brainDir, ['--literal-pathspecs', 'add', '--', rel]);
     await git.run(brainDir, [
+      '--literal-pathspecs',
       'commit',
       '-q',
       '-m',

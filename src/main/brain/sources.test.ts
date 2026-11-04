@@ -596,3 +596,30 @@ describe('removeSource after review', () => {
     );
   });
 });
+
+describe('removeSource without a state file', () => {
+  it('recreates brain/state.json and commits', async () => {
+    const git = new GitClient();
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove3-')),
+    );
+    const dir = path.join(root, 'brain');
+    try {
+      await scaffoldBrain(git, dir, 'Acme');
+      const r = await addSource(
+        git,
+        dir,
+        { text: 'gone', title: 'Gone' },
+        'note',
+      );
+      if (!r.ok) throw new Error(r.message);
+      await git.run(dir, ['rm', '-q', '--', 'brain/state.json']);
+      await git.run(dir, ['commit', '-q', '-m', 'no state']);
+      await removeSource(git, dir, r.path);
+      expect((await readState(dir)).state).not.toBeNull();
+      expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});

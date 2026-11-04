@@ -5,8 +5,11 @@ import { withBrainGit } from './gitMutex';
 
 /** Shorter than this would redact half the brain by accident. */
 export const SCRUB_MIN_LENGTH = 6;
-/** One token for text and for names, so a renamed file still matches the links and state keys that name it. */
-export const REDACTED = '[REDACTED]';
+/**
+ * One token for text and for names, so a renamed file still matches the links and state keys that name it. No
+ * brackets: git reads `[…]` in a pathspec as a glob.
+ */
+export const REDACTED = 'REDACTED';
 /** The message of the commit that saves a person's edit before the scrub touches the file (Health keeps listing it). */
 export const OUTSIDE_EDIT_MESSAGE = 'Edited outside a capture';
 /** Text files of a brain; pictures and originals in binary formats are left alone. */
@@ -97,6 +100,7 @@ async function renameAll(
         from = `${r.to}${from.slice(r.from.length)}`;
     const dir = path.posix.dirname(from);
     const base = path.posix.basename(from).split(value).join(REDACTED);
+    if (base === path.posix.basename(from)) continue;
     const to = await freeName(brainDir, `${dir}/${base}`);
     await fs.rename(abs(brainDir, from), abs(brainDir, to));
     out.push({ from, to });
@@ -120,7 +124,9 @@ async function tracked(
   paths: string[],
 ): Promise<string[]> {
   if (!paths.length) return [];
-  return (await git.run(brainDir, ['ls-files', '--', ...paths]))
+  return (
+    await git.run(brainDir, ['--literal-pathspecs', 'ls-files', '--', ...paths])
+  )
     .split('\n')
     .filter(Boolean);
 }
@@ -131,6 +137,7 @@ async function dirtyWiki(
   brainDir: string,
 ): Promise<Set<string>> {
   const status = await git.run(brainDir, [
+    '--literal-pathspecs',
     'status',
     '--porcelain',
     '-uall',
@@ -180,8 +187,15 @@ export async function scrubBrain(
       if (next !== text) planned.push({ rel, next });
     }
     // A person's uncommitted wiki edit among the files about to change is saved as their own commit first.
-    const wasDirty = (p: string) =>
-      dirty.has(p) || renames.some((r) => r.to === p && dirty.has(r.from));
+    // A dirty path as it is called now: a file inside a renamed folder moved with the folder.
+    const moved = (p: string) => {
+      for (const r of renames)
+        if (p === r.from || p.startsWith(`${r.from}/`))
+          return `${r.to}${p.slice(r.from.length)}`;
+      return p;
+    };
+    const dirtyNow = new Set([...dirty].map(moved));
+    const wasDirty = (p: string) => dirtyNow.has(p);
     const outside = [
       ...new Set([...planned.map((p) => p.rel), ...renames.map((r) => r.to)]),
     ].filter((p) => p.startsWith('wiki/') && wasDirty(p));
@@ -191,8 +205,16 @@ export async function scrubBrain(
         brainDir,
         renames.filter((r) => outside.includes(r.to)).map((r) => r.from),
       );
-      await git.run(brainDir, ['add', '-A', '--', ...outside, ...old]);
       await git.run(brainDir, [
+        '--literal-pathspecs',
+        'add',
+        '-A',
+        '--',
+        ...outside,
+        ...old,
+      ]);
+      await git.run(brainDir, [
+        '--literal-pathspecs',
         'commit',
         '-q',
         '-m',
@@ -224,8 +246,15 @@ export async function scrubBrain(
       ]),
     ];
     if (!paths.length) return { files: 0, skipped };
-    await git.run(brainDir, ['add', '-A', '--', ...paths]);
+    await git.run(brainDir, [
+      '--literal-pathspecs',
+      'add',
+      '-A',
+      '--',
+      ...paths,
+    ]);
     const status = await git.run(brainDir, [
+      '--literal-pathspecs',
       'status',
       '--porcelain',
       '--',
@@ -233,6 +262,7 @@ export async function scrubBrain(
     ]);
     if (status.trim())
       await git.run(brainDir, [
+        '--literal-pathspecs',
         'commit',
         '-q',
         '-m',

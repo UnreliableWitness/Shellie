@@ -54,13 +54,11 @@ describe('scrubBrain', () => {
     const r = await scrubBrain(git, dir, secret);
     expect(r).toEqual({ files: 4, skipped: 0 });
     expect(await read('sources/2026-11-04-notes.md')).toBe(
-      'Use [REDACTED] here.\n',
+      'Use REDACTED here.\n',
     );
-    expect(await read('sources/2026-11-04-notes.txt')).toBe(
-      'url?p=[REDACTED]\n',
-    );
-    expect(await read('wiki/account.md')).toBe('b64 [REDACTED] end\n');
-    expect(await read('log.md')).toBe('# Log\n\n- [REDACTED]\n');
+    expect(await read('sources/2026-11-04-notes.txt')).toBe('url?p=REDACTED\n');
+    expect(await read('wiki/account.md')).toBe('b64 REDACTED end\n');
+    expect(await read('log.md')).toBe('# Log\n\n- REDACTED\n');
     expect(await read('sources/pic.png')).toBe(secret);
     expect(await subjects(1)).toEqual(['Brain: scrub']);
     // The hand edit of another file stays uncommitted: the scrub commit holds only what it changed.
@@ -93,8 +91,8 @@ describe('scrubBrain', () => {
       skipped: 0,
     });
     expect(await subjects(2)).toEqual(['Brain: scrub', OUTSIDE_EDIT_MESSAGE]);
-    expect(await read('wiki/h.md')).toBe('committed\nhand-added [REDACTED]\n');
-    expect(await read('wiki/newpage.md')).toBe('new page with [REDACTED]\n');
+    expect(await read('wiki/h.md')).toBe('committed\nhand-added REDACTED\n');
+    expect(await read('wiki/newpage.md')).toBe('new page with REDACTED\n');
     const h = await brainHealth(dir, git, { tokens: 0, costEur: 0 }, false);
     expect(h.outsideEdits).toEqual([
       'wiki/h.md',
@@ -125,9 +123,9 @@ describe('scrubBrain', () => {
       files: 5,
       skipped: 0,
     });
-    const renamed = 'sources/2026-11-04-[REDACTED]';
+    const renamed = 'sources/2026-11-04-REDACTED';
     expect(await read(`${renamed}.md`)).toBe(
-      '# Notes\n\n![p](2026-11-04-[REDACTED]-assets/p.png)\n',
+      '# Notes\n\n![p](2026-11-04-REDACTED-assets/p.png)\n',
     );
     expect(await read(`${renamed}.pdf`)).toBe('binary');
     expect(await read(`${renamed}-assets/p.png`)).toBe('png');
@@ -147,15 +145,15 @@ describe('scrubBrain', () => {
     await write('wiki/precious.md', `holds ${secret}\n`);
     await fs.rename(
       path.join(dir, 'wiki', 'x-redacted.md'),
-      path.join(dir, 'wiki', 'x-[REDACTED].md'),
+      path.join(dir, 'wiki', 'x-REDACTED.md'),
     );
     await commit('Brain: sync');
     expect(await scrubBrain(git, dir, secret)).toEqual({
       files: 2,
       skipped: 0,
     });
-    expect(await read('wiki/x-[REDACTED].md')).toBe('precious\n');
-    expect(await read('wiki/x-[REDACTED]-2.md')).toBe('first\n');
+    expect(await read('wiki/x-REDACTED.md')).toBe('precious\n');
+    expect(await read('wiki/x-REDACTED-2.md')).toBe('first\n');
     expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
     await write('sources/big.vtt', `${'a'.repeat(21 * 1024 * 1024)} ${secret}`);
     expect(await scrubBrain(git, dir, secret)).toEqual({
@@ -174,5 +172,56 @@ describe('scrubBrain', () => {
       'plainvalue1',
       Buffer.from('plainvalue1').toString('base64'),
     ]);
+  });
+});
+
+describe('scrubBrain after the second review', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-scrub2-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const write = async (rel: string, text: string) => {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), text);
+  };
+  const commit = async (message: string) => {
+    await git.run(dir, ['add', '-A']);
+    await git.run(dir, ['commit', '-q', '-m', message]);
+  };
+
+  it('never sweeps an unrelated file in through a glob, keeps a dirty file inside a renamed folder an outside edit, and leaves a name already redacted alone', async () => {
+    const secret = 'hunter2hunter2';
+    await write(`wiki/${secret}dir/inner.md`, 'committed\n');
+    await write('wiki/other.md', 'other\n');
+    await write('wiki/REDACTEDx.md', 'already\n');
+    await commit('Brain: sync');
+    await write(`wiki/${secret}dir/inner.md`, `edited by hand ${secret}\n`);
+    await write('sources/2026-11-04-D.md', 'unrelated, never committed\n');
+    await write(`sources/2026-11-04-${secret}.md`, 'x\n');
+    await scrubBrain(git, dir, secret);
+    expect(
+      await fs.readFile(
+        path.join(dir, 'wiki', 'REDACTEDdir', 'inner.md'),
+        'utf8',
+      ),
+    ).toBe('edited by hand REDACTED\n');
+    const h = await brainHealth(dir, git, { tokens: 0, costEur: 0 }, false);
+    expect(h.outsideEdits).toContain('wiki/REDACTEDdir/inner.md');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe(
+      '?? sources/2026-11-04-D.md',
+    );
+    expect(await fs.readdir(path.join(dir, 'wiki'))).toContain('REDACTEDx.md');
+    expect(await fs.readdir(path.join(dir, 'wiki'))).not.toContain(
+      'REDACTEDx-2.md',
+    );
   });
 });

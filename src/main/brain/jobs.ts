@@ -173,7 +173,10 @@ export class BrainJobRunner {
   dropQueued(brainId: string, source: string): number {
     const l = this.lane(brainId);
     const gone = l.queue.filter(
-      (j) => j.status === 'queued' && j.source === source && j !== l.current,
+      (j) =>
+        (j.status === 'queued' || j.status === 'paused') &&
+        j.source === source &&
+        j !== l.current,
     );
     if (!gone.length) return 0;
     l.queue = l.queue.filter((j) => !gone.includes(j));

@@ -386,3 +386,15 @@ describe('dropQueued', () => {
     await idle(r, 'b');
   });
 });
+
+describe('dropQueued and paused jobs', () => {
+  it('drops a job paused at the cap too', async () => {
+    dirs = { b: await mk('b') };
+    tokens = 1_000_000;
+    const r = runner();
+    r.enqueue('b', 'capture', 'sources/going.md');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('paused'));
+    expect(r.dropQueued('b', 'sources/going.md')).toBe(1);
+    expect(r.jobs('b')).toEqual([]);
+  });
+});

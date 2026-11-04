@@ -330,7 +330,7 @@ describe('brain handlers', () => {
       files: 1,
       skipped: 0,
     });
-    expect((await h['brain:read'](v.id, r.path)).text).toContain('[REDACTED]');
+    expect((await h['brain:read'](v.id, r.path)).text).toContain('REDACTED');
   });
 
   it('an archived brain refuses sources, jobs and refreshes until restored, and is no task brain', async () => {
