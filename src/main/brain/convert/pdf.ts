@@ -1,10 +1,17 @@
 import { encodePng, type PixelKind } from './png';
-import { ImageCollector, type Converted } from './types';
+import { loadCanvas } from './raster';
+import { ImageCollector, type ConvertOptions, type Converted } from './types';
 
 const TEXT_THRESHOLD = 20;
 /** Bullets, rules and icons: not worth a look. */
 const MIN_IMAGE_SIDE = 48;
 const MAX_PIXELS = 25_000_000;
+/** A page with this many drawn paths covering this share of the page carries a drawing, not rules or a logo. */
+const DRAWING_MIN_PATHS = 8;
+const DRAWING_MIN_AREA = 0.05;
+/** Most pages rendered per PDF, and the longer side of a render. */
+export const MAX_PAGE_RENDERS = 20;
+const RENDER_SIDE = 1600;
 
 /** pdf.js ImageKind values. */
 const KIND: Record<number, PixelKind> = { 1: 'gray1', 2: 'rgb', 3: 'rgba' };
@@ -63,7 +70,58 @@ async function imageOf(page: Page, arg: unknown): Promise<PdfImage | null> {
   return img && img.data && img.width > 0 && img.height > 0 ? img : null;
 }
 
-export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
+type OperatorList = Awaited<ReturnType<Page['getOperatorList']>>;
+
+/** Whether the page's paths add up to a drawing: enough of them, covering enough of the page. */
+export function hasDrawing(
+  ops: OperatorList,
+  constructPath: number,
+  pageArea: number,
+): boolean {
+  let paths = 0;
+  let area = 0;
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    if (ops.fnArray[i] !== constructPath) continue;
+    paths++;
+    // The third argument is the path's bounding box [minX, minY, maxX, maxY].
+    const box = ops.argsArray[i]?.[2] as ArrayLike<number> | undefined;
+    if (box && box.length >= 4) {
+      area += Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]);
+    }
+  }
+  return (
+    paths >= DRAWING_MIN_PATHS &&
+    pageArea > 0 &&
+    Math.min(area, pageArea) / pageArea >= DRAWING_MIN_AREA
+  );
+}
+
+/** Renders the page to PNG bytes with the canvas package; null when it is not available. */
+async function renderPage(page: Page): Promise<Buffer | null> {
+  const canvas = await loadCanvas();
+  if (!canvas) return null;
+  const base = page.getViewport({ scale: 1 });
+  const scale = RENDER_SIDE / Math.max(base.width, base.height, 1);
+  const viewport = page.getViewport({ scale });
+  const c = canvas.createCanvas(
+    Math.ceil(viewport.width),
+    Math.ceil(viewport.height),
+  );
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  await page.render({
+    canvas: c as unknown as HTMLCanvasElement,
+    canvasContext: ctx as unknown as CanvasRenderingContext2D,
+    viewport,
+  }).promise;
+  return Buffer.from(await c.encode('png'));
+}
+
+export async function pdfToMarkdown(
+  buf: Uint8Array,
+  opts: ConvertOptions = {},
+): Promise<Converted> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   // Once bundled there is no pdf.worker.mjs file next to the main bundle for the
   // in-process "fake worker" to load, so hand pdf.js the worker module directly.
@@ -84,10 +142,13 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
   try {
     const doc = await task.promise;
     const sections: string[] = [];
-    const images = new ImageCollector();
+    const images = new ImageCollector(opts.rasterize);
     // Object reference (or name) -> markdown path, so an image painted on several pages is stored once.
     const seen = new Map<string, string | null>();
     let total = 0;
+    let renders = 0;
+    let unrendered = 0;
+    let canvasMissing = false;
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n);
       const content = await page.getTextContent();
@@ -106,8 +167,26 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
 
       const refs: string[] = [];
       const ops = await page.getOperatorList();
+      const view = page.getViewport({ scale: 1 });
+      // A page with a drawing is shown as drawn; its own pictures are part of that render.
+      let rendered = false;
+      if (hasDrawing(ops, pdfjs.OPS.constructPath, view.width * view.height)) {
+        if (renders >= MAX_PAGE_RENDERS) unrendered++;
+        else {
+          const png = await renderPage(page);
+          if (!png) canvasMissing = true;
+          else {
+            renders++;
+            const ref = images.add(`p${n}.png`, png);
+            if (ref) {
+              refs.push(`![p.${n} as drawn](${ref})`);
+              rendered = true;
+            }
+          }
+        }
+      }
       let k = 0;
-      for (let i = 0; i < ops.fnArray.length; i++) {
+      for (let i = 0; i < ops.fnArray.length && !rendered; i++) {
         if (!paintOps.has(ops.fnArray[i])) continue;
         const arg = ops.argsArray[i]?.[0];
         const img = await imageOf(page, arg);
@@ -146,6 +225,14 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
     const noText = total < TEXT_THRESHOLD;
     if (noText && images.images.length > 0) {
       images.warn('no text layer; captured from page images');
+    }
+    if (canvasMissing) {
+      images.warn('pages with drawings were not rendered: canvas unavailable');
+    }
+    if (unrendered > 0) {
+      images.warn(
+        `${unrendered} more page${unrendered === 1 ? '' : 's'} with drawings not rendered (limit ${MAX_PAGE_RENDERS})`,
+      );
     }
     return {
       markdown: sections.join('\n\n') + '\n',

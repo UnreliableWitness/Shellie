@@ -1,0 +1,43 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 701 >>
+stream
+BT /F1 18 Tf 72 740 Td (Target architecture) Tj ET 2 w 72 500 120 60 re S BT /F1 12 Tf 82 525 Td (Web App) Tj ET 272 500 120 60 re S BT /F1 12 Tf 282 525 Td (API Gateway) Tj ET 472 500 120 60 re S BT /F1 12 Tf 482 525 Td (Orders) Tj ET 272 350 120 60 re S BT /F1 12 Tf 282 375 Td (Billing) Tj ET 472 350 120 60 re S BT /F1 12 Tf 482 375 Td (Postgres) Tj ET 192 530 m 272 530 l S 266 524 m 272 530 l 266 536 l S 392 530 m 472 530 l S 466 524 m 472 530 l 466 536 l S 332 500 m 332 410 l S 326 404 m 332 410 l 326 416 l S 392 380 m 472 380 l S 466 374 m 472 380 l 466 386 l S 532 410 m 532 500 l S 526 494 m 532 500 l 526 506 l S BT /F1 10 Tf 200 540 Td (HTTPS) Tj ET BT /F1 10 Tf 400 540 Td (REST) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 92 >>
+stream
+BT /F1 12 Tf 72 700 Td (Plain page with one rule below the title) Tj ET 72 690 m 300 690 l S
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000191 00000 n 
+0000000317 00000 n 
+0000001069 00000 n 
+0000001195 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1337
+%%EOF

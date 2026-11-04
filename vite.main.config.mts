@@ -10,7 +10,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ['node-pty'],
+      external: ['node-pty', '@napi-rs/canvas'],
     },
   },
 });

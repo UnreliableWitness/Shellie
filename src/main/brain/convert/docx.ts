@@ -1,9 +1,9 @@
 import mammoth from 'mammoth';
 import {
   ImageCollector,
-  VIEWABLE,
   firstHeading,
   imageExt,
+  type ConvertOptions,
   type Converted,
 } from './types';
 
@@ -14,8 +14,11 @@ const toMarkdown = (
   }
 ).convertToMarkdown;
 
-export async function docxToMarkdown(buf: Buffer): Promise<Converted> {
-  const images = new ImageCollector();
+export async function docxToMarkdown(
+  buf: Buffer,
+  opts: ConvertOptions = {},
+): Promise<Converted> {
+  const images = new ImageCollector(opts.rasterize);
   // mammoth escapes markdown punctuation in the src it writes, so it gets a bare token per picture.
   const refs: string[] = [];
   let result: Awaited<ReturnType<typeof toMarkdown>>;
@@ -25,14 +28,10 @@ export async function docxToMarkdown(buf: Buffer): Promise<Converted> {
       {
         // Each picture goes to the assets folder; the markdown keeps an image link in place.
         convertImage: mammoth.images.imgElement(async (image) => {
-          const ext = imageExt(image.contentType ?? '');
-          if (!VIEWABLE.has(ext)) {
-            images.skip(ext);
-            return { src: '' };
-          }
-          const ref = images.add(
-            `image-${refs.length + 1}.${ext}`,
+          const ref = await images.addAny(
+            `image-${refs.length + 1}`,
             Buffer.from(await image.readAsBuffer()),
+            imageExt(image.contentType ?? ''),
           );
           if (!ref) return { src: '' };
           refs.push(ref);

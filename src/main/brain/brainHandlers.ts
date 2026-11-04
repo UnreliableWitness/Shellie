@@ -33,6 +33,7 @@ import {
   scaffoldBrain,
   templateDiff,
 } from './scaffold';
+import type { Rasterize } from './convert';
 import { addSource, listSources } from './sources';
 import { acquireLock, readState, releaseLock } from './state';
 import { TEMPLATES_VERSION } from './templates';
@@ -69,6 +70,8 @@ export type BrainRunner = Pick<
 
 export type BrainHandlerDeps = {
   brains: BrainStore;
+  /** Converts pictures in formats Claude cannot view (createRasterizer); absent in tests. */
+  rasterize?: Rasterize;
   git: GitClient;
   runner: BrainRunner;
   /** The brain's Claude terminal (main); absent in tests that do not open one. */
@@ -347,7 +350,14 @@ export function createBrainHandlers(
       const out: AddSourceResult[] = [];
       for (const f of files) {
         const type = SourceTypeSchema.parse(f.type);
-        const r = await addSource(d.git, b.path, { file: f.path }, type);
+        const r = await addSource(
+          d.git,
+          b.path,
+          { file: f.path },
+          type,
+          undefined,
+          { rasterize: d.rasterize },
+        );
         const bytes = await fs.stat(f.path).then(
           (s) => s.size,
           () => 0,

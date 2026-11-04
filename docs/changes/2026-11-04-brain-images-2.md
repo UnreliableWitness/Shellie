@@ -1,0 +1,22 @@
+# Brain: drawn PDF pages, other picture formats and layout pictures
+
+Spec: `docs/superpowers/specs/2026-11-04-brain-images-2-design.md`. Closes the known gaps of `2026-11-04-brain-images.md`: vector drawings inside PDFs, pictures in EMF/WMF/TIFF/BMP/SVG, pictures on slide layouts and masters, and nested alternate content.
+
+## What changed
+
+- **Canvas.** `@napi-rs/canvas` (prebuilt N-API binaries, no system dependencies, exact version) is a runtime dependency, external to the Vite main bundle like node-pty: `tools/forge/packageFilter.mjs` keeps the package's JS and the target platform's binding package (`canvasBindingPackage`), `forge.config.mts` unpacks it from asar, and the packaged-app smoke check (`src/main/smoke.ts`, run by CI on macOS and Windows) now also loads it and encodes a PNG, so a build where the binary cannot load fails CI. `convert/raster.ts` loads it lazily (`loadCanvas`); when it is missing, page rendering and in-process rasterising are skipped with one warning on the source.
+- **PDF pages with drawings** (`convert/pdf.ts`): a page whose operator list has at least 8 `constructPath` operations whose bounding boxes cover at least 5 % of the page is rendered with pdf.js at a scale that makes the longer side 1600 px and stored as `p<n>.png`, linked `![p.<n> as drawn]` after the page's text; the page's own pictures are then not extracted separately. Rules, underlines and a vector logo fall under the threshold; a diagram or a filled table is above it. At most 20 pages per PDF are rendered, in page order, with a warning for the rest.
+- **Other picture formats**: `ImageCollector.addAny` takes any format and sends non-viewable ones through a `rasterize` hook. The app's hook (`createRasterizer`) converts SVG, BMP and ICO in process through the canvas, and EMF, WMF, TIFF and BMP through the platform's own tool with temp files: `Platform.rasterizeCommand` is PowerShell with `System.Drawing` on Windows (the release target) and `sips` on macOS, where EMF and WMF stay unconverted. The hook never throws; a failed conversion is counted in the existing "formats Claude cannot view" warning. The hook reaches the converters through `addSource`'s new `convert` options from the brain handlers.
+- **Layout and master pictures** (`convert/pptx.ts`): the pictures of each distinct layout and master the slides use are extracted once (`layout-<k>`) into a final `## Slide layouts and master` section, so a template's logo or background is seen once rather than on every slide.
+- **Nested alternate content**: the resolver now replaces innermost `mc:AlternateContent` blocks first, repeating until none is left.
+
+## Verified
+
+`npm test` (3468 tests), `npm run typecheck`, `npm run lint` green. New tests: a fixture PDF with a drawn diagram (page 1 rendered at 1600 px, page 2 with a single rule not rendered), a 22-page fixture for the render cap, the rasterize hook with a fake in PPTX and DOCX, in-process SVG and BMP through the real canvas (read back through the canvas, since its encoder filters rows), the platform fallback through temp files with cleanup and on failure, the Windows and macOS command shapes, layout and master pictures once each, nested alternate content, `keepInPackage` for the canvas packages per target, and the smoke check failing without the canvas. Live, GUI-free: the drawn-diagram PDF and a deck whose only picture is an SVG went through `addSource` with the real rasterizer and the real headless `/capture` on a fresh brain; Claude named every box and line of both diagrams, including the legend of the SVG and the hub role of one component. The packaged build is checked by CI's smoke step on both platforms.
+
+## Known gaps
+
+- EMF and WMF are converted on Windows only; on macOS they are reported, not converted.
+- Page rendering costs tokens at capture (a 1600 px page is a few thousand tokens); a long document with a drawing on every page renders 20 pages and warns about the rest.
+- A diagram drawn with fewer than 8 paths, or a tiny one, is not rendered; its text labels still reach the page.
+- The canvas binding is per platform and architecture; `canvasBindingPackage` knows macOS, Windows and Linux on x64 and arm64.

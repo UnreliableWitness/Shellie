@@ -10,6 +10,7 @@ import type { GitClient } from '../services/GitClient';
 import {
   ASSETS_PLACEHOLDER,
   convertFile,
+  type ConvertOptions,
   type ConvertedImage,
 } from './convert';
 import { withBrainGit } from './gitMutex';
@@ -62,6 +63,7 @@ export async function addSource(
   input: AddSourceInput,
   type: SourceType,
   now: () => Date = () => new Date(),
+  convert: ConvertOptions = {},
 ): Promise<AddSourceResult> {
   let title: string;
   let sourceUrl: string;
@@ -77,7 +79,7 @@ export async function addSource(
     const ext = path.extname(base);
     let converted;
     try {
-      converted = await convertFile(input.file);
+      converted = await convertFile(input.file, convert);
     } catch (e) {
       return {
         ok: false,

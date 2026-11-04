@@ -37,6 +37,11 @@ export function darwinPlatform(env: NodeJS.ProcessEnv): Platform {
           ...cmds.flatMap((c) => [`printf '%s\\n' ${shellQuote(`$ ${c}`)}`, c]),
         ].join('\n'),
       ]),
+    // sips reads TIFF, BMP and GIF (not EMF or WMF).
+    rasterizeCommand: (src, dest) =>
+      /\.(tiff?|bmp|gif)$/i.test(src)
+        ? { command: 'sips', args: ['-s', 'format', 'png', src, '--out', dest] }
+        : null,
     cloneDir: (src, dest) => ({
       command: '/usr/bin/osascript',
       args: ['-l', 'JavaScript', '-e', CLONE_DIR, src, dest],

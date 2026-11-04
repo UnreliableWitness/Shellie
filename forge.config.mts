@@ -28,7 +28,9 @@ const config: ForgeConfig = {
     // unpacked: its .node binaries, spawn-helper (macOS), the conpty worker script, conpty.dll,
     // OpenConsole.exe (Windows) have to exist on disk.
     // Packaging targets the host platform and arch (see keepInPackage).
-    asar: { unpack: '**/node_modules/node-pty/**' },
+    // @napi-rs/canvas (PDF page rendering and picture conversion for the brain) is external too: its
+    // .node binary must be on disk as well.
+    asar: { unpack: '{**/node_modules/node-pty/**,**/node_modules/@napi-rs/**}' },
     ignore: (file: string) => !keepInPackage(file),
     executableName: 'Shellie',
     icon: 'assets/icon/shellie',

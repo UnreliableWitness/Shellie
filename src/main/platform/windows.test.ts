@@ -51,6 +51,19 @@ describe('windowsPlatform', () => {
     );
   });
 
+  it('converts EMF, WMF, TIFF and BMP pictures with System.Drawing', () => {
+    const p = make({});
+    const cmd = p.rasterizeCommand?.('C:\\t\\a b.emf', 'C:\\t\\a b.png');
+    expect(cmd?.command).toBe('powershell.exe');
+    const script = cmd?.args[cmd.args.length - 1] ?? '';
+    expect(script).toContain('Add-Type -AssemblyName System.Drawing');
+    expect(script).toContain("FromFile('C:\\t\\a b.emf')");
+    expect(script).toContain("Save('C:\\t\\a b.png'");
+    expect(p.rasterizeCommand?.('C:\\t\\x.wmf', 'C:\\t\\x.png')).not.toBeNull();
+    expect(p.rasterizeCommand?.('C:\\t\\x.tif', 'C:\\t\\x.png')).not.toBeNull();
+    expect(p.rasterizeCommand?.('C:\\t\\x.svg', 'C:\\t\\x.png')).toBeNull();
+  });
+
   it('prefers pwsh and falls back to Windows PowerShell', () => {
     expect(make({ pwsh: 'C:\\pwsh\\pwsh.exe' }).interactiveShell()).toEqual({
       command: 'C:\\pwsh\\pwsh.exe',

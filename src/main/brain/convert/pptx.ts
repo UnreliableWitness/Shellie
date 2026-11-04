@@ -1,5 +1,10 @@
 import JSZip from 'jszip';
-import { ImageCollector, VIEWABLE, imageExt, type Converted } from './types';
+import {
+  ImageCollector,
+  imageExt,
+  type ConvertOptions,
+  type Converted,
+} from './types';
 
 function decode(s: string): string {
   return s
@@ -152,6 +157,9 @@ function chartOf(chartXml: string): string[] {
 
 type SlideCtx = {
   n: number;
+  /** Start of the stored file names (`slide-3`, `layout-1`) and of the default alt text. */
+  stem: string;
+  label: string;
   dir: string;
   rels: Rel[];
   read: (p: string) => Promise<string | null>;
@@ -173,27 +181,20 @@ async function pictureOf(ctx: SlideCtx, xml: string): Promise<string[]> {
   const descr = first(xml, /<p:cNvPr\s[^>]*\bdescr="([^"]*)"/);
   const alt = descr ? decode(descr).trim() : '';
   const ext = imageExt(mediaPath);
-  if (!VIEWABLE.has(ext)) {
-    ctx.images.skip(ext);
-    return [
-      `_Picture ${k} (${ext || 'unknown format'}) could not be extracted_`,
-    ];
-  }
   if (!ctx.media.has(mediaPath)) {
     const data = await ctx.readBinary(mediaPath);
     ctx.media.set(
       mediaPath,
-      data
-        ? ctx.images.add(
-            `slide-${ctx.n}-${k}.${ext === 'jpeg' ? 'jpg' : ext}`,
-            data,
-          )
-        : null,
+      data ? await ctx.images.addAny(`${ctx.stem}-${k}`, data, ext) : null,
     );
   }
   const ref = ctx.media.get(mediaPath);
-  if (!ref) return [];
-  return [`![${alt || `Slide ${ctx.n} picture ${k}`}](${ref})`];
+  if (!ref) {
+    return ctx.images.lastSkipped === ext
+      ? [`_Picture ${k} (${ext || 'unknown format'}) could not be extracted_`]
+      : [];
+  }
+  return [`![${alt || `${ctx.label} picture ${k}`}](${ref})`];
 }
 
 async function graphicFrameOf(ctx: SlideCtx, xml: string): Promise<string[]> {
@@ -224,16 +225,59 @@ const READABLE = /<p:(sp|pic)[\s>]|<a:tbl[\s>]|<dgm:relIds[\s>]|<c:chart[\s>]/;
  * while its Fallback holds the preview picture.
  */
 function resolveAlternateContent(xml: string): string {
-  return xml.replace(
-    /<mc:AlternateContent[\s>][\s\S]*?<\/mc:AlternateContent>/g,
-    (whole) => {
+  // Innermost blocks first (a block whose body holds no other block), until none is left.
+  const inner =
+    /<mc:AlternateContent[\s>](?:(?!<mc:AlternateContent)[\s\S])*?<\/mc:AlternateContent>/g;
+  let out = xml;
+  for (let guard = 0; guard < 50 && inner.test(out); guard++) {
+    inner.lastIndex = 0;
+    out = out.replace(inner, (whole) => {
       const choice =
         first(whole, /<mc:Choice[\s>][\s\S]*?>([\s\S]*?)<\/mc:Choice>/) ?? '';
       const fallback =
         first(whole, /<mc:Fallback>([\s\S]*?)<\/mc:Fallback>/) ?? '';
       return READABLE.test(choice) ? choice : fallback;
-    },
-  );
+    });
+    inner.lastIndex = 0;
+  }
+  return out;
+}
+
+/** Pictures on a layout or master part, once each (`layout-<k>`), as markdown lines. */
+async function layoutPictures(
+  ctx: Omit<SlideCtx, 'n' | 'stem' | 'label' | 'dir' | 'rels' | 'pictures'>,
+  part: string,
+  count: { k: number },
+): Promise<string[]> {
+  const xml = (await ctx.read(part)) ?? '';
+  const dir = part.slice(0, part.lastIndexOf('/'));
+  const file = part.slice(part.lastIndexOf('/') + 1);
+  const rels = parseRels((await ctx.read(`${dir}/_rels/${file}.rels`)) ?? '');
+  const out: string[] = [];
+  for (const m of resolveAlternateContent(xml).matchAll(
+    /<p:pic[\s>][\s\S]*?<\/p:pic>/g,
+  )) {
+    const rid = first(m[0], /<a:blip\s[^>]*\br:embed="([^"]*)"/);
+    const rel = rid ? rels.find((r) => r.id === rid) : undefined;
+    if (!rel || rel.mode === 'External') continue;
+    const mediaPath = resolve(dir, rel.target);
+    if (ctx.media.has(mediaPath)) continue;
+    const data = await ctx.readBinary(mediaPath);
+    if (!data) continue;
+    count.k++;
+    const ref = await ctx.images.addAny(
+      `layout-${count.k}`,
+      data,
+      imageExt(mediaPath),
+    );
+    ctx.media.set(mediaPath, ref);
+    if (!ref) continue;
+    const descr = first(m[0], /<p:cNvPr\s[^>]*\bdescr="([^"]*)"/);
+    out.push(
+      `![${descr ? decode(descr).trim() : `Layout picture ${count.k}`}](${ref})`,
+    );
+  }
+  return out;
 }
 
 async function slideLines(ctx: SlideCtx, xml: string): Promise<string[]> {
@@ -249,7 +293,10 @@ async function slideLines(ctx: SlideCtx, xml: string): Promise<string[]> {
   return out;
 }
 
-export async function pptxToMarkdown(buf: Buffer): Promise<Converted> {
+export async function pptxToMarkdown(
+  buf: Buffer,
+  opts: ConvertOptions = {},
+): Promise<Converted> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(buf);
@@ -273,16 +320,34 @@ export async function pptxToMarkdown(buf: Buffer): Promise<Converted> {
     },
   );
 
-  const images = new ImageCollector();
+  const images = new ImageCollector(opts.rasterize);
   const media = new Map<string, string | null>();
   const sections: string[] = [];
+  // Layout and master parts used by the slides, in order of first use.
+  const layoutParts: string[] = [];
   let text = 0;
   for (const [i, slidePath] of slidePaths.entries()) {
     const dir = slidePath.slice(0, slidePath.lastIndexOf('/'));
     const file = slidePath.slice(slidePath.lastIndexOf('/') + 1);
     const rels = parseRels((await read(`${dir}/_rels/${file}.rels`)) ?? '');
+    const layoutRel = rels.find((r) => r.type.endsWith('/slideLayout'));
+    if (layoutRel) {
+      const layout = resolve(dir, layoutRel.target);
+      if (!layoutParts.includes(layout)) layoutParts.push(layout);
+      const ldir = layout.slice(0, layout.lastIndexOf('/'));
+      const lfile = layout.slice(layout.lastIndexOf('/') + 1);
+      const master = parseRels(
+        (await read(`${ldir}/_rels/${lfile}.rels`)) ?? '',
+      ).find((r) => r.type.endsWith('/slideMaster'));
+      if (master) {
+        const m = resolve(ldir, master.target);
+        if (!layoutParts.includes(m)) layoutParts.push(m);
+      }
+    }
     const ctx: SlideCtx = {
       n: i + 1,
+      stem: `slide-${i + 1}`,
+      label: `Slide ${i + 1}`,
       dir,
       rels,
       read,
@@ -300,6 +365,27 @@ export async function pptxToMarkdown(buf: Buffer): Promise<Converted> {
     if (notes) out.push(`_Notes:_ ${notes}`);
     text += lines.join('').length + notes.length;
     sections.push(out.join('\n'));
+  }
+
+  const count = { k: 0 };
+  const layoutLines: string[] = [];
+  for (const part of layoutParts) {
+    layoutLines.push(
+      ...(await layoutPictures(
+        { read, readBinary, images, media },
+        part,
+        count,
+      )),
+    );
+  }
+  if (layoutLines.length) {
+    sections.push(
+      [
+        '## Slide layouts and master',
+        'Pictures that appear on the slide layouts and master (logos, backgrounds), once each.',
+        ...layoutLines,
+      ].join('\n'),
+    );
   }
 
   return {

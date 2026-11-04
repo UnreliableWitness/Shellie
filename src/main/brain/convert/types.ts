@@ -19,12 +19,41 @@ export const VIEWABLE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 /** Most images one source may bring along. */
 export const MAX_IMAGES = 60;
 
+/** Turns a picture in another format into PNG bytes; null when it cannot. Never throws. */
+export type Rasterize = (data: Buffer, ext: string) => Promise<Buffer | null>;
+
+export type ConvertOptions = { rasterize?: Rasterize };
+
 /** Collects a source's images under the cap and remembers what could not be taken. */
 export class ImageCollector {
   readonly images: ConvertedImage[] = [];
   private overCap = 0;
   private readonly unviewable = new Map<string, number>();
   private readonly extra: string[] = [];
+
+  /** The format of the last picture that could not be taken, so a converter can say so in place. */
+  lastSkipped: string | null = null;
+
+  constructor(private readonly rasterize?: Rasterize) {}
+
+  /** Takes a picture in any format: viewable ones as they are, others as PNG through the rasterize hook. */
+  async addAny(
+    stem: string,
+    data: Buffer,
+    ext: string,
+  ): Promise<string | null> {
+    const e = ext.toLowerCase();
+    this.lastSkipped = null;
+    if (VIEWABLE.has(e))
+      return this.add(`${stem}.${e === 'jpeg' ? 'jpg' : e}`, data);
+    const png = this.rasterize ? await this.rasterize(data, e) : null;
+    if (!png) {
+      this.skip(e);
+      this.lastSkipped = e;
+      return null;
+    }
+    return this.add(`${stem}.png`, png);
+  }
 
   /** Takes a viewable image; returns the markdown path to reference it by, or null when the cap is reached. */
   add(name: string, data: Buffer): string | null {

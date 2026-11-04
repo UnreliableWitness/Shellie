@@ -180,6 +180,18 @@ export function windowsPlatform(
         ? null
         : path.win32.join(appData, 'Microsoft', 'UserSecrets', id);
     },
+    // System.Drawing reads EMF, WMF, TIFF and BMP (GDI+), on Windows PowerShell 5.1 and PowerShell 7 alike.
+    rasterizeCommand: (src, dest) =>
+      /\.(emf|wmf|tiff?|bmp)$/i.test(src)
+        ? ps(
+            [
+              'Add-Type -AssemblyName System.Drawing',
+              `$img = [System.Drawing.Image]::FromFile(${psQuote(src)})`,
+              `$img.Save(${psQuote(dest)}, [System.Drawing.Imaging.ImageFormat]::Png)`,
+              '$img.Dispose()',
+            ].join('\n'),
+          )
+        : null,
     editorCommand: (p) => vscode([p]),
     editorGotoCommand: (wt, f, line, col) =>
       vscode([wt, '-g', `${f}:${line ?? 1}:${col ?? 1}`]),

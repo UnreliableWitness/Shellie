@@ -53,6 +53,11 @@ export interface Platform {
   opencodeCommand(base?: string): Command;
   /** Where .NET stores a project's user secrets (`secrets.json` inside); the folder may not exist; null when the home folder is unknown. */
   userSecretsDir(id: string): string | null;
+  /**
+   * Convert a picture file to PNG with the platform's own image tool (`src` and `dest` are absolute paths; `dest`
+   * is written). Null when the platform has no tool for `src`'s format.
+   */
+  rasterizeCommand?(src: string, dest: string): Command | null;
   /** Open a folder in the editor. */
   editorCommand(path: string): Command;
   /** Open a file in the editor at a line (and column), in the worktree's window. */

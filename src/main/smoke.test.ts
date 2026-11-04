@@ -15,6 +15,18 @@ describe('runSmoke', () => {
     expect(ok).toBe(true);
   });
 
+  it('fails when the brain canvas cannot be loaded', async () => {
+    const lines: string[] = [];
+    const ok = await runSmoke({
+      terminals: new TerminalManager(),
+      platform: testPlatform(),
+      log: (l) => lines.push(l),
+      canvas: async () => null,
+    });
+    expect(ok).toBe(false);
+    expect(lines.join('\n')).toMatch(/canvas could not be loaded/);
+  });
+
   it('fails when the command exits non-zero', async () => {
     const p = testPlatform();
     const lines: string[] = [];
