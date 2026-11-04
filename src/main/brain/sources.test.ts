@@ -5,7 +5,8 @@ import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitClient } from '../services/GitClient';
 import { scaffoldBrain } from './scaffold';
-import { addSource, listSources } from './sources';
+import { addSource, listSources, removeSource } from './sources';
+import { readState, writeState } from './state';
 
 const VTT = `WEBVTT
 
@@ -467,5 +468,78 @@ describe('secret scan at drop time', () => {
     expect(f.reason).toBe('secret');
     expect(await listSources(dir, null)).toEqual([]);
     expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+});
+
+describe('removeSource', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('deletes the source, its original and assets, forgets the capture and commits those paths', async () => {
+    const file = path.join(root, 'standup.vtt');
+    await fs.writeFile(
+      file,
+      'WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello from the standup\n',
+    );
+    const r = await addSource(git, dir, { file }, 'transcript');
+    if (!r.ok) throw new Error(r.message);
+    const other = await addSource(
+      git,
+      dir,
+      { text: 'keep', title: 'Keep' },
+      'note',
+    );
+    if (!other.ok) throw new Error(other.message);
+    await writeState(dir, (s) => ({
+      ...s,
+      captured: {
+        [r.path]: { at: 't', sessionId: null },
+        [other.path]: { at: 't', sessionId: null },
+      },
+    }));
+    await fs.writeFile(path.join(dir, 'wiki', 'hand.md'), 'uncommitted\n');
+    await removeSource(git, dir, r.path);
+    const left = (await listSources(dir, (await readState(dir)).state)).map(
+      (s) => s.path,
+    );
+    expect(left).toEqual([other.path]);
+    expect(await fs.readdir(path.join(dir, 'sources'))).not.toContain(
+      path.basename(r.path).replace(/\.md$/, '.vtt'),
+    );
+    expect((await readState(dir)).state?.captured).toEqual({
+      [other.path]: { at: 't', sessionId: null },
+    });
+    expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+      `Brain: remove source ${r.path}`,
+    );
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe(
+      '?? wiki/hand.md',
+    );
+  });
+
+  it('refuses wiki mirror pages, paths outside sources/ and missing sources', async () => {
+    await expect(
+      removeSource(git, dir, 'sources/wiki/Page.md'),
+    ).rejects.toThrow(/wiki mirror/);
+    await expect(removeSource(git, dir, 'wiki/account.md')).rejects.toThrow(
+      /outside the wiki mirror/,
+    );
+    await expect(
+      removeSource(git, dir, 'sources/../SCHEMA.md'),
+    ).rejects.toThrow(/outside the wiki mirror/);
+    await expect(removeSource(git, dir, 'sources/none.md')).rejects.toThrow(
+      /No source/,
+    );
   });
 });

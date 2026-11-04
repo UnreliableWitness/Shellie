@@ -179,3 +179,39 @@ describe('startBrainScheduler', () => {
     stop();
   });
 });
+
+describe('archived brains', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('get no scheduled refresh or digest', async () => {
+    vi.setSystemTime(new Date(2026, 10, 2, 9, 0));
+    const refreshed: string[] = [];
+    const digested: string[] = [];
+    const stop = startBrainScheduler({
+      brains: () => [
+        brain({
+          id: 'archived',
+          wiki,
+          archived: true,
+          options: { weeklyDigest: true } as Brain['options'],
+        }),
+        brain({
+          id: 'live',
+          wiki,
+          options: { weeklyDigest: true } as Brain['options'],
+        }),
+      ],
+      refresh: async (id) => {
+        refreshed.push(id);
+        return { ok: true };
+      },
+      digest: (id) => digested.push(id),
+      running: () => false,
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    stop();
+    expect(refreshed).toEqual(['live']);
+    expect(digested).toEqual(['live']);
+  });
+});

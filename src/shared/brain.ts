@@ -50,6 +50,8 @@ export const BrainSchema = z.object({
   createdAt: z.string(),
   lastRefreshAt: z.string().nullable().default(null),
   lastDigestAt: z.string().nullable().default(null),
+  /** Kept but quiet: out of the nav, no task gets it, no scheduled work, no jobs. Settings lists it for Restore. */
+  archived: z.boolean().default(false),
 });
 export type Brain = z.infer<typeof BrainSchema>;
 
@@ -103,7 +105,19 @@ export const BrainStateSchema = z.object({
 });
 export type BrainState = z.infer<typeof BrainStateSchema>;
 
-export type BrainJobKind = 'capture' | 'sync' | 'lint' | 'digest';
+/** `capture`, `retract` and `lessons` take a source path; the others run on the whole brain. */
+export type BrainJobKind =
+  | 'capture'
+  | 'sync'
+  | 'lint'
+  | 'digest'
+  | 'retract'
+  | 'lessons';
+export const SOURCE_JOB_KINDS: ReadonlySet<BrainJobKind> = new Set([
+  'capture',
+  'retract',
+  'lessons',
+]);
 export type BrainJob = {
   id: string;
   brainId: string;

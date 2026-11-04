@@ -329,3 +329,30 @@ describe('brainJobEnv', () => {
     });
   });
 });
+
+describe('retract and lessons jobs', () => {
+  it('take a source, prompt the matching skill, and a lessons run records the capture', async () => {
+    dirs = { b: await mk('b') };
+    run = async () => ok('sess-1');
+    const r = runner();
+    expect(() => r.enqueue('b', 'retract')).toThrow(/needs a source/);
+    expect(() => r.enqueue('b', 'lessons')).toThrow(/needs a source/);
+    r.enqueue('b', 'retract', 'sources/gone.md');
+    r.enqueue('b', 'lessons', 'sources/2026-11-04-task-session.md');
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual([
+      '/retract sources/gone.md',
+      '/lessons sources/2026-11-04-task-session.md',
+    ]);
+    expect(commits.map(([, m]) => m)).toEqual([
+      'Brain: retract sources/gone.md',
+      'Brain: lessons sources/2026-11-04-task-session.md',
+    ]);
+    const { state } = await readState(dirs.b);
+    expect(Object.keys(state?.captured ?? {})).toEqual([
+      'sources/2026-11-04-task-session.md',
+    ]);
+    // No automatic lint after these, unlike a capture.
+    expect(r.jobs('b').map((j) => j.kind)).toEqual(['lessons', 'retract']);
+  });
+});

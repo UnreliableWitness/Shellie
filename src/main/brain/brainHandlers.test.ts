@@ -303,6 +303,52 @@ describe('brain handlers', () => {
     );
   });
 
+  it('removes a source and queues a retract; refuses while a job runs', async () => {
+    const v = await h['brain:create'](NEW);
+    const r = await h['brain:addText'](v.id, 'to go', 'Gone', 'note');
+    if (!r.ok) throw new Error(r.message);
+    enqueued.length = 0;
+    await h['brain:removeSource'](v.id, r.path);
+    expect(enqueued).toEqual([[v.id, 'retract', r.path]]);
+    expect((await h['brain:sources'](v.id)).map((s) => s.path)).toEqual([]);
+    expect((await git.run(v.path, ['log', '-1', '--format=%s'])).trim()).toBe(
+      `Brain: remove source ${r.path}`,
+    );
+  });
+
+  it('scrubs a value through the handler', async () => {
+    const v = await h['brain:create'](NEW);
+    const r = await h['brain:addText'](
+      v.id,
+      'the code is Zx9!secret ok',
+      'S',
+      'note',
+    );
+    if (!r.ok) throw new Error(r.message);
+    expect(await h['brain:scrub'](v.id, 'Zx9!secret')).toEqual({ files: 1 });
+    expect((await h['brain:read'](v.id, r.path)).text).toContain('[REDACTED]');
+  });
+
+  it('an archived brain refuses sources, jobs and refreshes until restored, and is no task brain', async () => {
+    const v = await h['brain:create'](NEW);
+    const archived = await h['brain:update'](v.id, { archived: true });
+    expect(archived.archived).toBe(true);
+    await expect(h['brain:addText'](v.id, 'x', 'X', 'note')).rejects.toThrow(
+      /archived/,
+    );
+    await expect(h['brain:run'](v.id, 'lint')).rejects.toThrow(/archived/);
+    await expect(h['brain:refresh'](v.id)).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/archived/),
+    });
+    expect(brains.forProject(NEW.connectionId, NEW.project)).toEqual([]);
+    const back = await h['brain:update'](v.id, { archived: false });
+    expect(back.archived).toBe(false);
+    expect(
+      brains.forProject(NEW.connectionId, NEW.project).map((b) => b.id),
+    ).toEqual([v.id]);
+  });
+
   it('rebuilds index.md from the pages when a job commits, and on brain:get when no job runs', async () => {
     const v = await h['brain:create'](NEW);
     const index = () => fs.readFile(path.join(v.path, 'index.md'), 'utf8');

@@ -1,4 +1,6 @@
+import { useState, type FormEvent } from 'react';
 import type { BrainView } from '../../../shared/brain';
+import { errorMessage } from '../../../shared/errors';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
 import { eur } from '../../format';
@@ -141,6 +143,71 @@ export function BrainHealth({
           {findings.length - shown.length} more not shown
         </p>
       )}
+      <ScrubForm brainId={brain.id} />
     </section>
+  );
+}
+
+/**
+ * Redacts a value (a password, a token that slipped into a document) everywhere in the brain's text files. The
+ * value goes to main and nowhere else; what comes back is a count.
+ */
+function ScrubForm({ brainId }: { brainId: string }) {
+  const notify = useStore((s) => s.notify);
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!value.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await api().invoke('brain:scrub', brainId, value);
+      trackBrain('scrub');
+      notify(
+        'info',
+        r.files === 0
+          ? 'No file held that value'
+          : `Redacted in ${r.files} ${r.files === 1 ? 'file' : 'files'}; git history still holds the old text`,
+      );
+      setValue('');
+      setOpen(false);
+    } catch (err) {
+      notify('error', errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="brain-scrub">
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        Scrub a value…
+      </button>
+      {open && (
+        <form className="brain-ask" onSubmit={(e) => void submit(e)}>
+          <input
+            className="field"
+            type="password"
+            aria-label="Value to redact"
+            placeholder="A password or token to replace with [REDACTED] everywhere"
+            autoComplete="off"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <button
+            type="submit"
+            className="btn btn-sm"
+            disabled={busy || value.trim().length < 6}
+          >
+            Redact everywhere
+          </button>
+        </form>
+      )}
+    </div>
   );
 }

@@ -371,6 +371,8 @@ export type FinishOptions = {
   confirmLeak?: boolean;
   /** Copy the task's .shellie/task.md into its project's brain as a source and capture it. */
   captureTaskMd?: boolean;
+  /** Save a digest of the task's Claude sessions into its project's brain and run /lessons on it. */
+  captureLessons?: boolean;
 };
 
 export type GitFile = { status: string; path: string };

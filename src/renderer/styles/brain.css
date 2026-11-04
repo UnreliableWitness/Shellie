@@ -179,3 +179,13 @@
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
 }
+
+.brain-bar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Scrub a value: a password field under the findings. */
+.brain-scrub {
+  margin-top: 8px;
+}

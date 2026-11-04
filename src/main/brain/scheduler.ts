@@ -35,6 +35,7 @@ export function startBrainScheduler(d: {
   const check = () => {
     const at = now();
     for (const b of d.brains()) {
+      if (b.archived) continue;
       const last = b.lastRefreshAt ? Date.parse(b.lastRefreshAt) : 0;
       const failed = failedAt.get(b.id);
       if (

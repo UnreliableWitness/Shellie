@@ -52,3 +52,40 @@ describe('BrainFiles', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('BrainFiles sources', () => {
+  it('removes a source after a confirmation, never a wiki mirror page', async () => {
+    const a = installFakeApi({
+      'brain:files': () => [
+        { path: 'sources/2026-11-04-deck.md', changed: null },
+        { path: 'sources/wiki/Page.md', changed: null },
+      ],
+      'brain:sources': () => [],
+      'brain:read': () => ({ text: '# Deck\n' }),
+    });
+    render(<BrainFiles brainId="b1" dir="sources" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'sources/wiki/Page.md' }),
+    );
+    await screen.findByRole('status', {}, { timeout: 500 }).catch(() => null);
+    expect(screen.queryByRole('button', { name: 'Remove…' })).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'sources/2026-11-04-deck.md' }),
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Remove…' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Remove sources/2026-11-04-deck.md?',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove source' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:removeSource',
+        args: ['b1', 'sources/2026-11-04-deck.md'],
+      }),
+    );
+  });
+});

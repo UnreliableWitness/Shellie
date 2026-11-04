@@ -27,9 +27,11 @@ export class BrainStore {
     return this.list().find((b) => b.id === id);
   }
 
+  /** The live brains of a project: an archived one is not any task's brain. */
   forProject(connectionId: string, project: string): Brain[] {
     return this.list().filter(
-      (b) => b.connectionId === connectionId && b.project === project,
+      (b) =>
+        b.connectionId === connectionId && b.project === project && !b.archived,
     );
   }
 

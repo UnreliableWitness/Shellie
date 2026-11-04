@@ -11,7 +11,14 @@ import { useBrains } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { track } from '../../telemetry';
 
-type Action = 'create' | 'update' | 'delete' | 'update-skills' | 'open-folder';
+type Action =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'update-skills'
+  | 'open-folder'
+  | 'archive'
+  | 'restore';
 const trackBrain = (action: Action) => track('settings.brain', { action });
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -271,6 +278,19 @@ function BrainCard({ brain }: { brain: BrainView }) {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
+          onClick={() =>
+            run(brain.archived ? 'restore' : 'archive', () =>
+              api().invoke('brain:update', brain.id, {
+                archived: !brain.archived,
+              }),
+            )
+          }
+        >
+          {brain.archived ? 'Restore' : 'Archive'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
           onClick={() => setConfirming(true)}
         >
           Delete
@@ -380,11 +400,24 @@ export function BrainsSection() {
         >
           <div className="list">
             {brains
-              .filter((b) => b.connectionId === c.id)
+              .filter((b) => b.connectionId === c.id && !b.archived)
               .map((b) => (
                 <BrainCard key={b.id} brain={b} />
               ))}
           </div>
+          {brains.some((b) => b.connectionId === c.id && b.archived) && (
+            <div className="list" aria-label="Archived brains">
+              <div className="muted small">
+                Archived: out of the nav, no task gets them, nothing runs for
+                them. Restore to use again.
+              </div>
+              {brains
+                .filter((b) => b.connectionId === c.id && b.archived)
+                .map((b) => (
+                  <BrainCard key={b.id} brain={b} />
+                ))}
+            </div>
+          )}
           <CreateBrainForm connection={c} />
         </SettingRow>
       ))}

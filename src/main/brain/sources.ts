@@ -16,6 +16,7 @@ import {
 } from './convert';
 import { withBrainGit } from './gitMutex';
 import { findSecrets, secretMessage } from './secrets';
+import { writeState } from './state';
 import {
   parseSourceFrontmatter,
   renderSource,
@@ -295,4 +296,65 @@ export async function listSources(
     (a, b) =>
       b.ingestedAt.localeCompare(a.ingestedAt) || a.path.localeCompare(b.path),
   );
+}
+
+/**
+ * Deletes a source with its original and its assets folder, forgets its capture, and commits only those paths as
+ * `Brain: remove source <path>`. Not a wiki mirror page (the next refresh would bring it back). The file stays in
+ * the brain's git history; the caller queues `/retract` to take its claims out of the pages.
+ */
+export async function removeSource(
+  git: GitClient,
+  brainDir: string,
+  source: string,
+): Promise<void> {
+  const rel = path.posix.normalize(source.replace(/\\/g, '/'));
+  if (
+    !/^sources\/.+\.md$/.test(rel) ||
+    rel.startsWith('sources/wiki/') ||
+    rel.startsWith('sources/../')
+  )
+    throw new Error('Only a source outside the wiki mirror can be removed');
+  const abs = path.join(brainDir, ...rel.split('/'));
+  if (
+    !(await fs.stat(abs).then(
+      (s) => s.isFile(),
+      () => false,
+    ))
+  )
+    throw new Error(`No source ${rel}`);
+  const dir = path.posix.dirname(rel);
+  const base = path.posix.basename(rel, '.md');
+  const names = await fs.readdir(path.join(brainDir, ...dir.split('/')));
+  const paths = [rel];
+  for (const n of names) {
+    if (n === `${base}-assets`) paths.push(`${dir}/${n}`);
+    else if (
+      n !== `${base}.md` &&
+      n.startsWith(`${base}.`) &&
+      path.extname(n) === n.slice(base.length)
+    )
+      paths.push(`${dir}/${n}`);
+  }
+  await withBrainGit(brainDir, async () => {
+    for (const p of paths)
+      await fs.rm(path.join(brainDir, ...p.split('/')), {
+        recursive: true,
+        force: true,
+      });
+    await writeState(brainDir, (s) => {
+      const { [rel]: _gone, ...captured } = s.captured;
+      return { ...s, captured };
+    });
+    const staged = [...paths, 'brain/state.json'];
+    await git.run(brainDir, ['add', '-A', '--', ...staged]);
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      `Brain: remove source ${rel}`,
+      '--',
+      ...staged,
+    ]);
+  });
 }

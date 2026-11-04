@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   brainTaskId,
+  SOURCE_JOB_KINDS,
   type BrainJob,
   type BrainJobKind,
   type BrainModel,
@@ -74,7 +75,7 @@ type Lane = {
 };
 
 const prompt = (j: BrainJob) =>
-  j.kind === 'capture' ? `/capture ${j.source}` : `/${j.kind}`;
+  j.source ? `/${j.kind} ${j.source}` : `/${j.kind}`;
 
 /** Runs the brain's skills headless, one job at a time per brain (brains in parallel). */
 export class BrainJobRunner {
@@ -128,10 +129,10 @@ export class BrainJobRunner {
     kind: BrainJobKind,
     source: string | null = null,
   ): BrainJob {
-    if (kind === 'capture' && !source)
-      throw new Error('A capture needs a source file');
+    const withSource = SOURCE_JOB_KINDS.has(kind);
+    if (withSource && !source) throw new Error(`A ${kind} needs a source file`);
     const l = this.lane(brainId);
-    const job = this.make(brainId, kind, kind === 'capture' ? source : null);
+    const job = this.make(brainId, kind, withSource ? source : null);
     l.queue.push(job);
     this.add(l, job);
     this.changed(brainId);
@@ -249,7 +250,8 @@ export class BrainJobRunner {
       const { result, sessionId } = claudeResultWithSession(stdout);
       job.result = result;
       job.sessionId = sessionId;
-      if (job.kind === 'capture' && job.source) {
+      // A capture and a lessons run both fold a source into the wiki: the source is captured.
+      if ((job.kind === 'capture' || job.kind === 'lessons') && job.source) {
         const source = job.source;
         const at = this.now().toISOString();
         await writeState(dir, (s) => ({
