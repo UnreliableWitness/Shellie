@@ -279,6 +279,19 @@ describe('groupTasks', () => {
     expect(all.open.flatMap((x) => x.tasks)).toHaveLength(4);
     expect(all.done).toHaveLength(3);
   });
+
+  it('shows a task whose own connection was removed under every project (#219)', () => {
+    const split: Repo[] = [{ ...repos[0], connectionId: 'A' }];
+    const orphan: TaskView = {
+      ...tasks[0],
+      id: 'o1',
+      repoId: 'r1',
+      connectionId: 'B',
+    };
+    const g = groupTasks([orphan], split, 'A', ['A']);
+    expect(g.open.flatMap((x) => x.tasks.map((t) => t.id))).toEqual(['o1']);
+    expect(groupTasks([orphan], split, 'A', ['A', 'B']).open).toEqual([]);
+  });
 });
 
 describe('TaskNav', () => {

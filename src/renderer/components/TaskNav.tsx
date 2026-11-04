@@ -43,9 +43,10 @@ export function groupTasks(
   all: TaskView[],
   repos: Repo[],
   connectionId?: string | null,
+  knownIds?: string[],
 ) {
   const tasks = connectionId
-    ? all.filter((t) => inConnection(t, repos, connectionId))
+    ? all.filter((t) => inConnection(t, repos, connectionId, knownIds))
     : all;
   const open = repos
     .map((repo) => ({
@@ -496,6 +497,7 @@ export function TaskNav() {
   const screenKind = useStore((s) => s.screen.kind);
   const go = useStore((s) => s.go);
   const connection = useStore(activeConnection);
+  const connections = useStore((s) => s.connections);
   const navCollapsed = useStore((s) => s.navCollapsed);
   const setNavCollapsed = useStore((s) => s.setNavCollapsed);
   const navWidth = useStore((s) => s.navWidth);
@@ -503,7 +505,12 @@ export function TaskNav() {
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? navWidth;
   const [showDone, setShowDone] = useState(false);
-  const { open, done } = groupTasks(tasks, repos, connection?.id);
+  const { open, done } = groupTasks(
+    tasks,
+    repos,
+    connection?.id,
+    connections.map((c) => c.id),
+  );
   const rail = navCollapsed;
   const brains = useBrains();
   const screen = useStore((s) => s.screen);

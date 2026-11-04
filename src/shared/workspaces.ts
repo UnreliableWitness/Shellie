@@ -102,8 +102,14 @@ export function inConnection(
   task: Pick<Task, 'connectionId' | 'repoId'>,
   repos: Pick<Repo, 'id' | 'connectionId'>[],
   connectionId: string,
+  knownIds?: string[],
 ): boolean {
-  const own = taskConnectionId(task, repos);
+  const resolved = taskConnectionId(task, repos);
+  // A removed connection counts as none, so the task never vanishes from every project.
+  const own =
+    resolved !== null && knownIds && !knownIds.includes(resolved)
+      ? null
+      : resolved;
   return own === null || own === connectionId;
 }
 
