@@ -97,6 +97,22 @@ export function taskConnectionId(
   );
 }
 
+/** Whether a task shows under a project (#219): its own connection's tasks, plus tasks with none. */
+export function inConnection(
+  task: Pick<Task, 'connectionId' | 'repoId'>,
+  repos: Pick<Repo, 'id' | 'connectionId'>[],
+  connectionId: string,
+  knownIds?: string[],
+): boolean {
+  const resolved = taskConnectionId(task, repos);
+  // A removed connection counts as none, so the task never vanishes from every project.
+  const own =
+    resolved !== null && knownIds && !knownIds.includes(resolved)
+      ? null
+      : resolved;
+  return own === null || own === connectionId;
+}
+
 /** A docs target: the task id alone (its active home) or `<taskId>#<workspaceId>` (one workspace's worktree). */
 export function docsTarget(taskId: string, workspaceId?: string): string {
   return workspaceId === undefined ? taskId : `${taskId}#${workspaceId}`;

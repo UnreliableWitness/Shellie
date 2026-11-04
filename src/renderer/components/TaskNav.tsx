@@ -24,7 +24,11 @@ import {
   useState,
 } from 'react';
 import type { Repo, TaskStatus, TaskView } from '../../shared/types';
-import { activeHome, activeWorkspaces } from '../../shared/workspaces';
+import {
+  activeHome,
+  activeWorkspaces,
+  inConnection,
+} from '../../shared/workspaces';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { useBrains } from '../hooks/useBrains';
@@ -34,7 +38,16 @@ import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { AttentionDot } from './AttentionDot';
 import { WorkItemTypeIcon } from './ui';
 
-export function groupTasks(tasks: TaskView[], repos: Repo[]) {
+/** With a connection, only that project's tasks and tasks with no connection (#219). */
+export function groupTasks(
+  all: TaskView[],
+  repos: Repo[],
+  connectionId?: string | null,
+  knownIds?: string[],
+) {
+  const tasks = connectionId
+    ? all.filter((t) => inConnection(t, repos, connectionId, knownIds))
+    : all;
   const open = repos
     .map((repo) => ({
       repo,
@@ -484,6 +497,7 @@ export function TaskNav() {
   const screenKind = useStore((s) => s.screen.kind);
   const go = useStore((s) => s.go);
   const connection = useStore(activeConnection);
+  const connections = useStore((s) => s.connections);
   const navCollapsed = useStore((s) => s.navCollapsed);
   const setNavCollapsed = useStore((s) => s.setNavCollapsed);
   const navWidth = useStore((s) => s.navWidth);
@@ -491,7 +505,12 @@ export function TaskNav() {
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? navWidth;
   const [showDone, setShowDone] = useState(false);
-  const { open, done } = groupTasks(tasks, repos);
+  const { open, done } = groupTasks(
+    tasks,
+    repos,
+    connection?.id,
+    connections.map((c) => c.id),
+  );
   const rail = navCollapsed;
   const brains = useBrains();
   const screen = useStore((s) => s.screen);
