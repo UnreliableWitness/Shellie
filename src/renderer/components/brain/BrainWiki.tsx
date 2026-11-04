@@ -5,7 +5,7 @@ import { useBrainChanged } from '../../hooks/useBrains';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
 import { PageCard, PageSections } from './PageCards';
-import { recentEntries, shortDay, type RecentEntry } from './recent';
+import { isAfter, recentEntries, shortDay, type RecentEntry } from './recent';
 import { useBrainNav } from './useBrainNav';
 
 const LAST_OPENED = (brainId: string) => `brain-last-opened:${brainId}`;
@@ -81,7 +81,7 @@ function Recent({
                 )}
               </span>
             ))}
-            {since && e.at > since && (
+            {since && isAfter(e.at, since) && (
               <span className="tag tag-green">new</span>
             )}
           </li>
@@ -102,7 +102,8 @@ export function BrainWiki({ brainId }: { brainId: string }) {
     const out = new Set<string>();
     if (!since) return out;
     for (const e of recent)
-      if (e.at > since) for (const p of e.pages) if (p.path) out.add(p.path);
+      if (isAfter(e.at, since))
+        for (const p of e.pages) if (p.path) out.add(p.path);
     return out;
   }, [recent, since]);
   const pinned = useMemo(() => {
@@ -119,54 +120,55 @@ export function BrainWiki({ brainId }: { brainId: string }) {
     [nav],
   );
 
-  if (nav.current)
-    return (
-      <BrainPage
-        brainId={brainId}
-        path={nav.current.path}
-        anchor={nav.current.anchor}
-        rows={rows}
-        sources={sources}
-        canBack={nav.canBack}
-        canForward={nav.canForward}
-        onOpen={open}
-        onBack={nav.back}
-        onForward={nav.forward}
-      />
-    );
-
   return (
     <div className="brain-wiki">
-      {nav.canForward && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={nav.forward}
-        >
-          Forward ›
-        </button>
+      {nav.current && (
+        <BrainPage
+          brainId={brainId}
+          path={nav.current.path}
+          anchor={nav.current.anchor}
+          rows={rows}
+          sources={sources}
+          canBack={nav.canBack}
+          canForward={nav.canForward}
+          onOpen={open}
+          onBack={nav.back}
+          onForward={nav.forward}
+        />
       )}
-      <BrainSearch brainId={brainId} onOpen={open} onActive={setSearching} />
-      {!searching && (
-        <>
-          {pinned.length > 0 && (
-            <section className="brain-section" aria-label="Pinned">
-              <div className="brain-card-grid">
-                {pinned.map((r) => (
-                  <PageCard
-                    key={r.path}
-                    row={r}
-                    isNew={newPaths.has(r.path)}
-                    onOpen={open}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-          <Recent entries={recent} since={since} onOpen={open} />
-          <PageSections rows={rows} newPaths={newPaths} onOpen={open} />
-        </>
-      )}
+      {/* The lists stay mounted under an open page, so a search and its results are there on Back. */}
+      <div hidden={!!nav.current} className="brain-wiki-lists">
+        {!nav.current && nav.canForward && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={nav.forward}
+          >
+            Forward ›
+          </button>
+        )}
+        <BrainSearch brainId={brainId} onOpen={open} onActive={setSearching} />
+        {!searching && (
+          <>
+            {pinned.length > 0 && (
+              <section className="brain-section" aria-label="Pinned">
+                <div className="brain-card-grid">
+                  {pinned.map((r) => (
+                    <PageCard
+                      key={r.path}
+                      row={r}
+                      isNew={newPaths.has(r.path)}
+                      onOpen={open}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+            <Recent entries={recent} since={since} onOpen={open} />
+            <PageSections rows={rows} newPaths={newPaths} onOpen={open} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

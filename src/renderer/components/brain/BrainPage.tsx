@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
@@ -50,27 +50,43 @@ export function BrainPage({
   const row = rows.find((r) => r.path === path) ?? null;
   const source = sources.find((s) => s.path === path) ?? null;
 
+  // Only the answer for the path shown lands: a slow read of the previous page must not show under this header.
+  const shown = useRef(path);
+  shown.current = path;
   const load = useCallback(() => {
+    const p = path;
     setError(null);
     api()
-      .invoke('brain:read', brainId, path)
+      .invoke('brain:read', brainId, p)
       .then(
-        (r) => setText(r.text),
+        (r) => {
+          if (shown.current === p) setText(r.text);
+        },
         (e: unknown) => {
+          if (shown.current !== p) return;
           setText(null);
           setError(errorMessage(e));
         },
       );
   }, [brainId, path]);
-  useEffect(load, [load]);
+  useEffect(() => {
+    setText(null);
+    load();
+  }, [load]);
   useBrainChanged(brainId, load);
+  const bar = useRef<HTMLDivElement>(null);
 
   // After the text renders, the anchor's element (a heading id) scrolls into view.
   useEffect(() => {
-    if (text === null || !anchor) return;
+    if (text === null) return;
+    if (!anchor) {
+      // A new page starts at its top, whatever the scroll position the last one left.
+      bar.current?.scrollIntoView?.({ block: 'start' });
+      return;
+    }
     const el = body.current?.querySelector(`[id="${CSS.escape(anchor)}"]`);
     el?.scrollIntoView?.({ block: 'start' });
-  }, [text, anchor]);
+  }, [text, anchor, path]);
 
   const asset = useCallback(
     (p: string) => api().invoke('brain:asset', brainId, p),
@@ -86,16 +102,28 @@ export function BrainPage({
       api()
         .invoke('brain:openSource', brainId, p)
         .catch((e: unknown) => notify('error', errorMessage(e)));
+    } else notify('error', `${p} is not a page, a picture or a source file`);
+  };
+  // A picture in the body opens at full size.
+  const onBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    if (t.tagName === 'IMG') {
+      const img = t as HTMLImageElement;
+      if (img.src) setPicture({ src: img.src, alt: img.alt });
     }
   };
   const titleOf = (p: string) => rows.find((r) => r.path === p)?.title ?? p;
 
-  const crumbs = [path.split('/')[0], ...folderOf(path)];
+  const top = path.split('/')[0];
+  const crumbs =
+    top === 'wiki' || top === 'sources'
+      ? [top, ...folderOf(path)]
+      : folderOf(path);
   const title = row?.title ?? source?.path.split('/').pop() ?? path;
 
   return (
     <div className="brain-page">
-      <div className="brain-page-bar">
+      <div className="brain-page-bar" ref={bar}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -115,13 +143,9 @@ export function BrainPage({
           Forward ›
         </button>
         <span className="brain-crumbs muted small" aria-label="Location">
-          {crumbs.map((c, i) => (
-            <span key={i}>
-              {i > 0 && ' › '}
-              {c}
-            </span>
+          {crumbs.map((c) => (
+            <span key={c}>{c} › </span>
           ))}
-          {' › '}
           <span>{title}</span>
         </span>
       </div>
@@ -204,7 +228,11 @@ export function BrainPage({
       {error && <p className="brain-error small">{error}</p>}
       {text === null && !error && <p className="muted small">Loading</p>}
       {text !== null && (
-        <div className="brain-doc brain-page-body" ref={body}>
+        <div
+          className="brain-doc brain-page-body"
+          ref={body}
+          onClick={onBodyClick}
+        >
           <MarkdownView
             asset={asset}
             path={path}

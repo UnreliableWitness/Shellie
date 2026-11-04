@@ -78,7 +78,7 @@ export function BrainTab({
           ))}
         </ul>
       )}
-      {nav.current ? (
+      {nav.current && (
         <BrainPage
           brainId={brain.id}
           path={nav.current.path}
@@ -91,33 +91,29 @@ export function BrainTab({
           onBack={nav.back}
           onForward={nav.forward}
         />
-      ) : (
-        <>
-          <AskBox brainId={brain.id} onTerminal={onTerminal} />
-          <BrainSearch
-            brainId={brain.id}
-            onOpen={open}
-            onActive={setSearching}
-          />
-          {!searching && (
-            <>
-              <section className="brain-section" aria-label="For this task">
-                <h3>For this task</h3>
-                {relevantRows.length ? (
-                  <div className="brain-card-grid">
-                    {relevantRows.map((r) => (
-                      <PageCard key={r.path} row={r} onOpen={open} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="muted small">No page mentions this task yet.</p>
-                )}
-              </section>
-              <PageSections rows={rows} compact onOpen={open} />
-            </>
-          )}
-        </>
       )}
+      {/* The lists stay mounted under an open page, so a search and its results are there on Back. */}
+      <div hidden={!!nav.current} className="brain-tab-lists">
+        <AskBox brainId={brain.id} onTerminal={onTerminal} />
+        <BrainSearch brainId={brain.id} onOpen={open} onActive={setSearching} />
+        {!searching && (
+          <>
+            <section className="brain-section" aria-label="For this task">
+              <h3>For this task</h3>
+              {relevantRows.length ? (
+                <div className="brain-card-grid">
+                  {relevantRows.map((r) => (
+                    <PageCard key={r.path} row={r} onOpen={open} />
+                  ))}
+                </div>
+              ) : (
+                <p className="muted small">No page mentions this task yet.</p>
+              )}
+            </section>
+            <PageSections rows={rows} compact onOpen={open} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

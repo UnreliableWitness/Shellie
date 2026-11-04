@@ -113,6 +113,16 @@ async function markdownFiles(
   return out;
 }
 
+/** A heading's text as the viewer slugs it: links to their text, pictures to their alt, code and emphasis marks off. */
+export function headingText(raw: string): string {
+  return raw
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/(\*\*|__|\*|_|~~)/g, '')
+    .trim();
+}
+
 /** The matching line cut to SNIPPET characters around the match. */
 export function snippet(line: string, index: number): string {
   const l = line.trim();
@@ -159,11 +169,23 @@ export async function searchBrain(
     const slugger = new GithubSlugger();
     let anchor: string | null = null;
     let found = 0;
+    // Fenced code is not headings: the viewer gives a `#` line inside it no id. A fence closes with its own marker.
+    let fence: string | null = null;
     const lines = body.split(/\r?\n/);
     for (let i = 0; i < lines.length && found < SEARCH_PER_FILE; i++) {
       const line = lines[i];
-      const h = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
-      if (h) anchor = slugger.slug(h[1]);
+      const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (
+          f[1][0] === fence[0] &&
+          f[1].length >= fence.length &&
+          f[2].trim() === ''
+        )
+          fence = null;
+      }
+      const h = fence === null ? /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line) : null;
+      if (h) anchor = slugger.slug(headingText(h[1]));
       const at = line.toLowerCase().indexOf(q);
       if (at < 0) continue;
       out.push({
@@ -203,13 +225,31 @@ const STOP = new Set([
   'them',
   'what',
   'which',
+  // Dutch and German, the owner's other languages.
+  'voor',
+  'niet',
+  'deze',
+  'naar',
+  'zijn',
+  'maar',
+  'ook',
+  'nicht',
+  'eine',
+  'auch',
+  'werden',
+  'wird',
+  'über',
+  'dass',
 ]);
 
 /** The words (4+ letters, lower case, no stop words) of the texts, each once, in order of first appearance. */
 export function taskWords(texts: string[]): string[] {
   const out: string[] = [];
   for (const t of texts)
-    for (const m of t.toLowerCase().matchAll(/\p{L}{4,}/gu))
+    for (const m of t
+      .normalize('NFC')
+      .toLowerCase()
+      .matchAll(/\p{L}{4,}/gu))
       if (!STOP.has(m[0]) && !out.includes(m[0])) out.push(m[0]);
   return out;
 }

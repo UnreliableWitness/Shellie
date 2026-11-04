@@ -45,12 +45,25 @@ export function recentEntries(
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
-      .map((label) => ({ label, path: matchPage(label, rows) }));
+      .map((raw) => {
+        // `[Title](wiki/x.md)` names the page by its path; a trailing period is punctuation.
+        const link = /^\[([^\]]*)\]\(([^)]*)\)$/.exec(raw);
+        const label = (link ? link[1] : raw).replace(/\.$/, '');
+        const key = (link ? link[2] : raw).replace(/\.$/, '');
+        return { label, path: matchPage(key, rows) ?? matchPage(label, rows) };
+      });
     if (!pages.length) continue;
     out.push({ at: m[1], skill: m[2], pages });
     if (out.length >= max) break;
   }
   return out;
+}
+
+/** Whether `at` is after `since`: as instants when both parse, else as text. */
+export function isAfter(at: string, since: string): boolean {
+  const a = Date.parse(at);
+  const b = Date.parse(since);
+  return Number.isNaN(a) || Number.isNaN(b) ? at > since : a > b;
 }
 
 /** A `yyyy-mm-dd` day (or a timestamp) as "4 Nov" in the app's locale; the text as is when it is not a day. */

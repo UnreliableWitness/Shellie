@@ -107,6 +107,28 @@ export type BrainHandlerDeps = {
 };
 
 const ROOT_FILES = new Set(['index.md', 'log.md', 'SCHEMA.md']);
+/** What `brain:openSource` hands to the system: a source's original or a picture, never a script or a program. */
+const OPENABLE = new Set([
+  '.pdf',
+  '.docx',
+  '.pptx',
+  '.xlsx',
+  '.vtt',
+  '.drawio',
+  '.md',
+  '.txt',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.svg',
+  '.bmp',
+  '.tif',
+  '.tiff',
+  '.emf',
+  '.wmf',
+]);
 const BUSY = 'A brain job is running; try again later';
 const ARCHIVED =
   'This brain is archived; restore it in Settings › Brains first';
@@ -631,6 +653,9 @@ export function createBrainHandlers(
       const p = path.posix.normalize(rel.replace(/\\/g, '/'));
       if (!p.startsWith('sources/') || p.startsWith('sources/../'))
         throw new Error('Only a file under sources/ can be opened');
+      // Documents and pictures only: shell.openPath would run a script or a program.
+      if (!OPENABLE.has(path.posix.extname(p).toLowerCase()))
+        throw new Error('Only a document or a picture can be opened');
       const error = await d.openPath(path.join(b.path, ...p.split('/')));
       if (error) throw new Error(`Could not open the file: ${error}`);
     },

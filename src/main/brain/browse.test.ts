@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  headingText,
   pageRows,
   pageType,
   relevantPages,
@@ -179,5 +180,52 @@ describe('relevance', () => {
     expect(top.slice(0, 3)).toEqual(['wiki/a.md', 'wiki/b.md', 'wiki/d.md']);
     expect(top).toHaveLength(5);
     expect(relevantPages(rows, [])).toEqual([]);
+  });
+});
+
+describe('after review', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-browse2-'));
+    await fs.mkdir(path.join(dir, 'wiki'), { recursive: true });
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('gives a hit the anchor the viewer would, skipping fenced code and markdown in headings', async () => {
+    await fs.writeFile(
+      path.join(dir, 'wiki', 'a.md'),
+      [
+        '---',
+        'title: A',
+        '---',
+        '# Top',
+        '```',
+        '# not a heading',
+        'foo in fence',
+        '```',
+        '## The `api` [link](x) **bold**',
+        'foo after',
+        '## Top',
+        'foo last',
+      ].join('\n'),
+    );
+    const hits = await searchBrain(dir, 'foo');
+    expect(hits.map((h) => [h.line, h.anchor])).toEqual([
+      [7, 'top'],
+      [10, 'the-api-link-bold'],
+      [12, 'top-1'],
+    ]);
+    expect(headingText('![pic](p.png) `code` _em_ ~~x~~')).toBe(
+      'pic code em x',
+    );
+  });
+
+  it('normalises words and skips Dutch and German stop words', () => {
+    expect(taskWords(['Größe Änderung', 'voor niet nicht eine'])).toEqual([
+      'größe',
+      'änderung',
+    ]);
   });
 });

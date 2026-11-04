@@ -33,25 +33,32 @@ export function BrainSearch({
   onActive: (active: boolean) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [hits, setHits] = useState<BrainSearchHit[]>([]);
+  // The hits and the query they answer: a slow answer for an earlier query never shows for a later one.
+  const [result, setResult] = useState<{ q: string; hits: BrainSearchHit[] }>({
+    q: '',
+    hits: [],
+  });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const q = query.trim();
   const active = q.length >= SEARCH_MIN;
+  const hits = result.q === q ? result.hits : [];
+  const pending = active && result.q !== q;
 
   useEffect(() => {
     onActive(active);
   }, [active, onActive]);
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
-    if (!active) {
-      setHits([]);
-      return;
-    }
+    if (!active) return;
     timer.current = setTimeout(() => {
       trackBrain('search');
+      const asked = q;
       api()
-        .invoke('brain:search', brainId, q)
-        .then(setHits, () => setHits([]));
+        .invoke('brain:search', brainId, asked)
+        .then(
+          (found) => setResult({ q: asked, hits: found }),
+          () => setResult({ q: asked, hits: [] }),
+        );
     }, DEBOUNCE_MS);
     return () => {
       if (timer.current) clearTimeout(timer.current);
@@ -76,7 +83,8 @@ export function BrainSearch({
       />
       {active && (
         <ul className="list brain-hits" aria-label="Search results">
-          {hits.length === 0 && (
+          {pending && <li className="muted small">Searching…</li>}
+          {!pending && hits.length === 0 && (
             <li className="muted small">Nothing holds “{q}”.</li>
           )}
           {hits.map((h) => (

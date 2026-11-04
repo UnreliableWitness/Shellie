@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BrainPageRow } from '../../../shared/brain';
 import {
   folderOf,
+  isAfter,
   matchPage,
   recentEntries,
   shortDay,
@@ -78,5 +79,23 @@ describe('recentEntries', () => {
     expect(sourceLabel('sources/wiki/Page.md')).toBe('Page');
     expect(folderOf('wiki/digests/2026-w45.md')).toEqual(['digests']);
     expect(folderOf('wiki/account.md')).toEqual([]);
+  });
+});
+
+describe('after review', () => {
+  it('cleans a trailing period and a markdown link in a pages entry, and compares instants', () => {
+    const log =
+      '- 2026-11-04T10:00:00Z capture x → pages: account., [Database](wiki/decision-2026-11-03-db.md); takeaway: x\n';
+    expect(recentEntries(log, rows)[0].pages).toEqual([
+      { label: 'account', path: 'wiki/account.md' },
+      { label: 'Database', path: 'wiki/decision-2026-11-03-db.md' },
+    ]);
+    expect(
+      isAfter('2026-11-04T11:30:00+01:00', '2026-11-04T11:00:00.000Z'),
+    ).toBe(false);
+    expect(
+      isAfter('2026-11-04T12:30:00+01:00', '2026-11-04T11:00:00.000Z'),
+    ).toBe(true);
+    expect(isAfter('later', 'earlier')).toBe(true);
   });
 });
