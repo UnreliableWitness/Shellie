@@ -129,7 +129,11 @@ describe('BrainScreen', () => {
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:terminal',
-        args: ['b1', null, 'resolve: orphan on wiki/a.md: nothing links here'],
+        args: [
+          'b1',
+          null,
+          'resolve: broken-link on wiki/a.md: ../sources/gone.md does not exist',
+        ],
       }),
     );
     expect(await screen.findByTestId('terminal')).toBeInTheDocument();

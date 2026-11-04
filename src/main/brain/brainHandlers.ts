@@ -26,6 +26,7 @@ import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
 import { brainForTask } from './context';
 import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
+import { rebuildIndex } from './indexPage';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
   applyTemplates,
@@ -122,15 +123,17 @@ async function stageable(git: GitClient, brainDir: string): Promise<string[]> {
 }
 
 /**
- * The runner's `commit` (and, with OUTSIDE_EDIT_MESSAGE, its `beforeJob`): stages the job's output paths and commits
- * them when anything changed, nothing else.
+ * The runner's `commit` (and, with OUTSIDE_EDIT_MESSAGE, its `beforeJob`): rebuilds index.md from the pages, then
+ * stages the job's output paths and commits them when anything changed, nothing else.
  */
 export function commitJobOutput(
   git: GitClient,
   brainDir: string,
   message: string,
+  brainName = 'Brain',
 ): Promise<void> {
   return withBrainGit(brainDir, async () => {
+    await rebuildIndex(brainDir, brainName);
     const paths = await stageable(git, brainDir);
     if (!paths.length) return;
     await git.run(brainDir, ['add', '-A', '--', ...paths]);
@@ -143,6 +146,38 @@ export function commitJobOutput(
     if (status.trim())
       await git.run(brainDir, ['commit', '-q', '-m', message, '--', ...paths]);
   });
+}
+
+/**
+ * index.md rebuilt from the pages outside a job (a page added by hand, an older brain) and committed alone, so a
+ * human's wiki edits stay outside edits. True when the index changed.
+ */
+export async function refreshIndex(
+  git: GitClient,
+  brainDir: string,
+  brainName: string,
+): Promise<boolean> {
+  if (!(await rebuildIndex(brainDir, brainName))) return false;
+  await withBrainGit(brainDir, async () => {
+    await git.run(brainDir, ['add', '--', 'index.md']);
+    // A job that started meanwhile may have committed the same index already.
+    const status = await git.run(brainDir, [
+      'status',
+      '--porcelain',
+      '--',
+      'index.md',
+    ]);
+    if (!status.trim()) return;
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      'Brain: index',
+      '--',
+      'index.md',
+    ]);
+  });
+  return true;
 }
 
 const isEmptyOrMissing = async (dir: string) =>
@@ -190,6 +225,11 @@ export function createBrainHandlers(
   const view = async (b: Brain, withHealth = false): Promise<BrainView> => {
     const jobs = d.runner.jobs(b.id);
     const paused = jobs.some((j) => j.status === 'paused');
+    // A stale index (a page added by hand) is rebuilt here, never while a job writes the brain.
+    if (withHealth && !d.runner.running(b.id))
+      await refreshIndex(d.git, b.path, b.name).catch((e: unknown) =>
+        console.error('[brain] index not rebuilt', e),
+      );
     return {
       ...b,
       health: withHealth

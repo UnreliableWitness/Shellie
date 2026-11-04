@@ -838,12 +838,12 @@ async function boot(): Promise<void> {
       commit: async (id, message) => {
         const b = brains.get(id);
         if (!b) throw new Error(`Unknown brain ${id}`);
-        await commitJobOutput(git, b.path, message);
+        await commitJobOutput(git, b.path, message, b.name);
       },
       beforeJob: async (id) => {
         const b = brains.get(id);
         if (!b) throw new Error(`Unknown brain ${id}`);
-        await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE);
+        await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);

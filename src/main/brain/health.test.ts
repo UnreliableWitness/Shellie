@@ -91,6 +91,40 @@ describe('brainHealth', () => {
     ]);
   });
 
+  it("merges Shellie's own findings with the lint's, dropping the kinds Shellie computes", async () => {
+    const a = await addSource(git, dir, { text: 'a', title: 'A' }, 'note');
+    if (!a.ok) throw new Error('add failed');
+    await write(
+      'wiki/account.md',
+      `---\ntitle: Acme\nsummary: Who.\nsources: [${a.path}]\nlast_updated: 2020-01-01\n---\n[gone](missing.md)\n`,
+    );
+    await write('wiki/thin.md', '# Thin\n');
+    const at = '2026-11-02T10:00:00.000Z';
+    await writeState(dir, (s) => ({
+      ...s,
+      findings: [
+        { kind: 'orphan', page: 'wiki/x.md', detail: 'old lint', at },
+        { kind: 'broken-link', page: 'wiki/x.md', detail: 'old lint', at },
+        { kind: 'contradiction', page: 'wiki/account.md', detail: 'dates', at },
+        { kind: 'scope-change', page: 'wiki/scope-a.md', detail: 'rate', at },
+      ],
+    }));
+    const now = new Date('2026-11-04T12:00:00Z');
+    const h = await brainHealth(dir, git, today, false, now);
+    expect(h.pages).toBe(2);
+    expect(h.findings.map((f) => [f.kind, f.page])).toEqual([
+      ['broken-link', 'wiki/account.md'],
+      ['stale', 'wiki/account.md'],
+      ['frontmatter', 'wiki/thin.md'],
+      ['uncaptured', a.path],
+      ['contradiction', 'wiki/account.md'],
+      ['scope-change', 'wiki/scope-a.md'],
+    ]);
+    expect(h.findings[0].at).toBe(now.toISOString());
+    expect(h.findings[4].at).toBe(at);
+    expect(h.uncaptured).toBe(1);
+  });
+
   it('reports a broken state file without failing', async () => {
     await write('brain/state.json', '{not json');
     const h = await brainHealth(dir, git, today, false);

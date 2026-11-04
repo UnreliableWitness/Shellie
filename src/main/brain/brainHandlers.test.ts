@@ -300,6 +300,43 @@ describe('brain handlers', () => {
     );
   });
 
+  it('rebuilds index.md from the pages when a job commits, and on brain:get when no job runs', async () => {
+    const v = await h['brain:create'](NEW);
+    const index = () => fs.readFile(path.join(v.path, 'index.md'), 'utf8');
+    expect(await index()).toBe('# Acme brain\n\n(no pages yet)\n');
+    // A job wrote a page: its commit lists it.
+    await fs.writeFile(
+      path.join(v.path, 'wiki', 'account.md'),
+      '---\ntitle: Acme\nsummary: Who they are.\nsources: [sources/k.md]\n---\n',
+    );
+    await commitJobOutput(git, v.path, 'Brain: capture sources/k.md', v.name);
+    expect(await index()).toBe(
+      '# Acme brain\n\n- [Acme](wiki/account.md): Who they are.\n',
+    );
+    expect((await git.run(v.path, ['status', '--porcelain'])).trim()).toBe('');
+    // A page added by hand: the next Health read lists it and commits only the index.
+    await fs.writeFile(
+      path.join(v.path, 'wiki', 'glossary.md'),
+      '---\ntitle: Glossary\nsummary: Terms.\nsources: [sources/k.md]\n---\n',
+    );
+    const view = await h['brain:get'](v.id);
+    expect(await index()).toContain('- [Glossary](wiki/glossary.md): Terms.');
+    expect(view.health?.pages).toBe(2);
+    expect(view.health?.outsideEdits).toEqual(['wiki/glossary.md']);
+    expect((await git.run(v.path, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: index',
+    );
+    expect(
+      (await git.run(v.path, ['show', '--name-only', '--format=', 'HEAD']))
+        .trim()
+        .split('\n'),
+    ).toEqual(['index.md']);
+    // Nothing changed: no new commit.
+    const head = (await git.run(v.path, ['rev-parse', 'HEAD'])).trim();
+    await h['brain:get'](v.id);
+    expect((await git.run(v.path, ['rev-parse', 'HEAD'])).trim()).toBe(head);
+  });
+
   it("commits a job's output, so it is not an outside edit", async () => {
     const v = await h['brain:create'](NEW);
     await fs.writeFile(path.join(v.path, 'wiki', 'account.md'), '# A\n');

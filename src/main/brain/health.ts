@@ -1,6 +1,10 @@
-import type { BrainHealth } from '../../shared/brain';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { BrainFinding, BrainHealth } from '../../shared/brain';
 import type { CostRecord } from '../../shared/ledger';
 import type { GitClient } from '../services/GitClient';
+import { checkBrain, SHELLIE_FINDING_KINDS } from './check';
+import { readPages } from './pages';
 import { listSources } from './sources';
 import { readState } from './state';
 
@@ -60,21 +64,36 @@ async function outsideEdits(brainDir: string, git: GitClient) {
   return [...found].sort();
 }
 
+/** The lint's findings worth showing: the kinds Shellie does not compute itself (its live result replaces those). */
+export const lintFindings = (findings: BrainFinding[]): BrainFinding[] =>
+  findings.filter(
+    (f) => !SHELLIE_FINDING_KINDS.has(f.kind) && f.kind !== 'orphan',
+  );
+
 export async function brainHealth(
   brainDir: string,
   git: GitClient,
   ledgerToday: { tokens: number; costEur: number },
   queuePaused: boolean,
+  now: Date = new Date(),
 ): Promise<BrainHealth> {
   const { state, error } = await readState(brainDir);
-  const [sources, edits] = await Promise.all([
+  const [sources, edits, pages, indexMd] = await Promise.all([
     listSources(brainDir, state).catch(() => []),
     outsideEdits(brainDir, git),
+    readPages(brainDir).catch(() => []),
+    fs.readFile(path.join(brainDir, 'index.md'), 'utf8').catch(() => null),
   ]);
+  const own = await checkBrain(
+    { brainDir, pages, sources, indexMd },
+    now,
+  ).catch(() => []);
   const mirror = sources.filter((s) => s.path.startsWith('sources/wiki/'));
   return {
     state,
     stateError: error,
+    findings: [...own, ...lintFindings(state?.findings ?? [])],
+    pages: pages.length,
     uncaptured: sources.filter(
       (s) => !s.captured && !s.path.startsWith('sources/wiki/'),
     ).length,

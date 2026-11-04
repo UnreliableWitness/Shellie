@@ -18,7 +18,8 @@ export function BrainHealth({
 }) {
   const notify = useStore((s) => s.notify);
   const h = brain.health;
-  const findings = h?.state?.findings ?? [];
+  // Shellie's own checks (links, stale pages, frontmatter, uncaptured) plus what the last lint found.
+  const findings = h?.findings ?? [];
 
   const resolve = async (f: (typeof findings)[number]) => {
     trackBrain('resolve');
@@ -59,6 +60,10 @@ export function BrainHealth({
       <dl className="facts">
         <dt>Last lint</dt>
         <dd>{when(h.state?.lastLintAt ?? null)}</dd>
+        <dt>Wiki</dt>
+        <dd>
+          {h.pages} {h.pages === 1 ? 'page' : 'pages'}
+        </dd>
         <dt>Uncaptured</dt>
         <dd>{h.uncaptured} uncaptured</dd>
         <dt>Wiki mirror</dt>

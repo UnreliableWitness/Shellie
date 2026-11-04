@@ -43,6 +43,21 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
       ],
     },
     stateError: null,
+    findings: [
+      {
+        kind: 'broken-link',
+        page: 'wiki/a.md',
+        detail: '../sources/gone.md does not exist',
+        at: '2026-11-02T10:00:00.000Z',
+      },
+      {
+        kind: 'contradiction',
+        page: 'wiki/b.md',
+        detail: 'disagrees with wiki/c.md on the go-live date',
+        at: '2026-11-02T10:00:00.000Z',
+      },
+    ],
+    pages: 7,
     uncaptured: 3,
     mirrorPages: 12,
     outsideEdits: [],

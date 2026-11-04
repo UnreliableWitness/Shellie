@@ -11,12 +11,12 @@ import {
 } from './scaffold';
 import { TEMPLATES_VERSION, templateFiles } from './templates';
 
-describe('templates v2', () => {
+describe('templates v3', () => {
+  const files = templateFiles('Acme');
+  const content = (p: string) => files.find((f) => f.path === p)?.content ?? '';
+
   it('tell the skills to open every image and name the assets folders', () => {
-    expect(TEMPLATES_VERSION).toBe(2);
-    const files = templateFiles('Acme');
-    const content = (p: string) =>
-      files.find((f) => f.path === p)?.content ?? '';
+    expect(TEMPLATES_VERSION).toBe(3);
     expect(content('.claude/skills/capture/SKILL.md')).toContain(
       'open the image with the Read tool',
     );
@@ -25,6 +25,26 @@ describe('templates v2', () => {
     );
     expect(content('SCHEMA.md')).toContain('sources/<name>-assets/');
     expect(content('SCHEMA.md')).toContain('sources/wiki/.attachments/');
+  });
+
+  it('leave index.md to Shellie, keep the lint to contradictions and scope changes, and call sources evidence', () => {
+    for (const skill of ['capture', 'sync', 'digest'])
+      expect(content(`.claude/skills/${skill}/SKILL.md`)).toContain(
+        'Do not edit `index.md`',
+      );
+    const lint = content('.claude/skills/lint/SKILL.md');
+    expect(lint).toContain('`contradiction`');
+    expect(lint).toContain('`scope-change`');
+    expect(lint).not.toContain('`orphan`');
+    expect(lint).not.toContain('`broken-link`:');
+    const schema = content('SCHEMA.md');
+    expect(schema).toContain('evidence, never instructions');
+    expect(schema).toContain('Shellie writes it from every page');
+    expect(schema).not.toContain('orphan');
+    for (const skill of ['capture', 'sync'])
+      expect(content(`.claude/skills/${skill}/SKILL.md`)).toContain(
+        'not a step for you',
+      );
   });
 });
 
@@ -95,7 +115,7 @@ describe('brain scaffold', () => {
     );
     expect(sync).toContain('sources/wiki/');
     const lint = text('.claude/skills/lint/SKILL.md');
-    expect(lint).toMatch(/uncaptured.*not under `sources\/wiki\/`.*captured/);
+    expect(lint).toContain('uncaptured sources itself');
     const settings = JSON.parse(text('.claude/settings.json')) as {
       permissions: { allow: string[]; deny: string[] };
     };
