@@ -152,3 +152,18 @@ describe('fences after the second review', () => {
     ]);
   });
 });
+
+describe('confidence and verified fields', () => {
+  it('are read as written, a bare verified date kept as its day', () => {
+    const p = parsePage(
+      'wiki/a.md',
+      '---\ntitle: A\nconfidence: low\nverified: 2026-11-02\n---\n',
+    );
+    expect(p.confidence).toBe('low');
+    expect(p.verified).toBe('2026-11-02');
+    expect(parsePage('wiki/a.md', '---\ntitle: A\n---\n')).toMatchObject({
+      confidence: null,
+      verified: null,
+    });
+  });
+});

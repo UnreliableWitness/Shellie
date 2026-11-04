@@ -422,3 +422,50 @@ describe('brain sources', () => {
     });
   });
 });
+
+describe('secret scan at drop time', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-secret-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('refuses pasted text and a file that hold a credential, writing nothing', async () => {
+    const r = await addSource(
+      git,
+      dir,
+      {
+        text:
+          'Deploy notes\n\nUse ghp_' +
+          'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 for the API.\n',
+        title: 'Notes',
+      },
+      'note',
+    );
+    expect(r).toEqual({
+      ok: false,
+      reason: 'secret',
+      message:
+        'looks like it holds a GitHub token (line 3); remove it and add it again',
+    });
+    const file = path.join(root, 'conn.md');
+    await fs.writeFile(
+      file,
+      '# Connection\n\nServer=db;Password=Sup3rSecretValue;Database=x\n',
+    );
+    const f = await addSource(git, dir, { file }, 'doc');
+    expect(f.ok).toBe(false);
+    if (f.ok) throw new Error('unexpected');
+    expect(f.reason).toBe('secret');
+    expect(await listSources(dir, null)).toEqual([]);
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+});

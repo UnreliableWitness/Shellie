@@ -5,6 +5,7 @@ import { errorMessage } from '../../shared/errors';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
 import { VIEWABLE, imageExt } from './convert/types';
+import { findSecrets } from './secrets';
 import { parseSourceFrontmatter, renderSource, sha256 } from './sourceFile';
 
 /** Env for git (the auth header), built by the caller from the connection's PAT. */
@@ -398,6 +399,12 @@ export async function refreshMirror(
       const hash = sha256(text);
       const prev = existing.get(rel);
       if (prev === hash) continue;
+      // The customer's wiki is copied as it is; a credential in it is theirs to remove, but the owner should know.
+      const secrets = findSecrets(text);
+      if (secrets.length)
+        warnings.push(
+          `${rel} looks like it holds a ${secrets[0].kind} (line ${secrets[0].line})`,
+        );
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(
         target,

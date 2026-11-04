@@ -31,6 +31,7 @@ export function localTarget(fromPage: string, target: string): string | null {
 
 const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?!\d)/;
 const pad = (n: number) => String(n).padStart(2, '0');
+const CONFIDENCE = new Set(['high', 'medium', 'low']);
 /** The local day of a timestamp: `last_updated` is the writer's local day, `ingested_at` a UTC instant. */
 export function localDay(iso: string): string {
   // A bare date is already a day, not an instant.
@@ -126,6 +127,18 @@ export async function checkBrain(
       missing.push('sources');
     if (missing.length)
       add('frontmatter', p.path, `missing ${missing.join(', ')}`);
+    if (p.confidence && !CONFIDENCE.has(p.confidence))
+      add(
+        'frontmatter',
+        p.path,
+        `confidence is not high, medium or low: ${p.confidence}`,
+      );
+    if (p.verified && !DAY.test(p.verified))
+      add(
+        'frontmatter',
+        p.path,
+        `verified is not a date (yyyy-mm-dd): ${p.verified}`,
+      );
     if (!p.lastUpdated) continue;
     if (!DAY.test(p.lastUpdated)) {
       add(
@@ -136,11 +149,14 @@ export async function checkBrain(
       continue;
     }
     const updated = p.lastUpdated.slice(0, 10);
+    // A person who verified the page after the source arrived has seen it against that source.
+    const verified =
+      p.verified && DAY.test(p.verified) ? p.verified.slice(0, 10) : '';
     for (const s of citedSources(p)) {
       const when = ingested.get(s);
       if (!when) continue;
       const ingestedDay = localDay(when);
-      if (ingestedDay > updated)
+      if (ingestedDay > updated && ingestedDay > verified)
         add(
           'stale',
           p.path,

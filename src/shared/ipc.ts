@@ -627,6 +627,11 @@ export type Channels = {
     args: [brainId: string, resumeSession?: string | null, prompt?: string];
     result: TerminalDef;
   };
+  /** A person checked a wiki page: writes today's local date as its `verified` and commits. */
+  'brain:verify': {
+    args: [brainId: string, page: string];
+    result: { verified: string };
+  };
   'brain:templateDiff': {
     args: [brainId: string];
     result: { path: string; status: 'same' | 'changed' | 'missing' }[];

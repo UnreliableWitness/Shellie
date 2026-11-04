@@ -284,3 +284,59 @@ describe('after the second review', () => {
     }
   });
 });
+
+describe('confidence and verified', () => {
+  let dir: string;
+  const now = new Date('2026-11-04T10:00:00Z');
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-check4-'));
+    await fs.mkdir(path.join(dir, 'wiki'), { recursive: true });
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  const write = (rel: string, text: string) =>
+    fs.writeFile(path.join(dir, ...rel.split('/')), text);
+
+  it('flags bad values and lets a verification cover a newer source', async () => {
+    await write(
+      'wiki/a.md',
+      '---\ntitle: A\nsummary: s\nsources: [sources/k.md]\nlast_updated: 2026-11-01\nconfidence: maybe\nverified: soon\n---\n',
+    );
+    await write(
+      'wiki/b.md',
+      '---\ntitle: B\nsummary: s\nsources: [sources/k.md]\nlast_updated: 2026-11-01\nconfidence: high\nverified: 2026-11-03\n---\n',
+    );
+    await write(
+      'wiki/c.md',
+      '---\ntitle: C\nsummary: s\nsources: [sources/k.md]\nlast_updated: 2026-11-01\nverified: 2026-11-02\n---\n',
+    );
+    const out = await checkBrain(
+      {
+        brainDir: dir,
+        pages: await readPages(dir),
+        sources: [row('sources/k.md', new Date(2026, 10, 3, 12).toISOString())],
+        indexMd: null,
+      },
+      now,
+    );
+    expect(out.map((f) => [f.kind, f.page, f.detail])).toEqual([
+      [
+        'frontmatter',
+        'wiki/a.md',
+        'confidence is not high, medium or low: maybe',
+      ],
+      ['frontmatter', 'wiki/a.md', 'verified is not a date (yyyy-mm-dd): soon'],
+      [
+        'stale',
+        'wiki/a.md',
+        'updated 2026-11-01, cites sources/k.md ingested 2026-11-03',
+      ],
+      [
+        'stale',
+        'wiki/c.md',
+        'updated 2026-11-01, cites sources/k.md ingested 2026-11-03',
+      ],
+    ]);
+  });
+});

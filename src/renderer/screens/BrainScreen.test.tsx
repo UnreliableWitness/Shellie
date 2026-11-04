@@ -96,7 +96,7 @@ describe('BrainScreen', () => {
     );
     expect(a.calls).toContainEqual({
       channel: 'brain:terminal',
-      args: ['b1', null, 'who owns billing?'],
+      args: ['b1', null, '/ask who owns billing?'],
     });
     expect(names(a)).not.toContain('terminals:write');
   });

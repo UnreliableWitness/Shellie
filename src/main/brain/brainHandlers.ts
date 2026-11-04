@@ -58,6 +58,7 @@ export type BrainChannels =
   | 'brain:sources'
   | 'brain:files'
   | 'brain:read'
+  | 'brain:verify'
   | 'brain:asset'
   | 'brain:terminal'
   | 'brain:templateDiff'
@@ -170,6 +171,64 @@ export async function refreshIndex(
       'index.md',
     ]);
     return true;
+  });
+}
+
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * Writes today's local date as the page's `verified` (replacing an earlier one) and commits the page alone as
+ * `Brain: verified <page>`. Only a wiki page with frontmatter; the value comes from the clock, never from a skill.
+ * An uncommitted edit of the page is committed first as an outside edit, so Health and /sync still see it.
+ */
+export async function verifyPage(
+  git: GitClient,
+  brainDir: string,
+  page: string,
+  now: Date,
+): Promise<string> {
+  const rel = path.posix.normalize(page.replace(/\\/g, '/'));
+  if (!/^wiki\/.+\.md$/.test(rel) || rel.startsWith('wiki/../'))
+    throw new Error('Only a page under wiki/ can be verified');
+  const file = path.join(brainDir, ...rel.split('/'));
+  const day = localDate(now);
+  return withBrainGit(brainDir, async () => {
+    const text = await fs.readFile(file, 'utf8');
+    const m = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(text);
+    if (!m) throw new Error('The page has no frontmatter');
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const lines = m[1].split(/\r?\n/).filter((l) => !/^verified:/.test(l));
+    lines.push(`verified: ${day}`);
+    const next = `---${eol}${lines.join(eol)}${eol}---${m[2]}${text.slice(m[0].length)}`;
+    // Already verified today, wherever the line sits: nothing to commit.
+    const current = /^verified:[ \t]*(.*?)[ \t]*$/m.exec(m[1])?.[1];
+    if (next === text || current === day) return day;
+    const dirty = (
+      await git.run(brainDir, ['status', '--porcelain', '--', rel])
+    ).trim();
+    if (dirty) {
+      await git.run(brainDir, ['add', '--', rel]);
+      await git.run(brainDir, [
+        'commit',
+        '-q',
+        '-m',
+        OUTSIDE_EDIT_MESSAGE,
+        '--',
+        rel,
+      ]);
+    }
+    await fs.writeFile(file, next, 'utf8');
+    await git.run(brainDir, ['add', '--', rel]);
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      `Brain: verified ${rel}`,
+      '--',
+      rel,
+    ]);
+    return day;
   });
 }
 
@@ -468,6 +527,15 @@ export function createBrainHandlers(
     'brain:read': async (id, rel) => ({
       text: (await readDoc(brainOf(id).path, rel)).text,
     }),
+    'brain:verify': async (id, page) => {
+      const b = brainOf(id);
+      // A running skill may be halfway through the page: the person would verify text they never saw.
+      if (d.runner.running(id)) throw new Error(BUSY);
+      const verified = await verifyPage(d.git, b.path, page, now());
+      d.event('brain.screen.action', { action: 'verify' });
+      changed(id);
+      return { verified };
+    },
     'brain:asset': async (id, rel) => readAsset(brainOf(id).path, rel),
     'brain:terminal': async (id, resumeSession, prompt) => {
       brainOf(id);

@@ -13,6 +13,10 @@ export type WikiPage = {
   lastUpdated: string | null;
   /** The `sources` entries as written, or null when the field is absent or not a list of strings. */
   sources: string[] | null;
+  /** `confidence` as written (high, medium, low expected), or null. */
+  confidence: string | null;
+  /** `verified` as written (a day a person checked the page), or null. */
+  verified: string | null;
   /** Markdown link and image targets in the body, outside fenced code, as written (fragment included). */
   links: string[];
   /** The first `# ` heading of the body, or null. */
@@ -148,6 +152,12 @@ export function parsePage(relPath: string, text: string): WikiPage {
     summary: str(data?.summary),
     lastUpdated: dateStr(data?.last_updated),
     sources: data ? stringList(data.sources) : null,
+    // A number (`confidence: 3`) is kept as text so the check can say it is not high, medium or low.
+    confidence:
+      typeof data?.confidence === 'number'
+        ? String(data.confidence)
+        : str(data?.confidence),
+    verified: dateStr(data?.verified),
     links: linkTargets(body),
     heading,
     firstLine,
