@@ -123,20 +123,26 @@ export function headingText(raw: string): string {
   const noLinks = noPictures.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
   return noLinks
     .split(/(`[^`]*`)/)
-    .map((part, i) =>
-      i % 2 === 1
-        ? part.slice(1, -1)
-        : part
-            .replace(
-              /(^|[\s"'.,:;!?()[\]{}<>])(?:\*\*|__|\*|_|~~)+(?=\S)/g,
-              '$1',
-            )
-            .replace(
-              /(?<=\S)(?:\*\*|__|\*|_|~~)+(?=[\s"'.,:;!?()[\]{}<>]|$)/g,
-              '',
-            ),
-    )
+    .map((part, i) => (i % 2 === 1 ? part.slice(1, -1) : unemphasised(part)))
     .join('');
+}
+
+/** Punctuation that may sit next to an emphasis mark; not `_`, `*` or `~`, which are marks themselves. */
+const EDGE = `[\\s"'.,:;!?()[\\]{}<>]`;
+/** `(^|edge)(mark)(text)(same mark)(?=edge|$)`: only a paired mark is emphasis; `_private` keeps its underscore. */
+const PAIRED = new RegExp(
+  `(^|${EDGE})(\\*\\*|__|\\*|_|~~)(\\S(?:.*?\\S)??)\\2(?=${EDGE}|$)`,
+  'g',
+);
+
+/** Emphasis marks dropped where they pair up, as the viewer renders them; run until nothing pairs any more. */
+function unemphasised(text: string): string {
+  let out = text;
+  for (;;) {
+    const next = out.replace(PAIRED, '$1$3');
+    if (next === out) return out;
+    out = next;
+  }
 }
 
 /** The matching line cut to SNIPPET characters around the match. */

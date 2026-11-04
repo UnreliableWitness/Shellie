@@ -226,6 +226,12 @@ describe('after review', () => {
     expect(headingText('__init__ and snake__double')).toBe(
       'init and snake__double',
     );
+    expect(headingText('_private')).toBe('_private');
+    expect(headingText('trailing_')).toBe('trailing_');
+    expect(headingText('(_x_) a _b_, c')).toBe('(x) a b, c');
+    expect(headingText("it's _x_'s file_name.md")).toBe(
+      "it's x's file_name.md",
+    );
     expect(headingText('![pic](p.png) Diagram')).toBe(' Diagram');
     expect(headingText('The `api` [link](x) **bold**')).toBe(
       'The api link bold',
