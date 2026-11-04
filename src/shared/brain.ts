@@ -159,6 +159,52 @@ export type BrainView = Brain & {
   jobs: BrainJob[];
 };
 
+/** Page types by file name, in the order the front page shows them. */
+export const BRAIN_PAGE_TYPES = [
+  'account',
+  'scope',
+  'component',
+  'glossary',
+  'decision',
+  'meeting',
+  'lesson',
+  'digest',
+  'other',
+] as const;
+export type BrainPageType = (typeof BRAIN_PAGE_TYPES)[number];
+
+/** A wiki page as the front page and the task tab show it, from its frontmatter and links. */
+export type BrainPageRow = {
+  path: string;
+  title: string;
+  /** '' when the page has neither a summary nor a first line. */
+  summary: string;
+  type: BrainPageType;
+  /** `last_updated` as written, or null. */
+  lastUpdated: string | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  /** The day a person checked the page, or null. */
+  verified: string | null;
+  changedSinceVerified: boolean;
+  /** Sources the page cites, repo-relative. */
+  sources: string[];
+  /** Pages whose links point here, repo-relative. */
+  linkedFrom: string[];
+};
+
+/** One line of a page or source matching a search. */
+export type BrainSearchHit = {
+  path: string;
+  kind: 'page' | 'source';
+  title: string;
+  /** 1-based line in the file. */
+  line: number;
+  /** The matching line, cut around the match. */
+  text: string;
+  /** The slug of the nearest heading above the line, as the viewer ids it, or null. */
+  anchor: string | null;
+};
+
 /** A wiki of an Azure DevOps project (REST `_apis/wiki/wikis`). */
 export type AdoWiki = {
   id: string;

@@ -1,6 +1,6 @@
 # Brain: browsing the wiki
 
-Follows `2026-11-04-brain-followups-design.md`. The owner asked for "ways to make the wiki visually attractive and easy to browse through", uses the brain both from inside a task looking for one fact and to read up on a customer before a meeting, and approved the picture below.
+Follows `2026-11-04-brain-followups-design.md`. The owner asked for "ways to make the wiki visually attractive and easy to browse through", uses the brain both from inside a task looking for one fact and to read up on a customer before a meeting, and approved the picture below. A builder check by a separate agent on 2026-11-04 corrected the mechanics; its answers are folded in and the open choices are settled below, marked "(my call)".
 
 ## Intent
 
@@ -14,63 +14,65 @@ Today the Brain screen's Wiki tab and the task's Brain tab are file browsers: fi
 
 ## Non-goals
 
-- A graph view. An Obsidian launcher. Editing pages in the app. Any change to the skills, the schema or what Shellie writes.
+- A graph view. An Obsidian launcher. Editing pages in the app. Any change to the skills, the schema or what Shellie writes. The Sources tab keeps `BrainFiles` as it is (with its Remove bar).
 
 ## Data (main process)
 
-All read-only, computed from files already on disk, no model call, no git call except where noted.
+All read-only, computed from files already on disk, no model call, no git call.
 
-- `brain:pages(brainId)` → `BrainPageRow[]`: every `wiki/**/*.md` page with `path`, `title` (frontmatter, else first heading, else file name), `summary` (frontmatter, else first paragraph line, else ''), `type` (`account`, `scope`, `component`, `decision`, `meeting`, `lesson`, `glossary`, `digest`, `other`, from the file name as the schema names them; `digests/` folder → `digest`), `lastUpdated` (day or null), `confidence` (`high`/`medium`/`low`/null), `verified` (day or null), `changedSinceVerified` (`verified` before `lastUpdated`), `sources` (repo-relative paths the page cites, from `citedSources`), `linkedFrom` (paths of pages whose links resolve to this page, from `pages.ts` links through `localTarget`). Uses `readPages`, `pageTitle`, `pageSummary` and `citedSources` that exist; sorted as the index sorts.
-- `brain:search(brainId, query)` → `BrainSearchHit[]`: case-insensitive substring search, `query` trimmed, at least 2 characters, over `wiki/**/*.md` first then `sources/**/*.md` (not `.attachments`, not `-assets`), outside the frontmatter block; per file at most 3 hits, at most 50 in all; a hit is `{ path, kind: 'page' | 'source', title, line, text }` with `text` the matching line cut to 160 characters around the match. Files over 2 MB skipped.
-- `brain:relevant(brainId, taskId)` → `string[]`: page paths ranked for the task. Words of 4+ letters (lower-cased, a short stop list: with, from, this, that, task, work, item) from the work item title, the task name and the first 200 lines of `.shellie/task.md` without its Context section (`withoutContext`); each page scores the number of distinct words found in its title (counted twice) and summary; the top 5 with a score above 0, by score then title. A task without a work item uses its name alone.
-- `brain:read` as today for the body; `brain:sources` (exists) gives a source's type, ingested day, contents line and original file for the source header.
+- `brain:pages(brainId)` → `BrainPageRow[]`: every `wiki/**/*.md` page (`readPages` in `pages.ts`) with `path`; `title` and `summary` from `pageTitle`/`pageSummary` in `indexPage.ts` (a page without either shows "(no summary)", rendered muted); `type` from the file name prefix as the schema names them (`account`, `scope-`, `component-`, `decision-`, `meeting-`, `lesson-`, `glossary`; a page under `wiki/digests/` is `digest`; anything else, sub-folder pages included, is `other`) (my call); `lastUpdated` (as written, or null); `confidence` (only `high`/`medium`/`low`, else null); `verified` (a `yyyy-mm-dd` day, else null); `changedSinceVerified` (`verified` before `lastUpdated`, both days); `sources` (`citedSources` in `check.ts`, repo-relative); `linkedFrom` (paths of pages whose links resolve through `localTarget` in `check.ts` to this page). Order: type order `account, scope, component, glossary, decision, meeting, lesson, digest, other`, then as the index sorts within a type (dated names newest first) (my call).
+- `brain:search(brainId, query)` → `BrainSearchHit[]`: case-insensitive substring search, `query` trimmed, at least 2 characters, over `wiki/**/*.md` first then `sources/**/*.md` (not `.attachments`, not `-assets`), outside the frontmatter block; per file at most 3 hits, at most 50 in all; a hit is `{ path, kind: 'page' | 'source', title, line, text, anchor }` with `text` the matching line cut to 160 characters around the match, `line` the 1-based line in the file, and `anchor` the slug of the nearest heading above the line (the same slugger `rehype-slug` uses, `github-slugger`, added as a direct dependency; `## p.3` → `p3`, `## Slide 4` → `slide-4`, a repeated heading gets `-1`, `-2` like the renderer) or null. Files over 2 MB skipped.
+- `brain:relevant(brainId, taskId)` → `string[]`: page paths ranked for the task. Words of 4+ letters (lower-cased, a short stop list: with, from, this, that, task, work, item, when, then, have, will) from the work item title and the task name together (deduplicated, so a name that repeats the title counts once) and from the first 200 lines of `.shellie/task.md` (`withoutContext` in `context.ts`; the task's `worktreePath`, which a no-repo task has too) when it exists; each page scores the number of distinct words found in its title (counted twice) and summary; the top 5 with a score above 0, by score then title. The task comes from `BrainHandlerDeps.task(taskId)`.
+- `brain:openSource(brainId, path)` → `void`: opens a file under `sources/` with the system (`BrainHandlerDeps.openPath`, as `brain:openFolder` does); refused outside `sources/` or with `..`. Used for a source's original (`BrainSourceRow.original`) and for a link to a non-markdown, non-image file (a `.pptx` original).
+- `brain:read` as today for the body (its "too large" error text is aligned with `DocsBody`'s `'too-large'` so the state shows); `brain:sources` (exists) gives a source's type, ingested day, contents line and original for the source header.
 
 ## Screens (renderer)
 
 ### The front page (Brain screen › Wiki tab)
 
-Replaces `BrainFiles` for the Wiki tab. From top to bottom:
+`BrainWiki` replaces `BrainFiles` for the Wiki tab. From top to bottom:
 
-1. **Pinned:** three cards side by side when they exist: the account page, the scope page(s), the latest digest. The owner's "within two clicks before a meeting".
-2. **Recent:** the last 10 lines of `log.md` that name pages (the `pages:` part of the schema's log format), newest first, each rendered as the action, the pages as links and the time. Pages touched since the brain was last opened in this app carry a "new" mark; "last opened" is the time the front page was last shown, kept per brain in `localStorage` (a convenience, never state).
-3. **Search:** a box over page text (`brain:search`); results replace the cards while a query is typed (two characters or more), each hit a row with the page title, the matching line with the match emphasised, and the kind; Enter or click opens the page at that line's heading when one is known, else at the top. Esc clears.
-4. **Cards by type**, in the schema's order: account, scope, components, glossary, decisions, meetings, lessons, digests, other. A section heading per type with the count, cards in a responsive grid (`minmax(220px, 1fr)`). A card: title, the summary (3 lines, then cut), a confidence badge (`high` green, `medium` neutral, `low` amber; none when absent), a verified badge ("verified 4 Nov" or "changed since verified" in amber), "updated <day>" muted. Dated types newest first, as the index. Click opens the page.
+1. **Pinned:** cards for the account page, every `scope-*` page (my call: all of them, the grid wraps) and the latest digest (by file name, the ISO week) (my call), when they exist.
+2. **Recent:** the last 10 entries of `log.md` (file order, newest first as the schema prescribes) that carry a `pages:` part (`→` or `->` accepted), each rendered as the skill, the pages as links and the timestamp. A `pages:` entry is matched, case-insensitively, against a page's path suffix, its file stem or its title; an entry that matches nothing is shown as text (my call). Pages touched since the brain was last opened in this app carry a "new" tag; "last opened" is a snapshot taken when the front page mounts, stored per brain in `localStorage` after the snapshot (a convenience: cleared storage just shows no tags) (my call).
+3. **Search:** a box over page text (`brain:search`, debounced 150 ms); results replace the cards while a query of 2+ characters is typed, each hit a row with the page or source title, the matching line with the match emphasised, and the kind; click or Enter (the first hit) opens it at its `anchor` when there is one, else at the top (my call). Esc clears.
+4. **Cards by type**, in the type order above, a section heading per type with the count, cards in a responsive grid (`minmax(240px, 1fr)`, like `.home-cards`). A card: title, the summary (3 lines, then cut), a confidence tag (`.tag-green` for high, `.tag-muted` for medium, `.tag-warn` for low; none when absent), a verified tag ("verified 4 Nov" muted, "changed since verified" warn, "not verified" muted) (my call), "updated <day>" muted. Dates in the app's locale, day and short month (my call). Click opens the page.
 
 ### The page view
 
-Opens inside the Wiki tab (and inside the task tab), with:
+`BrainPage` opens inside the Wiki tab and inside the task tab, replacing the lists, with:
 
-- **A bar:** back, forward (a history kept by the view: a stack of `{ path, anchor }`), the path as a breadcrumb (`wiki / decisions / 2026-11-03 database`), and for a wiki page the existing "Mark verified" bar's content folded into the header below.
-- **A header** from the frontmatter instead of the raw block: the title, the summary as the lead paragraph, badges (confidence, verified, updated), **Sources** as chips (the file name without date prefix and extension; click opens the source), **Linked from** as chips (page titles; click opens the page). For a source: its type, ingested day, the contents line, and "Original: <file>" that opens it with the system (the existing `brain:openFolder`-style open; a new `brain:openSource(brainId, path)` that calls `shell.openPath` on the original beside the source).
-- **The body**: the existing `MarkdownView` with the frontmatter block stripped (it is in the header), reading width capped at 72 characters of body text, images at most the column width with a click to open at full size (the existing asset data URL in a new window is enough), tables scrolling horizontally inside their box instead of overflowing.
-- **Links:** `MarkdownView` already resolves relative links and anchors; `onOpenDoc(path, anchor)` pushes to the history and opens the page or source, and after the text loads scrolls to the anchor's element (`rehype-slug` ids; `p3` and `slide-4` in citations match the converters' headings `## p.3` → `p3` and `## Slide 4` → `slide-4`; verify in tests). A link to a file that is not markdown (a picture) opens it as the asset. A web link opens the browser, as today.
+- **A bar:** back and forward over a history the view keeps (a stack of `{ path, anchor }`; lost when the view unmounts, which a pivot or tab switch does) (my call); back from the first page returns to the lists, and is disabled only on the lists (my call); a breadcrumb of the folder and the title ("wiki › decisions › Database") rather than the raw path (my call); for a wiki page, the "Mark verified" button.
+- **A header** from the frontmatter instead of the raw block: the title, the summary as the lead paragraph, tags (confidence, verified, updated), **Sources** as chips (the file name without date prefix and extension; click opens the source in this view), **Linked from** as chips (page titles; click opens the page). For a source: its type, ingested day, the contents line, and "Original: <file>" that opens it with the system (`brain:openSource`); no Remove here, that stays on the Sources tab (my call).
+- **The body**: `MarkdownView` with the frontmatter block stripped (it is in the header), brain-scoped styles (`.brain-doc .doc-md`): reading width `72ch`, images at most the column width, tables `display: block; overflow-x: auto`. A click on an image opens a lightbox (an in-app overlay with the asset at full size, Esc or click closes; the app's window guard allows no new windows).
+- **Links:** `MarkdownView` resolves relative links and calls `onOpenDoc(path, anchor)` for markdown targets and `onOpenFile(path)` for the rest. `BrainPage` pushes to the history and opens the target; after the text renders it scrolls to the anchor's element by id. `onOpenFile` opens an image as the asset lightbox and anything else under `sources/` with the system. Same-page `#` links scroll as today and do not enter the history (my call). A web link opens the browser, as today.
 
 ### The task's Brain tab
 
-From top to bottom, keeping the drop zone and "Open brain":
+`BrainTab` gets two new props from `TerminalTabs`: `taskId` and `onTerminal(def)` (the tab bar's existing `openBrainTerminal` path, which selects the terminal's tab). From top to bottom, keeping the drop zone and "Open brain":
 
-1. **Ask:** the Ask box of the Brain screen, same behaviour (`/ask <q>` into the brain terminal, which opens in the task's tab bar as "Continue in terminal" does today).
+1. **Ask:** an `AskBox` component extracted from the Brain screen (the same inline form, a toggle button opening it) (my call), sending `/ask <q>` through `openBrainTerminal` and handing the terminal to `onTerminal`.
 2. **Search:** the same search box and results as the front page.
-3. **For this task:** the `brain:relevant` pages as cards (same card), or the line "No page mentions this task yet" when none scores.
-4. **All pages:** the type sections in a compact form (one line per page: title, summary cut to one line, badges) instead of the index markdown.
-5. Opening anything shows the page view in place, with its back button returning to the tab's lists; the drop zone stays active around it.
+3. **For this task:** the `brain:relevant` pages as cards, or "No page mentions this task yet".
+4. **All pages:** the type sections in a compact form (one line per page: title, summary cut to one line, tags) instead of the index markdown.
+5. Opening anything shows `BrainPage` in place of the lists; the drop zone stays active around it.
 
-The index markdown rendering goes (the cards carry the same content). The filter box goes (search replaces it).
+The index markdown rendering and the filter box go.
 
 ## Styling
 
-Tokens already in `brain.css` and the app's variables. Cards use the app's `list-row` surfaces with a 1px border and 8px radius; badges are the app's small pill (`.pill` if present, else a new `.brain-badge`). The page view's body uses the docs typography already used for task docs. Dark and light both from the existing variables; nothing hard-coded.
+Badges are the app's `.tag` with `.tag-green`, `.tag-warn`, `.tag-muted` (`app.css`). Cards are a new `.brain-card` (1px `var(--border)`, `var(--radius)`, the app's surface) in a `.brain-card-grid`. Colours only from `tokens.css`. The brain-scoped reading styles live in `brain.css`, never in the shared `docs.css`.
 
 ## Telemetry
 
-`brain.screen.action` gains `open-page` (a card, a hit or a link opened a page), `search` (a query of 2+ characters was run; never the text), `back`. `docs/telemetry.md` updated.
+`brain.screen.action` gains `open-page` (a card, a hit, a chip or a link opened a page or a source), `search` (a debounced query of 2+ characters ran; never the text), `back` (back or forward). `docs/telemetry.md` updated.
 
 ## Tests
 
-Main: `brain:pages` rows (type from name, backlinks, changed since verified, digests folder), `brain:search` (frontmatter skipped, per-file and total caps, sources after pages, snippet cut), `brain:relevant` (title words count double, stop words, task.md without Context, no work item). Renderer: the front page renders pinned, recent with the new mark, cards by type with badges; search replaces the cards and opens a page; the page view's header, chips, backlinks, back and forward, anchor scroll; the task tab's Ask, relevant cards and page view in place. `npm test`, `npm run typecheck`, `npm run lint`, a review by a separate agent before merge.
+Main: `brain:pages` rows (type from name and folder, bad values nulled, backlinks, changed since verified, order), `brain:search` (frontmatter skipped, per-file and total caps, sources after pages, snippet cut, anchor slugs incl. repeats), `brain:relevant` (title words count double, stop words, name deduplicated against title, task.md without Context, missing task.md), `brain:openSource` guards. Renderer: the front page renders pinned, recent with the new tag and matched links, cards by type with tags; search replaces the cards and opens a hit at its anchor; the page view's header, chips, backlinks, back and forward, anchor scroll, the lightbox; the task tab's Ask through `onTerminal`, relevant cards and the page view in place. `npm test`, `npm run typecheck`, `npm run lint`, a review by a separate agent before merge.
 
 ## Known gaps to expect
 
 - Search is substring, not ranked; a brain of thousands of pages will feel it.
-- "Recent" relies on the skills writing the schema's log format; a line in another shape is shown without links.
+- "Recent" relies on the skills writing the schema's log format and real timestamps (a known gap: the skills sometimes invent one); a line in another shape is shown without links.
 - The relevance score is word overlap; it will miss a page named by a synonym.
+- The history is per view: switching pivots or task tabs forgets it.

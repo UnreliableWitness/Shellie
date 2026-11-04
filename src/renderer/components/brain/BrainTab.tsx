@@ -1,33 +1,50 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BrainView } from '../../../shared/brain';
+import type { TerminalDef } from '../../../shared/types';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
-import { MarkdownView } from '../docs/MarkdownView';
-import { BrainFiles } from './BrainFiles';
+import { AskBox } from './AskBox';
+import { BrainPage } from './BrainPage';
+import { BrainSearch } from './BrainSearch';
+import { useBrainPages } from './BrainWiki';
+import { PageCard, PageSections } from './PageCards';
 import { useBrainDrop } from './useBrainDrop';
+import { useBrainNav } from './useBrainNav';
 
-/** A task's Brain tab: the brain's index, its wiki pages (filtered by name), and a drop target for new sources. */
-export function BrainTab({ brain }: { brain: BrainView }) {
+/**
+ * A task's Brain tab: ask the brain, search it, the pages that matter for this task, every page in a compact list,
+ * a page opened in place; the whole tab takes dropped files as new sources.
+ */
+export function BrainTab({
+  brain,
+  taskId,
+  onTerminal,
+}: {
+  brain: BrainView;
+  taskId: string;
+  onTerminal: (def: TerminalDef) => void;
+}) {
   const go = useStore((s) => s.go);
-  const [index, setIndex] = useState<string | null>(null);
-  const [filter, setFilter] = useState('');
   const { over, problems, notes, dropProps } = useBrainDrop(brain.id);
-
-  const load = useCallback(() => {
+  const { rows, sources } = useBrainPages(brain.id);
+  const nav = useBrainNav();
+  const [searching, setSearching] = useState(false);
+  const [relevant, setRelevant] = useState<string[]>([]);
+  const loadRelevant = useCallback(() => {
     api()
-      .invoke('brain:read', brain.id, 'index.md')
-      .then(
-        (r) => setIndex(r.text),
-        () => setIndex(''),
-      );
-  }, [brain.id]);
-  useEffect(load, [load]);
-  useBrainChanged(brain.id, load);
-  const asset = useCallback(
-    (path: string) => api().invoke('brain:asset', brain.id, path),
-    [brain.id],
+      .invoke('brain:relevant', brain.id, taskId)
+      .then(setRelevant, () => setRelevant([]));
+  }, [brain.id, taskId]);
+  useEffect(loadRelevant, [loadRelevant]);
+  useBrainChanged(brain.id, loadRelevant);
+  const open = useCallback(
+    (path: string, anchor?: string) => nav.open(path, anchor),
+    [nav],
   );
+  const relevantRows = relevant
+    .map((p) => rows.find((r) => r.path === p))
+    .filter((r): r is NonNullable<typeof r> => !!r);
 
   return (
     <div
@@ -61,25 +78,42 @@ export function BrainTab({ brain }: { brain: BrainView }) {
           ))}
         </ul>
       )}
-      {index && index.trim() !== '' && (
-        <div className="brain-tab-index brain-doc">
-          <MarkdownView
-            asset={asset}
-            path="index.md"
-            text={index}
-            onOpenDoc={() => undefined}
-            onOpenFile={() => undefined}
-          />
-        </div>
+      {nav.current && (
+        <BrainPage
+          brainId={brain.id}
+          path={nav.current.path}
+          anchor={nav.current.anchor}
+          rows={rows}
+          sources={sources}
+          canBack={nav.canBack}
+          canForward={nav.canForward}
+          onOpen={open}
+          onBack={nav.back}
+          onForward={nav.forward}
+        />
       )}
-      <input
-        className="field"
-        aria-label="Filter pages"
-        placeholder="Filter pages"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
-      <BrainFiles brainId={brain.id} dir="wiki" filter={filter} />
+      {/* The lists stay mounted under an open page, so a search and its results are there on Back. */}
+      <div hidden={!!nav.current} className="brain-tab-lists">
+        <AskBox brainId={brain.id} onTerminal={onTerminal} />
+        <BrainSearch brainId={brain.id} onOpen={open} onActive={setSearching} />
+        {!searching && (
+          <>
+            <section className="brain-section" aria-label="For this task">
+              <h3>For this task</h3>
+              {relevantRows.length ? (
+                <div className="brain-card-grid">
+                  {relevantRows.map((r) => (
+                    <PageCard key={r.path} row={r} onOpen={open} />
+                  ))}
+                </div>
+              ) : (
+                <p className="muted small">No page mentions this task yet.</p>
+              )}
+            </section>
+            <PageSections rows={rows} compact onOpen={open} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

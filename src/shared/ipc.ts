@@ -4,6 +4,8 @@ import type {
   AdoWikiPage,
   BrainJob,
   BrainOptions,
+  BrainPageRow,
+  BrainSearchHit,
   BrainSourceRow,
   BrainView,
   BrainWiki,
@@ -590,6 +592,20 @@ export type Channels = {
     /** `files` changed; `skipped`: too large to scan. */
     result: { files: number; skipped: number };
   };
+  /** Every wiki page as the front page shows it, in its order. */
+  'brain:pages': { args: [brainId: string]; result: BrainPageRow[] };
+  /** Lines of pages then sources holding the query (2+ characters), capped. */
+  'brain:search': {
+    args: [brainId: string, query: string];
+    result: BrainSearchHit[];
+  };
+  /** The pages that mention the task's words, best first (at most 5). */
+  'brain:relevant': {
+    args: [brainId: string, taskId: string];
+    result: string[];
+  };
+  /** Opens a file under sources/ (an original, a picture) with the system. */
+  'brain:openSource': { args: [brainId: string, path: string]; result: void };
   'brain:delete': {
     args: [brainId: string, deleteFolder: boolean];
     result: void;

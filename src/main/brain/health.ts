@@ -44,22 +44,25 @@ async function outsideEdits(brainDir: string, git: GitClient) {
     for (const f of files) if (f.trim()) found.add(f.trim());
   }
   // No optional locks: Health must never hold .git/index.lock while a job or source commits.
+  // -z: NUL-separated records with the path as it is (never quoted); a rename record is followed by the old path.
   const status = await git
     .run(brainDir, [
       '--no-optional-locks',
       ...RAW,
       'status',
       '--porcelain',
+      '-z',
       '-uall',
       '--',
       'wiki/',
     ])
     .catch(() => '');
-  for (const line of status.split('\n')) {
-    if (line.length < 4) continue;
-    const p = line.slice(3);
-    // A rename shows as 'old -> new'.
-    found.add(p.includes(' -> ') ? p.split(' -> ')[1] : p);
+  const records = status.split('\0');
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    if (r.length < 4) continue;
+    found.add(r.slice(3));
+    if (r[0] === 'R' || r[0] === 'C') i++;
   }
   return [...found].sort();
 }

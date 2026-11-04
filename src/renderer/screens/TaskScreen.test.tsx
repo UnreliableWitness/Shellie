@@ -867,9 +867,6 @@ describe('tabs and focus', () => {
       {},
       {
         'brain:forTask': () => listedBrain(),
-        'brain:files': () => [
-          { path: 'wiki/a.md', name: 'a.md', changed: null },
-        ],
       },
     );
     render(<Shell />);
@@ -880,8 +877,8 @@ describe('tabs and focus', () => {
     expect(await screen.findByText('Acme')).toBeInTheDocument();
     await waitFor(() =>
       expect(calls).toContainEqual({
-        channel: 'brain:files',
-        args: ['b1', 'wiki'],
+        channel: 'brain:pages',
+        args: ['b1'],
       }),
     );
     // The body lives in the page area, not among the tab buttons.
@@ -895,18 +892,49 @@ describe('tabs and focus', () => {
     });
   });
 
-  it('the Brain tab shows the index, filters pages and adds dropped files', async () => {
+  it('the Brain tab lists the pages for the task and all pages, searches, and adds dropped files', async () => {
     const { calls } = setup(
       {},
       {
         'brain:forTask': () => listedBrain(),
-        'brain:read': (_id, rel) => ({
-          text: rel === 'index.md' ? '# Acme index\n\n- Scope of work' : '',
-        }),
-        'brain:files': () => [
-          { path: 'wiki/scope.md', name: 'scope.md', changed: null },
-          { path: 'wiki/account.md', name: 'account.md', changed: null },
+        'brain:pages': () => [
+          {
+            path: 'wiki/scope.md',
+            title: 'Scope of work',
+            summary: 'What we build.',
+            type: 'other',
+            lastUpdated: null,
+            confidence: null,
+            verified: null,
+            changedSinceVerified: false,
+            sources: [],
+            linkedFrom: [],
+          },
+          {
+            path: 'wiki/account.md',
+            title: 'Account',
+            summary: 'Who Acme is.',
+            type: 'other',
+            lastUpdated: null,
+            confidence: null,
+            verified: null,
+            changedSinceVerified: false,
+            sources: [],
+            linkedFrom: [],
+          },
         ],
+        'brain:relevant': () => ['wiki/scope.md'],
+        'brain:search': () => [
+          {
+            path: 'wiki/account.md',
+            kind: 'page',
+            title: 'Account',
+            line: 3,
+            text: 'Acme is the customer.',
+            anchor: null,
+          },
+        ],
+        'brain:read': () => ({ text: '# Account\n\nAcme is the customer.' }),
         'brain:addFiles': () => [
           {
             ok: true,
@@ -920,22 +948,26 @@ describe('tabs and focus', () => {
     );
     render(<Shell />);
     await userEvent.click(await screen.findByRole('tab', { name: /^Brain$/ }));
-    expect(
-      await screen.findByRole('heading', { name: 'Acme index' }),
-    ).toBeInTheDocument();
-    expect(calls).toContainEqual({
-      channel: 'brain:read',
-      args: ['b1', 'index.md'],
+    const forTask = await screen.findByRole('region', {
+      name: 'For this task',
     });
     expect(
-      await screen.findByRole('button', { name: 'wiki/account.md' }),
+      within(forTask).getByRole('button', { name: /Scope of work/ }),
     ).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Filter pages'), 'SCO');
+    expect(calls.some((c) => c.channel === 'brain:relevant')).toBe(true);
     expect(
-      screen.queryByRole('button', { name: 'wiki/account.md' }),
-    ).toBeNull();
+      screen.getByRole('region', { name: 'Other pages' }),
+    ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Search the brain'), 'acme');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Account/ }),
+    );
     expect(
-      screen.getByRole('button', { name: 'wiki/scope.md' }),
+      await screen.findByText('Acme is the customer.'),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(
+      await screen.findByLabelText('Search the brain'),
     ).toBeInTheDocument();
     const file = Object.assign(new File(['x'], 'notes.vtt'), {
       path: '/dl/notes.vtt',

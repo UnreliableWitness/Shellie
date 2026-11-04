@@ -54,7 +54,8 @@ const rank = (name: string) => {
   return i < 0 ? TYPE_ORDER.length : i;
 };
 
-function order(a: WikiPage, b: WikiPage): number {
+/** How pages of one folder are listed: by type prefix, dated names newest first, then by name. */
+export function pageOrder(a: WikiPage, b: WikiPage): number {
   const an = path.posix.basename(a.path);
   const bn = path.posix.basename(b.path);
   const r = rank(an) - rank(bn);
@@ -113,10 +114,10 @@ export function renderIndex(
     else folders.set(folder, [p]);
   }
   if (!top.length && !folders.size) out.push('(no pages yet)', '');
-  if (top.length) out.push(...top.sort(order).map(line), '');
+  if (top.length) out.push(...top.sort(pageOrder).map(line), '');
   for (const folder of [...folders.keys()].sort()) {
     out.push(`## ${folder}`, '');
-    out.push(...folders.get(folder)!.sort(order).map(line), '');
+    out.push(...folders.get(folder)!.sort(pageOrder).map(line), '');
   }
   return `${out.join('\n').replace(/\n+$/, '')}\n`;
 }
