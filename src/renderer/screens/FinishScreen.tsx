@@ -126,6 +126,7 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
   const [closeTerminals, setCloseTerminals] = useState(true);
   const [removeFolder, setRemoveFolder] = useState(false);
   const [captureTaskMd, setCaptureTaskMd] = useState(false);
+  const [captureLessons, setCaptureLessons] = useState(false);
   const [busy, setBusy] = useState(false);
   useEscape(back);
   if (!task) return null;
@@ -152,6 +153,7 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
         removeWorktree: removeFolder,
         deleteBranch: false,
         ...(brain && captureTaskMd ? { captureTaskMd: true } : {}),
+        ...(brain && captureLessons ? { captureLessons: true } : {}),
       });
       return true;
     }, notify);
@@ -207,6 +209,19 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
               Capture task.md into the brain
             </label>
           )}
+          {brain && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={captureLessons}
+                onChange={(e) => {
+                  if (e.target.checked) trackBrain('lessons-option');
+                  setCaptureLessons(e.target.checked);
+                }}
+              />
+              Save what this task taught into the brain
+            </label>
+          )}
         </div>
         <div className="finish-foot">
           <button type="button" className="btn" onClick={back}>
@@ -250,6 +265,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
   const [deleteBranch, setDeleteBranch] = useState(true);
   const brain = useTaskBrain(taskId);
   const [captureTaskMd, setCaptureTaskMd] = useState(false);
+  const [captureLessons, setCaptureLessons] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checksFailed, setChecksFailed] = useState<string | null>(null);
   const [pr, setPr] = useState<{
@@ -505,6 +521,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
           deleteBranch,
           ...options,
           ...(brain && captureTaskMd ? { captureTaskMd: true } : {}),
+          ...(brain && captureLessons ? { captureLessons: true } : {}),
           ...(Object.keys(prSummaries).length > 0 ? { prSummaries } : {}),
           ...(!withoutTime && time && bookValue !== null
             ? { bookedSeconds: bookValue }
@@ -1016,6 +1033,21 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
               </label>
               <div className="muted small">
                 Adds this task&apos;s task.md as a source and runs a capture.
+              </div>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={captureLessons}
+                  onChange={(e) => {
+                    if (e.target.checked) trackBrain('lessons-option');
+                    setCaptureLessons(e.target.checked);
+                  }}
+                />
+                Save what this task taught into the brain
+              </label>
+              <div className="muted small">
+                A digest of this task&apos;s Claude sessions becomes a source
+                and the brain writes lesson pages from it.
               </div>
             </>
           )}

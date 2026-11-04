@@ -32,7 +32,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `home.refreshed` | the Home page's data was rebuilt; number of connections, number that failed; duration in ms |
 | `home.failed` | a connection failed in a Home rebuild; `kind` (`unauthorized`, `unreachable`, `timeout`, `step`) |
 | `home.clicked` | a click on Home; `band` (`task`, `up-next`, `review`, `team-review`, `my-pr`, `sprint`, `stats-period`, `budget-month`, `budget-settings`) |
-| `brain.screen.action` | a button or drop on a Brain page; `action` (`refresh`, `lint`, `digest`, `ask`, `drop`, `paste`, `resolve`, `resume`, `retry`, `continue`, `capture` (a source captured from the inbox list or from an uncaptured finding on Health), `verify` (Mark verified on a wiki page), `terminal` (Open terminal, or from a task its brain terminal), `close-terminal`, and from a task: `tab`, `capture-option`); never names, paths or content |
+| `brain.screen.action` | a button or drop on a Brain page; `action` (`refresh`, `lint`, `digest`, `ask`, `drop`, `paste`, `resolve`, `resume`, `retry`, `continue`, `capture` (a source captured from the inbox list or from an uncaptured finding on Health), `verify` (Mark verified on a wiki page), `remove-source`, `scrub` (a value redacted across the brain; never the value), `lessons-option` (the Finish option ticked), `terminal` (Open terminal, or from a task its brain terminal), `close-terminal`, and from a task: `tab`, `capture-option`); never names, paths or content |
 | `budget.alert` | a budget alert fired (main); `vendor` (`claude`, `copilot`), `kind` (`at80`, `forecastOver`, `at100`) |
 | `costServer.connected`, `costServer.disconnected` | Settings › Cost server saved or forgot a connection; none (never the address, email or key) |
 | `costServer.connectFailed` | Settings › Cost server's test of a connection failed; `kind` (`network`, `auth`, `server`, `rejected`) |
@@ -92,7 +92,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `settings.copyEntries` | measurements: count per `copy:` entry state (`present`, `missing`, `holdsSecrets`, `notIgnored`, `outside`) and `suggestions`; no names or paths |
 | `settings.scope` | the Settings scope tab chosen (`user` or `repo`), by the tab or the other scope's results link |
 | `settings.search` | a Settings search, sent once the box has been still for 1 s; measurement `results`: matching settings in the current scope. Never the query |
-| `settings.brain` | `action`: `create`, `update`, `delete`, `update-skills` or `open-folder`; never names, paths or wikis |
+| `settings.brain` | `action`: `create`, `update`, `delete`, `update-skills`, `open-folder`, `archive` or `restore`; never names, paths or wikis |
 | `workItems.search` | picker scope (`sprint` or `mine`); whether search text was typed (not the text) |
 | `secrets.discovered` | Shellie looked for a repo's secrets (the import page opened); measurements only: `values` found, `secretLike`, `unassigned` (no environment from the file or profile name), `skipped` (names that cannot be environment variables), and the number of values per source kind (`dotenv`, `appsettings`, `launchSettings`, `userSecrets`, `vscode`, `compose`, `localSettings`, `secretsFolder`, `other`). Never a name, value, path or source |
 | `secrets.imported` | an import saved values; `environments`: the environments it saved values for, from the fixed four (`development`, `test`, `uat`, `production`, comma-separated); `rewriteWorktreeCopies`; measurements `values`, `worktreesRewritten`, `filesChanged` (main-checkout files the import took the keys out of) |
@@ -106,7 +106,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `repo.inspected` | a folder was inspected for adding: `remote` (`azure-devops`, `github`, `other` or `none`), `lockfile` (`npm`, `pnpm`, `yarn` or `none`), and `linked`, `dotnet`, `devScript`, `apm`, `existingConfig`, `secrets` (whether discovery found a secret-like value) (booleans); never paths, URLs, names or values |
 | `brain.created` | a brain was created or an existing brain folder adopted; `wiki` (whether a wiki mirror was chosen). Never the brain's name, path or project |
 | `brain.source.added` | a file or pasted text was added to a brain; `type` (`sow`, `deck`, `doc`, `transcript`, `note`, `task`, `wiki-page`), `format` (`pdf`, `docx`, `pptx`, `xlsx`, `vtt`, `drawio`, `md`, `txt`, `other`, or `text` for pasted text), `sizeKb` (`<10`, `10-100`, `100-1000`, `>1000`), `outcome` (`ok`, `unsupported`, `duplicate`, `needs-ocr`, `secret` (refused: it looked like it held a credential), `error`), `images` (pictures stored beside the source: `0`, `1-10`, `>10`). Never the file name or content |
-| `brain.job` | a brain's headless skill run finished; `kind` (`capture`, `sync`, `lint`, `digest`), `outcome` (`ok`, `failed`), `ms` (duration) |
+| `brain.job` | a brain's headless skill run finished; `kind` (`capture`, `sync`, `lint`, `digest`, `retract`, `lessons`), `outcome` (`ok`, `failed`), `ms` (duration) |
 | `brain.refresh` | a brain's wiki mirror was refreshed (the button or the daily refresh); `outcome` (`ok`, `failed`), `pages` (`0`, `1-10`, `11-100`, `>100`), `ms` (duration). Never a page name or URL |
 | `brain.deleted` | a brain was removed; `folder` (whether its folder was deleted too) |
 

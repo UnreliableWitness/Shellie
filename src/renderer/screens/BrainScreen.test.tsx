@@ -215,3 +215,28 @@ describe('BrainScreen', () => {
     });
   });
 });
+
+describe('BrainScreen scrub', () => {
+  it('sends the value to main and reports the count, never writing it anywhere else', async () => {
+    const a = setup(brainView(), {
+      'brain:scrub': () => ({ files: 3, skipped: 0 }),
+    });
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Scrub a value…' }),
+    );
+    await userEvent.type(screen.getByLabelText('Value to redact'), 'hunter2x!');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Redact everywhere' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:scrub',
+        args: ['b1', 'hunter2x!'],
+      }),
+    );
+    expect(useStore.getState().notices.map((n) => n.message)).toContainEqual(
+      expect.stringContaining('Redacted in 3 files'),
+    );
+  });
+});

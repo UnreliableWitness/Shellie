@@ -54,3 +54,20 @@ describe('BrainStore', () => {
     await expect(s.patch('nope', { name: 'x' })).rejects.toThrow(/nope/);
   });
 });
+
+describe('archived brains', () => {
+  it('are kept in the list but are not any project task brain', async () => {
+    const s = new BrainStore(file);
+    await s.load();
+    await s.add(brain('a', 'P'));
+    await s.add(brain('b', 'P'));
+    await s.patch('a', { archived: true });
+    expect(s.list().map((b) => [b.id, b.archived])).toEqual([
+      ['a', true],
+      ['b', false],
+    ]);
+    expect(s.forProject('c1', 'P').map((b) => b.id)).toEqual(['b']);
+    await s.patch('a', { archived: false });
+    expect(s.forProject('c1', 'P').map((b) => b.id)).toEqual(['a', 'b']);
+  });
+});

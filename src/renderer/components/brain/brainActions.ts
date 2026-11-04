@@ -20,7 +20,13 @@ export type BrainAction =
   | 'terminal'
   | 'capture-option'
   /** The Brain page's terminal closed (killed). */
-  | 'close-terminal';
+  | 'close-terminal'
+  /** Mark verified on a wiki page; a source removed; a value scrubbed. */
+  | 'verify'
+  | 'remove-source'
+  | 'scrub'
+  /** From a task's Finish: the lessons option ticked. */
+  | 'lessons-option';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>

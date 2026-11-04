@@ -5,6 +5,7 @@ import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
+import { trackBrain } from './brainActions';
 import { DocsBody, type Doc } from '../docs/DocsBody';
 
 /** A frontmatter field of a page's text, as written. */
@@ -46,6 +47,53 @@ function VerifiedBar({
       <button type="button" className="btn btn-sm" onClick={onVerify}>
         {verified ? 'Verify again' : 'Mark verified'}
       </button>
+    </div>
+  );
+}
+
+/** Remove a source (two clicks): the file, its original and pictures go; a /retract job takes its claims out. */
+function SourceBar({ path, onRemove }: { path: string; onRemove: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="brain-verified small" role="status">
+      {confirming ? (
+        <>
+          <span>
+            Remove {path}? Its claims are taken out of the pages; the file stays
+            in the brain&apos;s git history.
+          </span>
+          <span className="brain-bar-actions">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setConfirming(false);
+                onRemove();
+              }}
+            >
+              Remove source
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setConfirming(false)}
+            >
+              Keep
+            </button>
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="muted">Source</span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setConfirming(true)}
+          >
+            Remove…
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -147,6 +195,28 @@ export function BrainFiles({
         ))}
       </aside>
       <div className="brain-doc">
+        {dir === 'sources' &&
+          current &&
+          doc?.text != null &&
+          !current.startsWith('sources/wiki/') && (
+            <SourceBar
+              path={current}
+              onRemove={() =>
+                api()
+                  .invoke('brain:removeSource', brainId, current)
+                  .then(
+                    () => {
+                      trackBrain('remove-source');
+                      open.current = null;
+                      setCurrent(null);
+                      setDoc(null);
+                      loadList();
+                    },
+                    (e: unknown) => notify('error', errorMessage(e)),
+                  )
+              }
+            />
+          )}
         {dir === 'wiki' && current && doc?.text != null && (
           <VerifiedBar
             text={doc.text}
@@ -154,7 +224,10 @@ export function BrainFiles({
               api()
                 .invoke('brain:verify', brainId, current)
                 .then(
-                  () => read(current),
+                  () => {
+                    trackBrain('verify');
+                    read(current);
+                  },
                   (e: unknown) => notify('error', errorMessage(e)),
                 )
             }

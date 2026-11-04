@@ -5,6 +5,7 @@ import {
   BrainOptionsSchema,
   BrainSchema,
   BrainWikiSchema,
+  SOURCE_JOB_KINDS,
   SourceTypeSchema,
   type AddSourceResult,
   type Brain,
@@ -35,7 +36,8 @@ import {
   templateDiff,
 } from './scaffold';
 import type { Rasterize } from './convert';
-import { addSource, listSources } from './sources';
+import { scrubBrain } from './scrub';
+import { addSource, listSources, removeSource } from './sources';
 import { acquireLock, readState, releaseLock } from './state';
 import { TEMPLATES_VERSION } from './templates';
 import { rootGitItemPath, wikiPageUrl } from './wikiAccess';
@@ -59,6 +61,8 @@ export type BrainChannels =
   | 'brain:files'
   | 'brain:read'
   | 'brain:verify'
+  | 'brain:removeSource'
+  | 'brain:scrub'
   | 'brain:asset'
   | 'brain:terminal'
   | 'brain:templateDiff'
@@ -67,7 +71,7 @@ export type BrainChannels =
 
 export type BrainRunner = Pick<
   BrainJobRunner,
-  'enqueue' | 'jobs' | 'running' | 'resume'
+  'enqueue' | 'jobs' | 'running' | 'resume' | 'dropQueued'
 >;
 
 export type BrainHandlerDeps = {
@@ -99,6 +103,8 @@ export type BrainHandlerDeps = {
 
 const ROOT_FILES = new Set(['index.md', 'log.md', 'SCHEMA.md']);
 const BUSY = 'A brain job is running; try again later';
+const ARCHIVED =
+  'This brain is archived; restore it in Settings › Brains first';
 
 /** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
 const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];
@@ -205,11 +211,18 @@ export async function verifyPage(
     const current = /^verified:[ \t]*(.*?)[ \t]*$/m.exec(m[1])?.[1];
     if (next === text || current === day) return day;
     const dirty = (
-      await git.run(brainDir, ['status', '--porcelain', '--', rel])
+      await git.run(brainDir, [
+        '--literal-pathspecs',
+        'status',
+        '--porcelain',
+        '--',
+        rel,
+      ])
     ).trim();
     if (dirty) {
-      await git.run(brainDir, ['add', '--', rel]);
+      await git.run(brainDir, ['--literal-pathspecs', 'add', '--', rel]);
       await git.run(brainDir, [
+        '--literal-pathspecs',
         'commit',
         '-q',
         '-m',
@@ -219,8 +232,9 @@ export async function verifyPage(
       ]);
     }
     await fs.writeFile(file, next, 'utf8');
-    await git.run(brainDir, ['add', '--', rel]);
+    await git.run(brainDir, ['--literal-pathspecs', 'add', '--', rel]);
     await git.run(brainDir, [
+      '--literal-pathspecs',
       'commit',
       '-q',
       '-m',
@@ -265,6 +279,12 @@ export function createBrainHandlers(
     if (!b) throw new Error(`Unknown brain ${id}`);
     return b;
   };
+  /** A brain that takes work: an archived one is read-only until restored. */
+  const live = (id: string): Brain => {
+    const b = brainOf(id);
+    if (b.archived) throw new Error(ARCHIVED);
+    return b;
+  };
   /** A connection that was removed has no project. */
   const connectionProject = (id: string): string | null => {
     try {
@@ -284,7 +304,7 @@ export function createBrainHandlers(
       );
     // A source with a capture queued or running is not "uncaptured": a job is on it.
     const inFlight = jobs.flatMap((j) =>
-      j.kind === 'capture' &&
+      SOURCE_JOB_KINDS.has(j.kind) &&
       j.source &&
       (j.status === 'queued' || j.status === 'running' || j.status === 'paused')
         ? [j.source]
@@ -345,6 +365,8 @@ export function createBrainHandlers(
   const refreshing = new Map<string, Promise<RefreshResult>>();
   const refresh = async (id: string): Promise<RefreshResult> => {
     const b = brainOf(id);
+    // An archived brain's mirror stays as it is; the scheduler skips it, a click gets the answer.
+    if (b.archived) return { ok: false, message: ARCHIVED };
     // The mirror commits in the brain folder: never while a job runs there (the runner retries its lock).
     let locked: boolean;
     try {
@@ -436,6 +458,9 @@ export function createBrainHandlers(
               }),
             }
           : {}),
+        ...(typeof patch.archived === 'boolean'
+          ? { archived: patch.archived }
+          : {}),
       });
       if (name) d.remember([name]);
       changed(id);
@@ -462,7 +487,7 @@ export function createBrainHandlers(
     'brain:wikiPages': (connectionId, project, wikiId) =>
       d.tracker(connectionId).wikiPages(project, wikiId),
     'brain:addFiles': async (id, files) => {
-      const b = brainOf(id);
+      const b = live(id);
       const out: AddSourceResult[] = [];
       for (const f of files) {
         const type = SourceTypeSchema.parse(f.type);
@@ -486,7 +511,7 @@ export function createBrainHandlers(
       return out;
     },
     'brain:addText': async (id, text, title, type) => {
-      const b = brainOf(id);
+      const b = live(id);
       const t = SourceTypeSchema.parse(type);
       const r = await addSource(d.git, b.path, { text, title }, t);
       sourceAdded(t, 'text', Buffer.byteLength(text), r);
@@ -502,11 +527,11 @@ export function createBrainHandlers(
       return p;
     },
     'brain:run': async (id, kind, source) => {
-      brainOf(id);
+      live(id);
       return d.runner.enqueue(id, kind, source ?? null);
     },
     'brain:resumeQueue': async (id) => {
-      brainOf(id);
+      live(id);
       d.runner.resume(id);
     },
     'brain:sources': async (id) => {
@@ -527,12 +552,37 @@ export function createBrainHandlers(
     'brain:read': async (id, rel) => ({
       text: (await readDoc(brainOf(id).path, rel)).text,
     }),
+    'brain:removeSource': async (id, source) => {
+      const b = live(id);
+      if (d.runner.running(id)) throw new Error(BUSY);
+      // A capture still queued for it would write it back into the state.
+      d.runner.dropQueued(id, source);
+      await removeSource(d.git, b.path, source);
+      // Its claims come out of the pages; the Health check lists any link left to it meanwhile.
+      d.runner.enqueue(id, 'retract', source);
+      changed(id);
+    },
+    'brain:scrub': async (id, value) => {
+      const b = brainOf(id);
+      if (d.runner.running(id)) throw new Error(BUSY);
+      let r: { files: number; skipped: number };
+      try {
+        r = await scrubBrain(d.git, b.path, value);
+      } catch (e) {
+        // The error text may hold a path named after the value: nothing of it leaves main.
+        console.error('[brain] scrub failed', e instanceof Error ? e.name : '');
+        throw new Error(
+          'The scrub stopped halfway; check the brain folder with git status and try again',
+        );
+      }
+      changed(id);
+      return r;
+    },
     'brain:verify': async (id, page) => {
       const b = brainOf(id);
       // A running skill may be halfway through the page: the person would verify text they never saw.
       if (d.runner.running(id)) throw new Error(BUSY);
       const verified = await verifyPage(d.git, b.path, page, now());
-      d.event('brain.screen.action', { action: 'verify' });
       changed(id);
       return { verified };
     },

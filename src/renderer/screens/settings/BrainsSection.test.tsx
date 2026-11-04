@@ -289,3 +289,34 @@ describe('BrainsSection', () => {
     );
   });
 });
+
+describe('archiving', () => {
+  it('archives from the card, and lists an archived brain apart with Restore', async () => {
+    const { calls } = installFakeApi({ 'brain:list': () => [brain] });
+    render(<BrainsSection />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Archive' }),
+    );
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        channel: 'brain:update',
+        args: ['b1', { archived: true }],
+      }),
+    );
+  });
+
+  it('shows an archived brain under its own heading with Restore', async () => {
+    const { calls } = installFakeApi({
+      'brain:list': () => [{ ...brain, archived: true }],
+    });
+    render(<BrainsSection />);
+    expect(await screen.findByLabelText('Archived brains')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        channel: 'brain:update',
+        args: ['b1', { archived: false }],
+      }),
+    );
+  });
+});

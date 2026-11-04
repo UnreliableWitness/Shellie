@@ -215,6 +215,7 @@ import {
   closeLine,
   contextSection,
 } from '../brain/context';
+import { sessionDigest } from '../brain/sessionDigest';
 import { addSource } from '../brain/sources';
 import type { Brain } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
@@ -761,6 +762,7 @@ export function createHandlers(s: Services): Handlers {
       jobs: () => [],
       running: () => false,
       resume: () => undefined,
+      dropQueued: () => 0,
     },
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData: s.usageDir,
@@ -1818,6 +1820,44 @@ export function createHandlers(s: Services): Handlers {
     const b = taskBrain(task);
     if (!b) return;
     const taskMd = path.join(task.worktreePath, '.shellie', 'task.md');
+    if (options.captureLessons) {
+      // What the developer and Claude said in the task's sessions, as a source the /lessons skill reads.
+      try {
+        const ids = [...task.closedTerminals, ...task.terminals]
+          .filter((t) => t.kind === 'claude' && t.sessionId)
+          .map((t) => t.sessionId!);
+        const sessions: string[][] = [];
+        for (const id of new Set(ids)) {
+          const file = (s.claudeSessionFile ?? ((x) => claudeSessionFile(x)))(
+            id,
+          );
+          if (!file) continue;
+          const text = await fs.readFile(file, 'utf8').catch(() => '');
+          if (text) sessions.push(text.split('\n'));
+        }
+        const digest = sessionDigest(
+          task.workItem?.title ?? task.name,
+          sessions,
+        );
+        if (digest) {
+          const tmp = await fs.mkdtemp(
+            path.join(os.tmpdir(), 'shellie-lessons-'),
+          );
+          try {
+            const file = path.join(tmp, `${task.slug}-session.md`);
+            await fs.writeFile(file, digest);
+            const r = await addSource(s.git, b.path, { file }, 'task');
+            if (r.ok) brain.runner.enqueue(b.id, 'lessons', r.path);
+            else
+              console.error('[brain] session not added at finish:', r.message);
+          } finally {
+            await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.error('[brain] lessons not captured at finish', e);
+      }
+    }
     if (options.captureTaskMd && (await pathExists(taskMd))) {
       // A copy named after the task, so the source's name says which task it was.
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-task-'));

@@ -569,9 +569,26 @@ export type Channels = {
         name?: string;
         wiki?: BrainWiki | null;
         options?: Partial<BrainOptions>;
+        /** Archive (true) or restore (false): see `Brain.archived`. */
+        archived?: boolean;
       },
     ];
     result: BrainView;
+  };
+  /**
+   * Deletes a source (its original and assets too), forgets its capture, commits, and queues `/retract` to take
+   * its claims out of the pages. Not a wiki mirror page. The file stays in the brain's git history.
+   */
+  'brain:removeSource': { args: [brainId: string, path: string]; result: void };
+  /**
+   * Replaces every occurrence of a value (and its URL-encoded and base64 forms) in the brain's text files with
+   * `[REDACTED]`, renames files named after it, and commits; the value never leaves the call. `files`: how many
+   * changed. History keeps the old text.
+   */
+  'brain:scrub': {
+    args: [brainId: string, value: string];
+    /** `files` changed; `skipped`: too large to scan. */
+    result: { files: number; skipped: number };
   };
   'brain:delete': {
     args: [brainId: string, deleteFolder: boolean];
@@ -600,7 +617,7 @@ export type Channels = {
   'brain:run': {
     args: [
       brainId: string,
-      kind: 'lint' | 'digest' | 'sync' | 'capture',
+      kind: 'lint' | 'digest' | 'sync' | 'capture' | 'retract' | 'lessons',
       source?: string,
     ];
     result: BrainJob;

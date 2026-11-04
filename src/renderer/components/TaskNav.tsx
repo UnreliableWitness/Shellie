@@ -516,7 +516,9 @@ export function TaskNav() {
   );
   const rail = navCollapsed;
   // Like tasks, only the active project's brains (#229); none without a connection.
-  const brains = useBrains().filter((b) => b.connectionId === connection?.id);
+  const brains = useBrains().filter(
+    (b) => b.connectionId === connection?.id && !b.archived,
+  );
   const screen = useStore((s) => s.screen);
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }

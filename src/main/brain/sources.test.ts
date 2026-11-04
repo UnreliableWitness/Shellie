@@ -5,7 +5,8 @@ import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitClient } from '../services/GitClient';
 import { scaffoldBrain } from './scaffold';
-import { addSource, listSources } from './sources';
+import { addSource, listSources, removeSource } from './sources';
+import { readState, writeState } from './state';
 
 const VTT = `WEBVTT
 
@@ -467,5 +468,187 @@ describe('secret scan at drop time', () => {
     expect(f.reason).toBe('secret');
     expect(await listSources(dir, null)).toEqual([]);
     expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+});
+
+describe('removeSource', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('deletes the source, its original and assets, forgets the capture and commits those paths', async () => {
+    const file = path.join(root, 'standup.vtt');
+    await fs.writeFile(
+      file,
+      'WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello from the standup\n',
+    );
+    const r = await addSource(git, dir, { file }, 'transcript');
+    if (!r.ok) throw new Error(r.message);
+    const other = await addSource(
+      git,
+      dir,
+      { text: 'keep', title: 'Keep' },
+      'note',
+    );
+    if (!other.ok) throw new Error(other.message);
+    await writeState(dir, (s) => ({
+      ...s,
+      captured: {
+        [r.path]: { at: 't', sessionId: null },
+        [other.path]: { at: 't', sessionId: null },
+      },
+    }));
+    await fs.writeFile(path.join(dir, 'wiki', 'hand.md'), 'uncommitted\n');
+    await removeSource(git, dir, r.path);
+    const left = (await listSources(dir, (await readState(dir)).state)).map(
+      (s) => s.path,
+    );
+    expect(left).toEqual([other.path]);
+    expect(await fs.readdir(path.join(dir, 'sources'))).not.toContain(
+      path.basename(r.path).replace(/\.md$/, '.vtt'),
+    );
+    expect((await readState(dir)).state?.captured).toEqual({
+      [other.path]: { at: 't', sessionId: null },
+    });
+    expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+      `Brain: remove source ${r.path}`,
+    );
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe(
+      '?? wiki/hand.md',
+    );
+  });
+
+  it('refuses wiki mirror pages, paths outside sources/ and missing sources', async () => {
+    await expect(
+      removeSource(git, dir, 'sources/wiki/Page.md'),
+    ).rejects.toThrow(/wiki mirror/);
+    await expect(removeSource(git, dir, 'wiki/account.md')).rejects.toThrow(
+      /outside the wiki mirror/,
+    );
+    await expect(
+      removeSource(git, dir, 'sources/../SCHEMA.md'),
+    ).rejects.toThrow(/outside the wiki mirror/);
+    await expect(removeSource(git, dir, 'sources/none.md')).rejects.toThrow(
+      /No source/,
+    );
+  });
+});
+
+describe('removeSource after review', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove2-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('removes a source that was never committed, with its untracked original', async () => {
+    await fs.writeFile(
+      path.join(dir, 'sources', '2026-11-04-new.md'),
+      '---\ntitle: New\nsource_url: new.vtt\ningested_at: 2026-11-04T10:00:00.000Z\ncontent_type: transcript\nsha256: x\n---\n\nnew\n',
+    );
+    await fs.writeFile(
+      path.join(dir, 'sources', '2026-11-04-new.vtt'),
+      'WEBVTT',
+    );
+    await fs.mkdir(path.join(dir, 'sources', '2026-11-04-new-assets'));
+    await fs.writeFile(
+      path.join(dir, 'sources', '2026-11-04-new-assets', 'p.png'),
+      'x',
+    );
+    await removeSource(git, dir, 'sources/2026-11-04-new.md');
+    expect(await fs.readdir(path.join(dir, 'sources'))).toEqual(['.gitkeep']);
+    expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: remove source sources/2026-11-04-new.md',
+    );
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+
+  it('stops before deleting anything when brain/state.json is broken', async () => {
+    const r = await addSource(
+      git,
+      dir,
+      { text: 'keep', title: 'Keep' },
+      'note',
+    );
+    if (!r.ok) throw new Error(r.message);
+    await fs.writeFile(path.join(dir, 'brain', 'state.json'), '{bad');
+    await expect(removeSource(git, dir, r.path)).rejects.toThrow(/state\.json/);
+    expect(await fs.readdir(path.join(dir, 'sources'))).toContain(
+      path.basename(r.path),
+    );
+  });
+});
+
+describe('removeSource without a state file', () => {
+  it('recreates brain/state.json and commits', async () => {
+    const git = new GitClient();
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove3-')),
+    );
+    const dir = path.join(root, 'brain');
+    try {
+      await scaffoldBrain(git, dir, 'Acme');
+      const r = await addSource(
+        git,
+        dir,
+        { text: 'gone', title: 'Gone' },
+        'note',
+      );
+      if (!r.ok) throw new Error(r.message);
+      await git.run(dir, ['rm', '-q', '--', 'brain/state.json']);
+      await git.run(dir, ['commit', '-q', '-m', 'no state']);
+      await removeSource(git, dir, r.path);
+      expect((await readState(dir)).state).not.toBeNull();
+      expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('removeSource with a non-ASCII name', () => {
+  it('removes a committed source whose name has a space and an accent', async () => {
+    const git = new GitClient();
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove4-')),
+    );
+    const dir = path.join(root, 'brain');
+    try {
+      await scaffoldBrain(git, dir, 'Acme');
+      await fs.mkdir(path.join(dir, 'sources', 'sub'));
+      await fs.writeFile(
+        path.join(dir, 'sources', 'sub', 'x y é.md'),
+        '---\ntitle: X\nsource_url: x.pdf\ningested_at: 2026-11-04T10:00:00.000Z\ncontent_type: doc\nsha256: x\n---\n\nx\n',
+      );
+      await fs.writeFile(path.join(dir, 'sources', 'sub', 'x y é.pdf'), 'pdf');
+      await git.run(dir, ['add', '-A']);
+      await git.run(dir, ['commit', '-q', '-m', 'Brain: sync']);
+      await removeSource(git, dir, 'sources/sub/x y é.md');
+      expect(await fs.readdir(path.join(dir, 'sources', 'sub'))).toEqual([]);
+      expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+      expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+        'Brain: remove source sources/sub/x y é.md',
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

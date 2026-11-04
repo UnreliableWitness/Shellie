@@ -329,3 +329,72 @@ describe('brainJobEnv', () => {
     });
   });
 });
+
+describe('retract and lessons jobs', () => {
+  it('take a source, prompt the matching skill, and a lessons run records the capture', async () => {
+    dirs = { b: await mk('b') };
+    run = async () => ok('sess-1');
+    const r = runner();
+    expect(() => r.enqueue('b', 'retract')).toThrow(/needs a source/);
+    expect(() => r.enqueue('b', 'lessons')).toThrow(/needs a source/);
+    r.enqueue('b', 'retract', 'sources/gone.md');
+    r.enqueue('b', 'lessons', 'sources/2026-11-04-task-session.md');
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual([
+      '/retract sources/gone.md',
+      '/lessons sources/2026-11-04-task-session.md',
+    ]);
+    expect(commits.map(([, m]) => m)).toEqual([
+      'Brain: retract sources/gone.md',
+      'Brain: lessons sources/2026-11-04-task-session.md',
+    ]);
+    const { state } = await readState(dirs.b);
+    expect(Object.keys(state?.captured ?? {})).toEqual([
+      'sources/2026-11-04-task-session.md',
+    ]);
+    // No automatic lint after these, unlike a capture.
+    expect(r.jobs('b').map((j) => j.kind)).toEqual(['lessons', 'retract']);
+  });
+});
+
+describe('dropQueued', () => {
+  it('forgets the queued jobs on a source, not a running one', async () => {
+    dirs = { b: await mk('b') };
+    // The first job waits until released; the ones after it finish at once.
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'capture', 'sources/going.md');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    r.enqueue('b', 'capture', 'sources/going.md');
+    r.enqueue('b', 'lessons', 'sources/going.md');
+    r.enqueue('b', 'capture', 'sources/staying.md');
+    expect(r.dropQueued('b', 'sources/going.md')).toBe(2);
+    expect(r.jobs('b').map((j) => [j.kind, j.source, j.status])).toEqual([
+      ['capture', 'sources/staying.md', 'queued'],
+      ['capture', 'sources/going.md', 'running'],
+    ]);
+    expect(r.dropQueued('b', 'sources/none.md')).toBe(0);
+    release();
+    await idle(r, 'b');
+  });
+});
+
+describe('dropQueued and paused jobs', () => {
+  it('drops a job paused at the cap too', async () => {
+    dirs = { b: await mk('b') };
+    tokens = 1_000_000;
+    const r = runner();
+    r.enqueue('b', 'capture', 'sources/going.md');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('paused'));
+    expect(r.dropQueued('b', 'sources/going.md')).toBe(1);
+    expect(r.jobs('b')).toEqual([]);
+  });
+});
