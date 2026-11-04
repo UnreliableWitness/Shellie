@@ -186,9 +186,16 @@ export function drawioToMarkdown(xml: string): Converted {
     return {
       markdown: '_This diagram has no readable shapes or text._\n',
       title: null,
-      needsOcr: false,
+      images: [],
       warnings,
+      empty: false,
     };
   }
-  return { markdown: out.join('\n'), title: null, needsOcr: false, warnings };
+  return {
+    markdown: out.join('\n'),
+    title: null,
+    images: [],
+    warnings,
+    empty: false,
+  };
 }

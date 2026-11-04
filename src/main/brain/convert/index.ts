@@ -7,15 +7,17 @@ import { pptxToMarkdown } from './pptx';
 import { firstHeading, type Converted } from './types';
 import { vttToMarkdown } from './vtt';
 
-export type { Converted } from './types';
+export type { Converted, ConvertedImage } from './types';
+export { ASSETS_PLACEHOLDER } from './types';
 export { docxToMarkdown, pdfToMarkdown, pptxToMarkdown };
 
 function plain(markdown: string): Converted {
   return {
     markdown,
     title: firstHeading(markdown),
-    needsOcr: false,
+    images: [],
     warnings: [],
+    empty: markdown.trim() === '',
   };
 }
 

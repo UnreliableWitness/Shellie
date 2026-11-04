@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitClient } from '../services/GitClient';
 import { scaffoldBrain } from './scaffold';
@@ -11,6 +12,34 @@ const VTT = `WEBVTT
 00:00:01.000 --> 00:00:03.000
 <v Ann>Welcome to the kickoff.
 `;
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+const REL =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** One slide with a title, a picture and a picture in a format Claude cannot view. */
+async function deckWithPicture(): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    'ppt/presentation.xml',
+    '<p:presentation xmlns:p="p" xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>',
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    `<Relationships><Relationship Id="rId1" Type="${REL}/slide" Target="slides/slide1.xml"/></Relationships>`,
+  );
+  zip.file(
+    'ppt/slides/slide1.xml',
+    '<p:sld xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Architecture</a:t></a:r></a:p></p:txBody></p:sp><p:pic><p:nvPicPr><p:cNvPr id="4" name="P" descr="Three tiers"/></p:nvPicPr><p:blipFill><a:blip r:embed="rId2"/></p:blipFill></p:pic><p:pic><p:nvPicPr><p:cNvPr id="5" name="Q"/></p:nvPicPr><p:blipFill><a:blip r:embed="rId3"/></p:blipFill></p:pic></p:spTree></p:cSld></p:sld>',
+  );
+  zip.file(
+    'ppt/slides/_rels/slide1.xml.rels',
+    `<Relationships><Relationship Id="rId2" Type="${REL}/image" Target="../media/image1.png"/><Relationship Id="rId3" Type="${REL}/image" Target="../media/image2.emf"/></Relationships>`,
+  );
+  zip.file('ppt/media/image1.png', PNG);
+  zip.file('ppt/media/image2.emf', PNG);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
 
 describe('brain sources', () => {
   let root: string;
@@ -40,7 +69,12 @@ describe('brain sources', () => {
       'note',
       now,
     );
-    expect(r).toEqual({ ok: true, path: 'sources/2026-11-03-note.md' });
+    expect(r).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-note.md',
+      images: 0,
+      warnings: [],
+    });
     const text = await fs.readFile(
       path.join(dir, 'sources/2026-11-03-note.md'),
       'utf8',
@@ -57,7 +91,12 @@ describe('brain sources', () => {
     const f = path.join(root, 'Kickoff.vtt');
     await fs.writeFile(f, VTT);
     const r = await addSource(git, dir, { file: f }, 'transcript', now);
-    expect(r).toEqual({ ok: true, path: 'sources/2026-11-03-kickoff.md' });
+    expect(r).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-kickoff.md',
+      images: 0,
+      warnings: [],
+    });
     expect(
       await fs.readFile(
         path.join(dir, 'sources/2026-11-03-kickoff.vtt'),
@@ -159,9 +198,65 @@ describe('brain sources', () => {
     expect(r).toEqual({
       ok: false,
       reason: 'needs-ocr',
-      message: 'No text layer; needs OCR',
+      message: 'No text layer and no images; needs OCR',
     });
     expect(await fs.readdir(path.join(dir, 'sources'))).toEqual(['.gitkeep']);
+  });
+
+  it("stores a deck's pictures beside the source, linked from the slide", async () => {
+    const f = path.join(root, 'Platform Deck.pptx');
+    await fs.writeFile(f, await deckWithPicture());
+    const r = await addSource(git, dir, { file: f }, 'deck', now);
+    expect(r).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-platform-deck.md',
+      images: 1,
+      warnings: ['1 picture in formats Claude cannot view (emf)'],
+    });
+    const text = await fs.readFile(
+      path.join(dir, 'sources/2026-11-03-platform-deck.md'),
+      'utf8',
+    );
+    expect(text).toContain(
+      '## Slide 1\nArchitecture\n![Three tiers](2026-11-03-platform-deck-assets/slide-1-1.png)\n_Picture 2 (emf) could not be extracted_',
+    );
+    expect(text).not.toContain('{{assets}}');
+    expect(text).toContain(
+      '> Note: 1 picture in formats Claude cannot view (emf)',
+    );
+    const asset = await fs.readFile(
+      path.join(dir, 'sources/2026-11-03-platform-deck-assets/slide-1-1.png'),
+    );
+    expect(asset.equals(PNG)).toBe(true);
+    expect(await clean()).toBe('');
+    const committed = (
+      await git.run(dir, ['show', '--stat', '--format=', 'HEAD'])
+    ).trim();
+    expect(committed).toContain(
+      '2026-11-03-platform-deck-assets/slide-1-1.png',
+    );
+    expect(committed).toContain('2026-11-03-platform-deck.pptx');
+    const rows = await listSources(dir, null);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        path: 'sources/2026-11-03-platform-deck.md',
+        original: 'sources/2026-11-03-platform-deck.pptx',
+      }),
+    ]);
+  });
+
+  it('removes the assets folder when the commit fails', async () => {
+    const f = path.join(root, 'Deck.pptx');
+    await fs.writeFile(f, await deckWithPicture());
+    const failing = Object.create(git) as GitClient;
+    failing.run = (cwd, args, opts) =>
+      args[0] === 'commit'
+        ? Promise.reject(new Error('commit refused'))
+        : git.run(cwd, args, opts);
+    const r = await addSource(failing, dir, { file: f }, 'deck', now);
+    expect(r).toMatchObject({ ok: false, reason: 'error' });
+    expect(await fs.readdir(path.join(dir, 'sources'))).toEqual(['.gitkeep']);
+    expect(await clean()).toBe('');
   });
 
   it('listSources marks captured ones, newest first', async () => {
@@ -212,6 +307,8 @@ describe('brain sources', () => {
     expect(await addSource(git, dir, { file: f }, 'transcript', now)).toEqual({
       ok: true,
       path: 'sources/2026-11-03-kickoff.md',
+      images: 0,
+      warnings: [],
     });
   });
 
@@ -248,8 +345,18 @@ describe('brain sources', () => {
       'transcript',
       now,
     );
-    expect(r1).toEqual({ ok: true, path: 'sources/2026-11-03-kickoff.md' });
-    expect(r2).toEqual({ ok: true, path: 'sources/2026-11-03-kickoff-2.md' });
+    expect(r1).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-kickoff.md',
+      images: 0,
+      warnings: [],
+    });
+    expect(r2).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-kickoff-2.md',
+      images: 0,
+      warnings: [],
+    });
     const rows = await listSources(dir, null);
     expect(rows.map((x) => [x.path, x.original]).sort()).toEqual([
       ['sources/2026-11-03-kickoff-2.md', 'sources/2026-11-03-kickoff-2.vtt'],
@@ -274,7 +381,17 @@ describe('brain sources', () => {
       now,
     );
     const r2 = await addSource(git, dir, { file: f }, 'doc', now);
-    expect(r1).toEqual({ ok: true, path: 'sources/2026-11-03-source.md' });
-    expect(r2).toEqual({ ok: true, path: 'sources/2026-11-03-source-2.md' });
+    expect(r1).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-source.md',
+      images: 0,
+      warnings: [],
+    });
+    expect(r2).toEqual({
+      ok: true,
+      path: 'sources/2026-11-03-source-2.md',
+      images: 0,
+      warnings: [],
+    });
   });
 });

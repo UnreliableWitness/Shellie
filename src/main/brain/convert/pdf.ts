@@ -1,6 +1,46 @@
-import type { Converted } from './types';
+import { encodePng, type PixelKind } from './png';
+import { ImageCollector, type Converted } from './types';
 
-const OCR_THRESHOLD = 20;
+const TEXT_THRESHOLD = 20;
+/** Bullets, rules and icons: not worth a look. */
+const MIN_IMAGE_SIDE = 48;
+const MAX_PIXELS = 25_000_000;
+
+/** pdf.js ImageKind values. */
+const KIND: Record<number, PixelKind> = { 1: 'gray1', 2: 'rgb', 3: 'rgba' };
+
+type PdfImage = {
+  width: number;
+  height: number;
+  kind: number;
+  data?: Uint8Array | Uint8ClampedArray;
+};
+
+type Page = Awaited<
+  ReturnType<
+    Awaited<
+      ReturnType<
+        (typeof import('pdfjs-dist/legacy/build/pdf.mjs'))['getDocument']
+      >['promise']
+    >['getPage']
+  >
+>;
+
+/** Reads a painted image's pixels; null when pdf.js has no decoded data for it (masks, unresolved objects). */
+function imageOf(page: Page, arg: unknown): PdfImage | null {
+  try {
+    const obj =
+      typeof arg === 'string'
+        ? arg.startsWith('g_')
+          ? page.commonObjs.get(arg)
+          : page.objs.get(arg)
+        : arg;
+    const img = obj as PdfImage | null;
+    return img && img.data && img.width > 0 && img.height > 0 ? img : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -13,10 +53,19 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
     data: new Uint8Array(buf),
     verbosity: pdfjs.VerbosityLevel.ERRORS,
     useSystemFonts: true,
+    // Pixels, not bitmaps, for JPEG images.
+    isOffscreenCanvasSupported: false,
   });
+  const paintOps = new Set([
+    pdfjs.OPS.paintImageXObject,
+    pdfjs.OPS.paintInlineImageXObject,
+  ]);
   try {
     const doc = await task.promise;
     const sections: string[] = [];
+    const images = new ImageCollector();
+    // Image name -> markdown path, so an image painted on several pages is stored once.
+    const seen = new Map<string, string | null>();
     let total = 0;
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n);
@@ -33,14 +82,55 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
         .filter(Boolean)
         .join('\n');
       total += text.length;
-      sections.push(`## p.${n}\n\n${text}`);
+
+      const refs: string[] = [];
+      const ops = await page.getOperatorList();
+      let k = 0;
+      for (let i = 0; i < ops.fnArray.length; i++) {
+        if (!paintOps.has(ops.fnArray[i])) continue;
+        const arg = ops.argsArray[i]?.[0];
+        const key = typeof arg === 'string' ? arg : `inline-${n}-${i}`;
+        if (seen.has(key)) {
+          const ref = seen.get(key);
+          if (ref) refs.push(`![p.${n} image](${ref})`);
+          continue;
+        }
+        const img = imageOf(page, arg);
+        if (!img || !img.data) continue;
+        const kind = KIND[img.kind];
+        if (!kind) continue;
+        if (img.width < MIN_IMAGE_SIDE || img.height < MIN_IMAGE_SIDE) continue;
+        if (img.width * img.height > MAX_PIXELS) {
+          images.warn(
+            `p.${n}: an image of ${img.width}×${img.height} px was skipped`,
+          );
+          seen.set(key, null);
+          continue;
+        }
+        k++;
+        const name = `p${n}-${k}.png`;
+        const ref = images.add(
+          name,
+          encodePng(img.width, img.height, img.data, kind),
+        );
+        seen.set(key, ref);
+        if (ref) refs.push(`![p.${n} image ${k}](${ref})`);
+      }
+      sections.push(
+        `## p.${n}\n\n${[text, ...refs].filter(Boolean).join('\n')}`,
+      );
       page.cleanup();
+    }
+    const noText = total < TEXT_THRESHOLD;
+    if (noText && images.images.length > 0) {
+      images.warn('no text layer; captured from page images');
     }
     return {
       markdown: sections.join('\n\n') + '\n',
       title: null,
-      needsOcr: total < OCR_THRESHOLD,
-      warnings: [],
+      images: images.images,
+      warnings: images.warnings(),
+      empty: noText && images.images.length === 0,
     };
   } catch (err) {
     if ((err as { name?: string })?.name === 'PasswordException') {

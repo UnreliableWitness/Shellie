@@ -22,7 +22,7 @@ import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
-import { pagesBucket, sizeBucket } from './brainTelemetry';
+import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
 import { brainForTask } from './context';
 import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
@@ -197,6 +197,7 @@ export function createBrainHandlers(
       format,
       sizeKb: sizeBucket(bytes),
       outcome: r.ok ? 'ok' : r.reason,
+      images: imagesBucket(r.ok ? r.images : 0),
     });
 
   const mirror = async (b: Brain): Promise<RefreshResult> => {
