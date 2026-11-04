@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { BrainSourceRow } from '../../../shared/brain';
 import type { DocFile } from '../../../shared/types';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
@@ -17,6 +18,8 @@ export function BrainFiles({
   filter?: string;
 }) {
   const [files, setFiles] = useState<DocFile[] | null>(null);
+  /** For the sources list: what each file holds, by path. */
+  const [rows, setRows] = useState<Map<string, BrainSourceRow>>(new Map());
   const [current, setCurrent] = useState<string | null>(null);
   const [doc, setDoc] = useState<Doc | null>(null);
   const open = useRef<string | null>(null);
@@ -44,6 +47,14 @@ export function BrainFiles({
     [read],
   );
   const loadList = useCallback(() => {
+    if (dir === 'sources') {
+      api()
+        .invoke('brain:sources', brainId)
+        .then(
+          (list) => setRows(new Map(list.map((r) => [r.path, r]))),
+          () => undefined,
+        );
+    }
     api()
       .invoke('brain:files', brainId, dir)
       .then(setFiles, () => setFiles([]));
@@ -82,6 +93,11 @@ export function BrainFiles({
             onClick={() => choose(f.path)}
           >
             <span className="docs-file-name">{f.path}</span>
+            {rows.get(f.path)?.contents && (
+              <span className="docs-file-contents muted small">
+                {rows.get(f.path)?.contents}
+              </span>
+            )}
           </button>
         ))}
       </aside>

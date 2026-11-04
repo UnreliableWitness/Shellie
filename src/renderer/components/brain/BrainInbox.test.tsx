@@ -18,9 +18,9 @@ describe('BrainInbox', () => {
   it('dropping files calls brain:addFiles with guessed types', async () => {
     const a = installFakeApi({
       'brain:addFiles': () => [
-        { ok: true, path: 'sources/x', images: 0, warnings: [] },
-        { ok: true, path: 'sources/y', images: 0, warnings: [] },
-        { ok: true, path: 'sources/z', images: 0, warnings: [] },
+        { ok: true, path: 'sources/x', images: 0, warnings: [], contents: '' },
+        { ok: true, path: 'sources/y', images: 0, warnings: [], contents: '' },
+        { ok: true, path: 'sources/z', images: 0, warnings: [], contents: '' },
       ],
     });
     render(<BrainInbox brain={brainView()} />);
@@ -52,12 +52,14 @@ describe('BrainInbox', () => {
           path: 'sources/2026-11-04-plan.md',
           images: 3,
           warnings: ['1 picture in formats Claude cannot view (emf)'],
+          contents: '12 slides · 3 pictures: Kick-off',
         },
         {
           ok: true,
           path: 'sources/2026-11-04-sow.md',
           images: 0,
           warnings: [],
+          contents: '',
         },
       ],
     });
@@ -66,7 +68,9 @@ describe('BrainInbox', () => {
       dataTransfer: { files: [file('plan.pptx'), file('sow.docx')] },
     });
     const added = await screen.findByLabelText('Added');
-    expect(added).toHaveTextContent('Added 2026-11-04-plan.md · 3 pictures');
+    expect(added).toHaveTextContent(
+      'Added 2026-11-04-plan.md · 12 slides · 3 pictures: Kick-off',
+    );
     expect(added).toHaveTextContent(
       '2026-11-04-plan.md: 1 picture in formats Claude cannot view (emf)',
     );
@@ -98,6 +102,7 @@ describe('BrainInbox', () => {
         path: 'sources/n.md',
         images: 0,
         warnings: [],
+        contents: '',
       }),
     });
     render(<BrainInbox brain={brainView()} />);
@@ -163,6 +168,7 @@ describe('BrainInbox', () => {
           ingestedAt: '2026-11-02T10:00:00.000Z',
           captured: false,
           original: null,
+          contents: null,
         },
         {
           path: 'sources/2026-11-01-kickoff.md',
@@ -170,6 +176,7 @@ describe('BrainInbox', () => {
           ingestedAt: '2026-11-01T10:00:00.000Z',
           captured: true,
           original: null,
+          contents: null,
         },
         {
           path: 'sources/wiki/Home.md',
@@ -177,6 +184,7 @@ describe('BrainInbox', () => {
           ingestedAt: '2026-11-01T10:00:00.000Z',
           captured: false,
           original: null,
+          contents: null,
         },
       ],
       'brain:run': () => brainJob({ status: 'queued' }),

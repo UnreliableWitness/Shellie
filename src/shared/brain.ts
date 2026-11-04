@@ -118,6 +118,8 @@ export type BrainSourceRow = {
   ingestedAt: string;
   captured: boolean;
   original: string | null;
+  /** What the file holds, in one line; null for wiki pages and older sources. */
+  contents: string | null;
 };
 export type BrainHealth = {
   state: BrainState | null;
@@ -159,6 +161,8 @@ export type AddSourceResult =
       /** Pictures stored beside the source for Claude to look at. */
       images: number;
       warnings: string[];
+      /** What the source holds, in one line. */
+      contents: string;
     }
   | {
       ok: false;

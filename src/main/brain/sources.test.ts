@@ -74,6 +74,7 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-note.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
     const text = await fs.readFile(
       path.join(dir, 'sources/2026-11-03-note.md'),
@@ -96,6 +97,7 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-kickoff.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
     expect(
       await fs.readFile(
@@ -212,6 +214,7 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-platform-deck.md',
       images: 1,
       warnings: ['1 picture in formats Claude cannot view (emf)'],
+      contents: '1 slide · 1 picture: Architecture',
     });
     const text = await fs.readFile(
       path.join(dir, 'sources/2026-11-03-platform-deck.md'),
@@ -220,6 +223,8 @@ describe('brain sources', () => {
     expect(text).toContain(
       '## Slide 1\nArchitecture\n![Three tiers](2026-11-03-platform-deck-assets/slide-1-1.png)\n_Picture 2 (emf) could not be extracted_',
     );
+    expect(text).toContain('contents: "1 slide · 1 picture: Architecture"');
+    expect(r.ok && r.contents).toBe('1 slide · 1 picture: Architecture');
     expect(text).not.toContain('{{assets}}');
     expect(text).toContain(
       '> Note: 1 picture in formats Claude cannot view (emf)',
@@ -241,6 +246,7 @@ describe('brain sources', () => {
       expect.objectContaining({
         path: 'sources/2026-11-03-platform-deck.md',
         original: 'sources/2026-11-03-platform-deck.pptx',
+        contents: '1 slide · 1 picture: Architecture',
       }),
     ]);
   });
@@ -325,6 +331,7 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-kickoff.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
   });
 
@@ -366,12 +373,14 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-kickoff.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
     expect(r2).toEqual({
       ok: true,
       path: 'sources/2026-11-03-kickoff-2.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
     const rows = await listSources(dir, null);
     expect(rows.map((x) => [x.path, x.original]).sort()).toEqual([
@@ -402,12 +411,14 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-source.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
     expect(r2).toEqual({
       ok: true,
       path: 'sources/2026-11-03-source-2.md',
       images: 0,
       warnings: [],
+      contents: expect.any(String),
     });
   });
 });

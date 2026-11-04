@@ -11,15 +11,13 @@ export const guessType = (name: string): SourceType =>
 const failures = (results: AddSourceResult[]) =>
   results.flatMap((r) => (r.ok ? [] : [r.message]));
 
-/** One line per added file, with its picture count, then each converter warning. */
+/** One line per added file, with what it holds, then each converter warning. */
 export const notesOf = (results: AddSourceResult[]) =>
   results.flatMap((r) => {
     if (!r.ok) return [];
     const name = r.path.replace(/^sources\//, '');
-    const pictures =
-      r.images > 0 ? ` · ${r.images} picture${r.images === 1 ? '' : 's'}` : '';
     return [
-      `Added ${name}${pictures}`,
+      `Added ${name}${r.contents ? ` · ${r.contents}` : ''}`,
       ...r.warnings.map((w) => `${name}: ${w}`),
     ];
   });
