@@ -377,6 +377,43 @@ describe('xlsxToMarkdown', () => {
     expect(Date.now() - t0).toBeLessThan(2000);
   });
 
+  it('parses crafted open tags, text runs and style blocks in linear time', async () => {
+    const zip = new JSZip();
+    const many = (tag: string, n: number) =>
+      Array.from({ length: n }, () => tag).join('');
+    zip.file(
+      'xl/workbook.xml',
+      `<workbook xmlns:r="r">${many('<workbookPr ', 32_000)}<sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    );
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      `<Relationships><Relationship Id="rId1" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+    );
+    zip.file(
+      'xl/sharedStrings.xml',
+      `<sst><si>${many('<t>', 32_000)}</si><si><t>${many('<rPh>', 32_000)}</t></si></sst>`,
+    );
+    zip.file(
+      'xl/styles.xml',
+      `<styleSheet>${many('<cellXfs>', 32_000)}</styleSheet>`,
+    );
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<worksheet><sheetData><row><c r="A1" t="s"><v>0</v></c><c r="B1" t="str"><v>x</v></c></row></sheetData></worksheet>',
+    );
+    const buf = await zip.generateAsync({ type: 'nodebuffer' });
+    const t0 = Date.now();
+    const r = await xlsxToMarkdown(buf);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(r.markdown).toContain('| x |');
+  });
+
+  it('does not take backslash-escaped letters in a number format for a date', () => {
+    expect(isDateFormat('General\\ \\d\\a\\y\\s')).toBe(false);
+    expect(isDateFormat('0\\ \\h')).toBe(false);
+    expect(isDateFormat('dd\\.mm\\.yyyy')).toBe(true);
+  });
+
   it('reads column letters and Excel serial dates', () => {
     expect(columnIndex('A1')).toBe(0);
     expect(columnIndex('Z9')).toBe(25);
