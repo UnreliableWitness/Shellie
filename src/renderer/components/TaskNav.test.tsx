@@ -195,6 +195,23 @@ describe('attention', () => {
 });
 
 describe('brains', () => {
+  const conn = (id: string, project: string) => ({
+    id,
+    name: 'unreliablewitness',
+    organizationUrl: 'https://dev.azure.com/unreliablewitness',
+    project,
+    user: 'D',
+    status: 'ok' as const,
+    checkedAt: null,
+    userUniqueName: null,
+    provider: 'azure-devops' as const,
+    workItemOnStart: {
+      moveToInProgress: true,
+      assignToMe: true,
+      stateOverrides: {},
+    },
+  });
+
   it('shows one item per brain and opens its screen', async () => {
     installFakeApi({
       'brain:list': () => [
@@ -202,6 +219,7 @@ describe('brains', () => {
         listedBrain({ id: 'b2', name: 'Globex' }),
       ],
     });
+    useStore.setState({ connections: [conn('c1', 'Shellie')] });
     render(<TaskNav />);
     await userEvent.click(
       await screen.findByRole('button', { name: 'Globex' }),
@@ -215,6 +233,39 @@ describe('brains', () => {
       'aria-current',
       'page',
     );
+  });
+
+  it('shows only the active project’s brains (#229)', async () => {
+    installFakeApi({
+      'brain:list': () => [
+        listedBrain({ id: 'b1', name: 'IML HUB brain', connectionId: 'c1' }),
+        listedBrain({ id: 'b2', name: 'DXP brain', connectionId: 'c2' }),
+      ],
+    });
+    useStore.setState({
+      connections: [conn('c1', 'IML Hub'), conn('c2', 'DXP')],
+      connectionId: 'c2',
+      selectedTaskId: null,
+      screen: { kind: 'sprint' },
+    });
+    render(<TaskNav />);
+    expect(
+      await screen.findByRole('button', { name: 'DXP brain' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'IML HUB brain' })).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Project DXP, switch project' }),
+    );
+    await userEvent.click(
+      within(screen.getByRole('menu', { name: 'Projects' })).getByRole(
+        'menuitemradio',
+        { name: /IML Hub/ },
+      ),
+    );
+    expect(
+      screen.getByRole('button', { name: 'IML HUB brain' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'DXP brain' })).toBeNull();
   });
 });
 

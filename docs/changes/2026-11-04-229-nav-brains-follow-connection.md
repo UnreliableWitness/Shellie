@@ -1,0 +1,3 @@
+# The nav's brains follow the project switcher
+
+The left nav now lists only the brains of the active project (#229) on `agent/issues/229-brain-is-linked-to-connection`, as the task list has done since #219. Before, `TaskNav` rendered every brain `brain:list` returned, so the 'IML HUB brain' still showed after switching to the 'DXP' project. `TaskNav` in `src/renderer/components/TaskNav.tsx` now keeps a brain when its `connectionId` is the active connection's; with no connection it shows none. `brain:list` and the Brains section in Settings still see every brain. Picking a project in the switcher already goes to Sprint, so a brain screen of the other project is not left open. Not verified: in the running app, and on Windows. No telemetry change.
