@@ -189,7 +189,13 @@ describe('brain handlers', () => {
     expect(broadcasts).toContainEqual(['brain:changed', { brainId: v.id }]);
     expect(events).toContainEqual([
       'brain.source.added',
-      { type: 'note', format: 'text', sizeKb: '<10', outcome: 'ok' },
+      {
+        type: 'note',
+        format: 'text',
+        sizeKb: '<10',
+        outcome: 'ok',
+        images: '0',
+      },
     ]);
   });
 
@@ -209,11 +215,23 @@ describe('brain handlers', () => {
     expect(events.filter((e) => e[0] === 'brain.source.added')).toEqual([
       [
         'brain.source.added',
-        { type: 'doc', format: 'other', sizeKb: '<10', outcome: 'unsupported' },
+        {
+          type: 'doc',
+          format: 'other',
+          sizeKb: '<10',
+          outcome: 'unsupported',
+          images: '0',
+        },
       ],
       [
         'brain.source.added',
-        { type: 'doc', format: 'md', sizeKb: '<10', outcome: 'ok' },
+        {
+          type: 'doc',
+          format: 'md',
+          sizeKb: '<10',
+          outcome: 'ok',
+          images: '0',
+        },
       ],
     ]);
   });

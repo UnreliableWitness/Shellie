@@ -11,14 +11,28 @@ export const guessType = (name: string): SourceType =>
 const failures = (results: AddSourceResult[]) =>
   results.flatMap((r) => (r.ok ? [] : [r.message]));
 
+/** One line per added file, with its picture count, then each converter warning. */
+export const notesOf = (results: AddSourceResult[]) =>
+  results.flatMap((r) => {
+    if (!r.ok) return [];
+    const name = r.path.replace(/^sources\//, '');
+    const pictures =
+      r.images > 0 ? ` · ${r.images} picture${r.images === 1 ? '' : 's'}` : '';
+    return [
+      `Added ${name}${pictures}`,
+      ...r.warnings.map((w) => `${name}: ${w}`),
+    ];
+  });
+
 /**
  * Files dropped (or chosen) for a brain go to `brain:addFiles`: `dropProps` go on the drop target, `over` is true
- * while a drag is above it, `problems` are what could not be added.
+ * while a drag is above it, `problems` are what could not be added, `notes` what was added and what its conversion left out.
  */
 export function useBrainDrop(brainId: string) {
   const notify = useStore((s) => s.notify);
   const [over, setOver] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
+  const [notes, setNotes] = useState<string[]>([]);
 
   const addFiles = async (files: File[]) => {
     if (files.length === 0) return;
@@ -32,6 +46,7 @@ export function useBrainDrop(brainId: string) {
       notify,
     );
     setProblems(results ? failures(results) : []);
+    setNotes(results ? notesOf(results) : []);
   };
 
   const dropProps = {
@@ -47,5 +62,5 @@ export function useBrainDrop(brainId: string) {
     },
   };
 
-  return { over, problems, setProblems, addFiles, dropProps };
+  return { over, problems, setProblems, notes, addFiles, dropProps };
 }

@@ -7,7 +7,11 @@ import type {
   SourceType,
 } from '../../shared/brain';
 import type { GitClient } from '../services/GitClient';
-import { convertFile } from './convert';
+import {
+  ASSETS_PLACEHOLDER,
+  convertFile,
+  type ConvertedImage,
+} from './convert';
 import { withBrainGit } from './gitMutex';
 import {
   parseSourceFrontmatter,
@@ -65,6 +69,8 @@ export async function addSource(
   let hash: string;
   let slugBase: string;
   let original: { buf: Buffer; ext: string } | null = null;
+  let images: ConvertedImage[] = [];
+  let warnings: string[] = [];
 
   if ('file' in input) {
     const base = path.basename(input.file);
@@ -86,11 +92,11 @@ export async function addSource(
         message: `Unsupported file type: ${ext || base}`,
       };
     }
-    if (converted.needsOcr) {
+    if (converted.empty) {
       return {
         ok: false,
         reason: 'needs-ocr',
-        message: 'No text layer; needs OCR',
+        message: 'No text layer and no images; needs OCR',
       };
     }
     const buf = await fs.readFile(input.file);
@@ -101,6 +107,8 @@ export async function addSource(
     body = converted.markdown.trimEnd() + '\n';
     for (const w of converted.warnings) body += `\n> Note: ${w}\n`;
     if (!['.md', '.txt'].includes(ext.toLowerCase())) original = { buf, ext };
+    images = converted.images;
+    warnings = converted.warnings;
   } else {
     title = input.title;
     sourceUrl = input.url ?? input.title;
@@ -118,6 +126,8 @@ export async function addSource(
       hash,
       slugBase,
       original,
+      images,
+      warnings,
     }),
   );
 }
@@ -134,9 +144,11 @@ async function writeSource(
     hash: string;
     slugBase: string;
     original: { buf: Buffer; ext: string } | null;
+    images: ConvertedImage[];
+    warnings: string[];
   },
 ): Promise<AddSourceResult> {
-  const { title, sourceUrl, body, hash, slugBase, original } = src;
+  const { title, sourceUrl, hash, slugBase, original, images, warnings } = src;
   const existing = await readSources(brainDir);
   const dup = existing.find((s) => s.fm.sha256 === hash);
   if (dup) {
@@ -147,6 +159,7 @@ async function writeSource(
     };
   }
 
+  // Files and folders written: removed again if anything below fails.
   const written: string[] = [];
   // Repo-relative paths of what is written: the only paths staged and committed.
   const rels: string[] = [];
@@ -158,10 +171,25 @@ async function writeSource(
     const date = now();
     const slug = slugify(slugBase) || 'source';
     const name = sourceFileName(date, slug, taken);
+    const stem = name.replace(/\.md$/, '');
+    const assetsDir = `${stem}-assets`;
+    // Only converter output with pictures carries the placeholder; other sources keep their text as is.
+    const body = images.length
+      ? src.body.split(`${ASSETS_PLACEHOLDER}/`).join(`${assetsDir}/`)
+      : src.body;
+    if (images.length) {
+      written.push(path.join(sourcesDir, assetsDir));
+      await fs.mkdir(written[0], { recursive: true });
+      for (const img of images) {
+        const rel = `sources/${assetsDir}/${img.name}`;
+        rels.push(rel);
+        await fs.writeFile(path.join(brainDir, rel), img.data);
+      }
+    }
     written.push(path.join(sourcesDir, name));
     rels.push(`sources/${name}`);
     await fs.writeFile(
-      written[0],
+      path.join(sourcesDir, name),
       renderSource(
         {
           title,
@@ -177,7 +205,7 @@ async function writeSource(
       const copyName = name.replace(/\.md$/, original.ext.toLowerCase());
       written.push(path.join(sourcesDir, copyName));
       rels.push(`sources/${copyName}`);
-      await fs.writeFile(written[1], original.buf);
+      await fs.writeFile(path.join(sourcesDir, copyName), original.buf);
     }
     staged = true;
     await git.run(brainDir, ['add', '--', ...rels]);
@@ -189,9 +217,14 @@ async function writeSource(
       '--',
       ...rels,
     ]);
-    return { ok: true, path: `sources/${name}` };
+    return {
+      ok: true,
+      path: `sources/${name}`,
+      images: images.length,
+      warnings,
+    };
   } catch (e) {
-    for (const f of written) await fs.rm(f, { force: true });
+    for (const f of written) await fs.rm(f, { recursive: true, force: true });
     if (staged && rels.length) {
       await git.run(brainDir, ['reset', '-q', '--', ...rels]).catch(() => '');
     }

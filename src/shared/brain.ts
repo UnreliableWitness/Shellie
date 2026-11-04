@@ -153,7 +153,13 @@ export type AdoWikiPage = {
 };
 
 export type AddSourceResult =
-  | { ok: true; path: string }
+  | {
+      ok: true;
+      path: string;
+      /** Pictures stored beside the source for Claude to look at. */
+      images: number;
+      warnings: string[];
+    }
   | {
       ok: false;
       reason: 'unsupported' | 'duplicate' | 'needs-ocr' | 'error';

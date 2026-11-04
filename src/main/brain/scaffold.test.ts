@@ -11,6 +11,23 @@ import {
 } from './scaffold';
 import { TEMPLATES_VERSION, templateFiles } from './templates';
 
+describe('templates v2', () => {
+  it('tell the skills to open every image and name the assets folders', () => {
+    expect(TEMPLATES_VERSION).toBe(2);
+    const files = templateFiles('Acme');
+    const content = (p: string) =>
+      files.find((f) => f.path === p)?.content ?? '';
+    expect(content('.claude/skills/capture/SKILL.md')).toContain(
+      'open the image with the Read tool',
+    );
+    expect(content('.claude/skills/sync/SKILL.md')).toContain(
+      'open every image it links',
+    );
+    expect(content('SCHEMA.md')).toContain('sources/<name>-assets/');
+    expect(content('SCHEMA.md')).toContain('sources/wiki/.attachments/');
+  });
+});
+
 describe('brain scaffold', () => {
   let root: string;
   let dir: string;

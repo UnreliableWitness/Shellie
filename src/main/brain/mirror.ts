@@ -4,6 +4,7 @@ import type { BrainWiki, RefreshResult } from '../../shared/brain';
 import { errorMessage } from '../../shared/errors';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
+import { VIEWABLE, imageExt } from './convert/types';
 import { parseSourceFrontmatter, renderSource, sha256 } from './sourceFile';
 
 /** Env for git (the auth header), built by the caller from the connection's PAT. */
@@ -12,6 +13,7 @@ export type MirrorAuth = () => Promise<Record<string, string>>;
 export type { RefreshResult };
 
 const WIKI_DIR = 'sources/wiki';
+const ATTACHMENTS = '.attachments';
 /** The wiki checkout keeps LF whatever the machine's git says (Windows runners set core.autocrlf=true). */
 const LF = ['-c', 'core.autocrlf=false'];
 
@@ -87,6 +89,53 @@ async function walk(dir: string, rel = ''): Promise<string[]> {
     } else if (e.name.toLowerCase().endsWith('.md')) out.push(next);
   }
   return out;
+}
+
+/**
+ * Attachment links as Azure DevOps writes them: `](/.attachments/name.png)` (also without the leading slash,
+ * and with the `=WxH` size suffix). Group 1 is the file name.
+ */
+const ATTACHMENT_LINK =
+  /\]\(\/?\.attachments\/((?:[^()\s]|\([^()\s]*\))+)(?:\s+=\d*x\d*)?\)/g;
+
+/** A decoded attachment file name that stays inside the folder on every platform, or null. */
+function attachmentName(raw: string): string | null {
+  let name: string;
+  try {
+    name = decodeURIComponent(raw);
+  } catch {
+    name = raw;
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[/\\\u0000-\u001f]/.test(name) || name === '.' || name === '..')
+    return null;
+  return name;
+}
+
+/** The attachments a page links: the viewable ones by file name, and the formats of the others. */
+function attachmentsOf(text: string): { names: string[]; other: string[] } {
+  const names = new Set<string>();
+  const other = new Set<string>();
+  for (const m of text.matchAll(ATTACHMENT_LINK)) {
+    const name = attachmentName(m[1]);
+    if (!name) continue;
+    if (VIEWABLE.has(imageExt(name))) names.add(name);
+    else other.add(imageExt(name) || 'unknown');
+  }
+  return { names: [...names], other: [...other].sort() };
+}
+
+/** A link destination that stays one link when the name has spaces or parentheses. */
+const linkPath = (p: string) => (/[\s()]/.test(p) ? `<${p}>` : p);
+
+/** Points a page's viewable attachment links at the copy in sources/wiki/.attachments, relative to the page. */
+function relinkAttachments(text: string, depth: number): string {
+  const up = '../'.repeat(depth);
+  return text.replace(ATTACHMENT_LINK, (whole, raw: string) => {
+    const name = attachmentName(raw);
+    if (!name || !VIEWABLE.has(imageExt(name))) return whole;
+    return `](${linkPath(`${up}${ATTACHMENTS}/${name}`)})`;
+  });
 }
 
 async function pruneEmptyDirs(dir: string): Promise<void> {
@@ -187,6 +236,61 @@ async function syncMirror(
   }
 }
 
+/** Copies the wanted attachments from the mirror into sources/wiki/.attachments and drops the rest. Returns how many files changed. */
+async function syncAttachments(
+  brainDir: string,
+  wiki: BrainWiki,
+  wanted: Set<string>,
+  warnings: string[],
+): Promise<number> {
+  const target = path.join(brainDir, ...segments(WIKI_DIR), ATTACHMENTS);
+  const mirrorAttachments = path.join(
+    mirrorDir(brainDir),
+    ...segments(joinPosix(wiki.mappedPath, ATTACHMENTS)),
+  );
+  const inside = (dir: string, file: string) =>
+    path.resolve(file).startsWith(path.resolve(dir) + path.sep);
+  let changes = 0;
+  const missing: string[] = [];
+  for (const name of wanted) {
+    const src = path.join(mirrorAttachments, name);
+    const dest = path.join(target, name);
+    if (!inside(mirrorAttachments, src) || !inside(target, dest)) {
+      missing.push(name);
+      continue;
+    }
+    let data: Buffer;
+    try {
+      data = await fs.readFile(src);
+    } catch {
+      missing.push(name);
+      continue;
+    }
+    const prev = await fs.readFile(dest).catch(() => null);
+    if (prev && prev.equals(data)) continue;
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(dest, data);
+    changes++;
+  }
+  let present: string[] = [];
+  try {
+    present = await fs.readdir(target);
+  } catch {
+    present = [];
+  }
+  for (const name of present) {
+    if (wanted.has(name)) continue;
+    await fs.rm(path.join(target, name), { recursive: true, force: true });
+    changes++;
+  }
+  if (missing.length) {
+    warnings.push(
+      `${missing.length} linked attachment${missing.length === 1 ? '' : 's'} not found in the wiki`,
+    );
+  }
+  return changes;
+}
+
 /** Mirrors the chosen wiki subtree into sources/wiki/ and commits what changed. Never throws. */
 export async function refreshMirror(
   git: GitClient,
@@ -232,6 +336,45 @@ export async function refreshMirror(
     let added = 0;
     let changed = 0;
     const warnings: string[] = [];
+
+    // The pictures the pages link: checked out on demand, copied beside the pages.
+    const pages = new Map<string, string>(); // gitItemPath -> page text (LF)
+    const wanted = new Set<string>(); // attachment file names
+    const otherFormats = new Set<string>();
+    for (const gitItemPath of found) {
+      const text = toLf(
+        await fs.readFile(path.join(mirror, ...segments(gitItemPath)), 'utf8'),
+      );
+      pages.set(gitItemPath, text);
+      const linked = attachmentsOf(text);
+      for (const name of linked.names) wanted.add(name);
+      for (const f of linked.other) otherFormats.add(f);
+    }
+    if (otherFormats.size > 0) {
+      warnings.push(
+        `Attachments in formats Claude cannot view are left as links (${[...otherFormats].sort().join(', ')})`,
+      );
+    }
+    if (wanted.size > 0) {
+      try {
+        await git.run(
+          mirror,
+          [
+            ...LF,
+            'sparse-checkout',
+            'add',
+            ...[...wanted].map((n) =>
+              joinPosix(wiki.mappedPath, ATTACHMENTS, n),
+            ),
+          ],
+          { env: await auth() },
+        );
+      } catch (e) {
+        warnings.push(`Attachments could not be fetched: ${errorMessage(e)}`);
+      }
+    }
+
+    let skippedPages = 0;
     const kept = new Set<string>();
     for (const gitItemPath of found) {
       const relSegs =
@@ -244,11 +387,13 @@ export async function refreshMirror(
       const target = path.join(wikiRoot, ...decoded);
       if (!path.resolve(target).startsWith(wikiRoot + path.sep)) {
         warnings.push(`Skipped ${gitItemPath}: unsafe page name`);
+        skippedPages++;
         continue;
       }
       kept.add(rel);
-      const text = toLf(
-        await fs.readFile(path.join(mirror, ...segments(gitItemPath)), 'utf8'),
+      const text = relinkAttachments(
+        pages.get(gitItemPath) ?? '',
+        decoded.length - 1,
       );
       const hash = sha256(text);
       const prev = existing.get(rel);
@@ -277,9 +422,10 @@ export async function refreshMirror(
       await fs.rm(path.join(wikiRoot, ...segments(rel)), { force: true });
       removed++;
     }
+    const attachments = await syncAttachments(brainDir, wiki, wanted, warnings);
     await pruneEmptyDirs(wikiRoot);
 
-    if (added + changed + removed > 0) {
+    if (added + changed + removed + attachments > 0) {
       await withBrainGit(brainDir, async () => {
         await git.run(brainDir, ['add', '-A', '--', WIKI_DIR]);
         await git.run(brainDir, [
@@ -297,7 +443,7 @@ export async function refreshMirror(
       added,
       changed,
       removed,
-      pages: found.length - warnings.length,
+      pages: found.length - skippedPages,
       ...(warnings.length ? { warnings } : {}),
     };
   } catch (e) {

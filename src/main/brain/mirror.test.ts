@@ -112,6 +112,93 @@ describe('wiki mirror', () => {
     ).toMatchObject({ ok: true, added: 0, changed: 0, removed: 0 });
   });
 
+  it('copies linked pictures beside the pages and relinks them relative to each page', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 7, 8, 9]);
+    await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+    await fs.writeFile(path.join(wikiRepo, '.attachments/arch-1.png'), png);
+    await fs.writeFile(path.join(wikiRepo, '.attachments/spec.pdf'), 'pdf');
+    await fs.writeFile(path.join(wikiRepo, '.attachments/unused.png'), png);
+    sh(wikiRepo, 'add', '-A');
+    sh(wikiRepo, 'commit', '-q', '-m', 'attachments');
+    await put(
+      'Customers/Acme/Second-brain.md',
+      '# Second brain\n![Architecture](/.attachments/arch-1.png =600x)\n[Spec](/.attachments/spec.pdf)\n',
+    );
+    await put(
+      KICK,
+      'See ![arch](.attachments/arch-1.png) and [gone](/.attachments/missing.png) and ![evil](/.attachments/..%5C..%5Cevil.png) and ![up](/.attachments/../x.png)\n',
+    );
+
+    const r = await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect(r).toMatchObject({
+      ok: true,
+      added: 2,
+      pages: 2,
+      warnings: [
+        'Attachments in formats Claude cannot view are left as links (pdf)',
+        '1 linked attachment not found in the wiki',
+      ],
+    });
+    expect(await exists('evil.png')).toBe(false);
+    expect(await exists('sources/wiki/x.png')).toBe(false);
+    const copy = path.join(dir, 'sources/wiki/.attachments/arch-1.png');
+    expect((await fs.readFile(copy)).equals(png)).toBe(true);
+    expect(await exists('sources/wiki/.attachments/unused.png')).toBe(false);
+    expect(await exists('sources/wiki/.attachments/spec.pdf')).toBe(false);
+    const root = await fs.readFile(
+      path.join(dir, 'sources/wiki/Second brain.md'),
+      'utf8',
+    );
+    expect(root).toContain('![Architecture](.attachments/arch-1.png)');
+    expect(root).toContain('[Spec](/.attachments/spec.pdf)');
+    const nested = await fs.readFile(
+      path.join(dir, 'sources/wiki/Second brain/Kick-off notes.md'),
+      'utf8',
+    );
+    expect(nested).toContain('![arch](../.attachments/arch-1.png)');
+    expect(nested).toContain('[gone](../.attachments/missing.png)');
+    // Unsafe names keep their original link.
+    expect(nested).toContain('![evil](/.attachments/..%5C..%5Cevil.png)');
+    expect(nested).toContain('![up](/.attachments/../x.png)');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    // Unchanged on the next refresh.
+    expect(
+      await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl),
+    ).toMatchObject({ ok: true, added: 0, changed: 0, removed: 0 });
+
+    // Once no page links the picture any more its copy goes.
+    await put('Customers/Acme/Second-brain.md', '# Second brain\n');
+    await put(KICK, 'Kick-off\n');
+    const before = await count();
+    expect(
+      await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl),
+    ).toMatchObject({ ok: true, changed: 2 });
+    expect(await exists('sources/wiki/.attachments/arch-1.png')).toBe(false);
+    expect(await count()).toBe(before + 1);
+  });
+
+  it('keeps a relinked attachment with spaces in its name one link', async () => {
+    await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+    await fs.writeFile(
+      path.join(wikiRepo, '.attachments/My diagram (v2).png'),
+      'png',
+    );
+    sh(wikiRepo, 'add', '-A');
+    sh(wikiRepo, 'commit', '-q', '-m', 'attachment');
+    await put(KICK, '![d](/.attachments/My%20diagram%20(v2).png)\n');
+    const r = await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect(r).toMatchObject({ ok: true, added: 2 });
+    expect(r).not.toHaveProperty('warnings');
+    const nested = await fs.readFile(
+      path.join(dir, 'sources/wiki/Second brain/Kick-off notes.md'),
+      'utf8',
+    );
+    expect(nested).toContain('![d](<../.attachments/My diagram (v2).png>)');
+    expect(await exists('sources/wiki/.attachments/My diagram (v2).png')).toBe(
+      true,
+    );
+  });
+
   it('removes mirror files for deleted pages', async () => {
     await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
     const before = await count();

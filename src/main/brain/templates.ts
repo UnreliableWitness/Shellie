@@ -1,5 +1,5 @@
 /** Bump when SCHEMA.md or a skill changes, so existing brains offer the update. */
-export const TEMPLATES_VERSION = 1;
+export const TEMPLATES_VERSION = 2;
 
 /** `path` is relative to the brain folder, with forward slashes. */
 export type TemplateFile = {
@@ -16,6 +16,7 @@ This file is the contract for everything that writes in this brain. Read it firs
 ## Layers
 
 - \`sources/\`: raw material (converted documents, transcripts, notes, task files). Never edited, by anyone or any skill. \`sources/wiki/\` is Shellie's copy of the chosen Azure DevOps wiki pages, refreshed in place; git history shows what changed.
+- \`sources/<name>-assets/\`: the pictures of \`sources/<name>.md\` (diagrams, screenshots, scanned pages), linked from the place they appeared; \`sources/wiki/.attachments/\` holds the wiki pages' pictures. They are part of the source: look at them, never edit them.
 - \`wiki/\`: the curated pages. Skills and humans both edit here.
 - \`index.md\`: the entry point. Lists every top-level page with a one-line summary.
 - \`log.md\`: history of what the skills did, newest first.
@@ -51,7 +52,7 @@ The summary is repeated as the first paragraph under the title. Set \`last_updat
 ## Links and citations
 
 - Every page is linked from \`index.md\` or from a parent page. A page nobody links to is an orphan.
-- Links and citations are ordinary markdown links, never wikilinks. Cite a source like this: \`[Kickoff p.3](../sources/2026-10-09-kickoff.md#p3)\`.
+- Links and citations are ordinary markdown links, never wikilinks. Cite a source like this: \`[Kickoff p.3](../sources/2026-10-09-kickoff.md#p3)\` or \`[Deck slide 4](../sources/2026-11-04-deck.md#slide-4)\`.
 - Every claim that comes from a source gets a citation.
 
 ## Log format
@@ -99,6 +100,8 @@ Capture the source named in the argument into the wiki.
 
 1. Read \`SCHEMA.md\`. Follow it for every step.
 2. Read the source in full, then \`index.md\`.
+   - For every image the source links (\`![…](…)\`), open the image with the Read tool and write down what it shows. A diagram, schematic or chart is a set of facts: name every component and every relationship (arrows, containment, order, numbers) in words, and put those facts in the pages with a citation to the source, like any other fact.
+   - Never skip an image. If one cannot be opened, say which in the takeaways.
 3. Decide which pages it affects. Update those pages, or create new ones of the right type.
    - Frontmatter on every page, summary at the top, citations as markdown links to the source.
    - Link every new page from \`index.md\` or a parent page.
@@ -118,7 +121,7 @@ Bring the wiki in line with what changed since the last sync.
 1. Read \`SCHEMA.md\`. Follow it for every step.
 2. Read \`brain/state.json\`. \`lastSyncCommit\` is the starting point; if it is null, use the first commit (\`git log --max-parents=0 --format=%H\`).
 3. Run \`git diff --stat <lastSyncCommit> HEAD -- sources/ wiki/\` to list what changed in \`sources/\` (including the wiki mirror in \`sources/wiki/\`) and in \`wiki/\`. Read each change with \`git diff <lastSyncCommit> HEAD -- <path>\`. \`git log --format='%h %s' <lastSyncCommit>..HEAD -- wiki/\` tells human edits (commits not starting with \`Brain:\`) from the skills' own.
-4. For each changed source, update the pages that cite it. Re-read the source; do not guess from the diff.
+4. For each changed source, update the pages that cite it. Re-read the source, and open every image it links with the Read tool (a diagram's components and relationships are facts for the pages); do not guess from the diff.
 5. For each human edit in \`wiki/\`, keep it. Fix links, \`index.md\` and other pages around it. If it contradicts a source, add a note to the takeaways instead of reverting it.
 6. If a source contradicts a \`scope-*\` page, leave the page as it is and report it in the takeaways.
 7. Update \`index.md\`. Insert one line into \`log.md\` right after the \`# Log\` heading (newest first), in the schema's format.
