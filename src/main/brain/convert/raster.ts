@@ -66,6 +66,31 @@ export function canvasFactoryFor(canvas: Canvas): new () => object {
   };
 }
 
+/** Most pixels a BMP or ICO may claim in its header: the decoder allocates the full bitmap before anything else. */
+const MAX_BITMAP_PIXELS = 25_000_000;
+
+/** The size a BMP or ICO header claims, read before decoding; null when the header is not there. */
+export function bitmapSize(
+  data: Buffer,
+  ext: string,
+): { width: number; height: number } | null {
+  if (
+    ext === 'bmp' &&
+    data.length >= 26 &&
+    data.toString('latin1', 0, 2) === 'BM'
+  ) {
+    return {
+      width: Math.abs(data.readInt32LE(18)),
+      height: Math.abs(data.readInt32LE(22)),
+    };
+  }
+  if (ext === 'ico' && data.length >= 8) {
+    // One directory entry per image; a byte of 0 means 256.
+    return { width: data[6] || 256, height: data[7] || 256 };
+  }
+  return null;
+}
+
 /** SVG, BMP and ICO to PNG in process, scaled down to MAX_RASTER_SIDE when larger. */
 export async function rasterizeInProcess(
   data: Buffer,
@@ -74,6 +99,9 @@ export async function rasterizeInProcess(
   if (!IN_PROCESS.has(ext)) return null;
   const canvas = await loadCanvas();
   if (!canvas) return null;
+  const claimed = bitmapSize(data, ext);
+  if (claimed && claimed.width * claimed.height > MAX_BITMAP_PIXELS)
+    return null;
   try {
     const img = await canvas.loadImage(data);
     if (!(img.width > 0 && img.height > 0)) return null;

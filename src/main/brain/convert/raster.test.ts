@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { Command } from '../../platform/Platform';
 import {
   MAX_RASTER_SIDE,
+  bitmapSize,
   createRasterizer,
   loadCanvas,
   rasterizeInProcess,
@@ -65,6 +66,18 @@ describe('rasterizeInProcess', () => {
       MAX_RASTER_SIDE,
       MAX_RASTER_SIDE / 2,
     ]);
+  });
+
+  it('refuses a BMP or ICO whose header claims a huge bitmap before decoding it', async () => {
+    const huge = bmp();
+    huge.writeInt32LE(16000, 18);
+    huge.writeInt32LE(-16000, 22);
+    expect(bitmapSize(huge, 'bmp')).toEqual({ width: 16000, height: 16000 });
+    expect(await rasterizeInProcess(huge, 'bmp')).toBeNull();
+    expect(bitmapSize(bmp(), 'bmp')).toEqual({ width: 2, height: 2 });
+    const ico = Buffer.alloc(8);
+    expect(bitmapSize(ico, 'ico')).toEqual({ width: 256, height: 256 });
+    expect(bitmapSize(Buffer.from('x'), 'svg')).toBeNull();
   });
 
   it('is null for formats it does not decode and for broken input', async () => {

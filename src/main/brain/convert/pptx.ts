@@ -217,7 +217,9 @@ async function shapeOf(ctx: SlideCtx, xml: string): Promise<string[]> {
   const lines = paragraphsOf(xml);
   const fill = first(xml, /(<p:spPr[\s>][\s\S]*?<\/p:spPr>)/);
   if (fill && /<a:blipFill[\s>]/.test(fill)) {
-    lines.push(...(await pictureOf(ctx, fill)));
+    // The shape's own name tag carries the alt text.
+    const name = first(xml, /(<p:cNvPr\s[^>]*>)/) ?? '';
+    lines.push(...(await pictureOf(ctx, name + fill)));
   }
   return lines;
 }

@@ -241,7 +241,8 @@ export async function pdfToMarkdown(
 
       const refs: string[] = [];
       const ops = await page.getOperatorList();
-      const view = page.getViewport({ scale: 1 });
+      // Unrotated: the path boxes are measured in the page's own space.
+      const view = page.getViewport({ scale: 1, rotation: 0 });
       // A page with a drawing is shown as drawn; its own pictures are part of that render.
       let rendered = false;
       if (hasDrawing(ops, drawingOps, view.width, view.height)) {

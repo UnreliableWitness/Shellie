@@ -223,6 +223,15 @@ describe('pdfToMarkdown', () => {
     expect(r.markdown).toContain('## p.3\n\nTiny bars\n');
   });
 
+  it('measures rotated pages in their own space', async () => {
+    const r = await pdfToMarkdown(await fs.readFile(fixture('rotated.pdf')));
+    // Both pages are /Rotate 90: a background with rules is still no drawing; nine boxes still are.
+    expect(r.images.map((i) => i.name)).toEqual(['p2.png']);
+    const png = decodePng(r.images[0].data);
+    // Rendered as shown: landscape.
+    expect(png.width).toBeGreaterThan(png.height);
+  });
+
   it('keeps the text and warns when a page cannot be rendered', async () => {
     const spy = vi.spyOn(raster, 'loadCanvas').mockResolvedValue({
       createCanvas: () => {
@@ -462,7 +471,7 @@ describe('pptxToMarkdown', () => {
       ),
     );
     expect(r.markdown).toContain(
-      'A\nLabel\n![Slide 1 picture 1]({{assets}}/slide-1-1.png)',
+      'A\nLabel\n![Filled box]({{assets}}/slide-1-1.png)',
     );
   });
 
