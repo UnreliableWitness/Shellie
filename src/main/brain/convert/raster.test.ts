@@ -75,9 +75,51 @@ describe('rasterizeInProcess', () => {
     expect(bitmapSize(huge, 'bmp')).toEqual({ width: 16000, height: 16000 });
     expect(await rasterizeInProcess(huge, 'bmp')).toBeNull();
     expect(bitmapSize(bmp(), 'bmp')).toEqual({ width: 2, height: 2 });
-    const ico = Buffer.alloc(8);
-    expect(bitmapSize(ico, 'ico')).toEqual({ width: 256, height: 256 });
     expect(bitmapSize(Buffer.from('x'), 'svg')).toBeNull();
+  });
+
+  it('reads the real size of the pictures inside an ICO', async () => {
+    // One entry whose directory bytes say 256×256 but whose data is a PNG header claiming 12000×12000.
+    const png = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png);
+    png.writeUInt32BE(13, 8);
+    png.write('IHDR', 12);
+    png.writeUInt32BE(12000, 16);
+    png.writeUInt32BE(12000, 20);
+    const ico = Buffer.alloc(6 + 16);
+    ico.writeUInt16LE(1, 2);
+    ico.writeUInt16LE(1, 4);
+    ico.writeUInt32LE(png.length, 6 + 8);
+    ico.writeUInt32LE(ico.length, 6 + 12);
+    const file = Buffer.concat([ico, png]);
+    expect(bitmapSize(file, 'ico')).toEqual({ width: 12000, height: 12000 });
+    expect(await rasterizeInProcess(file, 'ico')).toBeNull();
+    // A bitmap entry: the DIB header carries the width and the doubled height.
+    const dib = Buffer.alloc(40);
+    dib.writeUInt32LE(40, 0);
+    dib.writeInt32LE(48, 4);
+    dib.writeInt32LE(96, 8);
+    const ico2 = Buffer.concat([ico, dib]);
+    expect(bitmapSize(ico2, 'ico')).toEqual({ width: 48, height: 48 });
+    // No data to read: the directory bytes (0 means 256).
+    expect(bitmapSize(Buffer.alloc(6 + 16), 'ico')).toEqual({
+      width: 256,
+      height: 256,
+    });
+    // The refusal also keeps the platform tool out of it.
+    let ran = false;
+    const raster = createRasterizer({
+      platform: { rasterizeCommand: () => ({ command: 'conv', args: [] }) },
+      run: async () => {
+        ran = true;
+        return '';
+      },
+    });
+    const huge = bmp();
+    huge.writeInt32LE(16000, 18);
+    huge.writeInt32LE(16000, 22);
+    expect(await raster(huge, 'bmp')).toBeNull();
+    expect(ran).toBe(false);
   });
 
   it('is null for formats it does not decode and for broken input', async () => {

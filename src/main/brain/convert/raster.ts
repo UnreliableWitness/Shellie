@@ -69,7 +69,15 @@ export function canvasFactoryFor(canvas: Canvas): new () => object {
 /** Most pixels a BMP or ICO may claim in its header: the decoder allocates the full bitmap before anything else. */
 const MAX_BITMAP_PIXELS = 25_000_000;
 
-/** The size a BMP or ICO header claims, read before decoding; null when the header is not there. */
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
+
+/**
+ * The largest size a BMP or ICO header claims, read before decoding; null when the header is not there.
+ * An ICO's directory bytes say at most 256, so each entry's own data is read: a PNG's IHDR, or the
+ * bitmap header's width and (doubled) height.
+ */
 export function bitmapSize(
   data: Buffer,
   ext: string,
@@ -84,11 +92,36 @@ export function bitmapSize(
       height: Math.abs(data.readInt32LE(22)),
     };
   }
-  if (ext === 'ico' && data.length >= 8) {
-    // One directory entry per image; a byte of 0 means 256.
-    return { width: data[6] || 256, height: data[7] || 256 };
+  if (ext === 'ico' && data.length >= 6) {
+    const count = data.readUInt16LE(4);
+    let best = { width: 0, height: 0 };
+    for (let i = 0; i < count; i++) {
+      const entry = 6 + i * 16;
+      if (entry + 16 > data.length) break;
+      let width = data[entry] || 256;
+      let height = data[entry + 1] || 256;
+      const at = data.readUInt32LE(entry + 12);
+      if (
+        at + 24 <= data.length &&
+        data.subarray(at, at + 8).equals(PNG_SIGNATURE)
+      ) {
+        width = data.readUInt32BE(at + 16);
+        height = data.readUInt32BE(at + 20);
+      } else if (at + 12 <= data.length && data.readUInt32LE(at) === 40) {
+        width = Math.abs(data.readInt32LE(at + 4));
+        height = Math.abs(data.readInt32LE(at + 8)) / 2;
+      }
+      if (width * height > best.width * best.height) best = { width, height };
+    }
+    return best;
   }
   return null;
+}
+
+/** Whether a BMP or ICO claims more pixels than the decoder may allocate. */
+export function claimsTooManyPixels(data: Buffer, ext: string): boolean {
+  const claimed = bitmapSize(data, ext);
+  return claimed !== null && claimed.width * claimed.height > MAX_BITMAP_PIXELS;
 }
 
 /** SVG, BMP and ICO to PNG in process, scaled down to MAX_RASTER_SIDE when larger. */
@@ -135,6 +168,8 @@ export function createRasterizer(deps: {
   run: RunCommand;
 }): Rasterize {
   return async (data, ext) => {
+    // A bitmap refused for its size is not handed to the platform tool either.
+    if (claimsTooManyPixels(data, ext)) return null;
     const inProcess = await rasterizeInProcess(data, ext);
     if (inProcess) return inProcess;
     if (!deps.platform.rasterizeCommand) return null;
