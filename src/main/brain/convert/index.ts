@@ -6,6 +6,7 @@ import { pdfToMarkdown } from './pdf';
 import { pptxToMarkdown } from './pptx';
 import { firstHeading, type ConvertOptions, type Converted } from './types';
 import { vttToMarkdown } from './vtt';
+import { xlsxToMarkdown } from './xlsx';
 
 export type {
   ConvertOptions,
@@ -14,7 +15,8 @@ export type {
   Rasterize,
 } from './types';
 export { ASSETS_PLACEHOLDER } from './types';
-export { docxToMarkdown, pdfToMarkdown, pptxToMarkdown };
+export { docxToMarkdown, pdfToMarkdown, pptxToMarkdown, xlsxToMarkdown };
+export { describeContents } from './describe';
 
 function plain(markdown: string): Converted {
   return {
@@ -37,6 +39,8 @@ export async function convertFile(
       return docxToMarkdown(await fs.readFile(absPath), opts);
     case '.pptx':
       return pptxToMarkdown(await fs.readFile(absPath), opts);
+    case '.xlsx':
+      return xlsxToMarkdown(await fs.readFile(absPath), opts);
     case '.drawio':
       return drawioToMarkdown(await fs.readFile(absPath, 'utf8'));
     case '.vtt':

@@ -119,6 +119,9 @@ function SourcesToCapture({ brain }: { brain: BrainView }) {
           <li key={r.path} className="list-row">
             <span className="grow">
               {r.path} <span className="muted small">{r.type}</span>
+              {r.contents && (
+                <span className="muted small brain-contents">{r.contents}</span>
+              )}
             </span>
             <button
               type="button"
@@ -174,6 +177,9 @@ export function BrainInbox({
         {...dropProps}
       >
         <span>Drop files here</span>
+        <span className="muted small">
+          PDF, Word, PowerPoint, Excel, draw.io, VTT transcripts, Markdown, text
+        </span>
         <label className="btn btn-sm">
           Choose files
           <input

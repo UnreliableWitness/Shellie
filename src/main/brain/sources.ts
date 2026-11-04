@@ -10,6 +10,7 @@ import type { GitClient } from '../services/GitClient';
 import {
   ASSETS_PLACEHOLDER,
   convertFile,
+  describeContents,
   type ConvertOptions,
   type ConvertedImage,
 } from './convert';
@@ -73,6 +74,7 @@ export async function addSource(
   let original: { buf: Buffer; ext: string } | null = null;
   let images: ConvertedImage[] = [];
   let warnings: string[] = [];
+  let contents: string;
 
   if ('file' in input) {
     const base = path.basename(input.file);
@@ -111,12 +113,18 @@ export async function addSource(
     if (!['.md', '.txt'].includes(ext.toLowerCase())) original = { buf, ext };
     images = converted.images;
     warnings = converted.warnings;
+    contents = describeContents(
+      converted.markdown,
+      images.length,
+      ext.replace(/^\./, ''),
+    );
   } else {
     title = input.title;
     sourceUrl = input.url ?? input.title;
     slugBase = input.title;
     hash = sha256(input.text);
     body = input.text.trimEnd() + '\n';
+    contents = describeContents(body, 0, 'txt');
   }
 
   // Duplicate check, name choice and commit in one go per brain: concurrent adds never take the same name.
@@ -130,6 +138,7 @@ export async function addSource(
       original,
       images,
       warnings,
+      contents,
     }),
   );
 }
@@ -148,6 +157,7 @@ async function writeSource(
     original: { buf: Buffer; ext: string } | null;
     images: ConvertedImage[];
     warnings: string[];
+    contents: string;
   },
 ): Promise<AddSourceResult> {
   const { title, sourceUrl, hash, slugBase, original, images, warnings } = src;
@@ -199,6 +209,7 @@ async function writeSource(
           ingested_at: date.toISOString(),
           content_type: type,
           sha256: hash,
+          contents: src.contents,
         },
         body,
       ),
@@ -224,6 +235,7 @@ async function writeSource(
       path: `sources/${name}`,
       images: images.length,
       warnings,
+      contents: src.contents,
     };
   } catch (e) {
     for (const f of written) await fs.rm(f, { recursive: true, force: true });
@@ -258,6 +270,7 @@ export async function listSources(
       ingestedAt: s.fm.ingested_at,
       captured: state?.captured[s.path] != null,
       original: sibling ? `${path.posix.dirname(s.path)}/${sibling}` : null,
+      contents: s.fm.contents ?? null,
     });
   }
   return rows.sort(

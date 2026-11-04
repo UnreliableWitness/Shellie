@@ -151,7 +151,16 @@ const isEmptyOrMissing = async (dir: string) =>
     () => true,
   );
 
-const FORMATS = new Set(['pdf', 'docx', 'pptx', 'vtt', 'drawio', 'md', 'txt']);
+const FORMATS = new Set([
+  'pdf',
+  'docx',
+  'pptx',
+  'xlsx',
+  'vtt',
+  'drawio',
+  'md',
+  'txt',
+]);
 /** The format a source arrived in, for telemetry: a known extension, else `other` (never what the user typed). */
 const formatOf = (file: string) => {
   const ext = path.extname(file).slice(1).toLowerCase();

@@ -162,3 +162,10 @@
   margin: 4px 0 0;
   white-space: pre-wrap;
 }
+
+.docs-file-contents,
+.brain-contents {
+  display: block;
+  white-space: normal;
+  line-height: 1.3;
+}

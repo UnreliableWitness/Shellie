@@ -908,7 +908,13 @@ describe('tabs and focus', () => {
           { path: 'wiki/account.md', name: 'account.md', changed: null },
         ],
         'brain:addFiles': () => [
-          { ok: true, path: 'sources/x.md', images: 0, warnings: [] },
+          {
+            ok: true,
+            path: 'sources/x.md',
+            images: 0,
+            warnings: [],
+            contents: '',
+          },
         ],
       },
     );
