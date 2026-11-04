@@ -252,6 +252,33 @@ describe('groupTasks', () => {
       ['r2', ['a']],
     ]);
   });
+
+  it('keeps only the connection’s tasks and tasks without one (#219)', () => {
+    const split: Repo[] = [
+      { ...repos[0], connectionId: 'A' },
+      { ...repos[1], connectionId: 'B' },
+      { ...repos[1], id: 'r3', name: 'scratch', connectionId: null },
+    ];
+    const mixed: TaskView[] = [
+      { ...tasks[0], id: 'a1' },
+      { ...tasks[0], id: 'b1', connectionId: 'B' },
+      { ...tasks[0], id: 'a2', repoId: 'r2', connectionId: 'A' },
+      { ...tasks[2], id: 'a3', repoId: 'r1' },
+      { ...tasks[2], id: 'b2' },
+      { ...tasks[1], id: 'n1', repoId: 'r3' },
+      { ...tasks[2], id: 'n2', repoId: 'r3' },
+    ];
+    const g = groupTasks(mixed, split, 'A');
+    expect(g.open.map((x) => [x.repo.id, x.tasks.map((t) => t.id)])).toEqual([
+      ['r1', ['a1']],
+      ['r2', ['a2']],
+      ['r3', ['n1']],
+    ]);
+    expect(g.done.map((t) => t.id)).toEqual(['a3', 'n2']);
+    const all = groupTasks(mixed, split, null);
+    expect(all.open.flatMap((x) => x.tasks)).toHaveLength(4);
+    expect(all.done).toHaveLength(3);
+  });
 });
 
 describe('TaskNav', () => {
@@ -384,6 +411,75 @@ describe('TaskNav', () => {
       screen.getByRole('button', { name: 'Project DXP, switch project' }),
     ).toBeInTheDocument();
     expect(screen.getByText('unreliablewitness: DXP')).toBeInTheDocument();
+  });
+
+  it('shows only the switched-to project’s open and done tasks (#219)', async () => {
+    installFakeApi();
+    const conn = (id: string, project: string) => ({
+      id,
+      name: 'unreliablewitness',
+      organizationUrl: 'https://dev.azure.com/unreliablewitness',
+      project,
+      user: 'D',
+      status: 'ok' as const,
+      checkedAt: null,
+      userUniqueName: null,
+      provider: 'azure-devops' as const,
+      workItemOnStart: {
+        moveToInProgress: true,
+        assignToMe: true,
+        stateOverrides: {},
+      },
+    });
+    useStore.setState({
+      repos: [
+        { ...repos[0], connectionId: 'c1' },
+        { ...repos[1], connectionId: 'c2' },
+      ],
+      tasks: [
+        tasks[0],
+        {
+          ...tasks[0],
+          id: 'x',
+          repoId: 'r2',
+          workItem: null,
+          name: 'dxp-open',
+        },
+        tasks[2],
+        {
+          ...tasks[2],
+          id: 'y',
+          repoId: 'r1',
+          workItem: null,
+          name: 'iml-done',
+        },
+      ],
+      connections: [conn('c1', 'IML Hub'), conn('c2', 'DXP')],
+      connectionId: 'c2',
+      selectedTaskId: null,
+      screen: { kind: 'sprint' },
+    });
+    render(<TaskNav />);
+    expect(screen.getByText('dxp-open')).toBeInTheDocument();
+    expect(screen.queryByText('48213')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Done (1)' }));
+    expect(screen.getByText('47988')).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Project DXP, switch project' }),
+    );
+    await userEvent.click(
+      within(screen.getByRole('menu', { name: 'Projects' })).getByRole(
+        'menuitemradio',
+        { name: /IML Hub/ },
+      ),
+    );
+    expect(screen.getByText('48213')).toBeInTheDocument();
+    expect(screen.queryByText('dxp-open')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Done (1)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('iml-done')).toBeInTheDocument();
+    expect(screen.queryByText('47988')).toBeNull();
   });
 
   it('the project switcher is a keyboard menu: focus moves in, arrows move, Escape and outside clicks close', async () => {

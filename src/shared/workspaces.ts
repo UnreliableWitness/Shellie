@@ -97,6 +97,16 @@ export function taskConnectionId(
   );
 }
 
+/** Whether a task shows under a project (#219): its own connection's tasks, plus tasks with none. */
+export function inConnection(
+  task: Pick<Task, 'connectionId' | 'repoId'>,
+  repos: Pick<Repo, 'id' | 'connectionId'>[],
+  connectionId: string,
+): boolean {
+  const own = taskConnectionId(task, repos);
+  return own === null || own === connectionId;
+}
+
 /** A docs target: the task id alone (its active home) or `<taskId>#<workspaceId>` (one workspace's worktree). */
 export function docsTarget(taskId: string, workspaceId?: string): string {
   return workspaceId === undefined ? taskId : `${taskId}#${workspaceId}`;
