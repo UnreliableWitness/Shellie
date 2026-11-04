@@ -388,7 +388,7 @@ onSettingsSaved((settings) => useStore.setState({ settings }));
 
 /** The connection of a task's repo, for its work item icons and live state. */
 export const useTaskConnectionId = (
-  task: { repoId: string; connectionId?: string | null } | null,
+  task: { repoId: string | null; connectionId?: string | null } | null,
 ) =>
   useStore((s) =>
     task

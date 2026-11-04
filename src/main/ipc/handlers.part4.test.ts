@@ -544,7 +544,7 @@ describe('handlers: finish with a pull request', () => {
     await hx.store.update((st) => {
       st.tasks[0].extraWorkspaces.push({
         id: 'x1',
-        repoId: hx.t.repoId,
+        repoId: hx.t.repoId!,
         branch: 'feature/x',
         worktreePath: '/w/x',
         baseRef: 'origin/main',
@@ -590,7 +590,7 @@ describe('handlers: finish with a pull request', () => {
       st.tasks[0].connectionId = other.id;
       st.tasks[0].extraWorkspaces.push({
         id: 'x1',
-        repoId: hx.t.repoId,
+        repoId: hx.t.repoId!,
         branch: 'feature/x',
         worktreePath: '/w/x',
         baseRef: 'origin/main',

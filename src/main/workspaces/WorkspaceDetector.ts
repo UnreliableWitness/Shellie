@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Connection, Task, Workspace } from '../../shared/types';
-import { HOME_ID } from '../../shared/workspaces';
+import { hasNoRepo, HOME_ID } from '../../shared/workspaces';
 import { isInside, samePath } from '../paths';
 import { matchConnection } from '../services/azureRepos';
 import type { GitClient } from '../services/GitClient';
@@ -56,6 +56,8 @@ export class WorkspaceDetector {
     const task = this.task(taskId);
     if (task.status !== 'ready')
       throw new Error(`Cannot add a worktree to a task that is ${task.status}`);
+    if (hasNoRepo(task))
+      throw new Error('A task without a repo has no worktrees to add');
     const c = await resolveCandidate(this.d.git, folder);
     if (!c) throw new Error(`${folder} is not in a git repository`);
     const verdict = joinVerdict(
@@ -112,6 +114,8 @@ export class WorkspaceDetector {
     const task = this.task(taskId);
     // Finish, setup and Reopen work from the task's workspace list; it must not change under them.
     if (task.status !== 'ready') return { added: [] };
+    // A task without a repo stays without one: its scratch folder has no git (#225).
+    if (hasNoRepo(task)) return { added: [] };
     const found: { c: Candidate; source: Source }[] = [];
     const seen = (p: string) =>
       found.some((f) => samePath(f.c.worktreePath, p));

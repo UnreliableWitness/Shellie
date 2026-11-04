@@ -191,6 +191,31 @@ it('accepts a task saved before sub-project 3 and defaults the usage fields', as
   });
 });
 
+it('reads a stored task with a repo as before, and one without a repo (#225)', async () => {
+  const { TaskSchema } = await import('./types');
+  const stored = {
+    id: 't',
+    name: 'Ask the brain',
+    workItem: null,
+    slug: 'ask-the-brain',
+    worktreePath: '/data/scratch/ask-the-brain',
+    status: 'ready',
+    setup: { copy: false, commands: [], startClaude: true, openShell: true },
+    terminals: [],
+    createdAt: 'now',
+    finishedAt: null,
+  };
+  expect(
+    TaskSchema.parse({ ...stored, repoId: 'r', branch: 'b', baseRef: 'main' }),
+  ).toMatchObject({ repoId: 'r', branch: 'b', baseRef: 'main' });
+  expect(
+    TaskSchema.parse({ ...stored, repoId: null, branch: '', baseRef: '' }),
+  ).toMatchObject({ repoId: null, branch: '', baseRef: '' });
+  expect(() =>
+    TaskSchema.parse({ ...stored, repoId: '', branch: '', baseRef: '' }),
+  ).toThrow();
+});
+
 it('loads a summary saved before baseKnown existed as a known base', async () => {
   const { TaskSummarySchema } = await import('./types');
   expect(

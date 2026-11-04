@@ -60,7 +60,8 @@ export function attributionContext(
   const repoById = new Map(repos.map((r) => [r.id, r]));
   const connById = new Map(connections.map((c) => [c.id, c]));
   const taskCtx: TaskCtx[] = tasks.map((t) => {
-    const home = repoById.get(t.repoId);
+    // A task without a repo (#225) has no home repo; its connection is its own.
+    const home = t.repoId === null ? undefined : repoById.get(t.repoId);
     const conn = connById.get(t.connectionId ?? home?.connectionId ?? '');
     const homeRepo = home?.name ?? '';
     const periods: [number, number][] = (

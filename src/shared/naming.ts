@@ -198,35 +198,49 @@ export function renderTaskMd(
   repoPaths: Record<string, string> = {},
   details?: WorkItemDetails,
 ): string {
-  const lines = [
-    `# ${taskTitle(task)}`,
-    '',
-    `- Branch: \`${task.branch}\``,
-    `- Base: \`${task.baseRef}\``,
-    `- Worktree: \`${task.worktreePath}\``,
-    `- Created: ${task.createdAt}`,
-    '',
-    ...(task.extraWorkspaces.length > 0
-      ? [
-          '## Workspaces',
+  const lines =
+    task.repoId === null
+      ? noRepoLines(task)
+      : [
+          `# ${taskTitle(task)}`,
           '',
-          ...taskWorkspaces(task).map(
-            (w) =>
-              `- Repo \`${repoPaths[w.repoId] ?? w.repoId}\`: branch \`${w.branch}\`, worktree \`${w.worktreePath}\`${w.dropped ? ' (left out)' : ''}`,
-          ),
+          `- Branch: \`${task.branch}\``,
+          `- Base: \`${task.baseRef}\``,
+          `- Worktree: \`${task.worktreePath}\``,
+          `- Created: ${task.createdAt}`,
           '',
-        ]
-      : []),
-    otherReposInstruction(task),
-    '',
-    'This file is written by Shellie and excluded from git. Put notes for the task here.',
-    '',
-  ];
+          ...(task.extraWorkspaces.length > 0
+            ? [
+                '## Workspaces',
+                '',
+                ...taskWorkspaces(task).map(
+                  (w) =>
+                    `- Repo \`${repoPaths[w.repoId] ?? w.repoId}\`: branch \`${w.branch}\`, worktree \`${w.worktreePath}\`${w.dropped ? ' (left out)' : ''}`,
+                ),
+                '',
+              ]
+            : []),
+          otherReposInstruction(task),
+          '',
+          'This file is written by Shellie and excluded from git. Put notes for the task here.',
+          '',
+        ];
   const base = lines.join('\n');
   return details
     ? `${base}\n${workItemSection(details, task.workItem?.url ?? null)}`
     : base;
 }
+
+/** task.md of a task without a repo (#225): its scratch folder, no branch and no git. */
+const noRepoLines = (task: Task): string[] => [
+  `# ${taskTitle(task)}`,
+  '',
+  `- Folder: \`${task.worktreePath}\` (no repo)`,
+  `- Created: ${task.createdAt}`,
+  '',
+  'This file is written by Shellie. Put notes for the task here.',
+  '',
+];
 
 /** How Claude joins another repo to the task: a worktree on the task's branch, which Shellie detects. */
 export function otherReposInstruction(
@@ -248,9 +262,14 @@ export function shellieRunInstruction(names: string[]): string {
  * `runNames`: the `shellie run` names, given only when the task's repo has a stored secret.
  */
 export function claudeContext(
-  task: Pick<Task, 'workItem' | 'name' | 'branch' | 'slug'>,
+  task: Pick<Task, 'workItem' | 'name' | 'branch' | 'slug'> & {
+    repoId?: string | null;
+  },
   runNames?: string[],
 ): string {
+  // A task without a repo has no branch to put a worktree on.
+  if (task.repoId === null)
+    return `This folder is a Shellie task for ${taskTitle(task)}, without a repo. The details are in .shellie/task.md. Do not start on the task by yourself: wait for the user's instructions.`;
   const base = `This folder is a Shellie task for ${taskTitle(task)}. The details are in .shellie/task.md. Do not start on the task by yourself: wait for the user's instructions. ${otherReposInstruction(task)}`;
   return runNames && runNames.length > 0
     ? `${base} ${shellieRunInstruction(runNames)}`

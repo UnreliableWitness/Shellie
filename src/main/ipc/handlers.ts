@@ -64,6 +64,7 @@ import { WorkspaceDetector } from '../workspaces/WorkspaceDetector';
 import type {
   Connection,
   ConnectionInput,
+  CreateTaskInput,
   DiscardChecks,
   DiscardedCleanup,
   DiscardWorkspaceCheck,
@@ -93,6 +94,7 @@ import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
   activeHome,
   activeWorkspaces,
+  hasNoRepo,
   HOME_ID,
   isReopening,
   taskConnectionId,
@@ -418,7 +420,7 @@ class LeakError extends Error {
 
 /** The repos a task works in: its home and the ones it joined. */
 const taskRepoIds = (t: Task): string[] => [
-  t.repoId,
+  ...(t.repoId === null ? [] : [t.repoId]),
   ...t.extraWorkspaces.map((w) => w.repoId),
 ];
 
@@ -796,13 +798,14 @@ export function createHandlers(s: Services): Handlers {
   };
   /**
    * The brain of a task's work item project (else its connection's, for refs from before the project was stored),
-   * from what is stored; no network. A task without a work item has none.
+   * from what is stored; no network. A task without a work item has none, unless it has no repo either: then its
+   * project's brain is the point of the task (#225).
    */
   const taskBrain = (task: Task): Brain | null => {
-    if (!task.workItem) return null;
+    if (!task.workItem && !hasNoRepo(task)) return null;
     const connectionId = taskConnectionId(task, s.repos.list());
     if (!connectionId) return null;
-    let project = task.workItem.project ?? null;
+    let project = task.workItem?.project ?? null;
     if (!project)
       try {
         project = s.connections.get(connectionId).project;
@@ -1088,6 +1091,12 @@ export function createHandlers(s: Services): Handlers {
     return w && !w.dropped ? w : activeHome(task);
   };
 
+  /** The stored secrets a tab's repo has (its own and All); none for a task without a repo (#225). */
+  const tabRepoSecrets = (task: Task, def: TerminalDef) =>
+    hasNoRepo(task)
+      ? []
+      : s.secrets.list({ repoId: terminalWorkspace(task, def).repoId });
+
   /**
    * Claude Code starts with the task in its system prompt and waits for the user. Resuming continues the tab's own
    * session, starts it again when the user never sent a message (nothing was saved), or continues the latest
@@ -1159,7 +1168,7 @@ export function createHandlers(s: Services): Handlers {
     const ws = terminalWorkspace(task, def);
     if (
       givenToFor(def, null) === null ||
-      s.secrets.list({ repoId: ws.repoId }).length === 0
+      tabRepoSecrets(task, def).length === 0
     )
       return { env: {}, def };
     const command =
@@ -1256,8 +1265,7 @@ export function createHandlers(s: Services): Handlers {
     def: TerminalDef,
   ): Promise<string[] | undefined> => {
     const ws = terminalWorkspace(task, def);
-    if (!s.runs || s.secrets.list({ repoId: ws.repoId }).length === 0)
-      return undefined;
+    if (!s.runs || tabRepoSecrets(task, def).length === 0) return undefined;
     // An unreadable .shellie.yml only means the agent is not told the names.
     return s.runs.names(task.id, ws.worktreePath).catch(() => undefined);
   };
@@ -1351,11 +1359,7 @@ export function createHandlers(s: Services): Handlers {
       throw e;
     }
     spawnedEnv.set(def.id, spawnEnvironment);
-    const stored = new Set(
-      s.secrets
-        .list({ repoId: terminalWorkspace(task, def).repoId })
-        .map((v) => v.name),
-    );
+    const stored = new Set(tabRepoSecrets(task, def).map((v) => v.name));
     if (Object.keys(secrets.env).some((k) => stored.has(k)))
       spawnedWithSecrets.add(def.id);
     else spawnedWithSecrets.delete(def.id);
@@ -1365,10 +1369,8 @@ export function createHandlers(s: Services): Handlers {
   /** Every tab but an agent's can hold secrets. */
   /** The shared rule (inject.ts): a stored secret of the tab's repo is given to it. */
   const holdsSecrets = (task: Task, def: TerminalDef) =>
-    holdsSecretsFor(
-      def,
-      s.secrets.list({ repoId: terminalWorkspace(task, def).repoId }),
-    ) || spawnedWithSecrets.has(def.id);
+    holdsSecretsFor(def, tabRepoSecrets(task, def)) ||
+    spawnedWithSecrets.has(def.id);
 
   /** Stops a tab and tells its view it ended (a kill alone sends no exit). */
   const stopTab = async (id: string) => {
@@ -1885,7 +1887,31 @@ export function createHandlers(s: Services): Handlers {
     return { detail, warn };
   };
 
+  /** A task without a repo (#225): its scratch folder, task.md with the project's brain, and its tabs. */
+  const noRepoPlan = (task: Task): SetupPlan => {
+    const defs = initialTerminals(task);
+    const b = taskBrain(task);
+    return {
+      taskId: task.id,
+      repoPath: '',
+      worktreePath: task.worktreePath,
+      branch: '',
+      baseRef: '',
+      copy: [],
+      commands: [],
+      taskMd: renderTaskMd(task),
+      startTerminalsLabel:
+        defs.length > 0 ? defs.map((d) => d.label).join(', ') : null,
+      updateWorkItem: false,
+      noRepo: true,
+      ...(b?.options.contextInTaskMd
+        ? { brain: { id: b.id, name: b.name, path: b.path } }
+        : {}),
+    };
+  };
+
   const buildPlan = async (task: Task): Promise<SetupPlan> => {
+    if (task.repoId === null) return noRepoPlan(task);
     const repo = s.repos.get(task.repoId);
     const config = await s.loadConfig(repo.path);
     const details = await workItemDetails(task, repo);
@@ -2030,6 +2056,8 @@ export function createHandlers(s: Services): Handlers {
           await updateTerminals(taskId, (list) => [...list, ...defs]);
         },
         updateWorkItem: async () => {
+          // Never planned for a task without a repo: the repo's settings say how to update the work item.
+          if (task.repoId === null) return { detail: 'Skipped', warn: false };
           try {
             const repo = s.repos.get(task.repoId);
             const connection = s.connections.get(
@@ -2112,6 +2140,104 @@ export function createHandlers(s: Services): Handlers {
 
   const startSetupInBackground = (taskId: string, fromStep?: number) => {
     void runSetup(taskId, fromStep);
+  };
+
+  /**
+   * A task without a repo (#225), to work with a project's brain: a scratch folder under userData with task.md and
+   * the tabs. No branch, worktree, .shellie.yml, copies, setup commands or secrets; always on Development.
+   */
+  const createWithoutRepo = async (input: CreateTaskInput): Promise<Task> => {
+    if (!input.workItem && input.name.trim().length === 0)
+      throw new Error('Give the task a name or a work item');
+    if (input.workItem && input.workItem.title.trim().length === 0)
+      throw new Error('Give the work item a title');
+    const connectionId = input.connectionId ?? null;
+    if (
+      connectionId &&
+      !s.connections.list().some((c) => c.id === connectionId)
+    )
+      throw new Error(`Unknown connection ${connectionId}`);
+    // A kept folder of an earlier task with the same name gets a short suffix instead of blocking the new one.
+    const baseSlug = taskSlug(input.workItem, input.name);
+    let slug = baseSlug;
+    let worktreePath = path.join(brain.userData, 'scratch', slug);
+    while (
+      (await pathExists(worktreePath)) ||
+      creating.has(`scratch:${worktreePath}`)
+    ) {
+      slug = `${baseSlug}-${randomUUID().slice(0, 6)}`;
+      worktreePath = path.join(brain.userData, 'scratch', slug);
+    }
+    const key = `scratch:${worktreePath}`;
+    if (creating.has(key))
+      throw new Error(`Task ${slug} is already being created`);
+    creating.add(key);
+    const createdAt = new Date().toISOString();
+    const task: Task = {
+      id: randomUUID(),
+      repoId: null,
+      name: input.name.trim(),
+      workItem: input.workItem,
+      slug,
+      branch: '',
+      worktreePath,
+      baseRef: '',
+      baseSha: null,
+      status: 'setting-up',
+      setup: {
+        copy: false,
+        commands: [],
+        startClaude: input.startClaude,
+        openShell: input.openShell,
+        openCopilot: input.openCopilot ?? false,
+        openOpencode: input.openOpencode ?? false,
+        summary: null,
+      },
+      terminals: [],
+      createdAt,
+      finishedAt: null,
+      usageSyncedAt: null,
+      usageSyncError: null,
+      usageCommentId: null,
+      summary: null,
+      pullRequest: null,
+      closedTerminals: [],
+      reopen: null,
+      extraWorkspaces: [],
+      detachedPaths: [],
+      homeDropped: false,
+      connectionId,
+      mainCheckoutEdits: [],
+      environment: 'development',
+      environmentUntil: null,
+      pendingCleanup: [],
+      openPeriods: [{ start: createdAt, end: null }],
+      time: null,
+    };
+    inFlight.add(task.id);
+    try {
+      await s.store.update((st) => {
+        st.tasks.push(task);
+      });
+    } catch (e) {
+      release(task.id);
+      throw e;
+    } finally {
+      creating.delete(key);
+    }
+    startSetupInBackground(task.id);
+    void recordBaseline(task);
+    tel.event('task.created', {
+      workItem: input.workItem !== null && input.workItem !== undefined,
+      copy: false,
+      startClaude: input.startClaude,
+      openShell: input.openShell,
+      openCopilot: input.openCopilot ?? false,
+      openOpencode: input.openOpencode ?? false,
+      commands: 0,
+    });
+    await tasksChanged();
+    return task;
   };
 
   const workspaces =
@@ -2467,6 +2593,44 @@ export function createHandlers(s: Services): Handlers {
       closedTerminals: taskById(taskId).terminals,
       terminals: [],
     });
+  };
+
+  /**
+   * Finish for a task without a repo (#225): the brain's close line (and task.md when asked), the tabs stop, and the
+   * scratch folder goes when `removeWorktree`. The caller holds the claim. A folder that cannot be removed now stays.
+   */
+  const finishWithoutRepo = async (task: Task, options: FinishOptions) => {
+    const taskId = task.id;
+    await patchTask(taskId, { status: 'finishing' });
+    await brainAtFinish(task, options, 'no repo');
+    const killTerminals = options.closeTerminals || options.removeWorktree;
+    try {
+      if (killTerminals) await closeTaskTerminals(taskId);
+      if (options.removeWorktree)
+        await fs
+          .rm(task.worktreePath, { recursive: true, force: true })
+          .catch((e: unknown) => {
+            console.warn('[finish] scratch folder not removed', e);
+            s.broadcast('notice', {
+              level: 'warn',
+              message: `${task.worktreePath} could not be deleted; delete it by hand`,
+            });
+          });
+    } catch (e) {
+      await patchTask(taskId, { status: 'ready' });
+      throw e;
+    }
+    const finishedAt = new Date().toISOString();
+    await patchTask(taskId, {
+      status: 'done',
+      finishedAt,
+      openPeriods: withPeriodClosed(taskById(taskId), finishedAt),
+      ...endEnvironment(task),
+    });
+    s.stopRuns?.(taskId, 'The task was finished in Shellie');
+    leakWatch.dropTask(taskId);
+    reportFinished(task, options, { workspaces: 0, prs: 0, dropped: 0 });
+    await afterFinish(taskId, options);
   };
 
   /** The `task.finished` event of a Finish, single repo or per workspace. */
@@ -2863,6 +3027,7 @@ export function createHandlers(s: Services): Handlers {
 
     'tasks:list': listTasks,
     'tasks:create': async (input) => {
+      if (input.repoId === null) return createWithoutRepo(input);
       const repo = s.repos.get(input.repoId);
       if (
         input.environment !== undefined &&
@@ -3010,11 +3175,22 @@ export function createHandlers(s: Services): Handlers {
       claim(taskId, ['setup-failed'], 'cancel the setup of');
       try {
         const task = taskById(taskId);
-        const repo = s.repos.get(task.repoId);
         // Windows will not remove a folder that a running process has as its cwd.
         docsWatcher.stopTask(taskId);
         gitDirWatcher.stopTask(taskId);
         await s.terminals.killAllForTask(taskId);
+        if (task.repoId === null) {
+          // A task without a repo has only its scratch folder to remove.
+          await fs.rm(task.worktreePath, { recursive: true, force: true });
+          setupStates.delete(taskId);
+          await s.store.update((st) => {
+            st.tasks = st.tasks.filter((t) => t.id !== taskId);
+          });
+          await tasksChanged();
+          tel.event('setup.cancelled');
+          return;
+        }
+        const repo = s.repos.get(task.repoId);
         if (isReopening(task)) {
           // A failed reopen goes back to Done; the task, its branches and its history stay. Only the worktrees
           // this reopen made are removed: a kept one stays as it was.
@@ -3198,6 +3374,8 @@ export function createHandlers(s: Services): Handlers {
       let setup = false;
       try {
         const task = taskById(taskId);
+        if (hasNoRepo(task))
+          throw new Error('A task without a repo cannot be reopened');
         const active = activeWorkspaces(task);
         if (active.length === 0)
           throw new Error(
@@ -3280,6 +3458,7 @@ export function createHandlers(s: Services): Handlers {
       claim(taskId, ['ready'], 'finish');
       try {
         const task = taskById(taskId);
+        if (task.repoId === null) return await finishWithoutRepo(task, options);
         const repo = s.repos.get(task.repoId);
         await patchTask(taskId, { status: 'finishing' });
         // Record what the branch did while the worktree still exists; a summary must never block Finish.
@@ -3477,6 +3656,11 @@ export function createHandlers(s: Services): Handlers {
           const l = await removeForFinish(w, s.repos.get(w.repoId).path, true);
           if (l) left.push({ ...l, taskId });
         }
+        // A task without a repo has only its scratch folder (#225).
+        if (hasNoRepo(task))
+          await fs
+            .rm(task.worktreePath, { recursive: true, force: true })
+            .catch(() => console.warn('[discard] scratch folder not removed'));
         await s.store.update((st) => {
           st.tasks = st.tasks.filter((t) => t.id !== taskId);
           st.discardedCleanup.push(...left);

@@ -278,6 +278,25 @@ describe('groupTasks', () => {
     expect(g.done.map((t) => t.id)).toEqual(['c']);
   });
 
+  it('puts open tasks without a repo in their own group (#225)', () => {
+    const scratch: TaskView = {
+      ...tasks[0],
+      id: 'n',
+      repoId: null,
+      branch: '',
+      baseRef: '',
+      connectionId: 'A',
+    };
+    const g = groupTasks(
+      [scratch, { ...scratch, id: 'm', status: 'done' }],
+      repos,
+    );
+    expect(g.open).toEqual([]);
+    expect(g.noRepo.map((t) => t.id)).toEqual(['n']);
+    expect(g.done.map((t) => t.id)).toEqual(['m']);
+    expect(groupTasks([scratch], repos, 'B', ['A', 'B']).noRepo).toEqual([]);
+  });
+
   it('groups a task whose home was dropped under the repo that took over', () => {
     const moved: TaskView = {
       ...tasks[0],

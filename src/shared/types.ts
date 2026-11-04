@@ -167,13 +167,16 @@ export type PendingCleanup = z.infer<typeof PendingCleanupSchema>;
 
 export const TaskSchema = z.object({
   id: z.string().min(1),
-  repoId: z.string().min(1),
+  /** Null for a task without a repo (#225): a scratch folder, no branch, no git. */
+  repoId: z.string().min(1).nullable().default(null),
   name: z.string(),
   workItem: WorkItemRefSchema.nullable(),
   slug: z.string().min(1),
-  branch: z.string().min(1),
+  /** Empty for a task without a repo. */
+  branch: z.string(),
   worktreePath: z.string().min(1),
-  baseRef: z.string().min(1),
+  /** Empty for a task without a repo. */
+  baseRef: z.string(),
   /** The commit the branch started from, recorded when its worktree is made; null for older tasks. */
   baseSha: z.string().nullable().default(null),
   status: TaskStatusSchema,
@@ -321,7 +324,10 @@ export type ShellieConfig = {
 export type TaskView = Task & { worktreeMissing: boolean };
 
 export type CreateTaskInput = {
-  repoId: string;
+  /** Null makes a task without a repo in a scratch folder: branch, base, copy, commands and environment are unused. */
+  repoId: string | null;
+  /** The project of a task without a repo (for its brain); a repo's task takes its repo's. */
+  connectionId?: string | null;
   baseRef: string;
   name: string;
   workItem: WorkItemRef | null;

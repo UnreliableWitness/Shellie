@@ -6,9 +6,14 @@ export type WorkspaceView = Omit<Workspace, 'source'> & {
   source: 'home' | 'detected' | 'manual';
 };
 
+/** A task without a repo (#225): a scratch folder with terminals, no branch, no git. */
+export const hasNoRepo = (task: Pick<Task, 'repoId'>): boolean =>
+  task.repoId === null;
+
 const homeView = (task: Task): WorkspaceView => ({
   id: HOME_ID,
-  repoId: task.repoId,
+  // A task without a repo keeps a home for its terminals' folder; it is never one of its active workspaces.
+  repoId: task.repoId ?? '',
   branch: task.branch,
   worktreePath: task.worktreePath,
   baseRef: task.baseRef,
@@ -25,7 +30,9 @@ export function taskWorkspaces(task: Task): WorkspaceView[] {
   return [homeView(task), ...task.extraWorkspaces];
 }
 
+/** The workspaces with a worktree; none for a task without a repo, whose scratch folder has no git. */
 export function activeWorkspaces(task: Task): WorkspaceView[] {
+  if (hasNoRepo(task)) return [];
   return taskWorkspaces(task).filter((w) => !w.dropped);
 }
 

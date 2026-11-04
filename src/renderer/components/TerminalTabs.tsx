@@ -40,6 +40,7 @@ import { HtmlViewTab } from './HtmlViewTab';
 import {
   activeHome,
   activeWorkspaces,
+  hasNoRepo,
   parseDocsTarget,
   repoColor,
   type WorkspaceView,
@@ -177,7 +178,9 @@ export function TerminalTabs({
   const askDiscard = useStore((s) => s.askDiscard);
   const discarding = useStore((s) => s.discardTaskId === task.id);
   const repos = useStore((s) => s.repos);
-  const git = useGitSummary(task.id, task.worktreeMissing, visible);
+  // A task without a repo (#225) has a scratch folder with no git: no Docs, Changes, branch or run entries.
+  const noRepo = hasNoRepo(task);
+  const git = useGitSummary(task.id, task.worktreeMissing, visible && !noRepo);
   const brain = useTaskBrain(task.id);
   // The brain's terminal is a tab of this page only (not one of the task's terminals) until it is closed.
   const [brainTerm, setBrainTerm] = useState<TerminalDef | null>(null);
@@ -202,8 +205,9 @@ export function TerminalTabs({
   // Not while Changes is open (it loads the same list); the badge keeps its count and refreshes on leaving.
   const changeCount = useChangeCount(
     task,
-    visible && ready && active !== CHANGES_TAB,
+    visible && ready && !noRepo && active !== CHANGES_TAB,
   );
+  const hasGit = ready && !task.worktreeMissing && !noRepo;
   const toggleFocus = useStore((s) => s.toggleFocus);
   const navCollapsed = useStore((s) => s.navCollapsed);
   const views = useStore((s) => s.viewsByTask[task.id]) ?? NO_VIEWS;
@@ -227,13 +231,13 @@ export function TerminalTabs({
   );
 
   useEffect(() => {
-    if (!visible || !ready || task.worktreeMissing) return;
+    if (!visible || !hasGit) return;
     return holdWatch('docs:watch', task.id);
-  }, [task.id, visible, ready, task.worktreeMissing]);
+  }, [task.id, visible, hasGit]);
 
   // The task page looks for other repos' worktrees when shown and every 2 minutes while the window is focused.
   useEffect(() => {
-    if (!visible || !ready) return;
+    if (!visible || !ready || noRepo) return;
     const scan = () => {
       void api()
         .invoke('tasks:scanWorkspaces', task.id)
@@ -244,7 +248,7 @@ export function TerminalTabs({
       if (document.hasFocus()) scan();
     }, SCAN_MS);
     return () => clearInterval(timer);
-  }, [task.id, visible, ready]);
+  }, [task.id, visible, ready, noRepo]);
 
   const inTask = activeWorkspaces(task);
   const home = activeHome(task);
@@ -255,7 +259,7 @@ export function TerminalTabs({
     name: repoName(w),
     color: repoColor(task, w.id),
   }));
-  const runFrom = inTask.length > 1 ? inTask : [home];
+  const runFrom = noRepo ? [] : inTask.length > 1 ? inTask : [home];
 
   const open = async (def: NewTerminal) => {
     const created = await tryInvoke(
@@ -340,7 +344,7 @@ export function TerminalTabs({
               Usage
               {unseen && <span className="tab-new" aria-hidden="true" />}
             </button>
-            {ready && !task.worktreeMissing && (
+            {hasGit && (
               <button
                 type="button"
                 role="tab"
@@ -355,7 +359,7 @@ export function TerminalTabs({
                 {docsUnseen && <span className="tab-new" aria-hidden="true" />}
               </button>
             )}
-            {ready && !task.worktreeMissing && (
+            {hasGit && (
               <button
                 type="button"
                 role="tab"
@@ -493,15 +497,19 @@ export function TerminalTabs({
           />
         </div>
         <div className="taskbar-right">
-          {ready && <EnvironmentChip task={task} />}
-          {ready && visible && <CleanWorktreeButton task={task} />}
+          {ready && !noRepo && <EnvironmentChip task={task} />}
+          {ready && visible && !noRepo && <CleanWorktreeButton task={task} />}
           <WorkspaceChips task={task} />
-          <span className="mono taskbar-git" title={home.branch}>
-            <Branch16Regular aria-hidden="true" />
-            <span className="taskbar-branch">{home.branch}</span>
-            {git &&
-              ` ${UP}${git.ahead}${git.behind ? ` ${DOWN}${git.behind}` : ''} ${DOT} ${git.files.length ? `${git.files.length}${DELTA}` : 'clean'}`}
-          </span>
+          {noRepo ? (
+            <span className="small muted">No repo</span>
+          ) : (
+            <span className="mono taskbar-git" title={home.branch}>
+              <Branch16Regular aria-hidden="true" />
+              <span className="taskbar-branch">{home.branch}</span>
+              {git &&
+                ` ${UP}${git.ahead}${git.behind ? ` ${DOWN}${git.behind}` : ''} ${DOT} ${git.files.length ? `${git.files.length}${DELTA}` : 'clean'}`}
+            </span>
+          )}
           <CostButton taskId={task.id} />
           {ready && (
             <>
@@ -531,7 +539,7 @@ export function TerminalTabs({
                   <Delete16Regular />
                 </IconButton>
               )}
-              <TaskMenu task={task} />
+              {!noRepo && <TaskMenu task={task} />}
               <IconButton
                 label={inFocus ? 'Exit focus' : 'Focus'}
                 shortcut={`${modKey}+Shift+F`}
@@ -556,13 +564,12 @@ export function TerminalTabs({
       ))}
       <div className="termhost">
         {visible && active === USAGE_TAB && <UsagePanel taskId={task.id} />}
-        {visible && active === DOCS_TAB && !task.worktreeMissing && (
+        {visible && active === DOCS_TAB && !task.worktreeMissing && !noRepo && (
           <DocsTab task={task} />
         )}
-        {visible &&
-          active === CHANGES_TAB &&
-          ready &&
-          !task.worktreeMissing && <ChangesTab task={task} />}
+        {visible && active === CHANGES_TAB && hasGit && (
+          <ChangesTab task={task} />
+        )}
         {visible && active === BRAIN_TAB && brain && brainShown && (
           <BrainTab brain={brain} />
         )}

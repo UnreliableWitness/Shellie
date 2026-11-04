@@ -22,7 +22,7 @@ import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { PageHeader, Pivots, WorkItemTypeIcon } from '../components/ui';
 import { WorkItemPicker } from '../components/WorkItemPicker';
 import { useEscape } from '../hooks/useEscape';
-import { useStore } from '../store';
+import { activeConnection, useStore } from '../store';
 import { useTypeMeta } from '../workItemTypes';
 
 type Mode = 'pick' | 'typed' | 'blank';
@@ -40,10 +40,24 @@ export function NewTaskScreen({
   const select = useStore((s) => s.select);
   const notify = useStore((s) => s.notify);
   const connections = useStore((s) => s.connections);
-
-  const [repoId, setRepoId] = useState(
-    repos.find((r) => r.id === initial.repoId)?.id ?? repos[0]?.id ?? '',
+  const active = useStore(activeConnection);
+  // The active project's repos (and repos linked to none), never another project's (#225); a sprint row's own
+  // repo always stays.
+  const candidates = repos.filter(
+    (r) =>
+      !active ||
+      r.id === initial.repoId ||
+      r.connectionId === active.id ||
+      r.connectionId === null,
   );
+
+  // '' is No repo: a task in a scratch folder, for working with the project's brain.
+  const [repoId, setRepoId] = useState(
+    candidates.find((r) => r.id === initial.repoId)?.id ??
+      candidates[0]?.id ??
+      '',
+  );
+  const noRepo = repoId === '';
   const connectionOf = (rid: string) => {
     const cid = repos.find((x) => x.id === rid)?.connectionId;
     return cid ? (connections.find((c) => c.id === cid) ?? null) : null;
@@ -112,7 +126,12 @@ export function NewTaskScreen({
   const repo = repos.find((r) => r.id === repoId) ?? null;
   const connection = connectionOf(repoId);
   const connectionId = connection?.id ?? null;
-  const mode: Mode = rawMode === 'pick' && !connection ? 'typed' : rawMode;
+  // A task without a repo has a name only, like Blank.
+  const mode: Mode = noRepo
+    ? 'blank'
+    : rawMode === 'pick' && !connection
+      ? 'typed'
+      : rawMode;
 
   useEffect(() => {
     const repoChanged = lastRepo.current !== repoId;
@@ -256,8 +275,36 @@ export function NewTaskScreen({
     ...(openShell ? ['your shell'] : []),
   ];
 
+  const createWithoutRepo = async () => {
+    setBusy(true);
+    const task = await tryInvoke(
+      () =>
+        api().invoke('tasks:create', {
+          repoId: null,
+          connectionId: active?.id ?? null,
+          baseRef: '',
+          name,
+          workItem: null,
+          branch: '',
+          copy: false,
+          commands: [],
+          startClaude,
+          openShell,
+          openCopilot,
+          openOpencode,
+        }),
+      notify,
+    );
+    setBusy(false);
+    if (task) {
+      select(task.id);
+      go({ kind: 'setup', taskId: task.id });
+    }
+  };
+
   const create = async (confirmed = false) => {
     if (busy) return;
+    if (noRepo) return createWithoutRepo();
     if (!repo) return notify('error', 'Add a repository in Settings first');
     if (isGuarded(environment) && !confirmed) {
       setAsking(true);
@@ -316,8 +363,10 @@ export function NewTaskScreen({
   };
 
   const pivots: { key: Mode; label: string }[] = [
-    ...(connection ? [{ key: 'pick' as const, label: 'Work item' }] : []),
-    { key: 'typed', label: 'Typed' },
+    ...(connection && !noRepo
+      ? [{ key: 'pick' as const, label: 'Work item' }]
+      : []),
+    ...(noRepo ? [] : [{ key: 'typed' as const, label: 'Typed' }]),
     { key: 'blank', label: 'Blank' },
   ];
 
@@ -412,108 +461,124 @@ export function NewTaskScreen({
               value={repoId}
               onChange={(e) => setRepoId(e.target.value)}
             >
-              {repos.map((r) => (
+              {candidates.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
               ))}
+              <option value="">No repo</option>
             </select>
-            {config?.fileError != null && (
+            {noRepo && (
+              <p className="muted small form-grid-full">
+                A folder of its own with terminals and the project&apos;s brain:
+                no branch, no changes to review, no pull request.
+              </p>
+            )}
+            {!noRepo && config?.fileError != null && (
               // A task never starts on a broken file's defaults: Create stays off until it is fixed.
               <p className="text-red small form-grid-full" role="alert">
                 {config.fileError}
               </p>
             )}
-            <label htmlFor="nt-base">From</label>
-            <select
-              id="nt-base"
-              className="field mono"
-              value={baseRef}
-              onChange={(e) => setBaseRef(e.target.value)}
-            >
-              {baseOptions.map((b) => (
-                <option key={b}>{b}</option>
-              ))}
-            </select>
-            <label htmlFor="nt-branch">Branch</label>
-            <input
-              id="nt-branch"
-              className="field mono"
-              value={branch}
-              onChange={(e) => setEditedBranch(e.target.value)}
-              onBlur={(e) => {
-                if (!e.target.value) setEditedBranch(null);
-              }}
-            />
-            <span className="label">Folder</span>
-            <span className="mono small" style={{ overflowWrap: 'anywhere' }}>
-              {folder}
-            </span>
-            <label htmlFor="nt-env">Environment</label>
-            <select
-              id="nt-env"
-              className="field"
-              value={environment}
-              onChange={(e) => {
-                setEnvironment(e.target.value as Environment);
-                setAsking(false);
-              }}
-            >
-              {ENVIRONMENTS.map((e) => (
-                <option key={e} value={e}>
-                  {ENVIRONMENT_LABEL[e]}
-                </option>
-              ))}
-            </select>
+            {!noRepo && (
+              <>
+                <label htmlFor="nt-base">From</label>
+                <select
+                  id="nt-base"
+                  className="field mono"
+                  value={baseRef}
+                  onChange={(e) => setBaseRef(e.target.value)}
+                >
+                  {baseOptions.map((b) => (
+                    <option key={b}>{b}</option>
+                  ))}
+                </select>
+                <label htmlFor="nt-branch">Branch</label>
+                <input
+                  id="nt-branch"
+                  className="field mono"
+                  value={branch}
+                  onChange={(e) => setEditedBranch(e.target.value)}
+                  onBlur={(e) => {
+                    if (!e.target.value) setEditedBranch(null);
+                  }}
+                />
+                <span className="label">Folder</span>
+                <span
+                  className="mono small"
+                  style={{ overflowWrap: 'anywhere' }}
+                >
+                  {folder}
+                </span>
+                <label htmlFor="nt-env">Environment</label>
+                <select
+                  id="nt-env"
+                  className="field"
+                  value={environment}
+                  onChange={(e) => {
+                    setEnvironment(e.target.value as Environment);
+                    setAsking(false);
+                  }}
+                >
+                  {ENVIRONMENTS.map((e) => (
+                    <option key={e} value={e}>
+                      {ENVIRONMENT_LABEL[e]}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
-          {summary && repo && (
+          {!noRepo && summary && repo && (
             <TaskSummaryCard
               summary={summary}
               repoId={repo.id}
               copyStates={copyStates}
             />
           )}
-          <fieldset className="group">
-            <legend>Setup from .shellie.yml</legend>
-            {config && config.config.copy.length > 0 && (
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={copy}
-                  onChange={(e) => setCopy(e.target.checked)}
-                />
-                Copy{' '}
-                <span className="mono small">
-                  {config.config.copy.join(', ')}
-                </span>
-              </label>
-            )}
-            {(config?.config.setup ?? []).map((c) => (
-              <label key={c} className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={commands[c] ?? false}
-                  onChange={(e) => {
-                    const { checked } = e.target;
-                    setCommands((prev) => ({ ...prev, [c]: checked }));
-                  }}
-                />
-                <span className="mono">{c}</span>
-              </label>
-            ))}
-            {(config?.config.setup.length ?? 0) > 0 && (
-              <span className="muted small">
-                Commands run in a Setup tab while you work.
-              </span>
-            )}
-            {config &&
-              config.config.setup.length === 0 &&
-              config.config.copy.length === 0 && (
+          {!noRepo && (
+            <fieldset className="group">
+              <legend>Setup from .shellie.yml</legend>
+              {config && config.config.copy.length > 0 && (
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={copy}
+                    onChange={(e) => setCopy(e.target.checked)}
+                  />
+                  Copy{' '}
+                  <span className="mono small">
+                    {config.config.copy.join(', ')}
+                  </span>
+                </label>
+              )}
+              {(config?.config.setup ?? []).map((c) => (
+                <label key={c} className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={commands[c] ?? false}
+                    onChange={(e) => {
+                      const { checked } = e.target;
+                      setCommands((prev) => ({ ...prev, [c]: checked }));
+                    }}
+                  />
+                  <span className="mono">{c}</span>
+                </label>
+              ))}
+              {(config?.config.setup.length ?? 0) > 0 && (
                 <span className="muted small">
-                  Nothing to run for this repo.
+                  Commands run in a Setup tab while you work.
                 </span>
               )}
-          </fieldset>
+              {config &&
+                config.config.setup.length === 0 &&
+                config.config.copy.length === 0 && (
+                  <span className="muted small">
+                    Nothing to run for this repo.
+                  </span>
+                )}
+            </fieldset>
+          )}
           <fieldset className="group">
             <legend>When ready</legend>
             <label className="checkbox">
@@ -569,13 +634,15 @@ export function NewTaskScreen({
               type="button"
               className="btn btn-primary"
               disabled={
-                busy ||
-                !repo ||
-                !config ||
-                config.fileError !== null ||
-                !baseRef ||
-                !branch ||
-                !canCreate
+                noRepo
+                  ? busy || !canCreate
+                  : busy ||
+                    !repo ||
+                    !config ||
+                    config.fileError !== null ||
+                    !baseRef ||
+                    !branch ||
+                    !canCreate
               }
               onClick={() => void create()}
             >

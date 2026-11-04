@@ -170,7 +170,7 @@ export function SetupScreen({ taskId }: { taskId: string }) {
       />
       <div className="setup">
         <section className="setup-left">
-          {task.setup.summary && (
+          {task.setup.summary && task.repoId !== null && (
             <TaskSummaryCard
               summary={task.setup.summary}
               repoId={task.repoId}

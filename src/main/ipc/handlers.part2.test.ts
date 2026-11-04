@@ -1507,3 +1507,151 @@ describe('handlers: the brain at setup', () => {
     await hx.terminals.killAllForTask(t.id);
   });
 });
+
+describe('handlers: a task without a repo (#225)', () => {
+  async function noRepoSetup() {
+    const base = testPlatform();
+    const calls: { prompt: string | null; flags: string[] }[] = [];
+    const platform = {
+      ...base,
+      claudeCommand: (prompt: string | null, flags: string[] = []) => {
+        calls.push({ prompt, flags });
+        return base.runCommand(echoCmd('claude'));
+      },
+    };
+    const b = await brainServices();
+    const hx = await harness(fakeCrypto(), { platform, brain: b.brain });
+    routeHealthyOrg(hx.server);
+    const c = await hx.h['connections:save']({
+      organizationUrl: `${hx.server.url}/unreliablewitness`,
+      project: 'Shellie',
+      pat: 'p',
+    });
+    const spies = (
+      ['fetch', 'worktreeAdd', 'branchExists', 'validBranchName'] as const
+    ).map((m) => vi.spyOn(hx.services.git, m));
+    const create = async (over: Partial<CreateTaskInput> = {}) => {
+      const done = hx.setupDone();
+      const t = await hx.h['tasks:create'](
+        hx.input({
+          repoId: null,
+          connectionId: c.id,
+          name: 'Ask the brain',
+          workItem: null,
+          branch: '',
+          baseRef: '',
+          copy: false,
+          startClaude: true,
+          openShell: true,
+          ...over,
+        }),
+      );
+      const finished = await done;
+      return { t, finished, state: await hx.h['tasks:setupState'](t.id) };
+    };
+    return { hx, b, c, calls, spies, create };
+  }
+
+  it('makes a scratch folder with task.md and the tabs, without git', async () => {
+    const { hx, b, calls, spies, create } = await noRepoSetup();
+    const { t, finished, state } = await create();
+    expect(finished.ok).toBe(true);
+    expect(t).toMatchObject({ repoId: null, branch: '', baseRef: '' });
+    expect(t.worktreePath).toBe(
+      path.join(b.brain.userData, 'scratch', 'ask-the-brain'),
+    );
+    expect(state?.steps.map((s) => s.def.label)).toEqual([
+      'Create folder',
+      'Write task file',
+      'Start terminals',
+    ]);
+    const md = readFileSync(
+      path.join(t.worktreePath, '.shellie', 'task.md'),
+      'utf8',
+    );
+    expect(md).toContain('# Task: Ask the brain');
+    expect(md).toContain('(no repo)');
+    expect(md).not.toContain('Branch');
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    const task = hx.store.state.tasks[0];
+    expect(task.status).toBe('ready');
+    expect(task.terminals.map((d) => d.kind)).toEqual(['claude', 'shell']);
+    expect(calls.at(-1)!.prompt).toMatch(/without a repo/);
+    expect(calls.at(-1)!.prompt).not.toMatch(/worktree add/);
+    expect(calls.at(-1)!.flags).not.toContain('--add-dir');
+    // Nothing scans for other repos or looks for git changes.
+    expect(await hx.h['tasks:scanWorkspaces'](t.id)).toEqual([]);
+    await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('gives a second task with the same name its own folder', async () => {
+    const { hx, b, create } = await noRepoSetup();
+    const first = await create();
+    const second = await create();
+    expect(second.finished.ok).toBe(true);
+    expect(first.t.worktreePath).toBe(
+      path.join(b.brain.userData, 'scratch', 'ask-the-brain'),
+    );
+    expect(second.t.worktreePath).not.toBe(first.t.worktreePath);
+    expect(second.t.worktreePath).toMatch(/scratch[\\/]ask-the-brain-/);
+    expect(second.t.slug).toBe(path.basename(second.t.worktreePath));
+    await hx.terminals.killAllForTask(first.t.id);
+    await hx.terminals.killAllForTask(second.t.id);
+  });
+
+  it("gives Claude the project's brain without a work item", async () => {
+    const { b, c, calls, create, hx } = await noRepoSetup();
+    const brain = await b.add({
+      connectionId: c.id,
+      project: 'Shellie',
+      index: '# Index\n\n- [Scope](wiki/scope.md)\n',
+    });
+    const { t, state } = await create();
+    expect(state?.steps.find((s) => s.def.kind === 'brain')).toMatchObject({
+      status: 'done',
+    });
+    const md = readFileSync(
+      path.join(t.worktreePath, '.shellie', 'task.md'),
+      'utf8',
+    );
+    expect(md).toContain('## Context: Acme');
+    const flags = calls.at(-1)!.flags;
+    const at = flags.indexOf('--add-dir');
+    expect(flags.slice(at, at + 2)).toEqual(['--add-dir', brain.path]);
+    expect((await hx.h['brain:forTask'](t.id))?.id).toBe(brain.id);
+    await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('finishes without git, deletes the folder when asked and cannot be reopened', async () => {
+    const { create, hx, spies } = await noRepoSetup();
+    const { t } = await create();
+    await hx.h['tasks:finish'](t.id, {
+      closeTerminals: true,
+      removeWorktree: true,
+      deleteBranch: false,
+    });
+    const done = hx.store.state.tasks[0];
+    expect(done.status).toBe('done');
+    expect(done.terminals).toEqual([]);
+    expect(existsSync(t.worktreePath)).toBe(false);
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    await expect(hx.h['tasks:reopen'](t.id)).rejects.toThrow(
+      'A task without a repo cannot be reopened',
+    );
+  });
+
+  it('keeps the folder at Finish unless asked, and Discard deletes it', async () => {
+    const { create, hx } = await noRepoSetup();
+    const kept = await create({ name: 'Keep notes' });
+    await hx.h['tasks:finish'](kept.t.id, {
+      closeTerminals: true,
+      removeWorktree: false,
+      deleteBranch: false,
+    });
+    expect(existsSync(kept.t.worktreePath)).toBe(true);
+    const gone = await create({ name: 'Throw away' });
+    await hx.h['tasks:discard'](gone.t.id);
+    expect(existsSync(gone.t.worktreePath)).toBe(false);
+    expect(hx.store.state.tasks.map((x) => x.id)).toEqual([kept.t.id]);
+  });
+});
