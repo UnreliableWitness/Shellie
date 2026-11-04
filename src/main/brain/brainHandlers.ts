@@ -201,7 +201,9 @@ export async function verifyPage(
     const lines = m[1].split(/\r?\n/).filter((l) => !/^verified:/.test(l));
     lines.push(`verified: ${day}`);
     const next = `---${eol}${lines.join(eol)}${eol}---${m[2]}${text.slice(m[0].length)}`;
-    if (next === text) return day;
+    // Already verified today, wherever the line sits: nothing to commit.
+    const current = /^verified:[ \t]*(.*?)[ \t]*$/m.exec(m[1])?.[1];
+    if (next === text || current === day) return day;
     const dirty = (
       await git.run(brainDir, ['status', '--porcelain', '--', rel])
     ).trim();

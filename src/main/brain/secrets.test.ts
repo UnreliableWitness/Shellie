@@ -77,7 +77,7 @@ describe('findSecrets', () => {
       ['-----BEGIN PGP PRIVATE KEY BLOCK-----', 'private key'],
       ['ASIAIOSFODNN7EXAMPLE', 'AWS access key'],
       [
-        'aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+        'aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCY9kQ2mL7pQz',
         'AWS secret key',
       ],
       [
@@ -96,6 +96,11 @@ describe('findSecrets', () => {
         '"clientSecret": "Abc123def456ghi789"',
         'connection string password or key',
       ],
+      [
+        'Password=<placeholder>; then later Password=Real9Secret!x',
+        'connection string password or key',
+      ],
+      ['AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBW-', 'Google API key'],
     ];
     for (const [line, kind] of cases)
       expect(
@@ -124,6 +129,20 @@ describe('findSecrets', () => {
       'Resource id /subscriptions/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b/resourceGroups/rg',
       'https://contoso.sharepoint.com/sites/Engineering/Shared%20Documents/Forms/AllItems.aspx',
       'Donaudampfschifffahrtsgesellschaftskapitänsmützenabzeichen',
+      'Password: ********',
+      'Password: **************** (masked)',
+      'PWD=/home/runner/work/shellie/shellie',
+      'pwd: /Users/dries/projects/contoso',
+      'The password: must-be-changed-on-first-login',
+      'git clone https://user:$(System.AccessToken)@dev.azure.com/org/proj/_git/repo',
+      'https://username:password@host.example.com',
+      'https://<user>:<personal-access-token>@dev.azure.com/org',
+      'sk-learn-pipeline-configuration-for-the-model-training',
+      'api_key: YOUR_API_KEY_GOES_HERE_1234',
+      'access_token=ya29.a0AfH6SMBxxxxxxxxxxxxxxxxxxxxxxxxxxxx (truncated example)',
+      'password: changed on Monday',
+      'access token: see section 3',
+      'api-key: rotated 2026-01-01',
     ];
     for (const line of lines) expect(findSecrets(line), line).toEqual([]);
     expect(findSecrets(lines.join('\n'))).toEqual([]);
