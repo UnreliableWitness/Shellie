@@ -40,6 +40,9 @@ export function BrainSearch({
   });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const q = query.trim();
+  // The query as it is now: an answer for an earlier one is dropped, not stored.
+  const latest = useRef(q);
+  latest.current = q;
   const active = q.length >= SEARCH_MIN;
   const hits = result.q === q ? result.hits : [];
   const pending = active && result.q !== q;
@@ -56,8 +59,12 @@ export function BrainSearch({
       api()
         .invoke('brain:search', brainId, asked)
         .then(
-          (found) => setResult({ q: asked, hits: found }),
-          () => setResult({ q: asked, hits: [] }),
+          (found) => {
+            if (latest.current === asked) setResult({ q: asked, hits: found });
+          },
+          () => {
+            if (latest.current === asked) setResult({ q: asked, hits: [] });
+          },
         );
     }, DEBOUNCE_MS);
     return () => {

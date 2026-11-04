@@ -77,8 +77,13 @@ export function BrainPage({
   const bar = useRef<HTMLDivElement>(null);
 
   // After the text renders, the anchor's element (a heading id) scrolls into view.
+  // Once per navigation (path and anchor), not on every refetch: a reader halfway down stays there.
+  const scrolledFor = useRef<string | null>(null);
   useEffect(() => {
     if (text === null) return;
+    const key = `${path}#${anchor ?? ''}`;
+    if (scrolledFor.current === key) return;
+    scrolledFor.current = key;
     if (!anchor) {
       // A new page starts at its top, whatever the scroll position the last one left.
       bar.current?.scrollIntoView?.({ block: 'start' });
@@ -107,7 +112,8 @@ export function BrainPage({
   // A picture in the body opens at full size.
   const onBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
-    if (t.tagName === 'IMG') {
+    // A picture that is itself a link follows the link, not the lightbox.
+    if (t.tagName === 'IMG' && !t.closest('a')) {
       const img = t as HTMLImageElement;
       if (img.src) setPicture({ src: img.src, alt: img.alt });
     }

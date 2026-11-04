@@ -217,8 +217,13 @@ describe('after review', () => {
       [10, 'the-api-link-bold'],
       [12, 'top-1'],
     ]);
-    expect(headingText('![pic](p.png) `code` _em_ ~~x~~')).toBe(
-      'pic code em x',
+    // As the viewer ids them: underscores inside words and code stay, a picture leaves its leading space.
+    expect(headingText('`code` _em_ ~~x~~ **b**')).toBe('code em x b');
+    expect(headingText('snake_case_name')).toBe('snake_case_name');
+    expect(headingText('`a_b` call')).toBe('a_b call');
+    expect(headingText('![pic](p.png) Diagram')).toBe(' Diagram');
+    expect(headingText('The `api` [link](x) **bold**')).toBe(
+      'The api link bold',
     );
   });
 

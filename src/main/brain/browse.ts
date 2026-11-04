@@ -113,14 +113,24 @@ async function markdownFiles(
   return out;
 }
 
-/** A heading's text as the viewer slugs it: links to their text, pictures to their alt, code and emphasis marks off. */
+/**
+ * A heading's text as the viewer slugs it (rehype-slug on the rendered text): pictures gone, links to their text,
+ * code spans verbatim, emphasis marks dropped only where they delimit (`_` inside a word stays). Not trimmed: the
+ * viewer keeps a leading space as a dash.
+ */
 export function headingText(raw: string): string {
-  return raw
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/(\*\*|__|\*|_|~~)/g, '')
-    .trim();
+  const noPictures = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+  const noLinks = noPictures.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  return noLinks
+    .split(/(`[^`]*`)/)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part.slice(1, -1)
+        : part
+            .replace(/(^|\s)(?:\*\*|__|\*|_|~~)+(?=\S)/g, '$1')
+            .replace(/(?<=\S)(?:\*\*|__|\*|_|~~)+(?=\s|$)/g, ''),
+    )
+    .join('');
 }
 
 /** The matching line cut to SNIPPET characters around the match. */
