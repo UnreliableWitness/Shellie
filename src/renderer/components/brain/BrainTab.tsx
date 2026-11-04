@@ -12,7 +12,7 @@ export function BrainTab({ brain }: { brain: BrainView }) {
   const go = useStore((s) => s.go);
   const [index, setIndex] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
-  const { over, problems, dropProps } = useBrainDrop(brain.id);
+  const { over, problems, notes, dropProps } = useBrainDrop(brain.id);
 
   const load = useCallback(() => {
     api()
@@ -51,6 +51,13 @@ export function BrainTab({ brain }: { brain: BrainView }) {
         <ul className="brain-problems small" role="alert">
           {problems.map((p, i) => (
             <li key={i}>{p}</li>
+          ))}
+        </ul>
+      )}
+      {notes.length > 0 && (
+        <ul className="brain-notes muted small" aria-label="Added">
+          {notes.map((n, i) => (
+            <li key={i}>{n}</li>
           ))}
         </ul>
       )}

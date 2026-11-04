@@ -145,9 +145,8 @@ export function BrainInbox({
   onTerminal?: (def: TerminalDef) => void;
 }) {
   const notify = useStore((s) => s.notify);
-  const { over, problems, setProblems, addFiles, dropProps } = useBrainDrop(
-    brain.id,
-  );
+  const { over, problems, setProblems, notes, addFiles, dropProps } =
+    useBrainDrop(brain.id);
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [type, setType] = useState<SourceType>('note');
@@ -234,6 +233,13 @@ export function BrainInbox({
         <ul className="brain-problems small" role="alert">
           {problems.map((p, i) => (
             <li key={i}>{p}</li>
+          ))}
+        </ul>
+      )}
+      {notes.length > 0 && (
+        <ul className="brain-notes muted small" aria-label="Added">
+          {notes.map((n, i) => (
+            <li key={i}>{n}</li>
           ))}
         </ul>
       )}

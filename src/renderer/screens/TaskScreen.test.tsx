@@ -907,7 +907,9 @@ describe('tabs and focus', () => {
           { path: 'wiki/scope.md', name: 'scope.md', changed: null },
           { path: 'wiki/account.md', name: 'account.md', changed: null },
         ],
-        'brain:addFiles': () => [{ ok: true, path: 'sources/x.md' }],
+        'brain:addFiles': () => [
+          { ok: true, path: 'sources/x.md', images: 0, warnings: [] },
+        ],
       },
     );
     render(<Shell />);

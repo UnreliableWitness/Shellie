@@ -78,8 +78,12 @@
   color: var(--red);
   margin: 0;
 }
-.brain-problems {
+.brain-problems,
+.brain-notes {
   padding-left: 16px;
+}
+.brain-notes {
+  margin: 0;
 }
 .brain-status-failed {
   color: var(--red);

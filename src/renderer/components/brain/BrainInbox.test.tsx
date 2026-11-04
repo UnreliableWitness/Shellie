@@ -18,9 +18,9 @@ describe('BrainInbox', () => {
   it('dropping files calls brain:addFiles with guessed types', async () => {
     const a = installFakeApi({
       'brain:addFiles': () => [
-        { ok: true, path: 'sources/x' },
-        { ok: true, path: 'sources/y' },
-        { ok: true, path: 'sources/z' },
+        { ok: true, path: 'sources/x', images: 0, warnings: [] },
+        { ok: true, path: 'sources/y', images: 0, warnings: [] },
+        { ok: true, path: 'sources/z', images: 0, warnings: [] },
       ],
     });
     render(<BrainInbox brain={brainView()} />);
@@ -44,6 +44,36 @@ describe('BrainInbox', () => {
     );
   });
 
+  it('says what a drop added, with pictures and what conversion left out', async () => {
+    installFakeApi({
+      'brain:addFiles': () => [
+        {
+          ok: true,
+          path: 'sources/2026-11-04-plan.md',
+          images: 3,
+          warnings: ['1 picture in formats Claude cannot view (emf)'],
+        },
+        {
+          ok: true,
+          path: 'sources/2026-11-04-sow.md',
+          images: 0,
+          warnings: [],
+        },
+      ],
+    });
+    render(<BrainInbox brain={brainView()} />);
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('plan.pptx'), file('sow.docx')] },
+    });
+    const added = await screen.findByLabelText('Added');
+    expect(added).toHaveTextContent('Added 2026-11-04-plan.md · 3 pictures');
+    expect(added).toHaveTextContent(
+      '2026-11-04-plan.md: 1 picture in formats Claude cannot view (emf)',
+    );
+    expect(added).toHaveTextContent('Added 2026-11-04-sow.md');
+    expect(added).not.toHaveTextContent('sow.md ·');
+  });
+
   it('shows what a drop could not add', async () => {
     installFakeApi({
       'brain:addFiles': () => [
@@ -63,7 +93,12 @@ describe('BrainInbox', () => {
 
   it('pasting text sends title, text and type to brain:addText', async () => {
     const a = installFakeApi({
-      'brain:addText': () => ({ ok: true, path: 'sources/n.md' }),
+      'brain:addText': () => ({
+        ok: true,
+        path: 'sources/n.md',
+        images: 0,
+        warnings: [],
+      }),
     });
     render(<BrainInbox brain={brainView()} />);
     await userEvent.type(screen.getByLabelText('Title'), 'Call notes');
