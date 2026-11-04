@@ -1584,6 +1584,21 @@ describe('handlers: a task without a repo (#225)', () => {
     await hx.terminals.killAllForTask(t.id);
   });
 
+  it('gives a second task with the same name its own folder', async () => {
+    const { hx, b, create } = await noRepoSetup();
+    const first = await create();
+    const second = await create();
+    expect(second.finished.ok).toBe(true);
+    expect(first.t.worktreePath).toBe(
+      path.join(b.brain.userData, 'scratch', 'ask-the-brain'),
+    );
+    expect(second.t.worktreePath).not.toBe(first.t.worktreePath);
+    expect(second.t.worktreePath).toMatch(/scratch[\\/]ask-the-brain-/);
+    expect(second.t.slug).toBe(path.basename(second.t.worktreePath));
+    await hx.terminals.killAllForTask(first.t.id);
+    await hx.terminals.killAllForTask(second.t.id);
+  });
+
   it("gives Claude the project's brain without a work item", async () => {
     const { b, c, calls, create, hx } = await noRepoSetup();
     const brain = await b.add({

@@ -2157,10 +2157,17 @@ export function createHandlers(s: Services): Handlers {
       !s.connections.list().some((c) => c.id === connectionId)
     )
       throw new Error(`Unknown connection ${connectionId}`);
-    const slug = taskSlug(input.workItem, input.name);
-    const worktreePath = path.join(brain.userData, 'scratch', slug);
-    if (await pathExists(worktreePath))
-      throw new Error(`Folder ${worktreePath} already exists`);
+    // A kept folder of an earlier task with the same name gets a short suffix instead of blocking the new one.
+    const baseSlug = taskSlug(input.workItem, input.name);
+    let slug = baseSlug;
+    let worktreePath = path.join(brain.userData, 'scratch', slug);
+    while (
+      (await pathExists(worktreePath)) ||
+      creating.has(`scratch:${worktreePath}`)
+    ) {
+      slug = `${baseSlug}-${randomUUID().slice(0, 6)}`;
+      worktreePath = path.join(brain.userData, 'scratch', slug);
+    }
     const key = `scratch:${worktreePath}`;
     if (creating.has(key))
       throw new Error(`Task ${slug} is already being created`);
