@@ -225,3 +225,56 @@ describe('scrubBrain after the second review', () => {
     );
   });
 });
+
+describe('scrubBrain with non-ASCII names and deep dirty files', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-scrub3-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const write = async (rel: string, text: string) => {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), text);
+  };
+  const commit = async (message: string) => {
+    await git.run(dir, ['add', '-A']);
+    await git.run(dir, ['commit', '-q', '-m', message]);
+  };
+
+  it('renames and rewrites a committed page with a space and an accent, and keeps a dirty one an outside edit', async () => {
+    const secret = 'secretvalue1';
+    await write(`wiki/café ${secret}.md`, `holds ${secret}\n`);
+    await write('wiki/naïve page.md', 'committed\n');
+    await commit('Brain: sync');
+    await write('wiki/naïve page.md', `edited ${secret}\n`);
+    expect(await scrubBrain(git, dir, secret)).toEqual({
+      files: 2,
+      skipped: 0,
+    });
+    expect(
+      await fs.readFile(path.join(dir, 'wiki', 'café REDACTED.md'), 'utf8'),
+    ).toBe('holds REDACTED\n');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    const h = await brainHealth(dir, git, { tokens: 0, costEur: 0 }, false);
+    expect(h.outsideEdits).toEqual(['wiki/naïve page.md']);
+  });
+
+  it('keeps a dirty file without the value, deep inside a renamed folder, an outside edit', async () => {
+    const secret = 'hunter2hunter2';
+    await write(`wiki/${secret}dir/sub/deep.md`, 'committed\n');
+    await commit('Brain: sync');
+    await write(`wiki/${secret}dir/sub/deep.md`, 'edited by hand, no value\n');
+    await scrubBrain(git, dir, secret);
+    const h = await brainHealth(dir, git, { tokens: 0, costEur: 0 }, false);
+    expect(h.outsideEdits).toContain('wiki/REDACTEDdir/sub/deep.md');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+});

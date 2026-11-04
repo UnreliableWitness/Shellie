@@ -623,3 +623,32 @@ describe('removeSource without a state file', () => {
     }
   });
 });
+
+describe('removeSource with a non-ASCII name', () => {
+  it('removes a committed source whose name has a space and an accent', async () => {
+    const git = new GitClient();
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove4-')),
+    );
+    const dir = path.join(root, 'brain');
+    try {
+      await scaffoldBrain(git, dir, 'Acme');
+      await fs.mkdir(path.join(dir, 'sources', 'sub'));
+      await fs.writeFile(
+        path.join(dir, 'sources', 'sub', 'x y é.md'),
+        '---\ntitle: X\nsource_url: x.pdf\ningested_at: 2026-11-04T10:00:00.000Z\ncontent_type: doc\nsha256: x\n---\n\nx\n',
+      );
+      await fs.writeFile(path.join(dir, 'sources', 'sub', 'x y é.pdf'), 'pdf');
+      await git.run(dir, ['add', '-A']);
+      await git.run(dir, ['commit', '-q', '-m', 'Brain: sync']);
+      await removeSource(git, dir, 'sources/sub/x y é.md');
+      expect(await fs.readdir(path.join(dir, 'sources', 'sub'))).toEqual([]);
+      expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+      expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+        'Brain: remove source sources/sub/x y é.md',
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});

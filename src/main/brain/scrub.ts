@@ -124,10 +124,17 @@ async function tracked(
   paths: string[],
 ): Promise<string[]> {
   if (!paths.length) return [];
+  // -z: a non-ASCII or odd name comes back as it is, not quoted and escaped.
   return (
-    await git.run(brainDir, ['--literal-pathspecs', 'ls-files', '--', ...paths])
+    await git.run(brainDir, [
+      '--literal-pathspecs',
+      'ls-files',
+      '-z',
+      '--',
+      ...paths,
+    ])
   )
-    .split('\n')
+    .split('\0')
     .filter(Boolean);
 }
 
@@ -136,19 +143,23 @@ async function dirtyWiki(
   git: GitClient,
   brainDir: string,
 ): Promise<Set<string>> {
+  // -z: NUL-separated records, paths as they are; a rename record carries the new path, then the old one.
   const status = await git.run(brainDir, [
     '--literal-pathspecs',
     'status',
     '--porcelain',
+    '-z',
     '-uall',
     '--',
     'wiki/',
   ]);
   const out = new Set<string>();
-  for (const line of status.split('\n')) {
-    if (line.length < 4) continue;
-    const p = line.slice(3);
-    out.add(p.includes(' -> ') ? p.split(' -> ')[1] : p);
+  const records = status.split('\0');
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    if (r.length < 4) continue;
+    out.add(r.slice(3));
+    if (r[0] === 'R' || r[0] === 'C') i++;
   }
   return out;
 }
@@ -195,10 +206,13 @@ export async function scrubBrain(
       return p;
     };
     const dirtyNow = new Set([...dirty].map(moved));
-    const wasDirty = (p: string) => dirtyNow.has(p);
-    const outside = [
-      ...new Set([...planned.map((p) => p.rel), ...renames.map((r) => r.to)]),
-    ].filter((p) => p.startsWith('wiki/') && wasDirty(p));
+    // Every dirty wiki path this scrub will stage: rewritten, renamed, or inside a renamed folder.
+    const touched = (p: string) =>
+      planned.some((x) => x.rel === p) ||
+      renames.some((r) => r.to === p || p.startsWith(`${r.to}/`));
+    const outside = [...dirtyNow].filter(
+      (p) => p.startsWith('wiki/') && touched(p),
+    );
     if (outside.length) {
       const old = await tracked(
         git,

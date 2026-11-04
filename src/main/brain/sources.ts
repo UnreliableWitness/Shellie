@@ -345,11 +345,12 @@ export async function removeSource(
       await git.run(brainDir, [
         '--literal-pathspecs',
         'ls-files',
+        '-z',
         '--',
         ...paths,
       ])
     )
-      .split('\n')
+      .split('\0')
       .filter(Boolean);
     for (const p of paths)
       await fs.rm(path.join(brainDir, ...p.split('/')), {
