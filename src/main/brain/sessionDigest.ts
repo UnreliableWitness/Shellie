@@ -11,6 +11,7 @@ type Part = { type?: unknown; text?: unknown };
 type Line = {
   type?: string;
   isMeta?: boolean;
+  isCompactSummary?: boolean;
   isSidechain?: boolean;
   message?: { content?: unknown };
 };
@@ -48,7 +49,7 @@ export function sessionTurns(
     } catch {
       continue;
     }
-    if (l.isMeta || l.isSidechain) continue;
+    if (l.isMeta || l.isSidechain || l.isCompactSummary) continue;
     if (l.type !== 'user' && l.type !== 'assistant') continue;
     const text = textOf(l.message?.content).trim();
     if (!text || MACHINE.test(text)) continue;
@@ -73,11 +74,13 @@ export function sessionDigest(
   const parts: string[] = [`# Session of task: ${title}`, ''];
   let any = false;
   let size = parts.join('\n').length;
-  for (const [i, lines] of sessions.entries()) {
-    const turns = sessionTurns(lines);
-    if (!turns.some((t) => t.who === 'Developer')) continue;
+  // Only sessions where a person typed count, and they are numbered among themselves.
+  const used = sessions
+    .map((lines) => sessionTurns(lines))
+    .filter((turns) => turns.some((t) => t.who === 'Developer'));
+  for (const [i, turns] of used.entries()) {
     any = true;
-    if (sessions.length > 1) parts.push(`## Session ${i + 1}`, '');
+    if (used.length > 1) parts.push(`## Session ${i + 1}`, '');
     for (const t of turns) {
       const block = `**${t.who}:** ${clip(t.text.replace(/\r\n/g, '\n'), TURN_MAX)}\n`;
       if (size + block.length > DIGEST_MAX) {

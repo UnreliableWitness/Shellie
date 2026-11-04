@@ -356,3 +356,33 @@ describe('retract and lessons jobs', () => {
     expect(r.jobs('b').map((j) => j.kind)).toEqual(['lessons', 'retract']);
   });
 });
+
+describe('dropQueued', () => {
+  it('forgets the queued jobs on a source, not a running one', async () => {
+    dirs = { b: await mk('b') };
+    // The first job waits until released; the ones after it finish at once.
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'capture', 'sources/going.md');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    r.enqueue('b', 'capture', 'sources/going.md');
+    r.enqueue('b', 'lessons', 'sources/going.md');
+    r.enqueue('b', 'capture', 'sources/staying.md');
+    expect(r.dropQueued('b', 'sources/going.md')).toBe(2);
+    expect(r.jobs('b').map((j) => [j.kind, j.source, j.status])).toEqual([
+      ['capture', 'sources/staying.md', 'queued'],
+      ['capture', 'sources/going.md', 'running'],
+    ]);
+    expect(r.dropQueued('b', 'sources/none.md')).toBe(0);
+    release();
+    await idle(r, 'b');
+  });
+});

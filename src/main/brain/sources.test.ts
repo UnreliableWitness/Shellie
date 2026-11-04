@@ -543,3 +543,56 @@ describe('removeSource', () => {
     );
   });
 });
+
+describe('removeSource after review', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  beforeEach(async () => {
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-remove2-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('removes a source that was never committed, with its untracked original', async () => {
+    await fs.writeFile(
+      path.join(dir, 'sources', '2026-11-04-new.md'),
+      '---\ntitle: New\nsource_url: new.vtt\ningested_at: 2026-11-04T10:00:00.000Z\ncontent_type: transcript\nsha256: x\n---\n\nnew\n',
+    );
+    await fs.writeFile(
+      path.join(dir, 'sources', '2026-11-04-new.vtt'),
+      'WEBVTT',
+    );
+    await fs.mkdir(path.join(dir, 'sources', '2026-11-04-new-assets'));
+    await fs.writeFile(
+      path.join(dir, 'sources', '2026-11-04-new-assets', 'p.png'),
+      'x',
+    );
+    await removeSource(git, dir, 'sources/2026-11-04-new.md');
+    expect(await fs.readdir(path.join(dir, 'sources'))).toEqual(['.gitkeep']);
+    expect((await git.run(dir, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: remove source sources/2026-11-04-new.md',
+    );
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+
+  it('stops before deleting anything when brain/state.json is broken', async () => {
+    const r = await addSource(
+      git,
+      dir,
+      { text: 'keep', title: 'Keep' },
+      'note',
+    );
+    if (!r.ok) throw new Error(r.message);
+    await fs.writeFile(path.join(dir, 'brain', 'state.json'), '{bad');
+    await expect(removeSource(git, dir, r.path)).rejects.toThrow(/state\.json/);
+    expect(await fs.readdir(path.join(dir, 'sources'))).toContain(
+      path.basename(r.path),
+    );
+  });
+});

@@ -5,6 +5,7 @@ import {
   BrainOptionsSchema,
   BrainSchema,
   BrainWikiSchema,
+  SOURCE_JOB_KINDS,
   SourceTypeSchema,
   type AddSourceResult,
   type Brain,
@@ -70,7 +71,7 @@ export type BrainChannels =
 
 export type BrainRunner = Pick<
   BrainJobRunner,
-  'enqueue' | 'jobs' | 'running' | 'resume'
+  'enqueue' | 'jobs' | 'running' | 'resume' | 'dropQueued'
 >;
 
 export type BrainHandlerDeps = {
@@ -295,7 +296,7 @@ export function createBrainHandlers(
       );
     // A source with a capture queued or running is not "uncaptured": a job is on it.
     const inFlight = jobs.flatMap((j) =>
-      j.kind === 'capture' &&
+      SOURCE_JOB_KINDS.has(j.kind) &&
       j.source &&
       (j.status === 'queued' || j.status === 'running' || j.status === 'paused')
         ? [j.source]
@@ -522,7 +523,7 @@ export function createBrainHandlers(
       return d.runner.enqueue(id, kind, source ?? null);
     },
     'brain:resumeQueue': async (id) => {
-      brainOf(id);
+      live(id);
       d.runner.resume(id);
     },
     'brain:sources': async (id) => {
@@ -546,6 +547,8 @@ export function createBrainHandlers(
     'brain:removeSource': async (id, source) => {
       const b = live(id);
       if (d.runner.running(id)) throw new Error(BUSY);
+      // A capture still queued for it would write it back into the state.
+      d.runner.dropQueued(id, source);
       await removeSource(d.git, b.path, source);
       // Its claims come out of the pages; the Health check lists any link left to it meanwhile.
       d.runner.enqueue(id, 'retract', source);
@@ -554,7 +557,16 @@ export function createBrainHandlers(
     'brain:scrub': async (id, value) => {
       const b = brainOf(id);
       if (d.runner.running(id)) throw new Error(BUSY);
-      const r = await scrubBrain(d.git, b.path, value);
+      let r: { files: number; skipped: number };
+      try {
+        r = await scrubBrain(d.git, b.path, value);
+      } catch (e) {
+        // The error text may hold a path named after the value: nothing of it leaves main.
+        console.error('[brain] scrub failed', e instanceof Error ? e.name : '');
+        throw new Error(
+          'The scrub stopped halfway; check the brain folder with git status and try again',
+        );
+      }
       changed(id);
       return r;
     },

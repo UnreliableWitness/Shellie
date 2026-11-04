@@ -71,3 +71,32 @@ describe('sessionDigest', () => {
     expect(single).not.toContain('## Session');
   });
 });
+
+describe('after review', () => {
+  it('drops the compaction summary and numbers only the sessions with content', () => {
+    const compact = JSON.stringify({
+      type: 'user',
+      isCompactSummary: true,
+      message: {
+        content:
+          'This session is being continued from a previous conversation…',
+      },
+    });
+    expect(sessionTurns([compact, user('real')])).toEqual([
+      { who: 'Developer', text: 'real' },
+    ]);
+    const toolsOnly = [claude([{ type: 'text', text: 'only me' }])];
+    const d = sessionDigest('T', [
+      toolsOnly,
+      [user('one')],
+      toolsOnly,
+      [user('two')],
+    ])!;
+    expect(d).toContain('## Session 1\n\n**Developer:** one');
+    expect(d).toContain('## Session 2\n\n**Developer:** two');
+    expect(d).not.toContain('## Session 3');
+    expect(sessionDigest('T', [toolsOnly, [user('one')]])).not.toContain(
+      '## Session',
+    );
+  });
+});

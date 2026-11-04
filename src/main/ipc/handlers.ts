@@ -762,6 +762,7 @@ export function createHandlers(s: Services): Handlers {
       jobs: () => [],
       running: () => false,
       resume: () => undefined,
+      dropQueued: () => 0,
     },
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData: s.usageDir,

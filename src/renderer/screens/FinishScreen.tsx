@@ -1031,6 +1031,9 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
                 />
                 Capture task.md into the brain
               </label>
+              <div className="muted small">
+                Adds this task&apos;s task.md as a source and runs a capture.
+              </div>
               <label className="checkbox">
                 <input
                   type="checkbox"
@@ -1045,9 +1048,6 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
               <div className="muted small">
                 A digest of this task&apos;s Claude sessions becomes a source
                 and the brain writes lesson pages from it.
-              </div>
-              <div className="muted small">
-                Adds this task&apos;s task.md as a source and runs a capture.
               </div>
             </>
           )}

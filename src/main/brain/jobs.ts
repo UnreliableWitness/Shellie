@@ -70,6 +70,8 @@ type Lane = {
   /** Execution order. */
   queue: BrainJob[];
   busy: boolean;
+  /** The job being executed (its status may still read queued until the lock is taken). */
+  current: BrainJob | null;
   paused: boolean;
   retry: ReturnType<typeof setTimeout> | null;
 };
@@ -88,7 +90,14 @@ export class BrainJobRunner {
   private lane(id: string): Lane {
     let l = this.lanes.get(id);
     if (!l) {
-      l = { list: [], queue: [], busy: false, paused: false, retry: null };
+      l = {
+        list: [],
+        queue: [],
+        busy: false,
+        current: null,
+        paused: false,
+        retry: null,
+      };
       this.lanes.set(id, l);
     }
     return l;
@@ -160,6 +169,19 @@ export class BrainJobRunner {
     return [...this.lane(brainId).list];
   }
 
+  /** Forgets the queued (not running) jobs on a source that is being removed; returns how many. */
+  dropQueued(brainId: string, source: string): number {
+    const l = this.lane(brainId);
+    const gone = l.queue.filter(
+      (j) => j.status === 'queued' && j.source === source && j !== l.current,
+    );
+    if (!gone.length) return 0;
+    l.queue = l.queue.filter((j) => !gone.includes(j));
+    l.list = l.list.filter((j) => !gone.includes(j));
+    this.changed(brainId);
+    return gone.length;
+  }
+
   running(brainId: string): boolean {
     return this.lane(brainId).busy;
   }
@@ -187,8 +209,10 @@ export class BrainJobRunner {
     const job = l.queue.find((j) => j.status === 'queued');
     if (!job) return;
     l.busy = true;
+    l.current = job;
     void this.execute(brainId, l, job).finally(() => {
       l.busy = false;
+      l.current = null;
       this.pump(brainId);
     });
   }

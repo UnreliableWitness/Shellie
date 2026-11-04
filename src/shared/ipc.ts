@@ -587,7 +587,8 @@ export type Channels = {
    */
   'brain:scrub': {
     args: [brainId: string, value: string];
-    result: { files: number };
+    /** `files` changed; `skipped`: too large to scan. */
+    result: { files: number; skipped: number };
   };
   'brain:delete': {
     args: [brainId: string, deleteFolder: boolean];

@@ -16,7 +16,7 @@ import {
 } from './convert';
 import { withBrainGit } from './gitMutex';
 import { findSecrets, secretMessage } from './secrets';
-import { writeState } from './state';
+import { readState, writeState } from './state';
 import {
   parseSourceFrontmatter,
   renderSource,
@@ -337,6 +337,13 @@ export async function removeSource(
       paths.push(`${dir}/${n}`);
   }
   await withBrainGit(brainDir, async () => {
+    // The state must be writable before anything is deleted: a broken state.json stops the removal, not halfway.
+    const { error } = await readState(brainDir);
+    if (error) throw new Error(error);
+    // Only paths git tracks can be staged as deletions; a file never committed just goes.
+    const trackedFiles = (await git.run(brainDir, ['ls-files', '--', ...paths]))
+      .split('\n')
+      .filter(Boolean);
     for (const p of paths)
       await fs.rm(path.join(brainDir, ...p.split('/')), {
         recursive: true,
@@ -346,7 +353,7 @@ export async function removeSource(
       const { [rel]: _gone, ...captured } = s.captured;
       return { ...s, captured };
     });
-    const staged = [...paths, 'brain/state.json'];
+    const staged = [...trackedFiles, 'brain/state.json'];
     await git.run(brainDir, ['add', '-A', '--', ...staged]);
     await git.run(brainDir, [
       'commit',

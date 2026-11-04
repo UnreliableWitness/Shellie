@@ -93,6 +93,7 @@ describe('brain handlers', () => {
         jobs: () => [],
         running: () => false,
         resume: vi.fn(),
+        dropQueued: () => 0,
       },
       terminals: {
         open: async (id, resume, prompt) => {
@@ -325,7 +326,10 @@ describe('brain handlers', () => {
       'note',
     );
     if (!r.ok) throw new Error(r.message);
-    expect(await h['brain:scrub'](v.id, 'Zx9!secret')).toEqual({ files: 1 });
+    expect(await h['brain:scrub'](v.id, 'Zx9!secret')).toEqual({
+      files: 1,
+      skipped: 0,
+    });
     expect((await h['brain:read'](v.id, r.path)).text).toContain('[REDACTED]');
   });
 

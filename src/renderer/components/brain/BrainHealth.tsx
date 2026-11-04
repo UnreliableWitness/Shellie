@@ -166,9 +166,12 @@ function ScrubForm({ brainId }: { brainId: string }) {
       trackBrain('scrub');
       notify(
         'info',
-        r.files === 0
+        (r.files === 0
           ? 'No file held that value'
-          : `Redacted in ${r.files} ${r.files === 1 ? 'file' : 'files'}; git history still holds the old text`,
+          : `Redacted in ${r.files} ${r.files === 1 ? 'file' : 'files'}; git history still holds the old text`) +
+          (r.skipped > 0
+            ? ` (${r.skipped} ${r.skipped === 1 ? 'file' : 'files'} over 20 MB not scanned)`
+            : ''),
       );
       setValue('');
       setOpen(false);

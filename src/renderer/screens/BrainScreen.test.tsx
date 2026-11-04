@@ -218,7 +218,9 @@ describe('BrainScreen', () => {
 
 describe('BrainScreen scrub', () => {
   it('sends the value to main and reports the count, never writing it anywhere else', async () => {
-    const a = setup(brainView(), { 'brain:scrub': () => ({ files: 3 }) });
+    const a = setup(brainView(), {
+      'brain:scrub': () => ({ files: 3, skipped: 0 }),
+    });
     render(<BrainScreen brainId="b1" />);
     await userEvent.click(
       await screen.findByRole('button', { name: 'Scrub a value…' }),
