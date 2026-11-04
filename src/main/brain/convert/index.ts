@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { docxToMarkdown } from './docx';
+import { drawioToMarkdown } from './drawio';
 import { pdfToMarkdown } from './pdf';
 import { pptxToMarkdown } from './pptx';
 import { firstHeading, type Converted } from './types';
@@ -28,6 +29,8 @@ export async function convertFile(
       return docxToMarkdown(await fs.readFile(absPath));
     case '.pptx':
       return pptxToMarkdown(await fs.readFile(absPath));
+    case '.drawio':
+      return drawioToMarkdown(await fs.readFile(absPath, 'utf8'));
     case '.vtt':
       return plain(vttToMarkdown(await fs.readFile(absPath, 'utf8')));
     case '.md':
