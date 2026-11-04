@@ -64,7 +64,8 @@ export function BrainScreen({ brainId }: { brainId: string }) {
     const q = question.trim();
     if (!q) return;
     trackBrain('ask');
-    const def = await openBrainTerminal(brain.id, notify, null, q);
+    // The read-only ask skill: index first, cited answer, nothing written.
+    const def = await openBrainTerminal(brain.id, notify, null, `/ask ${q}`);
     if (!def) return;
     setTerminal(def);
     setQuestion('');

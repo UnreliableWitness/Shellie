@@ -15,6 +15,7 @@ import {
   type ConvertedImage,
 } from './convert';
 import { withBrainGit } from './gitMutex';
+import { findSecrets, secretMessage } from './secrets';
 import {
   parseSourceFrontmatter,
   renderSource,
@@ -126,6 +127,11 @@ export async function addSource(
     body = input.text.trimEnd() + '\n';
     contents = describeContents(body, 0, 'txt');
   }
+
+  // A credential never lands in the brain: git would keep it for good.
+  const secrets = findSecrets(body);
+  if (secrets.length)
+    return { ok: false, reason: 'secret', message: secretMessage(secrets) };
 
   // Duplicate check, name choice and commit in one go per brain: concurrent adds never take the same name.
   return withBrainGit(brainDir, () =>

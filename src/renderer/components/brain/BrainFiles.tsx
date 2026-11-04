@@ -6,6 +6,42 @@ import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { DocsBody, type Doc } from '../docs/DocsBody';
 
+/** A frontmatter field of a page's text, as written. */
+const field = (text: string, name: string): string | null => {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  const m = fm && new RegExp(`^${name}:\\s*(.+?)\\s*$`, 'm').exec(fm[1]);
+  return m ? m[1].replace(/^["']|["']$/g, '') : null;
+};
+
+/** When a person last checked the page, and the button to say they just did. Only a person writes `verified`. */
+function VerifiedBar({
+  text,
+  onVerify,
+}: {
+  text: string;
+  onVerify: () => void;
+}) {
+  const verified = field(text, 'verified');
+  const updated = field(text, 'last_updated');
+  const confidence = field(text, 'confidence');
+  const changedSince = !!verified && !!updated && updated > verified;
+  return (
+    <div className="brain-verified small" role="status">
+      <span className="muted">
+        {verified
+          ? changedSince
+            ? `Verified ${verified}, changed since (${updated})`
+            : `Verified ${verified}`
+          : 'Not verified by anyone yet'}
+        {confidence ? ` · confidence ${confidence}` : ''}
+      </span>
+      <button type="button" className="btn btn-sm" onClick={onVerify}>
+        {verified ? 'Verify again' : 'Mark verified'}
+      </button>
+    </div>
+  );
+}
+
 /** A brain's Markdown files: a list on the left, the chosen file rendered on the right. */
 export function BrainFiles({
   brainId,
@@ -102,6 +138,19 @@ export function BrainFiles({
         ))}
       </aside>
       <div className="brain-doc">
+        {dir === 'wiki' && current && doc?.text != null && (
+          <VerifiedBar
+            text={doc.text}
+            onVerify={() =>
+              api()
+                .invoke('brain:verify', brainId, current)
+                .then(
+                  () => read(current),
+                  () => undefined,
+                )
+            }
+          />
+        )}
         <DocsBody
           asset={asset}
           empty={current === null ? 'Pick a file' : null}

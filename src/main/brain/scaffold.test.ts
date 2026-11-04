@@ -11,12 +11,32 @@ import {
 } from './scaffold';
 import { TEMPLATES_VERSION, templateFiles } from './templates';
 
-describe('templates v3', () => {
+describe('templates v4', () => {
   const files = templateFiles('Acme');
   const content = (p: string) => files.find((f) => f.path === p)?.content ?? '';
 
+  it('add a read-only ask skill, retract and lessons, confidence and verified', () => {
+    expect(TEMPLATES_VERSION).toBe(4);
+    const ask = content('.claude/skills/ask/SKILL.md');
+    expect(ask).toContain('allowed-tools: Read, Glob, Grep');
+    expect(ask).toContain('never write');
+    expect(ask).toContain('Never fill a gap from memory');
+    expect(content('.claude/skills/retract/SKILL.md')).toContain(
+      'only this source backed',
+    );
+    expect(content('.claude/skills/lessons/SKILL.md')).toContain(
+      'lesson-<yyyy-mm-dd>-<topic>.md',
+    );
+    const schema = content('SCHEMA.md');
+    expect(schema).toContain('`confidence`');
+    expect(schema).toContain('Only a person writes it');
+    expect(schema).toContain('`lesson-*`');
+    expect(content('.claude/skills/capture/SKILL.md')).toContain(
+      'never touch `verified`',
+    );
+  });
+
   it('tell the skills to open every image and name the assets folders', () => {
-    expect(TEMPLATES_VERSION).toBe(3);
     expect(content('.claude/skills/capture/SKILL.md')).toContain(
       'open the image with the Read tool',
     );
@@ -94,11 +114,14 @@ describe('brain scaffold', () => {
   it('keeps each skill short, describes when to use it and ignores lock and mirror', () => {
     const files = templateFiles('Acme');
     const skills = files.filter((f) => f.path.endsWith('SKILL.md'));
-    expect(skills).toHaveLength(4);
+    expect(skills).toHaveLength(7);
     for (const s of skills) {
       expect(s.content.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
-      expect(s.content).toMatch(/^---\ndescription: .+\n---\n/);
-      expect(s.content).toContain('SCHEMA.md');
+      expect(s.content).toMatch(
+        /^---\ndescription: .+\n(allowed-tools: .+\n)?---\n/,
+      );
+      // The read-only ask skill reads the index, not the writers' contract.
+      if (!s.path.includes('/ask/')) expect(s.content).toContain('SCHEMA.md');
     }
     const ignore = files.find((f) => f.path === '.gitignore')!.content;
     expect(ignore).toContain('brain/lock');

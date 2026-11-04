@@ -174,7 +174,7 @@ export type AddSourceResult =
     }
   | {
       ok: false;
-      reason: 'unsupported' | 'duplicate' | 'needs-ocr' | 'error';
+      reason: 'unsupported' | 'duplicate' | 'needs-ocr' | 'secret' | 'error';
       message: string;
     };
 
