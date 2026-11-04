@@ -571,7 +571,14 @@ export function TerminalTabs({
           <ChangesTab task={task} />
         )}
         {visible && active === BRAIN_TAB && brain && brainShown && (
-          <BrainTab brain={brain} />
+          <BrainTab
+            brain={brain}
+            taskId={task.id}
+            onTerminal={(def) => {
+              setBrainTerm(def);
+              setTab(task.id, def.id);
+            }}
+          />
         )}
         {views.map(
           (v) =>

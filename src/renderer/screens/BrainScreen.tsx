@@ -1,8 +1,10 @@
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
 import { brainTaskId } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
+import { AskBox } from '../components/brain/AskBox';
 import { BrainFiles } from '../components/brain/BrainFiles';
+import { BrainWiki } from '../components/brain/BrainWiki';
 import { BrainHealth } from '../components/brain/BrainHealth';
 import { BrainInbox } from '../components/brain/BrainInbox';
 import { BrainLog } from '../components/brain/BrainLog';
@@ -28,8 +30,6 @@ export function BrainScreen({ brainId }: { brainId: string }) {
   const notify = useStore((s) => s.notify);
   const [tab, setTab] = useState<Tab>('sources');
   const [terminal, setTerminal] = useState<TerminalDef | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [question, setQuestion] = useState('');
 
   if (!brain)
     return (
@@ -58,18 +58,6 @@ export function BrainScreen({ brainId }: { brainId: string }) {
         `Wiki refreshed: ${r.added} added, ${r.changed} changed, ${r.removed} removed`,
       );
     else notify('error', r.message);
-  };
-  const ask = async (e: FormEvent) => {
-    e.preventDefault();
-    const q = question.trim();
-    if (!q) return;
-    trackBrain('ask');
-    // The read-only ask skill: index first, cited answer, nothing written.
-    const def = await openBrainTerminal(brain.id, notify, null, `/ask ${q}`);
-    if (!def) return;
-    setTerminal(def);
-    setQuestion('');
-    setAsking(false);
   };
   const openTerminal = async () => {
     trackBrain('terminal');
@@ -111,14 +99,7 @@ export function BrainScreen({ brainId }: { brainId: string }) {
             >
               Digest
             </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              aria-expanded={asking}
-              onClick={() => setAsking(!asking)}
-            >
-              Ask
-            </button>
+            <AskBox brainId={brain.id} onTerminal={setTerminal} />
             <button
               type="button"
               className="btn btn-sm"
@@ -130,25 +111,6 @@ export function BrainScreen({ brainId }: { brainId: string }) {
         }
       />
       <div className="page-body brain-body">
-        {asking && (
-          <form className="brain-ask" onSubmit={(e) => void ask(e)}>
-            <input
-              className="field"
-              aria-label="Question"
-              placeholder="Ask the brain"
-              autoFocus
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-            />
-            <button
-              type="submit"
-              className="btn btn-sm"
-              disabled={!question.trim()}
-            >
-              Send
-            </button>
-          </form>
-        )}
         <div className="brain-columns">
           <BrainInbox brain={brain} onTerminal={setTerminal} />
           <BrainHealth brain={brain} onTerminal={setTerminal} />
@@ -160,7 +122,7 @@ export function BrainScreen({ brainId }: { brainId: string }) {
           onSelect={setTab}
         />
         {tab === 'sources' && <BrainFiles brainId={brain.id} dir="sources" />}
-        {tab === 'wiki' && <BrainFiles brainId={brain.id} dir="wiki" />}
+        {tab === 'wiki' && <BrainWiki brainId={brain.id} />}
         {tab === 'log' && <BrainLog brainId={brain.id} />}
         {terminal && (
           <div className="brain-terminal">

@@ -26,7 +26,11 @@ export type BrainAction =
   | 'remove-source'
   | 'scrub'
   /** From a task's Finish: the lessons option ticked. */
-  | 'lessons-option';
+  | 'lessons-option'
+  /** Browsing: a page or source opened (card, hit, chip, link), a search ran, back or forward. */
+  | 'open-page'
+  | 'search'
+  | 'back';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>

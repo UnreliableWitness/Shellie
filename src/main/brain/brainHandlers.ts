@@ -24,7 +24,8 @@ import type { BrainJobRunner } from './jobs';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
-import { brainForTask } from './context';
+import { pageRows, relevantPages, searchBrain, taskWords } from './browse';
+import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { rebuildIndex } from './indexPage';
@@ -67,7 +68,11 @@ export type BrainChannels =
   | 'brain:terminal'
   | 'brain:templateDiff'
   | 'brain:updateTemplates'
-  | 'brain:openFolder';
+  | 'brain:openFolder'
+  | 'brain:pages'
+  | 'brain:search'
+  | 'brain:relevant'
+  | 'brain:openSource';
 
 export type BrainRunner = Pick<
   BrainJobRunner,
@@ -605,6 +610,29 @@ export function createBrainHandlers(
     'brain:openFolder': async (id) => {
       const error = await d.openPath(brainOf(id).path);
       if (error) throw new Error(`Could not open the folder: ${error}`);
+    },
+    'brain:pages': async (id) => pageRows(brainOf(id).path),
+    'brain:search': async (id, query) => searchBrain(brainOf(id).path, query),
+    'brain:relevant': async (id, taskId) => {
+      const b = brainOf(id);
+      const task = d.task(taskId);
+      const texts = [task.workItem?.title ?? '', task.name];
+      const taskMd = await fs
+        .readFile(path.join(task.worktreePath, '.shellie', 'task.md'), 'utf8')
+        .catch(() => '');
+      if (taskMd)
+        texts.push(
+          withoutContext(taskMd).split(/\r?\n/).slice(0, 200).join('\n'),
+        );
+      return relevantPages(await pageRows(b.path), taskWords(texts));
+    },
+    'brain:openSource': async (id, rel) => {
+      const b = brainOf(id);
+      const p = path.posix.normalize(rel.replace(/\\/g, '/'));
+      if (!p.startsWith('sources/') || p.startsWith('sources/../'))
+        throw new Error('Only a file under sources/ can be opened');
+      const error = await d.openPath(path.join(b.path, ...p.split('/')));
+      if (error) throw new Error(`Could not open the file: ${error}`);
     },
   };
 }

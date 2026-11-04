@@ -240,6 +240,55 @@ describe('brain handlers', () => {
     ]);
   });
 
+  it('serves pages, search, relevance and opening a source', async () => {
+    const v = await h['brain:create'](NEW);
+    await fs.writeFile(
+      path.join(v.path, 'wiki', 'component-billing.md'),
+      '---\ntitle: Billing\nsummary: Invoices go out monthly.\nsources: [sources/k.md]\n---\n\n# Billing\n\nInvoices go out monthly.\n',
+    );
+    await fs.writeFile(
+      path.join(v.path, 'wiki', 'account.md'),
+      '---\ntitle: Acme\nsummary: Who.\nsources: [sources/k.md]\n---\n\n# Acme\n\nSee [billing](component-billing.md).\n',
+    );
+    const rows = await h['brain:pages'](v.id);
+    expect(rows.map((r) => [r.path, r.type, r.linkedFrom])).toEqual([
+      ['wiki/account.md', 'account', []],
+      ['wiki/component-billing.md', 'component', ['wiki/account.md']],
+    ]);
+    const hits = await h['brain:search'](v.id, 'invoices');
+    expect(hits.map((x) => [x.path, x.anchor])).toEqual([
+      ['wiki/component-billing.md', 'billing'],
+    ]);
+    const worktree = await fs.mkdtemp(path.join(userData, 'task-'));
+    await fs.mkdir(path.join(worktree, '.shellie'));
+    await fs.writeFile(
+      path.join(worktree, '.shellie', 'task.md'),
+      '# Task\n\nTouches the billing export.\n\n## Context: Acme\nnot counted invoices\n',
+    );
+    tasks = [
+      {
+        id: 't9',
+        name: 'export',
+        connectionId: 'c1',
+        repoId: 'r1',
+        worktreePath: worktree,
+        workItem: { project: 'Acme', title: 'Fix the invoice export' },
+      },
+    ] as unknown as Task[];
+    expect(await h['brain:relevant'](v.id, 't9')).toEqual([
+      'wiki/component-billing.md',
+    ]);
+    await expect(
+      h['brain:openSource'](v.id, 'wiki/account.md'),
+    ).rejects.toThrow(/under sources/);
+    await expect(
+      h['brain:openSource'](v.id, 'sources/../SCHEMA.md'),
+    ).rejects.toThrow(/under sources/);
+    await expect(
+      h['brain:openSource'](v.id, 'sources/k.pdf'),
+    ).resolves.toBeUndefined();
+  });
+
   it("forTask resolves by connection and the work item's project", async () => {
     const v = await h['brain:create'](NEW);
     tasks = [

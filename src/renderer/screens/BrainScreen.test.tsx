@@ -191,22 +191,36 @@ describe('BrainScreen', () => {
     expect(names(a).filter((c) => c === 'brain:get')).toHaveLength(2);
   });
 
-  it('lists the files of a tab and renders the log', async () => {
+  it('shows the wiki as cards, opens a page, and renders the log', async () => {
     const a = setup(brainView(), {
-      'brain:files': (_id, dir) =>
-        dir === 'wiki' ? [{ path: 'wiki/a.md', changed: null }] : [],
+      'brain:pages': () => [
+        {
+          path: 'wiki/a.md',
+          title: 'Page A',
+          summary: 'About A.',
+          type: 'other',
+          lastUpdated: '2026-11-03',
+          confidence: 'high',
+          verified: null,
+          changedSinceVerified: false,
+          sources: [],
+          linkedFrom: [],
+        },
+      ],
       'brain:read': (_id, rel) => ({
-        text: rel === 'log.md' ? '# Log\n\n- did a thing' : '# Page A',
+        text:
+          rel === 'log.md'
+            ? '# Log\n\n- did a thing'
+            : '---\ntitle: Page A\n---\n\n# Page A\n\nBody of A.',
       }),
     });
     render(<BrainScreen brainId="b1" />);
     await userEvent.click(await screen.findByRole('tab', { name: 'Wiki' }));
     await userEvent.click(
-      await screen.findByRole('button', { name: 'wiki/a.md' }),
+      await screen.findByRole('button', { name: /Page A/ }),
     );
-    expect(
-      await screen.findByRole('heading', { name: 'Page A' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Body of A.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
     await userEvent.click(screen.getByRole('tab', { name: 'Log' }));
     expect(await screen.findByText('did a thing')).toBeInTheDocument();
     expect(a.calls).toContainEqual({
