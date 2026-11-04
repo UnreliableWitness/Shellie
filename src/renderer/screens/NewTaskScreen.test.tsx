@@ -40,6 +40,7 @@ beforeEach(() =>
     repos: [webshop],
     tasks: [],
     connections: [],
+    connectionId: null,
     notices: [],
     screen: { kind: 'new-task' },
   }),
@@ -677,5 +678,92 @@ describe('NewTaskScreen', () => {
     expect(line('Opens')).toHaveTextContent('Claude Code, Shell');
     await userEvent.click(screen.getByLabelText('Open a shell tab'));
     expect(line('Opens')).not.toHaveTextContent('Shell');
+  });
+
+  describe('follows the active project (#225)', () => {
+    const dxp = { ...webshop, id: 'rA', name: 'dxp-web', connectionId: 'c1' };
+    const iml = { ...webshop, id: 'rB', name: 'iml-hub', connectionId: 'c2' };
+    const conns = [conn, { ...conn, id: 'c2', name: 'iml', project: 'IML' }];
+    const options = () =>
+      within(screen.getByLabelText('Repo'))
+        .getAllByRole('option')
+        .map((o) => o.textContent);
+
+    it("lists only the active project's repos and loads its work items", async () => {
+      const { calls } = installFakeApi(pickerApi);
+      useStore.setState({
+        repos: [dxp, iml],
+        connections: conns,
+        connectionId: 'c2',
+      });
+      render(<NewTaskScreen />);
+      expect(
+        await screen.findByLabelText('Search work items'),
+      ).toBeInTheDocument();
+      expect(options()).toEqual(['iml-hub', 'No repo']);
+      expect(screen.getByLabelText('Repo')).toHaveValue('rB');
+      await waitFor(() =>
+        expect(
+          calls.filter((c) => c.channel === 'workItems:search').length,
+        ).toBeGreaterThan(0),
+      );
+      for (const c of calls.filter(
+        (x) =>
+          x.channel === 'workItems:search' ||
+          x.channel === 'workItems:currentIteration',
+      ))
+        expect(c.args[0]).toBe('c2');
+    });
+
+    it('keeps the repo a sprint row opened it with', async () => {
+      installFakeApi(pickerApi);
+      useStore.setState({
+        repos: [dxp, iml],
+        connections: conns,
+        connectionId: 'c2',
+      });
+      render(<NewTaskScreen initial={{ repoId: 'rA' }} />);
+      expect(screen.getByLabelText('Repo')).toHaveValue('rA');
+      expect(options()).toEqual(['dxp-web', 'iml-hub', 'No repo']);
+    });
+
+    it('makes a task without a repo when the project has none', async () => {
+      const { calls } = installFakeApi({
+        ...pickerApi,
+        'tasks:create': () => ({ id: 't7' }) as never,
+      });
+      useStore.setState({
+        repos: [dxp],
+        connections: conns,
+        connectionId: 'c2',
+      });
+      render(<NewTaskScreen />);
+      expect(options()).toEqual(['No repo']);
+      expect(screen.getByLabelText('Repo')).toHaveValue('');
+      expect(screen.queryByLabelText('Branch')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('tab', { name: 'Typed' }),
+      ).not.toBeInTheDocument();
+      const create = screen.getByRole('button', { name: 'Create task' });
+      expect(create).toBeDisabled();
+      await userEvent.type(screen.getByLabelText('Task name'), 'Ask the brain');
+      expect(create).toBeEnabled();
+      await userEvent.click(create);
+      await waitFor(() =>
+        expect(useStore.getState().screen).toEqual({
+          kind: 'setup',
+          taskId: 't7',
+        }),
+      );
+      expect(
+        calls.find((c) => c.channel === 'tasks:create')?.args[0],
+      ).toMatchObject({
+        repoId: null,
+        connectionId: 'c2',
+        name: 'Ask the brain',
+        workItem: null,
+      });
+      expect(calls.some((c) => c.channel === 'repos:config')).toBe(false);
+    });
   });
 });

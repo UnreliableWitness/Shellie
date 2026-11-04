@@ -1,7 +1,11 @@
 import { ArrowUndo16Regular } from '@fluentui/react-icons';
 import { type ReactNode, useEffect, useState } from 'react';
 import type { PullRequestRef, TaskSummary, TaskView } from '../../shared/types';
-import { taskWorkspaces, type WorkspaceView } from '../../shared/workspaces';
+import {
+  hasNoRepo,
+  taskWorkspaces,
+  type WorkspaceView,
+} from '../../shared/workspaces';
 import { api, tryInvoke } from '../api';
 import { TaskTypeIcon } from '../components/TaskTypeIcon';
 import { PageHeader, StateDot } from '../components/ui';
@@ -256,6 +260,7 @@ export function DoneTaskPage({ task }: { task: TaskView }) {
   const wi = task.workItem;
   const live = useLiveWorkItem(connectionId, wi?.id ?? null);
   const workspaces = taskWorkspaces(task);
+  const noRepo = hasNoRepo(task);
   // Every repo the task had, dropped ones included: those show as "no changes, removed".
   const multi = workspaces.length > 1;
   const took = task.finishedAt
@@ -292,16 +297,19 @@ export function DoneTaskPage({ task }: { task: TaskView }) {
         }
         title={wi?.title ?? task.name}
         commands={
-          <button
-            type="button"
-            className="btn"
-            disabled={reopening}
-            title="Back to work on this task: its worktree, terminals and Claude sessions"
-            onClick={() => void reopen()}
-          >
-            <ArrowUndo16Regular aria-hidden="true" />
-            {reopening ? 'Reopening' : 'Reopen'}
-          </button>
+          // A task without a repo has no worktree or branch to come back to (#225).
+          !noRepo && (
+            <button
+              type="button"
+              className="btn"
+              disabled={reopening}
+              title="Back to work on this task: its worktree, terminals and Claude sessions"
+              onClick={() => void reopen()}
+            >
+              <ArrowUndo16Regular aria-hidden="true" />
+              {reopening ? 'Reopening' : 'Reopen'}
+            </button>
+          )
         }
         after={
           live &&
@@ -322,7 +330,11 @@ export function DoneTaskPage({ task }: { task: TaskView }) {
           <Fact label="Finished">
             {task.finishedAt ? dateTime(task.finishedAt) : 'Unknown'}
           </Fact>
-          {!multi && <WorkspaceFacts taskId={task.id} w={workspaces[0]} />}
+          {noRepo ? (
+            <Fact label="Repo">No repo</Fact>
+          ) : (
+            !multi && <WorkspaceFacts taskId={task.id} w={workspaces[0]} />
+          )}
           {task.finishedEnvironment &&
             task.finishedEnvironment !== 'development' && (
               <Fact label="Environment">
@@ -385,7 +397,7 @@ export function DoneTaskPage({ task }: { task: TaskView }) {
               ))}
           </>
         ) : (
-          <WorkspaceCommits w={workspaces[0]} />
+          !noRepo && <WorkspaceCommits w={workspaces[0]} />
         )}
         <UsagePanel taskId={task.id} />
       </div>

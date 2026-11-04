@@ -27,6 +27,7 @@ import type { Repo, TaskStatus, TaskView } from '../../shared/types';
 import {
   activeHome,
   activeWorkspaces,
+  hasNoRepo,
   inConnection,
 } from '../../shared/workspaces';
 import { statusText } from '../connectionStatus';
@@ -57,8 +58,10 @@ export function groupTasks(
       ),
     }))
     .filter((g) => g.tasks.length > 0);
+  // Tasks without a repo (#225) get their own group after the repos.
+  const noRepo = tasks.filter((t) => hasNoRepo(t) && t.status !== 'done');
   const done = tasks.filter((t) => t.status === 'done');
-  return { open, done };
+  return { open, noRepo, done };
 }
 
 /** Only a task that is not ready gets a status dot. */
@@ -505,7 +508,7 @@ export function TaskNav() {
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? navWidth;
   const [showDone, setShowDone] = useState(false);
-  const { open, done } = groupTasks(
+  const { open, noRepo, done } = groupTasks(
     tasks,
     repos,
     connection?.id,
@@ -558,9 +561,18 @@ export function TaskNav() {
       ))}
       <div className="leftnav-scroll">
         <TasksHead rail={rail} />
-        {open.map(({ repo, tasks: list }) => (
-          <div key={repo.id} role="group" aria-label={repo.name}>
-            {!rail && <div className="nav-subhead">{repo.name}</div>}
+        {[
+          ...open.map(({ repo, tasks: list }) => ({
+            key: repo.id,
+            name: repo.name,
+            list,
+          })),
+          ...(noRepo.length > 0
+            ? [{ key: 'no-repo', name: 'No repo', list: noRepo }]
+            : []),
+        ].map(({ key, name, list }) => (
+          <div key={key} role="group" aria-label={name}>
+            {!rail && <div className="nav-subhead">{name}</div>}
             {list.map((t) =>
               rail ? (
                 <Fragment key={t.id}>
@@ -577,7 +589,7 @@ export function TaskNav() {
             )}
           </div>
         ))}
-        {open.length === 0 && !rail && (
+        {open.length === 0 && noRepo.length === 0 && !rail && (
           <div className="nav-empty">No open tasks.</div>
         )}
         {done.length > 0 && !rail && (

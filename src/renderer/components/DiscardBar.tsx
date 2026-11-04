@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DiscardChecks, TaskView } from '../../shared/types';
 import { api, tryInvoke } from '../api';
+import { hasNoRepo } from '../../shared/workspaces';
 import { plural } from '../format';
 import { useStore } from '../store';
 import { ConfirmBar } from './ui';
@@ -59,6 +60,11 @@ export function DiscardBar({ task }: { task: TaskView }) {
       {!checks && !failed && (
         <span className="confirm-bar-line muted">
           Checking what would be lost…
+        </span>
+      )}
+      {checks && hasNoRepo(task) && (
+        <span className="confirm-bar-line">
+          Deletes the folder <code>{task.worktreePath}</code>.
         </span>
       )}
       {checks?.workspaces.map((w) => (

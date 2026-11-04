@@ -87,7 +87,7 @@ async function setup(tasks: Task[]) {
       return t;
     },
     settings: defaultSettings,
-    connectionOf: (t) => repoConnection[t.repoId] ?? null,
+    connectionOf: (t) => repoConnection[t.repoId!] ?? null,
     tracker: { setTask: (id) => focused.push(id) },
     now: () => NOW,
   });

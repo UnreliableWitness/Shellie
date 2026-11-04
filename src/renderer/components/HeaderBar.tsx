@@ -4,7 +4,11 @@ import { ENVIRONMENT_LABEL } from '../../shared/secrets';
 import type { TaskView } from '../../shared/types';
 import { api, tryInvoke } from '../api';
 import { eur } from '../format';
-import { activeHome, activeWorkspaces } from '../../shared/workspaces';
+import {
+  activeHome,
+  activeWorkspaces,
+  hasNoRepo,
+} from '../../shared/workspaces';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { activeConnection, useStore } from '../store';
@@ -34,7 +38,8 @@ function TaskDetails({
   const workspaces = activeWorkspaces(task);
   // The task's folder: the home unless Finish dropped it, then the repo that took over.
   const home = activeHome(task);
-  const git = useGitSummary(task.id, task.worktreeMissing);
+  const noRepo = hasNoRepo(task);
+  const git = useGitSummary(task.id, task.worktreeMissing, !noRepo);
   const usage = useTaskUsage(task.id);
   return (
     <div
@@ -75,7 +80,9 @@ function TaskDetails({
           {task.status === 'ready' ? 'Active' : task.status}
         </span>
       </div>
-      {workspaces.length > 1 ? (
+      {noRepo ? (
+        <div className="muted">No repo</div>
+      ) : workspaces.length > 1 ? (
         workspaces.map((w) => (
           <div key={w.id} className="mono">
             {repos.find((r) => r.id === w.repoId)?.name ?? w.id}{' '}

@@ -725,7 +725,7 @@ describe('FinishScreen push that cannot sign in', () => {
     useStore.setState({
       repos: [
         {
-          id: task.repoId,
+          id: task.repoId!,
           name: 'webshop',
           path: '/r',
           baseBranch: 'main',
@@ -1862,5 +1862,48 @@ describe('FinishScreen review reminder', () => {
     render(<FinishScreen taskId="a" />);
     await screen.findByText('No uncommitted changes');
     expect(screen.queryByText(/not viewed/)).toBeNull();
+  });
+
+  it('finishes a task without a repo without git, keeping its folder unless ticked (#225)', async () => {
+    const { calls } = installFakeApi({
+      'tasks:finish': () => undefined,
+      'brain:forTask': () => listedBrain(),
+    });
+    useStore.setState({
+      tasks: [
+        {
+          ...task,
+          repoId: null,
+          workItem: null,
+          name: 'Ask the brain',
+          branch: '',
+          baseRef: '',
+          worktreePath: '/data/scratch/ask-the-brain',
+        },
+      ],
+    });
+    render(<FinishScreen taskId="a" />);
+    const folder = screen.getByLabelText(/Delete the folder/);
+    expect(folder).not.toBeChecked();
+    expect(screen.queryByText(/Delete local branch/)).toBeNull();
+    expect(screen.queryByText(/pull request/)).toBeNull();
+    await userEvent.click(folder);
+    await userEvent.click(
+      await screen.findByLabelText('Capture task.md into the brain'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Finish task' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'tasks:finish')?.args).toEqual([
+        'a',
+        {
+          closeTerminals: true,
+          removeWorktree: true,
+          deleteBranch: false,
+          captureTaskMd: true,
+        },
+      ]),
+    );
+    expect(calls.map((c) => c.channel)).not.toContain('tasks:finishChecks');
+    expect(calls.map((c) => c.channel)).not.toContain('tasks:prAvailability');
   });
 });

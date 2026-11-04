@@ -50,6 +50,8 @@ export type SetupPlan = {
   extraRestores?: ExtraRestore[];
   /** The project's brain whose index task.md gets (the `brainContext` hook); absent for none. */
   brain?: { id: string; name: string; path: string };
+  /** A task without a repo (#225): `worktreePath` is a plain folder, made without git; no fetch, copy or commands. */
+  noRepo?: boolean;
 };
 
 export type ExtraRestore = {
@@ -83,6 +85,7 @@ export type SetupHooks = {
 };
 
 export function planSteps(plan: SetupPlan): SetupStepDef[] {
+  if (plan.noRepo) return noRepoSteps(plan);
   const steps: SetupStepDef[] = [];
   if (!plan.skipHome) {
     if (plan.restore)
@@ -174,6 +177,32 @@ export function planSteps(plan: SetupPlan): SetupStepDef[] {
       detail: terminalsDetail(plan.startTerminalsLabel, commands),
     });
   return steps;
+}
+
+/** A task without a repo: its folder, task.md, the brain's context and the tabs. */
+function noRepoSteps(plan: SetupPlan): SetupStepDef[] {
+  return [
+    { kind: 'worktree', label: 'Create folder', detail: plan.worktreePath },
+    { kind: 'task-file', label: 'Write task file', detail: '.shellie/task.md' },
+    ...(plan.brain
+      ? [
+          {
+            kind: 'brain' as const,
+            label: 'Brain context',
+            detail: plan.brain.name,
+          },
+        ]
+      : []),
+    ...(plan.startTerminalsLabel
+      ? [
+          {
+            kind: 'terminals' as const,
+            label: 'Start terminals',
+            detail: plan.startTerminalsLabel,
+          },
+        ]
+      : []),
+  ];
 }
 
 const restoreDetail = (branch: string, from: string | null) =>
@@ -350,6 +379,11 @@ export class SetupRunner {
         return;
       }
       case 'worktree':
+        if (plan.noRepo) {
+          await fs.mkdir(plan.worktreePath, { recursive: true });
+          log(`made ${plan.worktreePath}`);
+          return;
+        }
         if (plan.restore)
           return this.restoreWorktree(plan, plan.restore.from, log);
         if (await this.reusable(plan, log)) return;
@@ -390,7 +424,8 @@ export class SetupRunner {
           plan.taskMd,
           'utf8',
         );
-        await ensureExcluded(this.git, plan.repoPath, '.shellie/');
+        if (!plan.noRepo)
+          await ensureExcluded(this.git, plan.repoPath, '.shellie/');
         log('wrote .shellie/task.md');
         return;
       case 'brain': {

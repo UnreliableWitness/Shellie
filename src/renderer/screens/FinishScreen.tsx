@@ -9,6 +9,7 @@ import type {
 import {
   activeWorkspaces,
   dropsAtFinish,
+  hasNoRepo,
   HOME_ID,
 } from '../../shared/workspaces';
 import { gitAuthHintFromText, remoteHost } from '../../shared/gitAuth';
@@ -101,6 +102,131 @@ const G = {
 };
 
 export function FinishScreen({ taskId }: { taskId: string }) {
+  const noRepo = useStore((s) => {
+    const t = s.tasks.find((x) => x.id === taskId);
+    return t ? hasNoRepo(t) : false;
+  });
+  return noRepo ? (
+    <NoRepoFinishScreen taskId={taskId} />
+  ) : (
+    <RepoFinishScreen taskId={taskId} />
+  );
+}
+
+/**
+ * Finish for a task without a repo (#225): nothing to commit, push or review. It stops the terminals, can capture
+ * task.md into the brain, and deletes the scratch folder only when ticked (it may hold the only copy of notes).
+ */
+function NoRepoFinishScreen({ taskId }: { taskId: string }) {
+  const task = useStore((s) => s.tasks.find((t) => t.id === taskId));
+  const back = useStore((s) => s.back);
+  const openTask = useStore((s) => s.openTask);
+  const notify = useStore((s) => s.notify);
+  const brain = useTaskBrain(taskId);
+  const [closeTerminals, setCloseTerminals] = useState(true);
+  const [removeFolder, setRemoveFolder] = useState(false);
+  const [captureTaskMd, setCaptureTaskMd] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEscape(back);
+  if (!task) return null;
+  if (task.status !== 'ready')
+    return (
+      <div className="page">
+        <PageHeader title="Finish task" />
+        <div className="page-body finish">
+          <div className="muted">{`This task is ${task.status}. Finish it once setup has succeeded; use the Setup screen to retry or remove it.`}</div>
+          <div className="finish-foot">
+            <button type="button" className="btn" onClick={back}>
+              Keep task
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  const nTerm = task.terminals.length;
+  const finish = async () => {
+    setBusy(true);
+    const ok = await tryInvoke(async () => {
+      await api().invoke('tasks:finish', taskId, {
+        closeTerminals: closeTerminals && nTerm > 0,
+        removeWorktree: removeFolder,
+        deleteBranch: false,
+        ...(brain && captureTaskMd ? { captureTaskMd: true } : {}),
+      });
+      return true;
+    }, notify);
+    setBusy(false);
+    const now = useStore.getState().screen;
+    if (ok && now.kind === 'finish' && now.taskId === taskId) openTask(taskId);
+  };
+  return (
+    <div className="page">
+      <PageHeader title="Finish task" />
+      <div className="page-body finish">
+        <div className="muted">
+          {task.workItem
+            ? `${task.workItem.type} ${task.workItem.id} ${task.workItem.title}`
+            : task.name}{' '}
+          <span className="small">No repo</span>
+        </div>
+        <div className="finish-section">
+          <h2>Clean up</h2>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={closeTerminals && nTerm > 0}
+              disabled={nTerm === 0}
+              onChange={(e) => setCloseTerminals(e.target.checked)}
+            />
+            {`Close ${plural(nTerm, 'terminal')}${nTerm > 0 ? ` (${task.terminals.map((t) => t.label).join(', ')})` : ''}`}
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={removeFolder}
+              onChange={(e) => setRemoveFolder(e.target.checked)}
+            />
+            Delete the folder{' '}
+            <span className="mono small">{task.worktreePath}</span>
+          </label>
+          {removeFolder && !closeTerminals && nTerm > 0 && (
+            <div className="muted small">
+              Deleting the folder closes its terminals too.
+            </div>
+          )}
+          {brain && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={captureTaskMd}
+                onChange={(e) => {
+                  if (e.target.checked) trackBrain('capture-option');
+                  setCaptureTaskMd(e.target.checked);
+                }}
+              />
+              Capture task.md into the brain
+            </label>
+          )}
+        </div>
+        <div className="finish-foot">
+          <button type="button" className="btn" onClick={back}>
+            Keep task
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void finish()}
+          >
+            Finish task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RepoFinishScreen({ taskId }: { taskId: string }) {
   const task = useStore((s) => s.tasks.find((t) => t.id === taskId));
   const back = useStore((s) => s.back);
   const openTask = useStore((s) => s.openTask);
@@ -400,7 +526,8 @@ export function FinishScreen({ taskId }: { taskId: string }) {
 
   const finish = async (withoutPr = false, withoutTime = false) => {
     // The choice is saved when Finish is clicked, not on every toggle.
-    if (pr?.available && !withoutPr) writePrChoice(task.repoId, prChoice);
+    if (pr?.available && !withoutPr && task.repoId)
+      writePrChoice(task.repoId, prChoice);
     await runFinish(
       { createPullRequest: createPr && !withoutPr },
       withoutTime,
