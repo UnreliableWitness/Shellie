@@ -245,6 +245,22 @@ describe('brain sources', () => {
     ]);
   });
 
+  it('leaves a literal {{assets}} in a source without pictures alone', async () => {
+    const r = await addSource(
+      git,
+      dir,
+      { text: 'Logo at {{assets}}/logo.png', title: 'Template' },
+      'note',
+      now,
+    );
+    expect(r).toMatchObject({ ok: true, images: 0 });
+    const text = await fs.readFile(
+      path.join(dir, 'sources/2026-11-03-template.md'),
+      'utf8',
+    );
+    expect(text).toContain('Logo at {{assets}}/logo.png');
+  });
+
   it('removes the assets folder when the commit fails', async () => {
     const f = path.join(root, 'Deck.pptx');
     await fs.writeFile(f, await deckWithPicture());

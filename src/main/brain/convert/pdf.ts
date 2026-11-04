@@ -14,7 +14,12 @@ type PdfImage = {
   height: number;
   kind: number;
   data?: Uint8Array | Uint8ClampedArray;
+  /** The PDF object reference, shared by every page that paints the same image. */
+  ref?: string | null;
 };
+
+/** How long to wait for pdf.js to decode one image. */
+const IMAGE_WAIT_MS = 10_000;
 
 type Page = Awaited<
   ReturnType<
@@ -26,20 +31,36 @@ type Page = Awaited<
   >
 >;
 
-/** Reads a painted image's pixels; null when pdf.js has no decoded data for it (masks, unresolved objects). */
-function imageOf(page: Page, arg: unknown): PdfImage | null {
-  try {
-    const obj =
-      typeof arg === 'string'
-        ? arg.startsWith('g_')
-          ? page.commonObjs.get(arg)
-          : page.objs.get(arg)
-        : arg;
-    const img = obj as PdfImage | null;
-    return img && img.data && img.width > 0 && img.height > 0 ? img : null;
-  } catch {
-    return null;
-  }
+/**
+ * Reads a painted image's pixels once pdf.js has decoded them (the operator list comes back before the
+ * image data does); null for masks, failed decodes and images that take too long.
+ */
+async function imageOf(page: Page, arg: unknown): Promise<PdfImage | null> {
+  let obj: unknown;
+  if (typeof arg === 'string') {
+    const store = arg.startsWith('g_') ? page.commonObjs : page.objs;
+    obj = await new Promise<unknown>((resolve) => {
+      const timer = setTimeout(() => resolve(null), IMAGE_WAIT_MS);
+      try {
+        store.get(
+          arg,
+          (data: unknown) => {
+            clearTimeout(timer);
+            resolve(data);
+          },
+          () => {
+            clearTimeout(timer);
+            resolve(null);
+          },
+        );
+      } catch {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    });
+  } else obj = arg;
+  const img = obj as PdfImage | null;
+  return img && img.data && img.width > 0 && img.height > 0 ? img : null;
 }
 
 export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
@@ -64,7 +85,7 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
     const doc = await task.promise;
     const sections: string[] = [];
     const images = new ImageCollector();
-    // Image name -> markdown path, so an image painted on several pages is stored once.
+    // Object reference (or name) -> markdown path, so an image painted on several pages is stored once.
     const seen = new Map<string, string | null>();
     let total = 0;
     for (let n = 1; n <= doc.numPages; n++) {
@@ -89,14 +110,15 @@ export async function pdfToMarkdown(buf: Uint8Array): Promise<Converted> {
       for (let i = 0; i < ops.fnArray.length; i++) {
         if (!paintOps.has(ops.fnArray[i])) continue;
         const arg = ops.argsArray[i]?.[0];
-        const key = typeof arg === 'string' ? arg : `inline-${n}-${i}`;
+        const img = await imageOf(page, arg);
+        if (!img || !img.data) continue;
+        const key =
+          img.ref ?? (typeof arg === 'string' ? arg : `inline-${n}-${i}`);
         if (seen.has(key)) {
           const ref = seen.get(key);
           if (ref) refs.push(`![p.${n} image](${ref})`);
           continue;
         }
-        const img = imageOf(page, arg);
-        if (!img || !img.data) continue;
         const kind = KIND[img.kind];
         if (!kind) continue;
         if (img.width < MIN_IMAGE_SIDE || img.height < MIN_IMAGE_SIDE) continue;

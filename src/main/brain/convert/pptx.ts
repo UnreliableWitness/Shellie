@@ -107,7 +107,9 @@ const first = (xml: string, re: RegExp) => re.exec(xml)?.[1];
 
 /** A chart as its title and one table row per series. */
 function chartOf(chartXml: string): string[] {
-  const titleXml = first(chartXml, /<c:title>([\s\S]*?)<\/c:title>/);
+  // The chart's own title sits before the plot area; the axes have titles of their own.
+  const head = first(chartXml, /<c:chart>([\s\S]*?)<c:plotArea>/) ?? '';
+  const titleXml = first(head, /<c:title>([\s\S]*?)<\/c:title>/);
   const title = titleXml ? paragraphsOf(titleXml).join(' ') : '';
   const series = [...chartXml.matchAll(/<c:ser>([\s\S]*?)<\/c:ser>/g)].map(
     (m) => {
@@ -213,9 +215,29 @@ async function graphicFrameOf(ctx: SlideCtx, xml: string): Promise<string[]> {
   return pic ? pictureOf(ctx, pic) : [];
 }
 
+/** What the slide walker can read. */
+const READABLE = /<p:(sp|pic)[\s>]|<a:tbl[\s>]|<dgm:relIds[\s>]|<c:chart[\s>]/;
+
+/**
+ * mc:AlternateContent carries the same thing twice: the Choice in a newer form and the Fallback in an older one.
+ * The Choice wins when it holds something readable; an embedded object's Choice has only the OLE reference
+ * while its Fallback holds the preview picture.
+ */
+function resolveAlternateContent(xml: string): string {
+  return xml.replace(
+    /<mc:AlternateContent[\s>][\s\S]*?<\/mc:AlternateContent>/g,
+    (whole) => {
+      const choice =
+        first(whole, /<mc:Choice[\s>][\s\S]*?>([\s\S]*?)<\/mc:Choice>/) ?? '';
+      const fallback =
+        first(whole, /<mc:Fallback>([\s\S]*?)<\/mc:Fallback>/) ?? '';
+      return READABLE.test(choice) ? choice : fallback;
+    },
+  );
+}
+
 async function slideLines(ctx: SlideCtx, xml: string): Promise<string[]> {
-  // mc:Fallback repeats mc:Choice in an older form.
-  const body = xml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, '');
+  const body = resolveAlternateContent(xml);
   const out: string[] = [];
   for (const m of body.matchAll(
     /<p:(sp|pic|graphicFrame)[\s>][\s\S]*?<\/p:\1>/g,

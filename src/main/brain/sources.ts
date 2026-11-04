@@ -173,7 +173,10 @@ async function writeSource(
     const name = sourceFileName(date, slug, taken);
     const stem = name.replace(/\.md$/, '');
     const assetsDir = `${stem}-assets`;
-    const body = src.body.split(`${ASSETS_PLACEHOLDER}/`).join(`${assetsDir}/`);
+    // Only converter output with pictures carries the placeholder; other sources keep their text as is.
+    const body = images.length
+      ? src.body.split(`${ASSETS_PLACEHOLDER}/`).join(`${assetsDir}/`)
+      : src.body;
     if (images.length) {
       written.push(path.join(sourcesDir, assetsDir));
       await fs.mkdir(written[0], { recursive: true });

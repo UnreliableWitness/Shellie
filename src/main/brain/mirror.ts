@@ -95,33 +95,46 @@ async function walk(dir: string, rel = ''): Promise<string[]> {
  * Attachment links as Azure DevOps writes them: `](/.attachments/name.png)` (also without the leading slash,
  * and with the `=WxH` size suffix). Group 1 is the file name.
  */
-const ATTACHMENT_LINK = /\]\(\/?\.attachments\/([^)\s]+)(?:\s+=\d*x\d*)?\)/g;
+const ATTACHMENT_LINK =
+  /\]\(\/?\.attachments\/((?:[^()\s]|\([^()\s]*\))+)(?:\s+=\d*x\d*)?\)/g;
 
-function attachmentName(raw: string): string {
+/** A decoded attachment file name that stays inside the folder on every platform, or null. */
+function attachmentName(raw: string): string | null {
+  let name: string;
   try {
-    return decodeURIComponent(raw);
+    name = decodeURIComponent(raw);
   } catch {
-    return raw;
+    name = raw;
   }
+  // eslint-disable-next-line no-control-regex
+  if (/[/\\\u0000-\u001f]/.test(name) || name === '.' || name === '..')
+    return null;
+  return name;
 }
 
-/** The viewable attachments a page links, by file name. */
-function attachmentsOf(text: string): string[] {
+/** The attachments a page links: the viewable ones by file name, and the formats of the others. */
+function attachmentsOf(text: string): { names: string[]; other: string[] } {
   const names = new Set<string>();
+  const other = new Set<string>();
   for (const m of text.matchAll(ATTACHMENT_LINK)) {
     const name = attachmentName(m[1]);
-    if (VIEWABLE.has(imageExt(name)) && !name.includes('/')) names.add(name);
+    if (!name) continue;
+    if (VIEWABLE.has(imageExt(name))) names.add(name);
+    else other.add(imageExt(name) || 'unknown');
   }
-  return [...names];
+  return { names: [...names], other: [...other].sort() };
 }
+
+/** A link destination that stays one link when the name has spaces or parentheses. */
+const linkPath = (p: string) => (/[\s()]/.test(p) ? `<${p}>` : p);
 
 /** Points a page's viewable attachment links at the copy in sources/wiki/.attachments, relative to the page. */
 function relinkAttachments(text: string, depth: number): string {
   const up = '../'.repeat(depth);
   return text.replace(ATTACHMENT_LINK, (whole, raw: string) => {
     const name = attachmentName(raw);
-    if (!VIEWABLE.has(imageExt(name)) || name.includes('/')) return whole;
-    return `](${up}${ATTACHMENTS}/${name})`;
+    if (!name || !VIEWABLE.has(imageExt(name))) return whole;
+    return `](${linkPath(`${up}${ATTACHMENTS}/${name}`)})`;
   });
 }
 
@@ -231,13 +244,21 @@ async function syncAttachments(
   warnings: string[],
 ): Promise<number> {
   const target = path.join(brainDir, ...segments(WIKI_DIR), ATTACHMENTS);
+  const mirrorAttachments = path.join(
+    mirrorDir(brainDir),
+    ...segments(joinPosix(wiki.mappedPath, ATTACHMENTS)),
+  );
+  const inside = (dir: string, file: string) =>
+    path.resolve(file).startsWith(path.resolve(dir) + path.sep);
   let changes = 0;
   const missing: string[] = [];
   for (const name of wanted) {
-    const src = path.join(
-      mirrorDir(brainDir),
-      ...segments(joinPosix(wiki.mappedPath, ATTACHMENTS, name)),
-    );
+    const src = path.join(mirrorAttachments, name);
+    const dest = path.join(target, name);
+    if (!inside(mirrorAttachments, src) || !inside(target, dest)) {
+      missing.push(name);
+      continue;
+    }
     let data: Buffer;
     try {
       data = await fs.readFile(src);
@@ -245,7 +266,6 @@ async function syncAttachments(
       missing.push(name);
       continue;
     }
-    const dest = path.join(target, name);
     const prev = await fs.readFile(dest).catch(() => null);
     if (prev && prev.equals(data)) continue;
     await fs.mkdir(target, { recursive: true });
@@ -320,12 +340,20 @@ export async function refreshMirror(
     // The pictures the pages link: checked out on demand, copied beside the pages.
     const pages = new Map<string, string>(); // gitItemPath -> page text (LF)
     const wanted = new Set<string>(); // attachment file names
+    const otherFormats = new Set<string>();
     for (const gitItemPath of found) {
       const text = toLf(
         await fs.readFile(path.join(mirror, ...segments(gitItemPath)), 'utf8'),
       );
       pages.set(gitItemPath, text);
-      for (const name of attachmentsOf(text)) wanted.add(name);
+      const linked = attachmentsOf(text);
+      for (const name of linked.names) wanted.add(name);
+      for (const f of linked.other) otherFormats.add(f);
+    }
+    if (otherFormats.size > 0) {
+      warnings.push(
+        `Attachments in formats Claude cannot view are left as links (${[...otherFormats].sort().join(', ')})`,
+      );
     }
     if (wanted.size > 0) {
       try {
@@ -346,6 +374,7 @@ export async function refreshMirror(
       }
     }
 
+    let skippedPages = 0;
     const kept = new Set<string>();
     for (const gitItemPath of found) {
       const relSegs =
@@ -358,6 +387,7 @@ export async function refreshMirror(
       const target = path.join(wikiRoot, ...decoded);
       if (!path.resolve(target).startsWith(wikiRoot + path.sep)) {
         warnings.push(`Skipped ${gitItemPath}: unsafe page name`);
+        skippedPages++;
         continue;
       }
       kept.add(rel);
@@ -413,7 +443,7 @@ export async function refreshMirror(
       added,
       changed,
       removed,
-      pages: found.length - warnings.length,
+      pages: found.length - skippedPages,
       ...(warnings.length ? { warnings } : {}),
     };
   } catch (e) {

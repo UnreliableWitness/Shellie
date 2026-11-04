@@ -167,6 +167,21 @@ describe('pdfToMarkdown', () => {
     expect(r.markdown).toContain('Diagram below');
   });
 
+  it('waits for pdf.js to decode a picture and stores one painted on several pages once', async () => {
+    const r = await pdfToMarkdown(
+      await fs.readFile(fixture('repeated-image.pdf')),
+    );
+    expect(r.images.map((i) => i.name)).toEqual(['p1-1.png']);
+    const png = decodePng(r.images[0].data);
+    expect([png.width, png.height]).toEqual([100, 100]);
+    expect(r.markdown).toContain(
+      '## p.1\n\n![p.1 image 1]({{assets}}/p1-1.png)',
+    );
+    expect(r.markdown).toContain('## p.2\n\n![p.2 image]({{assets}}/p1-1.png)');
+    expect(r.markdown).toContain('## p.4\n\n![p.4 image]({{assets}}/p1-1.png)');
+    expect(r.empty).toBe(false);
+  });
+
   it('decodes a JPEG picture to a PNG and references it', async () => {
     const r = await pdfToMarkdown(await fs.readFile(fixture('jpeg.pdf')));
     expect(r.images.map((i) => i.name)).toEqual(['p1-1.png']);
@@ -372,6 +387,53 @@ describe('pptxToMarkdown', () => {
     expect(r.markdown).toContain(
       'Numbers\n_Chart: Revenue by year_\n|  | 2025 | 2026 |\n| --- | --- | --- |\n| Licences | 10 | 12.5 |\n| Services | 3 | 4 |\n',
     );
+  });
+
+  it("keeps an embedded object's preview picture from the mc:Fallback side", async () => {
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          {
+            text: ['Visio'],
+            extra:
+              '<p:graphicFrame><a:graphic><a:graphicData><mc:AlternateContent xmlns:mc="x"><mc:Choice Requires="v"><p:oleObj name="Visio" r:id="rId9"><p:embed/></p:oleObj></mc:Choice><mc:Fallback><p:oleObj name="Visio" r:id="rId9">' +
+              pic('rId2', 'Process map') +
+              '</p:oleObj></mc:Fallback></mc:AlternateContent></a:graphicData></a:graphic></p:graphicFrame>',
+            rels: [
+              { id: 'rId2', type: 'image', target: '../media/image1.png' },
+            ],
+          },
+        ],
+        { media: { 'ppt/media/image1.png': PNG } },
+      ),
+    );
+    expect(r.images.map((i) => i.name)).toEqual(['slide-1-1.png']);
+    expect(r.markdown).toContain('![Process map]({{assets}}/slide-1-1.png)');
+  });
+
+  it('does not mistake an axis title for the chart title', async () => {
+    const data = CHART_DATA.replace(
+      /<c:title>[\s\S]*?<\/c:title>/,
+      '<c:autoTitleDeleted val="1"/>',
+    ).replace(
+      '</c:barChart>',
+      `</c:barChart><c:valAx><c:title><c:tx><c:rich>${paragraphs(['EUR (thousands)'])}</c:rich></c:tx></c:title></c:valAx>`,
+    );
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          {
+            text: ['Numbers'],
+            extra: chart('rId2'),
+            rels: [
+              { id: 'rId2', type: 'chart', target: '../charts/chart1.xml' },
+            ],
+          },
+        ],
+        { media: { 'ppt/charts/chart1.xml': Buffer.from(data) } },
+      ),
+    );
+    expect(r.markdown).toContain('Numbers\n_Chart_\n|  | 2025 | 2026 |');
   });
 
   it('reads only the mc:Choice side of alternate content', async () => {
