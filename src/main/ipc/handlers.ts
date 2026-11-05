@@ -117,7 +117,7 @@ import type { CostSender } from '../costServer/CostSender';
 import type { CostServerStore } from '../costServer/CostServerStore';
 import { type CostServerStatus, validServerUrl } from '../../shared/costServer';
 import { HomeService } from '../home/HomeService';
-import { homeStats } from '../home/homeStats';
+import { billableEurByTask, homeStats } from '../home/homeStats';
 import { DocsWatcher } from '../docs/DocsWatcher';
 import { GitDirWatcher } from '../review/GitDirWatcher';
 import type { AgentsDetected } from '../../shared/agents';
@@ -4506,6 +4506,7 @@ export function createHandlers(s: Services): Handlers {
         time: s.time,
       }),
     'usage:task': async (taskId) => s.usage.summarize(taskId),
+    'usage:costs': async (taskIds) => billableEurByTask(s.usage, taskIds),
     'usage:setBillable': async (taskId, sessionId, billable) => {
       await s.usage.setBillable(taskId, sessionId, billable);
       return s.usage.summarize(taskId);

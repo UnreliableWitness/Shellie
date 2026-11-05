@@ -1494,3 +1494,31 @@ describe('handlers: finish every workspace of a task', () => {
     });
   });
 });
+
+describe('handlers: usage:costs', () => {
+  it('usage:costs sums billable EUR per task and skips unknown ids', async () => {
+    const hx = await harness();
+    const add = (id: string, taskId: string, sessionId: string) =>
+      hx.usage.add({
+        id,
+        taskId,
+        tool: 'claude-code',
+        sessionId,
+        model: 'claude-opus-5-5',
+        at: '2026-10-14T10:00:00.000Z',
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        fast: false,
+      });
+    await add('a', 'ta', 's1');
+    await add('b', 'ta', 's2');
+    await add('c', 'tb', 's3');
+    await hx.h['usage:setBillable']('ta', 's2', false);
+    const costs = await hx.h['usage:costs'](['ta', 'tb', 'nope']);
+    expect(Object.keys(costs).sort()).toEqual(['ta', 'tb']);
+    expect(costs['ta']).toBeCloseTo(3.68, 5);
+    expect(costs['tb']).toBeCloseTo(3.68, 5);
+  });
+});

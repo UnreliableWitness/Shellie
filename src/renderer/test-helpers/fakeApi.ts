@@ -201,6 +201,7 @@ const defaults: FakeHandlers = {
   'app:whatsNew': () => null,
   'rates:list': () => ({ rates: [], officialAsOf: '2026-10-14' }),
   'usage:task': (taskId) => emptyUsage(taskId),
+  'usage:costs': () => ({}),
   'repos:list': () => [],
   'repos:inspect': (folder) => ({
     folder,

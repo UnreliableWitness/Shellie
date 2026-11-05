@@ -513,6 +513,8 @@ export type Channels = {
   /** Forgets the server and its key and stops sending; the ledger stays. */
   'costServer:disconnect': { args: []; result: CostServerStatus };
   'usage:task': { args: [taskId: string]; result: TaskUsage };
+  /** Billable EUR per task id; tasks without usage are absent. */
+  'usage:costs': { args: [taskIds: string[]]; result: Record<string, number> };
   'usage:setBillable': {
     args: [taskId: string, sessionId: string, billable: boolean];
     result: TaskUsage;

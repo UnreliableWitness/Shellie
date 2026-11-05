@@ -20,6 +20,36 @@ import {
 import { taskConnectionId } from '../../shared/workspaces';
 import { baselineKey } from '../time/timeHandlers';
 
+type UsageSource = HomeStatsInput['usage'];
+
+/** The one billable rule: a priced record in a session marked billable. */
+export function isBillableRecord(
+  usage: UsageSource,
+  taskId: string,
+  r: UsageRecord,
+): boolean {
+  return r.costUsd !== null && usage.isBillable(taskId, r.sessionId);
+}
+
+/** Billable EUR per task id; tasks without billable usage are absent. */
+export function billableEurByTask(
+  usage: UsageSource,
+  taskIds: string[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const id of taskIds) {
+    let eur = 0;
+    let any = false;
+    for (const r of usage.records(id)) {
+      if (!isBillableRecord(usage, id, r)) continue;
+      eur += (r.costUsd ?? 0) * OFFICIAL_USD_TO_EUR;
+      any = true;
+    }
+    if (any) out[id] = eur;
+  }
+  return out;
+}
+
 export type HomeStatsInput = {
   period: HomePeriod;
   now: Date;
@@ -61,13 +91,8 @@ export function homeStats(d: HomeStatsInput): HomeStats {
   for (const task of d.tasks) {
     const connectionId = taskConnectionId(task, d.repos);
     for (const r of d.usage.records(task.id)) {
-      if (
-        r.costUsd === null ||
-        !inPeriod(r.at) ||
-        !d.usage.isBillable(task.id, r.sessionId)
-      )
-        continue;
-      const eur = r.costUsd * OFFICIAL_USD_TO_EUR;
+      if (!inPeriod(r.at) || !isBillableRecord(d.usage, task.id, r)) continue;
+      const eur = (r.costUsd ?? 0) * OFFICIAL_USD_TO_EUR;
       costByTool[r.tool] += eur;
       byConnection.set(
         connectionId,
