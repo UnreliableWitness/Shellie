@@ -21,6 +21,7 @@ const ok: Connection = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 
 beforeEach(() =>

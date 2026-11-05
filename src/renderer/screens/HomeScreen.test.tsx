@@ -27,6 +27,7 @@ export const connection: Connection = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 
 export const snapshot = (over: Partial<HomeSnapshot> = {}): HomeSnapshot => ({

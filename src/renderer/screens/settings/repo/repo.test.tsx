@@ -39,6 +39,7 @@ const conn = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 
 const baseConfig: ShellieConfig = {

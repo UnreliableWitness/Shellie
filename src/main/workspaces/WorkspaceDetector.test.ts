@@ -55,6 +55,7 @@ const connection = (
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 });
 
 function worktree(repo: string, branch: string, name = 'wt'): string {

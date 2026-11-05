@@ -35,6 +35,7 @@ const connection: Connection = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 const repo: Repo = {
   id: 'r1',

@@ -163,6 +163,7 @@ export class ConnectionStore {
       workItemOnStart: StartSettingsSchema.parse(
         input.workItemOnStart ?? existing?.workItemOnStart ?? {},
       ),
+      writeTimeToAdo: existing?.writeTimeToAdo ?? false,
       tokenCiphertext,
     };
     await this.update((f) => {
@@ -239,5 +240,6 @@ function strip(c: Stored): Connection {
     userUniqueName: c.userUniqueName,
     provider: c.provider,
     workItemOnStart: c.workItemOnStart,
+    writeTimeToAdo: c.writeTimeToAdo,
   };
 }

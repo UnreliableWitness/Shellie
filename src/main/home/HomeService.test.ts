@@ -21,6 +21,7 @@ const conn = (id: string): Connection => ({
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 });
 
 const item = (

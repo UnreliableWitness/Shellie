@@ -107,6 +107,7 @@ const conn = (over: Partial<Connection> = {}): Connection => ({
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
   ...over,
 });
 

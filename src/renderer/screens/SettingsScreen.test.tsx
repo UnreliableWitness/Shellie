@@ -160,6 +160,7 @@ describe('SettingsScreen', () => {
             assignToMe: true,
             stateOverrides: {},
           },
+          writeTimeToAdo: false,
         },
       ],
       screen: repoScope,
@@ -222,6 +223,7 @@ describe('SettingsScreen', () => {
         assignToMe: true,
         stateOverrides: {},
       },
+      writeTimeToAdo: false,
     };
     const linked: Repo = { ...webshop, connectionId: 'c1' };
     const types = [

@@ -719,6 +719,7 @@ describe('FinishScreen push that cannot sign in', () => {
       assignToMe: true,
       stateOverrides: {},
     },
+    writeTimeToAdo: false,
   };
 
   it('says to update the token and opens Settings at the connection', async () => {

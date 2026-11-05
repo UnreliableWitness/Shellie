@@ -89,6 +89,7 @@ import type {
   WorkspaceCheck,
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
+import { effectiveStartSettings } from '../../shared/startSettings';
 import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
 import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
@@ -1957,6 +1958,10 @@ export function createHandlers(s: Services): Handlers {
     const details = await workItemDetails(task, repo);
     const brainOfTask = await setupBrain(task, repo, details);
     const reopening = isReopening(task);
+    const startSettings = effectiveStartSettings(
+      repo,
+      s.connections.list().find((c) => c.id === repo.connectionId) ?? null,
+    );
     const defs = reopening ? restoredTerminals(task) : initialTerminals(task);
     const hasApm =
       config.apm !== false &&
@@ -1999,8 +2004,7 @@ export function createHandlers(s: Services): Handlers {
         Boolean(
           task.workItem &&
           taskConnectionId(task, [repo]) &&
-          (repo.workItemOnStart.moveToInProgress ||
-            repo.workItemOnStart.assignToMe),
+          (startSettings.moveToInProgress || startSettings.assignToMe),
         ),
       ...(task.reopen ? { restore: { from: task.reopen.from } } : {}),
       ...(reopening
@@ -2103,6 +2107,7 @@ export function createHandlers(s: Services): Handlers {
             const connection = s.connections.get(
               taskConnectionId(task, [repo])!,
             );
+            const startSettings = effectiveStartSettings(repo, connection);
             const client = s.trackers.tracker(connection.id);
             const id = Number(task.workItem!.id);
             const current = await client.itemForStart(id);
@@ -2112,16 +2117,11 @@ export function createHandlers(s: Services): Handlers {
             );
             // Connections saved before the unique name was stored have none; look it up once.
             let user = connection.userUniqueName;
-            if (!user && repo.workItemOnStart.assignToMe)
+            if (!user && startSettings.assignToMe)
               user = await verifyConnection(connection.id)
                 .then((c) => c.userUniqueName)
                 .catch(() => null);
-            const plan = planStartUpdate(
-              current,
-              states,
-              repo.workItemOnStart,
-              user,
-            );
+            const plan = planStartUpdate(current, states, startSettings, user);
             if (plan.state || plan.assignTo)
               await client.updateItem(id, {
                 ...(plan.state ? { state: plan.state } : {}),
@@ -3009,14 +3009,8 @@ export function createHandlers(s: Services): Handlers {
       return { ...r, secretsFound };
     },
     'repos:add': async (folder, options) => {
-      const linked = options?.connectionId
-        ? s.connections.list().find((c) => c.id === options.connectionId)
-        : undefined;
-      // A new repo starts with its connection's on-start options; Settings stays the place to change them.
-      const repo = await s.repos.add(folder, {
-        ...options,
-        workItemOnStart: linked?.workItemOnStart,
-      });
+      // A new repo inherits its project's on-start options until it gets its own.
+      const repo = await s.repos.add(folder, options);
       reposChanged();
       tel.event('repo.added', {
         repos: s.repos.list().length,
@@ -3120,7 +3114,11 @@ export function createHandlers(s: Services): Handlers {
           commands: input.commands,
           tabs: setupTabLabels(input, s.platform.shellLabel),
           workItem: input.workItem,
-          start: repo.workItemOnStart,
+          start: effectiveStartSettings(
+            repo,
+            s.connections.list().find((c) => c.id === repo.connectionId) ??
+              null,
+          ),
           types: repo.connectionId
             ? (typesKnown.get(repo.connectionId) ?? null)
             : null,

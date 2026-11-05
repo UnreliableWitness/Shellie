@@ -23,6 +23,7 @@ const conn: Connection = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 
 const wiki: AdoWiki = {

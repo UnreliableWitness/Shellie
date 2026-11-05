@@ -4,6 +4,7 @@ import type {
   StartSettings,
   WorkItemTypeMeta,
 } from '../../../../shared/types';
+import { effectiveStartSettings } from '../../../../shared/startSettings';
 import { api, tryInvoke } from '../../../api';
 import {
   SettingRow,
@@ -24,7 +25,11 @@ export function WorkItemsCategory({
   title: string;
 }) {
   const notify = useStore((s) => s.notify);
-  const settings = repo.workItemOnStart;
+  const connections = useStore((s) => s.connections);
+  const settings = effectiveStartSettings(
+    repo,
+    connections.find((c) => c.id === repo.connectionId) ?? null,
+  );
   const connectionId = repo.connectionId;
   const linked = connectionId !== null;
   const [types, setTypes] = useState<WorkItemTypeMeta[] | null>(null);

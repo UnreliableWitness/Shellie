@@ -241,7 +241,7 @@ export class RepoRegistry {
       connectionId: base.connectionId,
       configFound: config.found,
       discovered: base.discovered ?? false,
-      workItemOnStart: base.workItemOnStart ?? StartSettingsSchema.parse({}),
+      workItemOnStart: base.workItemOnStart,
       overrides: base.overrides ?? {},
       ...(base.agentCommands && { agentCommands: base.agentCommands }),
     };

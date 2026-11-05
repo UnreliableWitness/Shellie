@@ -257,11 +257,8 @@ const RepoObjectSchema = z.object({
   configFound: z.boolean(),
   /** Added by Shellie when a task's Claude session worked in it, not by the user; Start never picks it. */
   discovered: z.boolean().default(false),
-  workItemOnStart: StartSettingsSchema.default({
-    moveToInProgress: true,
-    assignToMe: true,
-    stateOverrides: {},
-  }),
+  /** The repo's own on-start options; absent means it inherits its project's (see `effectiveStartSettings`). */
+  workItemOnStart: StartSettingsSchema.optional(),
   /** The command line a Claude Code or OpenCode tab runs in this repo (#191); absent means `claude` or `opencode`. */
   agentCommands: AgentCommandsSchema.optional(),
   overrides: RepoOverridesSchema.default({}),
@@ -532,14 +529,18 @@ export const ConnectionSchema = z.object({
   checkedAt: z.string().nullable(),
   userUniqueName: z.string().nullable().default(null),
   provider: TrackerProviderSchema.default('azure-devops'),
-  /** On-start options chosen when the connection was added; copied into a repo when it is linked at add. */
+  /** The project's on-start options; every linked repo inherits them unless it has its own. */
   workItemOnStart: StartSettingsSchema.default({
     moveToInProgress: true,
     assignToMe: true,
     stateOverrides: {},
   }),
+  writeTimeToAdo: z.boolean().default(false),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+export type ConnectionPatch = Partial<
+  Pick<Connection, 'name' | 'workItemOnStart' | 'writeTimeToAdo'>
+>;
 
 export const ConnectionsFileSchema = z.object({
   version: z.literal(1),

@@ -216,6 +216,8 @@ describe('ConnectionStore', () => {
     const again = new ConnectionStore(f, fakeCrypto());
     await again.load();
     expect(again.get(c.id).workItemOnStart).toEqual(options);
+    expect(c.writeTimeToAdo).toBe(false);
+    expect(again.list()[0].writeTimeToAdo).toBe(false);
     writeFileSync(
       f,
       JSON.stringify({

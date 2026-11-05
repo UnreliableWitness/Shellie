@@ -39,6 +39,7 @@ const connection = (userUniqueName: string | null) => ({
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 });
 
 beforeEach(() => {

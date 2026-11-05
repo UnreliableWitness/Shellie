@@ -210,6 +210,7 @@ describe('brains', () => {
       assignToMe: true,
       stateOverrides: {},
     },
+    writeTimeToAdo: false,
   });
 
   it('shows one item per brain and opens its screen', async () => {
@@ -391,6 +392,7 @@ describe('TaskNav', () => {
             assignToMe: true,
             stateOverrides: {},
           },
+          writeTimeToAdo: false,
         },
       ],
     });
@@ -476,6 +478,7 @@ describe('TaskNav', () => {
         assignToMe: true,
         stateOverrides: {},
       },
+      writeTimeToAdo: false,
     });
     useStore.setState({
       connections: [conn('c1', 'Shellie'), conn('c2', 'DXP')],
@@ -513,6 +516,7 @@ describe('TaskNav', () => {
         assignToMe: true,
         stateOverrides: {},
       },
+      writeTimeToAdo: false,
     });
     useStore.setState({
       repos: [
@@ -582,6 +586,7 @@ describe('TaskNav', () => {
         assignToMe: true,
         stateOverrides: {},
       },
+      writeTimeToAdo: false,
     });
     useStore.setState({
       connections: [conn('c1', 'Shellie'), conn('c2', 'DXP')],

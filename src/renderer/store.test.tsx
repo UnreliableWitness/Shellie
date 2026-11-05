@@ -247,6 +247,7 @@ describe('activeConnection', () => {
       assignToMe: true,
       stateOverrides: {},
     },
+    writeTimeToAdo: false,
   });
   const repo = (id: string, connectionId: string | null) => ({
     id,

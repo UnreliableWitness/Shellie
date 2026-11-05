@@ -426,7 +426,7 @@ describe('handlers: connections:probe and connections:saveMany', () => {
     expect(settings.get().onboarding.tracker).toBeNull();
   });
 
-  it("repos:add copies the linked connection's on-start options into the repo", async () => {
+  it('repos:add leaves the on-start options to the project: the repo stores none', async () => {
     const { h, server } = await harness();
     routeOrg(server);
     server.route('GET', '/uw/_apis/projects/Shellie', {
@@ -442,13 +442,9 @@ describe('handlers: connections:probe and connections:saveMany', () => {
     const repo = await h['repos:add'](makeRepo('onstart'), {
       connectionId: c.id,
     });
-    expect(repo.workItemOnStart).toEqual(onStart);
+    expect(repo.workItemOnStart).toBeUndefined();
     const unlinked = await h['repos:add'](makeRepo('onstart-none'));
-    expect(unlinked.workItemOnStart).toEqual({
-      moveToInProgress: true,
-      assignToMe: true,
-      stateOverrides: {},
-    });
+    expect(unlinked.workItemOnStart).toBeUndefined();
   });
 });
 
