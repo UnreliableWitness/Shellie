@@ -84,16 +84,16 @@ export function projectGraph(input: {
 
   const linked = repos.filter((r) => r.connectionId === connectionId).map(node);
   for (const t of open) {
-    const n = linked.find((l) => l.repoId === t.repoId);
-    if (!n) continue;
-    n.openTasks += 1;
-    if (
-      t.pullRequest !== null ||
-      t.extraWorkspaces.some(
-        (w) => !w.dropped && w.repoId === n.repoId && w.pullRequest !== null,
-      )
-    )
-      n.prOpen = true;
+    const home = linked.find((l) => l.repoId === t.repoId);
+    if (home) {
+      home.openTasks += 1;
+      if (t.pullRequest !== null) home.prOpen = true;
+    }
+    for (const w of t.extraWorkspaces) {
+      if (w.dropped || w.pullRequest === null) continue;
+      const n = linked.find((l) => l.repoId === w.repoId);
+      if (n) n.prOpen = true;
+    }
   }
 
   const elsewhere: GraphNode[] = [];

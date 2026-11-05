@@ -147,6 +147,24 @@ describe('projectGraph', () => {
     expect(g.linked.every((n) => n.openTasks === 0)).toBe(true);
   });
 
+  it('an extra workspace with a pull request lights its linked repo, not the task home', () => {
+    const pr = {
+      id: 1,
+      url: 'u',
+      repositoryId: 'x',
+      project: 'p',
+      repo: 'r',
+      status: 'active',
+      isDraft: false,
+    } as const;
+    const g = graph([
+      mkTask({ extraWorkspaces: [extra({ repoId: 'r3', pullRequest: pr })] }),
+    ]);
+    const [n1, n3] = g.linked;
+    expect([n1.openTasks, n1.prOpen]).toEqual([1, false]);
+    expect([n3.openTasks, n3.prOpen]).toEqual([0, true]);
+  });
+
   it('counts open tasks and open pull requests per linked repo', () => {
     const pr = {
       id: 1,
