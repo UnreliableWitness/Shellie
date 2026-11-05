@@ -1,4 +1,4 @@
-import type { Connection, Repo } from '../../shared/types';
+import type { Connection, ConnectionPatch, Repo } from '../../shared/types';
 import type { AppSettings } from '../../shared/usage';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -38,4 +38,58 @@ export function migrateStartSettings(
       );
     })
     .map((r) => ({ id: r.id }));
+}
+
+type ApplyDeps = {
+  settings: { get(): AppSettings; save(s: AppSettings): Promise<unknown> };
+  connections: {
+    list(): Connection[];
+    patch(id: string, patch: ConnectionPatch): Promise<unknown>;
+  };
+  store: {
+    state: { repos: Repo[] };
+    update(mutate: (s: { repos: Repo[] }) => void): Promise<unknown>;
+  };
+  log: (message: string, err: unknown) => void;
+};
+
+/**
+ * Applies both migrations at boot, never fatal. Every connection patch runs on its own; the legacy key is removed
+ * from the settings only when all of them succeeded (a failed one retries at the next boot). The start-settings
+ * step runs whatever the write-time step did.
+ */
+export async function applyProjectScopeMigration(
+  deps: ApplyDeps,
+): Promise<void> {
+  const { settings, connections, store, log } = deps;
+  try {
+    const wt = migrateWriteTime(settings.get(), connections.list());
+    if (wt) {
+      let failed = false;
+      for (const p of wt.patches) {
+        try {
+          await connections.patch(p.id, { writeTimeToAdo: p.writeTimeToAdo });
+        } catch (err) {
+          failed = true;
+          log(`Project scope migration: patching ${p.id} failed`, err);
+        }
+      }
+      if (!failed) await settings.save(wt.settings);
+    }
+  } catch (err) {
+    log('Project scope migration (write time) failed', err);
+  }
+  try {
+    const drop = new Set(
+      migrateStartSettings(store.state.repos, connections.list()).map(
+        (r) => r.id,
+      ),
+    );
+    if (drop.size > 0)
+      await store.update((s) => {
+        for (const r of s.repos) if (drop.has(r.id)) delete r.workItemOnStart;
+      });
+  } catch (err) {
+    log('Project scope migration (start settings) failed', err);
+  }
 }

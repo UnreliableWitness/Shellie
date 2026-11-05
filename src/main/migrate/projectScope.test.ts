@@ -1,11 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ConnectionSchema,
   type Connection,
   type Repo,
 } from '../../shared/types';
 import { defaultSettings } from '../../shared/usage';
-import { migrateStartSettings, migrateWriteTime } from './projectScope';
+import {
+  applyProjectScopeMigration,
+  migrateStartSettings,
+  migrateWriteTime,
+} from './projectScope';
 
 const conn = (id: string, over: Partial<Connection> = {}): Connection =>
   ConnectionSchema.parse({
@@ -70,5 +74,55 @@ describe('migrateStartSettings', () => {
       ids.includes(r.id) ? { ...r, workItemOnStart: undefined } : r,
     );
     expect(migrateStartSettings(after, [c])).toEqual([]);
+  });
+});
+
+describe('applyProjectScopeMigration', () => {
+  it('keeps going when one patch fails: others apply, settings stay, repo copies are stripped', async () => {
+    const a = conn('a');
+    const b = conn('b');
+    const settings = {
+      current: { ...defaultSettings(), writeTimeToAdo: true },
+      get() {
+        return this.current;
+      },
+      save: vi.fn(async () => {}),
+    };
+    const patch = vi.fn(async (id: string) => {
+      if (id === 'a') throw new Error('disk full');
+    });
+    const state = {
+      repos: [repo('r1', 'b', structuredClone(b.workItemOnStart))],
+    };
+    const log = vi.fn();
+    await applyProjectScopeMigration({
+      settings,
+      connections: { list: () => [a, b], patch },
+      store: {
+        state,
+        update: async (m) => {
+          m(state);
+        },
+      },
+      log,
+    });
+    expect(patch).toHaveBeenCalledTimes(2);
+    expect(patch).toHaveBeenCalledWith('b', { writeTimeToAdo: true });
+    expect(settings.save).not.toHaveBeenCalled();
+    expect(state.repos[0].workItemOnStart).toBeUndefined();
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+  it('saves the settings without the legacy key when every patch succeeds', async () => {
+    const settings = {
+      get: () => ({ ...defaultSettings(), writeTimeToAdo: true }),
+      save: vi.fn(async () => {}),
+    };
+    await applyProjectScopeMigration({
+      settings,
+      connections: { list: () => [conn('a')], patch: async () => {} },
+      store: { state: { repos: [] }, update: async () => {} },
+      log: vi.fn(),
+    });
+    expect(settings.save).toHaveBeenCalledTimes(1);
   });
 });
