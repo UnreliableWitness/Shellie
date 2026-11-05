@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../shared/usage';
@@ -956,7 +956,7 @@ describe('SettingsScreen', () => {
       ]);
     });
 
-    it('remembers the picked project', async () => {
+    it('the picked project starts at the active project, not the remembered one', async () => {
       installFakeApi();
       window.localStorage.setItem('shellie.settings.scope', 'project');
       window.localStorage.setItem('shellie.settings.connectionId', 'c2');
@@ -967,18 +967,32 @@ describe('SettingsScreen', () => {
         'true',
       );
       const picker = screen.getByRole('combobox', { name: 'Project' });
-      expect(picker).toHaveValue('c2');
+      expect(picker).toHaveValue('c1');
       expect(
-        screen.getByRole('option', { name: 'contoso / Shop' }),
+        screen.getByRole('option', { name: 'contoso / Platform' }),
       ).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Brains' })).toBeVisible();
       expect(document.getElementById('project-connection')).toBeVisible();
-      await userEvent.selectOptions(picker, 'c1');
+      await userEvent.selectOptions(picker, 'c2');
       expect(window.localStorage.getItem('shellie.settings.connectionId')).toBe(
-        'c1',
+        'c2',
       );
       // Settings-local: the nav's project stays.
       expect(useStore.getState().connectionId).toBe('c1');
+    });
+
+    it('a nav project change while Settings is open leaves the picker alone', () => {
+      installFakeApi();
+      useStore.setState({
+        connections: [shop, platform],
+        connectionId: 'c1',
+        screen: { kind: 'settings', scope: 'project' },
+      });
+      render(<SettingsScreen />);
+      act(() => useStore.setState({ connectionId: 'c2' }));
+      expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
+        'c1',
+      );
     });
 
     it("a repoId deep link picks that repo's project", () => {

@@ -94,9 +94,15 @@ export function SettingsScreen() {
   const [repoId, setRepoId] = useState<string | null>(
     () => linkRepo(link) ?? readPref(REPO_KEY),
   );
-  // Settings-local: picking a project here never switches the nav's project.
+  // Settings-local: picking a project here never switches the nav's project, and a nav switch while Settings
+  // is open does not move it. Opens on the deep link's project, else the active one, else the remembered one.
   const [connectionId, setConnectionId] = useState<string | null>(
-    () => linkConnection(link, repos) ?? readPref(CONNECTION_KEY),
+    () =>
+      linkConnection(link, repos) ??
+      activeConnection(useStore.getState())?.id ??
+      readPref(CONNECTION_KEY) ??
+      connections[0]?.id ??
+      null,
   );
   const [query, setQuery] = useState('');
   // A new deep link while the page is open picks its scope, project and repo again.
@@ -112,6 +118,7 @@ export function SettingsScreen() {
     if (link?.section || link?.repoId) setQuery('');
   }
 
+  // Falls back to the active project only when the pick is gone (or none existed at open).
   const connection =
     connections.find((c) => c.id === connectionId) ?? active ?? null;
   // Without a project there is no Project scope.
