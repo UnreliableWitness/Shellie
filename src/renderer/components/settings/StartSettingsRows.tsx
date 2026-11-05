@@ -16,8 +16,7 @@ export function useProjectTypes(
     if (active && connectionId) load(connectionId);
   }, [active, connectionId, load]);
   return useMemo(
-    () =>
-      active && entry?.status === 'ok' ? [...entry.types.values()] : null,
+    () => (active && entry?.status === 'ok' ? [...entry.types.values()] : null),
     [active, entry],
   );
 }

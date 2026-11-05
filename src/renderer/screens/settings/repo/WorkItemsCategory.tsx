@@ -31,10 +31,7 @@ export function WorkItemsCategory({
   const project = connections.find((c) => c.id === repo.connectionId) ?? null;
   const settings = effectiveStartSettings(repo, project);
   const own = repo.workItemOnStart !== undefined;
-  const types = useProjectTypes(
-    repo.connectionId,
-    active && (own || !project),
-  );
+  const types = useProjectTypes(repo.connectionId, active && (own || !project));
 
   // repos:changed is broadcast by the handlers and refreshes the store.
   const save = (next: StartSettings) =>
