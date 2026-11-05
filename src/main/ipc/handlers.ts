@@ -4153,12 +4153,13 @@ export function createHandlers(s: Services): Handlers {
       s.connections.get(id);
       for (const r of s.repos.list())
         if (r.connectionId === id) await s.repos.setConnection(r.id, null);
-      await brain.store.archiveByConnection(id);
+      const archived = await brain.store.archiveByConnection(id);
       await s.connections.remove(id);
       s.trackers.invalidate(id);
       dropTypes(id);
       connectionsChanged();
       reposChanged();
+      for (const brainId of archived) s.broadcast('brain:changed', { brainId });
       tel.event('connection.removed');
     },
     'connections:verify': async (id) => verifyConnection(id),

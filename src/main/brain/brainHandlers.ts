@@ -131,7 +131,7 @@ const OPENABLE = new Set([
 ]);
 const BUSY = 'A brain job is running; try again later';
 const ARCHIVED =
-  'This brain is archived; restore it in Settings › Brains first';
+  'This brain is archived; restore it in Settings › Project › Brains first';
 
 /** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
 const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];

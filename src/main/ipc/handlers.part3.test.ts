@@ -273,7 +273,9 @@ describe('handlers: work items on start override', () => {
 describe('handlers: removing a connection and its brains', () => {
   it('removing a connection archives its brains', async () => {
     const b = await brainServices();
-    const { h, server } = await harness(fakeCrypto(), { brain: b.brain });
+    const { h, server, broadcasts } = await harness(fakeCrypto(), {
+      brain: b.brain,
+    });
     routeHealthyOrg(server);
     const c = await h['connections:save']({
       organizationUrl: `${server.url}/unreliablewitness`,
@@ -285,14 +287,27 @@ describe('handlers: removing a connection and its brains', () => {
       project: 'Shellie',
       name: 'Mine',
     });
+    const second = await b.add({
+      connectionId: c.id,
+      project: 'Shellie',
+      name: 'Second',
+    });
     const other = await b.add({
       connectionId: 'other',
       project: 'Else',
       name: 'Other',
     });
+    broadcasts.length = 0;
     await h['connections:remove'](c.id);
     expect(b.store.get(mine.id)?.archived).toBe(true);
+    expect(b.store.get(second.id)?.archived).toBe(true);
     expect(b.store.get(other.id)?.archived).toBe(false);
+    // Open brain views (nav, Brain page, Project > Brains) reload and see them archived.
+    expect(
+      broadcasts
+        .filter((x) => x.event === 'brain:changed')
+        .map((x) => x.payload),
+    ).toEqual([{ brainId: mine.id }, { brainId: second.id }]);
   });
 });
 

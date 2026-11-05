@@ -71,21 +71,21 @@ describe('archived brains', () => {
     expect(s.forProject('c1', 'P').map((b) => b.id)).toEqual(['a', 'b']);
   });
 
-  it("archiveByConnection archives only that connection's brains and returns the count", async () => {
+  it("archiveByConnection archives only that connection's brains and returns their ids", async () => {
     const s = new BrainStore(file);
     await s.load();
     await s.add(brain('a', 'P'));
     await s.add(brain('b', 'Q'));
     await s.add({ ...brain('c', 'R'), connectionId: 'c2' });
     await s.add({ ...brain('d', 'S'), archived: true });
-    expect(await s.archiveByConnection('c1')).toBe(2);
+    expect(await s.archiveByConnection('c1')).toEqual(['a', 'b']);
     expect(s.list().map((b) => [b.id, b.archived])).toEqual([
       ['a', true],
       ['b', true],
       ['c', false],
       ['d', true],
     ]);
-    expect(await s.archiveByConnection('c1')).toBe(0);
+    expect(await s.archiveByConnection('c1')).toEqual([]);
     const again = new BrainStore(file);
     await again.load();
     expect(again.get('a')?.archived).toBe(true);
