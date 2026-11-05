@@ -52,6 +52,17 @@ describe('RepoGraph', () => {
     expect(
       screen.getByRole('button', { name: '1 task in api and webshop' }),
     ).toBeInTheDocument();
+    // The button is a wide invisible hit line; the drawn line beside it is 1px, or 2px for two or more tasks.
+    const wide = screen.getByRole('button', {
+      name: '2 tasks in design-system and webshop',
+    });
+    expect(wide).toHaveAttribute('stroke-width', '12');
+    expect(wide).toHaveAttribute('stroke', 'transparent');
+    const drawn = wide.nextElementSibling as Element;
+    expect(drawn).toHaveClass('graph-edge');
+    expect(drawn).toHaveAttribute('aria-hidden', 'true');
+    expect(drawn).toHaveAttribute('stroke-width', '2');
+    expect(drawn.getAttribute('d')).toBe(wide.getAttribute('d'));
     expect(screen.getByText('main · 2 open tasks · PR open')).toBeVisible();
     expect(screen.getByText('⚠ setup missing')).toBeInTheDocument();
     expect(

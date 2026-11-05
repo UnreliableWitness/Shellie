@@ -16,6 +16,8 @@ import { layoutGraph, type Placed } from './layout';
 /** The width laid out until the band is measured (and in tests, where nothing has a size). */
 const DEFAULT_WIDTH = 760;
 const MAX_NAME = 28;
+/** The width of an edge's invisible hit line, so a 1px line is easy to click. */
+const HIT_WIDTH = 12;
 
 const edgeKey = (e: GraphEdge) => `${e.a}\u0000${e.b}`;
 const short = (s: string) =>
@@ -105,19 +107,30 @@ export function RepoGraph({
             onEdge(p.edge, e.currentTarget as unknown as HTMLElement);
           return (
             <g key={edgeKey(p.edge)} className="graph-edge-group">
+              {/* A wide invisible line takes the clicks; the thin drawn line next to it is only for show. */}
               <path
                 role="button"
                 tabIndex={0}
                 aria-label={label}
-                className={hotEdge(p.edge) ? 'graph-edge is-hot' : 'graph-edge'}
+                className={
+                  hotEdge(p.edge) ? 'graph-edge-hit is-hot' : 'graph-edge-hit'
+                }
                 d={p.path}
-                strokeWidth={n > 1 ? 2 : 1}
+                stroke="transparent"
+                strokeWidth={HIT_WIDTH}
+                fill="none"
                 onClick={click}
                 onKeyDown={onKeys(click)}
                 onMouseEnter={() => setHover({ edge: p.edge })}
                 onMouseLeave={clear}
                 onFocus={() => setHover({ edge: p.edge })}
                 onBlur={clear}
+              />
+              <path
+                aria-hidden="true"
+                className="graph-edge"
+                d={p.path}
+                strokeWidth={n > 1 ? 2 : 1}
               />
               <circle
                 className="graph-edge-count"

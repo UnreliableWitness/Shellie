@@ -167,13 +167,17 @@
 .graph-node-start:focus-visible {
   text-decoration: underline;
 }
-.graph-edge {
-  fill: none;
-  stroke: var(--line-strong);
+.graph-edge-hit {
+  pointer-events: stroke;
   cursor: pointer;
   outline: none;
 }
-.graph-edge.is-hot {
+.graph-edge {
+  fill: none;
+  stroke: var(--line-strong);
+  pointer-events: none;
+}
+.graph-edge-hit.is-hot + .graph-edge {
   stroke: var(--link);
 }
 .graph-edge-count {
@@ -190,7 +194,7 @@
 }
 /* While something is hovered, everything it does not join fades. */
 .repo-graph svg[data-hover] .graph-node:not(.is-hot),
-.repo-graph svg[data-hover] .graph-edge:not(.is-hot) {
+.repo-graph svg[data-hover] .graph-edge-hit:not(.is-hot) + .graph-edge {
   opacity: 0.4;
 }
 .project-legend {
