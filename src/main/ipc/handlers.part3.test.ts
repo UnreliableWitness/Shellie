@@ -26,6 +26,7 @@ import {
 } from './handlers';
 import {
   allTerminals,
+  brainServices,
   harness,
   routeHealthyOrg,
   linkedTask,
@@ -250,6 +251,32 @@ describe('handlers: connections', () => {
     await expect(h['repos:setConnection'](added.id, 'ghost')).rejects.toThrow(
       /Unknown connection/,
     );
+  });
+});
+
+describe('handlers: removing a connection and its brains', () => {
+  it('removing a connection archives its brains', async () => {
+    const b = await brainServices();
+    const { h, server } = await harness(fakeCrypto(), { brain: b.brain });
+    routeHealthyOrg(server);
+    const c = await h['connections:save']({
+      organizationUrl: `${server.url}/unreliablewitness`,
+      project: 'Shellie',
+      pat: 'p',
+    });
+    const mine = await b.add({
+      connectionId: c.id,
+      project: 'Shellie',
+      name: 'Mine',
+    });
+    const other = await b.add({
+      connectionId: 'other',
+      project: 'Else',
+      name: 'Other',
+    });
+    await h['connections:remove'](c.id);
+    expect(b.store.get(mine.id)?.archived).toBe(true);
+    expect(b.store.get(other.id)?.archived).toBe(false);
   });
 });
 
