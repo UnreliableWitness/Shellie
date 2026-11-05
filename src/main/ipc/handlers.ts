@@ -99,6 +99,7 @@ import {
   HOME_ID,
   isReopening,
   taskConnectionId,
+  taskRepoIds,
   taskWorkspaces,
   workspaceById,
   type WorkspaceView,
@@ -419,12 +420,6 @@ class LeakError extends Error {
     this.name = 'LeakError';
   }
 }
-
-/** The repos a task works in: its home and the ones it joined. */
-const taskRepoIds = (t: Task): string[] => [
-  ...(t.repoId === null ? [] : [t.repoId]),
-  ...t.extraWorkspaces.map((w) => w.repoId),
-];
 
 /** Keys (repo:branch, repo:worktree) of tasks being created right now, across handler bundles. */
 const creating = new Set<string>();
