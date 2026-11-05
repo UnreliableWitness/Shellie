@@ -16,7 +16,7 @@ describe('templates v4', () => {
   const content = (p: string) => files.find((f) => f.path === p)?.content ?? '';
 
   it('add a read-only ask skill, retract and lessons, confidence and verified', () => {
-    expect(TEMPLATES_VERSION).toBe(4);
+    expect(TEMPLATES_VERSION).toBe(5);
     const ask = content('.claude/skills/ask/SKILL.md');
     expect(ask).toContain('allowed-tools: Read, Glob, Grep');
     expect(ask).toContain('never write');

@@ -10,6 +10,8 @@ export type SourceFrontmatter = {
   title: string;
   /** One line on what the source holds (describeContents); absent on wiki pages and older sources. */
   contents?: string;
+  /** What the person who added the source said about it, written once at ingest; the skills read it as their instruction. */
+  note?: string;
 };
 
 export function slugify(name: string): string {
@@ -41,6 +43,7 @@ export function renderSource(fm: SourceFrontmatter, body: string): string {
     content_type: fm.content_type,
     sha256: fm.sha256,
     ...(fm.contents ? { contents: fm.contents } : {}),
+    ...(fm.note ? { note: fm.note } : {}),
   };
   return `---\n${stringify(ordered)}---\n\n${body}`;
 }
@@ -73,6 +76,7 @@ export function parseSourceFrontmatter(text: string): SourceFrontmatter | null {
     content_type: type.data,
     sha256: d.sha256,
     ...(typeof d.contents === 'string' ? { contents: d.contents } : {}),
+    ...(typeof d.note === 'string' && d.note ? { note: d.note } : {}),
   };
 }
 

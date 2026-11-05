@@ -89,6 +89,40 @@ describe('brain sources', () => {
     );
   });
 
+  it('writes the note into the frontmatter, trimmed, and lists it', async () => {
+    const r = await addSource(
+      git,
+      dir,
+      {
+        text: 'hello',
+        title: 'Note',
+        note: '  From the kickoff call; rough  ',
+      },
+      'note',
+      now,
+    );
+    if (!r.ok) throw new Error(r.message);
+    const text = await fs.readFile(path.join(dir, r.path), 'utf8');
+    expect(text).toMatch(/^note: From the kickoff call; rough$/m);
+    expect(text).toContain('---\n\nhello\n');
+    const blank = await addSource(
+      git,
+      dir,
+      { text: 'other', title: 'Other', note: '   ' },
+      'note',
+      now,
+    );
+    if (!blank.ok) throw new Error(blank.message);
+    expect(await fs.readFile(path.join(dir, blank.path), 'utf8')).not.toMatch(
+      /^note:/m,
+    );
+    const rows = await listSources(dir, null);
+    expect(rows.map((s) => [s.path, s.note])).toEqual([
+      ['sources/2026-11-03-note.md', 'From the kickoff call; rough'],
+      ['sources/2026-11-03-other.md', null],
+    ]);
+  });
+
   it('copies the original beside a converted file', async () => {
     const f = path.join(root, 'Kickoff.vtt');
     await fs.writeFile(f, VTT);
@@ -468,6 +502,21 @@ describe('secret scan at drop time', () => {
     expect(f.reason).toBe('secret');
     expect(await listSources(dir, null)).toEqual([]);
     expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+
+  it('refuses a note that holds a credential', async () => {
+    const r = await addSource(
+      git,
+      dir,
+      {
+        text: 'Plain text\n',
+        title: 'Notes',
+        note: 'token ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0',
+      },
+      'note',
+    );
+    expect(r).toMatchObject({ ok: false, reason: 'secret' });
+    expect(await listSources(dir, null)).toEqual([]);
   });
 });
 

@@ -8,6 +8,8 @@ export type BrainAction =
   | 'digest'
   | 'ask'
   | 'drop'
+  /** The dropped files sent in, with their types and notes. */
+  | 'add'
   | 'paste'
   | 'resolve'
   | 'resume'

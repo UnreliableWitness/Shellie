@@ -975,10 +975,18 @@ describe('tabs and focus', () => {
     fireEvent.drop(screen.getByLabelText(/Acme brain, drop files/), {
       dataTransfer: { files: [file] },
     });
+    await userEvent.type(
+      await screen.findByLabelText('Note for notes.vtt'),
+      'Weekly call',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add 1 file' }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         channel: 'brain:addFiles',
-        args: ['b1', [{ path: '/dl/notes.vtt', type: 'transcript' }]],
+        args: [
+          'b1',
+          [{ path: '/dl/notes.vtt', type: 'transcript', note: 'Weekly call' }],
+        ],
       }),
     );
   });

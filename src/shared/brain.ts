@@ -138,6 +138,8 @@ export type BrainSourceRow = {
   original: string | null;
   /** What the file holds, in one line; null for wiki pages and older sources. */
   contents: string | null;
+  /** What the person who added it said about it, or null. */
+  note: string | null;
 };
 export type BrainHealth = {
   state: BrainState | null;

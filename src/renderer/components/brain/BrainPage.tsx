@@ -217,6 +217,11 @@ export function BrainPage({
           {source.contents && (
             <p className="brain-page-lead">{source.contents}</p>
           )}
+          {source.note && (
+            <blockquote className="brain-source-note" aria-label="Note">
+              <span className="muted small">Note</span> {source.note}
+            </blockquote>
+          )}
           {source.original && (
             <div className="brain-chips">
               <span className="muted small">Original</span>

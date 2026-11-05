@@ -73,6 +73,7 @@ describe('BrainWiki', () => {
           captured: true,
           original: 'sources/2026-11-01-kickoff.pptx',
           contents: '12 slides',
+          note: 'Kickoff deck; slide 7 pricing is outdated',
         },
       ],
       'brain:read': (_id, rel) => ({ text: pageText(rel) }),
@@ -113,6 +114,9 @@ describe('BrainWiki', () => {
     expect(await screen.findByText('Kickoff body.')).toBeInTheDocument();
     expect(screen.getByText('deck')).toBeInTheDocument();
     expect(screen.getByText('12 slides')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note')).toHaveTextContent(
+      'Kickoff deck; slide 7 pricing is outdated',
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Database' }),
