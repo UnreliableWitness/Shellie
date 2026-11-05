@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { AddSourceResult } from '../../../shared/brain';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { brainJob, brainView } from '../../test-helpers/brainFixture';
@@ -11,7 +12,11 @@ const file = (name: string, path = `/dl/${name}`) =>
 const def = { id: 'bt1', kind: 'claude' as const, label: 'Brain' };
 
 beforeEach(() =>
-  useStore.setState({ notices: [], screen: { kind: 'brain', brainId: 'b1' } }),
+  useStore.setState({
+    notices: [],
+    screen: { kind: 'brain', brainId: 'b1' },
+    brainPending: {},
+  }),
 );
 
 describe('BrainInbox', () => {
@@ -96,6 +101,42 @@ describe('BrainInbox', () => {
           ],
         ],
       }),
+    );
+  });
+
+  it('keeps waiting files across a remount, keeps files dropped during an add, and reports a file with no path', async () => {
+    let answer: (r: AddSourceResult[]) => void = () => undefined;
+    const a = installFakeApi({
+      'brain:addFiles': () => new Promise((res) => (answer = res)),
+    });
+    const { unmount } = render(<BrainInbox brain={brainView()} />);
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('a.docx')] },
+    });
+    await userEvent.type(
+      await screen.findByLabelText('Note for a.docx'),
+      'first',
+    );
+    unmount();
+    render(<BrainInbox brain={brainView()} />);
+    expect(screen.getByLabelText('Note for a.docx')).toHaveValue('first');
+    await userEvent.click(screen.getByRole('button', { name: 'Add 1 file' }));
+    expect(screen.getByLabelText('Note for a.docx')).toBeDisabled();
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('b.docx'), file('ghost.png', '')] },
+    });
+    expect(
+      await screen.findByText('ghost.png: not a file on disk'),
+    ).toBeInTheDocument();
+    answer([
+      { ok: true, path: 'sources/a.md', images: 0, warnings: [], contents: '' },
+    ]);
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Note for a.docx')).toBeNull(),
+    );
+    expect(screen.getByLabelText('Note for b.docx')).toBeInTheDocument();
+    expect(a.calls.filter((c) => c.channel === 'brain:addFiles')).toHaveLength(
+      1,
     );
   });
 

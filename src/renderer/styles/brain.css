@@ -57,6 +57,11 @@
 .brain-paste textarea {
   resize: vertical;
 }
+.brain-dropzone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .brain-pending {
   display: flex;
   flex-direction: column;

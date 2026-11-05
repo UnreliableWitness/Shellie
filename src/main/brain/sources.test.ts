@@ -515,8 +515,23 @@ describe('secret scan at drop time', () => {
       },
       'note',
     );
-    expect(r).toMatchObject({ ok: false, reason: 'secret' });
+    expect(r).toEqual({
+      ok: false,
+      reason: 'secret',
+      message:
+        'the note looks like it holds a GitHub token; remove it and add it again',
+    });
     expect(await listSources(dir, null)).toEqual([]);
+    // A credential in the file keeps the file's own line number.
+    const file = path.join(root, 'conn.md');
+    await fs.writeFile(
+      file,
+      '# Connection\n\nServer=db;Password=Sup3rSecretValue;Database=x\n',
+    );
+    const f = await addSource(git, dir, { file, note: 'From ops' }, 'doc');
+    expect(f).toMatchObject({ ok: false, reason: 'secret' });
+    if (f.ok) throw new Error('unexpected');
+    expect(f.message).toMatch(/^conn\.md: looks like it holds a .* \(line 3\)/);
   });
 });
 

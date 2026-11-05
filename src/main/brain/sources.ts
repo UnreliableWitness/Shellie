@@ -131,21 +131,28 @@ export async function addSource(
     contents = describeContents(body, 0, 'txt');
   }
 
-  // A credential never lands in the brain: git would keep it for good. The note is scanned with the body.
-  const secrets = findSecrets(note ? `${note}\n${body}` : body);
+  // A credential never lands in the brain: git would keep it for good. The note is scanned on its own, so a line
+  // number always counts the file's text.
+  const file =
+    'file' in input
+      ? {
+          name: path.basename(input.file),
+          converted: !/\.(md|txt)$/i.test(input.file),
+        }
+      : undefined;
+  const inNote = note ? findSecrets(note) : [];
+  if (inNote.length)
+    return {
+      ok: false,
+      reason: 'secret',
+      message: `${file ? `${file.name}: ` : ''}the note looks like it holds a ${inNote[0].kind}; remove it and add it again`,
+    };
+  const secrets = findSecrets(body);
   if (secrets.length)
     return {
       ok: false,
       reason: 'secret',
-      message: secretMessage(
-        secrets,
-        'file' in input
-          ? {
-              name: path.basename(input.file),
-              converted: !/\.(md|txt)$/i.test(input.file),
-            }
-          : undefined,
-      ),
+      message: secretMessage(secrets, file),
     };
 
   // Duplicate check, name choice and commit in one go per brain: concurrent adds never take the same name.

@@ -30,6 +30,7 @@ export function PendingFiles({ drop }: { drop: BrainDrop }) {
               className="field"
               aria-label={`Type of ${f.name}`}
               value={f.type}
+              disabled={adding}
               onChange={(e) => setType(f.path, e.target.value as SourceType)}
             >
               {SOURCE_TYPES.map((t) => (
@@ -43,12 +44,14 @@ export function PendingFiles({ drop }: { drop: BrainDrop }) {
               aria-label={`Note for ${f.name}`}
               placeholder={NOTE_HINT}
               value={f.note}
+              disabled={adding}
               onChange={(e) => setNote(f.path, e.target.value)}
             />
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               aria-label={`Remove ${f.name}`}
+              disabled={adding}
               onClick={() => remove(f.path)}
             >
               ×

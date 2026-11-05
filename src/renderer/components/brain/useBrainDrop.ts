@@ -1,7 +1,7 @@
 import { useState, type DragEvent } from 'react';
 import type { AddSourceResult, SourceType } from '../../../shared/brain';
 import { api, tryInvoke } from '../../api';
-import { useStore } from '../../store';
+import { useStore, type BrainPendingFile } from '../../store';
 import { trackBrain } from './brainActions';
 
 /** The same rule as main's `guessSourceType`: by extension, not by content. */
@@ -17,13 +17,7 @@ export const SOURCE_TYPES: SourceType[] = [
   'sow',
 ];
 
-/** A dropped file waiting for its type and note before it goes into the brain. */
-export type PendingFile = {
-  path: string;
-  name: string;
-  type: SourceType;
-  note: string;
-};
+export type PendingFile = BrainPendingFile;
 
 const failures = (results: AddSourceResult[]) =>
   results.flatMap((r) => (r.ok ? [] : [r.message]));
@@ -39,34 +33,48 @@ export const notesOf = (results: AddSourceResult[]) =>
     ];
   });
 
+const EMPTY: PendingFile[] = [];
+
 /**
- * Files dropped (or chosen) for a brain wait in `pending`, each with a type and a note the person can set, until
- * `add` sends them to `brain:addFiles`. `dropProps` go on the drop target, `over` is true while a drag is above it,
- * `problems` are what could not be added, `notes` what was added and what its conversion left out.
+ * Files dropped (or chosen) for a brain wait in `pending` (kept in the store per brain, so they survive a tab or
+ * screen switch), each with a type and a note the person can set, until `add` sends them to `brain:addFiles`.
+ * `dropProps` go on the drop target, `over` is true while a drag is above it, `problems` are what could not be
+ * added, `notes` what was added and what its conversion left out.
  */
 export function useBrainDrop(brainId: string) {
   const notify = useStore((s) => s.notify);
+  const pending = useStore((s) => s.brainPending[brainId] ?? EMPTY);
+  const setBrainPending = useStore((s) => s.setBrainPending);
+  const setPending = (update: (p: PendingFile[]) => PendingFile[]) =>
+    setBrainPending(brainId, update);
   const [over, setOver] = useState(false);
-  const [pending, setPending] = useState<PendingFile[]>([]);
   const [adding, setAdding] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
 
-  /** Queues files; a path already waiting is not queued twice. */
+  /** Queues files; a path already waiting is not queued twice, a File with no path on disk is reported. */
   const addFiles = (files: File[]) => {
     if (files.length === 0) return;
     trackBrain('drop');
+    const named = files.map((f) => ({
+      name: f.name,
+      path: api().pathForFile(f),
+    }));
+    const noPath = named.filter((f) => !f.path);
     setPending((p) => {
       const have = new Set(p.map((f) => f.path));
       const next = [...p];
-      for (const f of files) {
-        const path = api().pathForFile(f);
-        if (have.has(path)) continue;
-        have.add(path);
-        next.push({ path, name: f.name, type: guessType(f.name), note: '' });
+      for (const f of named) {
+        if (!f.path || have.has(f.path)) continue;
+        have.add(f.path);
+        next.push({ ...f, type: guessType(f.name), note: '' });
       }
       return next;
     });
+    if (noPath.length)
+      setProblems(
+        noPath.map((f) => `${f.name || 'A file'}: not a file on disk`),
+      );
   };
   const setType = (path: string, type: SourceType) =>
     setPending((p) => p.map((f) => (f.path === path ? { ...f, type } : f)));
@@ -75,7 +83,10 @@ export function useBrainDrop(brainId: string) {
   const remove = (path: string) =>
     setPending((p) => p.filter((f) => f.path !== path));
 
-  /** Sends every pending file; the list is cleared when main answered, kept when the call itself failed. */
+  /**
+   * Sends every pending file. Only the files sent leave the list when main answered (files dropped meanwhile stay);
+   * the whole list stays when the call itself failed.
+   */
   const add = async () => {
     if (pending.length === 0 || adding) return;
     trackBrain('add');
@@ -92,7 +103,8 @@ export function useBrainDrop(brainId: string) {
     );
     setAdding(false);
     if (!results) return;
-    setPending([]);
+    const sent = new Set(rows.map((r) => r.path));
+    setPending((p) => p.filter((f) => !sent.has(f.path)));
     setProblems(failures(results));
     setNotes(notesOf(results));
   };

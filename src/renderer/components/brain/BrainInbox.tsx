@@ -176,29 +176,31 @@ export function BrainInbox({
   return (
     <section className="brain-card" aria-labelledby="brain-inbox-h">
       <h2 id="brain-inbox-h">Inbox</h2>
-      <div
-        data-dropzone
-        className={over ? 'brain-drop is-over' : 'brain-drop'}
-        {...dropProps}
-      >
-        <span>Drop files here</span>
-        <span className="muted small">
-          PDF, Word, PowerPoint, Excel, draw.io, VTT transcripts, Markdown, text
-        </span>
-        <label className="btn btn-sm">
-          Choose files
-          <input
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              addFiles(Array.from(e.target.files ?? []));
-              e.target.value = '';
-            }}
-          />
-        </label>
+      <div className="brain-dropzone" {...dropProps}>
+        <div
+          data-dropzone
+          className={over ? 'brain-drop is-over' : 'brain-drop'}
+        >
+          <span>Drop files here</span>
+          <span className="muted small">
+            PDF, Word, PowerPoint, Excel, draw.io, VTT transcripts, Markdown,
+            text
+          </span>
+          <label className="btn btn-sm">
+            Choose files
+            <input
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+        <PendingFiles drop={drop} />
       </div>
-      <PendingFiles drop={drop} />
       <form
         className="brain-paste"
         onSubmit={(e) => {
