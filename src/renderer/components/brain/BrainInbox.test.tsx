@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { AddSourceResult } from '../../../shared/brain';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { brainJob, brainView } from '../../test-helpers/brainFixture';
@@ -11,11 +12,15 @@ const file = (name: string, path = `/dl/${name}`) =>
 const def = { id: 'bt1', kind: 'claude' as const, label: 'Brain' };
 
 beforeEach(() =>
-  useStore.setState({ notices: [], screen: { kind: 'brain', brainId: 'b1' } }),
+  useStore.setState({
+    notices: [],
+    screen: { kind: 'brain', brainId: 'b1' },
+    brainPending: {},
+  }),
 );
 
 describe('BrainInbox', () => {
-  it('dropping files calls brain:addFiles with guessed types', async () => {
+  it('dropped files wait with guessed types until Add sends them', async () => {
     const a = installFakeApi({
       'brain:addFiles': () => [
         { ok: true, path: 'sources/x', images: 0, warnings: [], contents: '' },
@@ -29,6 +34,14 @@ describe('BrainInbox', () => {
         files: [file('kickoff.vtt'), file('plan.pptx'), file('sow.docx')],
       },
     });
+    const list = await screen.findByRole('form', { name: 'Files to add' });
+    expect(list).toHaveTextContent('kickoff.vtt');
+    expect(screen.getByLabelText('Type of kickoff.vtt')).toHaveValue(
+      'transcript',
+    );
+    expect(screen.getByLabelText('Type of plan.pptx')).toHaveValue('deck');
+    expect(a.calls.filter((c) => c.channel === 'brain:addFiles')).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Add 3 files' }));
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:addFiles',
@@ -41,6 +54,89 @@ describe('BrainInbox', () => {
           ],
         ],
       }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('form', { name: 'Files to add' })).toBeNull(),
+    );
+  });
+
+  it('takes a type and a note per file, drops a removed one, and sends them with Enter', async () => {
+    const a = installFakeApi({
+      'brain:addFiles': () => [
+        { ok: true, path: 'sources/x', images: 0, warnings: [], contents: '' },
+      ],
+    });
+    render(<BrainInbox brain={brainView()} />);
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('sow.docx'), file('old.docx')] },
+    });
+    // The same path dropped again is not listed twice.
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('sow.docx')] },
+    });
+    expect(await screen.findAllByLabelText(/^Type of /)).toHaveLength(2);
+    await userEvent.selectOptions(
+      screen.getByLabelText('Type of sow.docx'),
+      'sow',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove old.docx' }),
+    );
+    expect(screen.queryByLabelText('Type of old.docx')).toBeNull();
+    await userEvent.type(
+      screen.getByLabelText('Note for sow.docx'),
+      ' Signed version; supersedes the draft {enter}',
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:addFiles',
+        args: [
+          'b1',
+          [
+            {
+              path: '/dl/sow.docx',
+              type: 'sow',
+              note: 'Signed version; supersedes the draft',
+            },
+          ],
+        ],
+      }),
+    );
+  });
+
+  it('keeps waiting files across a remount, keeps files dropped during an add, and reports a file with no path', async () => {
+    let answer: (r: AddSourceResult[]) => void = () => undefined;
+    const a = installFakeApi({
+      'brain:addFiles': () => new Promise((res) => (answer = res)),
+    });
+    const { unmount } = render(<BrainInbox brain={brainView()} />);
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('a.docx')] },
+    });
+    await userEvent.type(
+      await screen.findByLabelText('Note for a.docx'),
+      'first',
+    );
+    unmount();
+    render(<BrainInbox brain={brainView()} />);
+    expect(screen.getByLabelText('Note for a.docx')).toHaveValue('first');
+    await userEvent.click(screen.getByRole('button', { name: 'Add 1 file' }));
+    expect(screen.getByLabelText('Note for a.docx')).toBeDisabled();
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('b.docx'), file('ghost.png', '')] },
+    });
+    expect(
+      await screen.findByText('ghost.png: not a file on disk'),
+    ).toBeInTheDocument();
+    answer([
+      { ok: true, path: 'sources/a.md', images: 0, warnings: [], contents: '' },
+    ]);
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Note for a.docx')).toBeNull(),
+    );
+    expect(screen.getByLabelText('Note for b.docx')).toBeInTheDocument();
+    expect(a.calls.filter((c) => c.channel === 'brain:addFiles')).toHaveLength(
+      1,
     );
   });
 
@@ -67,6 +163,9 @@ describe('BrainInbox', () => {
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: { files: [file('plan.pptx'), file('sow.docx')] },
     });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add 2 files' }),
+    );
     const added = await screen.findByLabelText('Added');
     expect(added).toHaveTextContent(
       'Added 2026-11-04-plan.md · 12 slides · 3 pictures: Kick-off',
@@ -92,6 +191,9 @@ describe('BrainInbox', () => {
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: { files: [file('kickoff.vtt')] },
     });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add 1 file' }),
+    );
     expect(await screen.findByText(/already in the brain/)).toBeInTheDocument();
   });
 
@@ -117,6 +219,29 @@ describe('BrainInbox', () => {
       }),
     );
     expect(screen.getByLabelText('Text')).toHaveValue('');
+  });
+
+  it('sends the note with pasted text and clears it', async () => {
+    const a = installFakeApi({
+      'brain:addText': () => ({
+        ok: true,
+        path: 'sources/n.md',
+        images: 0,
+        warnings: [],
+        contents: '',
+      }),
+    });
+    render(<BrainInbox brain={brainView()} />);
+    await userEvent.type(screen.getByLabelText('Text'), 'we agreed on X');
+    await userEvent.type(screen.getByLabelText('Note'), ' From memory, check ');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:addText',
+        args: ['b1', 'we agreed on X', '', 'note', 'From memory, check'],
+      }),
+    );
+    expect(screen.getByLabelText('Note')).toHaveValue('');
   });
 
   it('lists jobs newest first with Retry and Continue in terminal', async () => {
@@ -169,6 +294,7 @@ describe('BrainInbox', () => {
           captured: false,
           original: null,
           contents: null,
+          note: null,
         },
         {
           path: 'sources/2026-11-01-kickoff.md',
@@ -177,6 +303,7 @@ describe('BrainInbox', () => {
           captured: true,
           original: null,
           contents: null,
+          note: null,
         },
         {
           path: 'sources/wiki/Home.md',
@@ -185,6 +312,7 @@ describe('BrainInbox', () => {
           captured: false,
           original: null,
           contents: null,
+          note: null,
         },
       ],
       'brain:run': () => brainJob({ status: 'queued' }),

@@ -10,11 +10,10 @@ import { api, tryInvoke } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
-import { useBrainDrop } from './useBrainDrop';
+import { NOTE_HINT, PendingFiles } from './PendingFiles';
+import { SOURCE_TYPES, useBrainDrop } from './useBrainDrop';
 
 export { guessType } from './useBrainDrop';
-
-const TYPES: SourceType[] = ['doc', 'note', 'transcript', 'deck', 'sow'];
 
 const newestFirst = (jobs: BrainJob[]) =>
   [...jobs].sort((a, b) =>
@@ -148,22 +147,28 @@ export function BrainInbox({
   onTerminal?: (def: TerminalDef) => void;
 }) {
   const notify = useStore((s) => s.notify);
-  const { over, problems, setProblems, notes, addFiles, dropProps } =
-    useBrainDrop(brain.id);
+  const drop = useBrainDrop(brain.id);
+  const { over, problems, setProblems, notes, addFiles, dropProps } = drop;
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [type, setType] = useState<SourceType>('note');
+  const [note, setNote] = useState('');
 
   const paste = async () => {
     trackBrain('paste');
+    const n = note.trim();
     const result = await tryInvoke(
-      () => api().invoke('brain:addText', brain.id, text, title.trim(), type),
+      () =>
+        n
+          ? api().invoke('brain:addText', brain.id, text, title.trim(), type, n)
+          : api().invoke('brain:addText', brain.id, text, title.trim(), type),
       notify,
     );
     if (!result) return;
     if (result.ok) {
       setText('');
       setTitle('');
+      setNote('');
       setProblems([]);
     } else setProblems([result.message]);
   };
@@ -171,27 +176,30 @@ export function BrainInbox({
   return (
     <section className="brain-card" aria-labelledby="brain-inbox-h">
       <h2 id="brain-inbox-h">Inbox</h2>
-      <div
-        data-dropzone
-        className={over ? 'brain-drop is-over' : 'brain-drop'}
-        {...dropProps}
-      >
-        <span>Drop files here</span>
-        <span className="muted small">
-          PDF, Word, PowerPoint, Excel, draw.io, VTT transcripts, Markdown, text
-        </span>
-        <label className="btn btn-sm">
-          Choose files
-          <input
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              void addFiles(Array.from(e.target.files ?? []));
-              e.target.value = '';
-            }}
-          />
-        </label>
+      <div className="brain-dropzone" {...dropProps}>
+        <div
+          data-dropzone
+          className={over ? 'brain-drop is-over' : 'brain-drop'}
+        >
+          <span>Drop files here</span>
+          <span className="muted small">
+            PDF, Word, PowerPoint, Excel, draw.io, VTT transcripts, Markdown,
+            text
+          </span>
+          <label className="btn btn-sm">
+            Choose files
+            <input
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+        <PendingFiles drop={drop} />
       </div>
       <form
         className="brain-paste"
@@ -213,12 +221,19 @@ export function BrainInbox({
           value={type}
           onChange={(e) => setType(e.target.value as SourceType)}
         >
-          {TYPES.map((t) => (
+          {SOURCE_TYPES.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
         </select>
+        <input
+          className="field brain-paste-note"
+          aria-label="Note"
+          placeholder={NOTE_HINT}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
         <textarea
           className="field"
           aria-label="Text"

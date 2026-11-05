@@ -199,8 +199,47 @@ describe('brain handlers', () => {
         sizeKb: '<10',
         outcome: 'ok',
         images: '0',
+        noted: false,
       },
     ]);
+  });
+
+  it('a note given with pasted text or a file lands in the source frontmatter', async () => {
+    const v = await h['brain:create'](NEW);
+    const t = await h['brain:addText'](
+      v.id,
+      'Kick-off notes',
+      'Kick-off',
+      'note',
+      'Rough notes, the dates are guesses',
+    );
+    if (!t.ok) throw new Error(t.message);
+    expect(await fs.readFile(path.join(v.path, t.path), 'utf8')).toContain(
+      'note: Rough notes, the dates are guesses\n',
+    );
+    const file = path.join(userData, 'sow.md');
+    await fs.writeFile(file, '# SOW\n\nbody\n');
+    const [f] = await h['brain:addFiles'](v.id, [
+      {
+        path: file,
+        type: 'sow',
+        note: '  Signed version; supersedes the draft  ',
+      },
+    ]);
+    if (!f.ok) throw new Error(f.message);
+    expect(await fs.readFile(path.join(v.path, f.path), 'utf8')).toContain(
+      'note: Signed version; supersedes the draft\n',
+    );
+    const rows = await h['brain:sources'](v.id);
+    expect(rows.map((r) => r.note).sort()).toEqual([
+      'Rough notes, the dates are guesses',
+      'Signed version; supersedes the draft',
+    ]);
+    expect(
+      events
+        .filter((e) => e[0] === 'brain.source.added')
+        .map((e) => (e[1] as { noted: boolean }).noted),
+    ).toEqual([true, true]);
   });
 
   it('addFiles reports unsupported files without enqueueing', async () => {
@@ -225,6 +264,7 @@ describe('brain handlers', () => {
           sizeKb: '<10',
           outcome: 'unsupported',
           images: '0',
+          noted: false,
         },
       ],
       [
@@ -235,6 +275,7 @@ describe('brain handlers', () => {
           sizeKb: '<10',
           outcome: 'ok',
           images: '0',
+          noted: false,
         },
       ],
     ]);

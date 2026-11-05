@@ -619,13 +619,22 @@ export type Channels = {
     args: [connectionId: string, project: string, wikiId: string];
     result: AdoWikiPage[];
   };
-  /** Each file that is added is queued as a capture. */
+  /** Each file that is added is queued as a capture; `note` is what the person says about the file. */
   'brain:addFiles': {
-    args: [brainId: string, files: { path: string; type: SourceType }[]];
+    args: [
+      brainId: string,
+      files: { path: string; type: SourceType; note?: string }[],
+    ];
     result: AddSourceResult[];
   };
   'brain:addText': {
-    args: [brainId: string, text: string, title: string, type: SourceType];
+    args: [
+      brainId: string,
+      text: string,
+      title: string,
+      type: SourceType,
+      note?: string,
+    ];
     result: AddSourceResult;
   };
   /** Mirrors the wiki; queues a sync when `syncAfterRefresh` is on and pages changed. */

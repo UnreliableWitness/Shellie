@@ -45,6 +45,23 @@ describe('sourceFile', () => {
     expect(parseSourceFrontmatter(text)).toEqual(fm);
   });
 
+  it('keeps a note through the round trip and drops a blank one', () => {
+    const fm = {
+      title: 'Deck',
+      source_url: 'deck.pptx',
+      ingested_at: '2026-11-05T10:00:00.000Z',
+      content_type: 'deck' as const,
+      sha256: sha256('x'),
+      note: 'Kickoff deck: slide 7 pricing is outdated',
+    };
+    const text = renderSource(fm, 'Body\n');
+    expect(text).toContain('note: "Kickoff deck: slide 7 pricing is outdated"');
+    expect(parseSourceFrontmatter(text)).toEqual(fm);
+    expect(
+      parseSourceFrontmatter(renderSource({ ...fm, note: '' }, 'Body\n')),
+    ).toEqual({ ...fm, note: undefined });
+  });
+
   it('returns null without usable frontmatter', () => {
     expect(parseSourceFrontmatter('just text')).toBeNull();
     expect(parseSourceFrontmatter('---\ntitle: x\n---\n\nbody')).toBeNull();

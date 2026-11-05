@@ -50,9 +50,56 @@
   grid-template-columns: 1fr auto;
   gap: 8px;
 }
-.brain-paste textarea {
+.brain-paste textarea,
+.brain-paste-note {
   grid-column: 1 / -1;
+}
+.brain-paste textarea {
   resize: vertical;
+}
+.brain-dropzone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brain-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+}
+.brain-pending .list {
+  margin: 0;
+}
+.brain-pending-row {
+  gap: 8px;
+}
+.brain-pending-name {
+  flex: 0 1 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brain-pending-note {
+  flex: 1;
+  min-width: 160px;
+}
+.brain-pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brain-source-note {
+  margin: 8px 0 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-hover);
+  border-radius: var(--radius);
+}
+.brain-file-note {
+  font-style: italic;
 }
 .brain-paste .btn {
   justify-self: start;

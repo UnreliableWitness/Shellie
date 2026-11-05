@@ -17,6 +17,7 @@ const row = (
   captured,
   original: null,
   contents: null,
+  note: null,
 });
 
 describe('localTarget', () => {

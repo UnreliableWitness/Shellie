@@ -9,6 +9,7 @@ import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
 import { useBrainPages } from './BrainWiki';
 import { PageCard, PageSections } from './PageCards';
+import { PendingFiles } from './PendingFiles';
 import { useBrainDrop } from './useBrainDrop';
 import { useBrainNav } from './useBrainNav';
 
@@ -26,7 +27,8 @@ export function BrainTab({
   onTerminal: (def: TerminalDef) => void;
 }) {
   const go = useStore((s) => s.go);
-  const { over, problems, notes, dropProps } = useBrainDrop(brain.id);
+  const drop = useBrainDrop(brain.id);
+  const { over, problems, notes, dropProps } = drop;
   const { rows, sources } = useBrainPages(brain.id);
   const nav = useBrainNav();
   const [searching, setSearching] = useState(false);
@@ -64,6 +66,7 @@ export function BrainTab({
         </button>
         <span className="muted small">Drop files here to add them</span>
       </div>
+      <PendingFiles drop={drop} />
       {problems.length > 0 && (
         <ul className="brain-problems small" role="alert">
           {problems.map((p, i) => (

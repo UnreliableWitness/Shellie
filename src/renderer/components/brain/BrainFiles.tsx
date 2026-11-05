@@ -149,6 +149,11 @@ export function BrainFiles({
                 {rows.get(f.path)?.contents}
               </span>
             )}
+            {rows.get(f.path)?.note && (
+              <span className="docs-file-contents brain-file-note small">
+                {rows.get(f.path)?.note}
+              </span>
+            )}
           </button>
         ))}
       </aside>

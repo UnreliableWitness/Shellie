@@ -357,6 +357,7 @@ export function createBrainHandlers(
     format: string,
     bytes: number,
     r: AddSourceResult,
+    noted: boolean,
   ) =>
     d.event('brain.source.added', {
       type,
@@ -364,6 +365,7 @@ export function createBrainHandlers(
       sizeKb: sizeBucket(bytes),
       outcome: r.ok ? 'ok' : r.reason,
       images: imagesBucket(r.ok ? r.images : 0),
+      noted,
     });
 
   const mirror = async (b: Brain): Promise<RefreshResult> => {
@@ -521,7 +523,7 @@ export function createBrainHandlers(
         const r = await addSource(
           d.git,
           b.path,
-          { file: f.path },
+          { file: f.path, note: f.note },
           type,
           undefined,
           { rasterize: d.rasterize },
@@ -530,18 +532,18 @@ export function createBrainHandlers(
           (s) => s.size,
           () => 0,
         );
-        sourceAdded(type, formatOf(f.path), bytes, r);
+        sourceAdded(type, formatOf(f.path), bytes, r, !!f.note?.trim());
         if (r.ok) d.runner.enqueue(id, 'capture', r.path);
         out.push(r);
       }
       changed(id);
       return out;
     },
-    'brain:addText': async (id, text, title, type) => {
+    'brain:addText': async (id, text, title, type, note) => {
       const b = live(id);
       const t = SourceTypeSchema.parse(type);
-      const r = await addSource(d.git, b.path, { text, title }, t);
-      sourceAdded(t, 'text', Buffer.byteLength(text), r);
+      const r = await addSource(d.git, b.path, { text, title, note }, t);
+      sourceAdded(t, 'text', Buffer.byteLength(text), r, !!note?.trim());
       if (r.ok) d.runner.enqueue(id, 'capture', r.path);
       changed(id);
       return r;

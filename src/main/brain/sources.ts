@@ -25,9 +25,10 @@ import {
   sourceFileName,
 } from './sourceFile';
 
+/** `note` is what the person adding the source says about it (context, weight, what is outdated); blank is dropped. */
 export type AddSourceInput =
-  | { file: string }
-  | { text: string; title: string; url?: string };
+  | { file: string; note?: string }
+  | { text: string; title: string; url?: string; note?: string };
 export type { AddSourceResult };
 
 type SourceEntry = {
@@ -77,6 +78,7 @@ export async function addSource(
   let images: ConvertedImage[] = [];
   let warnings: string[] = [];
   let contents: string;
+  const note = input.note?.trim() || undefined;
 
   if ('file' in input) {
     const base = path.basename(input.file);
@@ -129,21 +131,28 @@ export async function addSource(
     contents = describeContents(body, 0, 'txt');
   }
 
-  // A credential never lands in the brain: git would keep it for good.
+  // A credential never lands in the brain: git would keep it for good. The note is scanned on its own, so a line
+  // number always counts the file's text.
+  const file =
+    'file' in input
+      ? {
+          name: path.basename(input.file),
+          converted: !/\.(md|txt)$/i.test(input.file),
+        }
+      : undefined;
+  const inNote = note ? findSecrets(note) : [];
+  if (inNote.length)
+    return {
+      ok: false,
+      reason: 'secret',
+      message: `${file ? `${file.name}: ` : ''}the note looks like it holds a ${inNote[0].kind}; remove it and add it again`,
+    };
   const secrets = findSecrets(body);
   if (secrets.length)
     return {
       ok: false,
       reason: 'secret',
-      message: secretMessage(
-        secrets,
-        'file' in input
-          ? {
-              name: path.basename(input.file),
-              converted: !/\.(md|txt)$/i.test(input.file),
-            }
-          : undefined,
-      ),
+      message: secretMessage(secrets, file),
     };
 
   // Duplicate check, name choice and commit in one go per brain: concurrent adds never take the same name.
@@ -158,6 +167,7 @@ export async function addSource(
       images,
       warnings,
       contents,
+      note,
     }),
   );
 }
@@ -177,6 +187,7 @@ async function writeSource(
     images: ConvertedImage[];
     warnings: string[];
     contents: string;
+    note?: string;
   },
 ): Promise<AddSourceResult> {
   const { title, sourceUrl, hash, slugBase, original, images, warnings } = src;
@@ -229,6 +240,7 @@ async function writeSource(
           content_type: type,
           sha256: hash,
           contents: src.contents,
+          note: src.note,
         },
         body,
       ),
@@ -290,6 +302,7 @@ export async function listSources(
       captured: state?.captured[s.path] != null,
       original: sibling ? `${path.posix.dirname(s.path)}/${sibling}` : null,
       contents: s.fm.contents ?? null,
+      note: s.fm.note ?? null,
     });
   }
   return rows.sort(

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
+import type { SourceType } from '../shared/brain';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { AppSettings } from '../shared/usage';
 import type {
@@ -94,6 +95,14 @@ export type Screen =
   | { kind: 'secrets'; repoId?: string }
   | { kind: 'secrets-import'; repoId: string };
 
+/** A file dropped on a brain, waiting for its type and note before it goes in. */
+export type BrainPendingFile = {
+  path: string;
+  name: string;
+  type: SourceType;
+  note: string;
+};
+
 type Store = {
   screen: Screen;
   /** Where Cancel and Escape on New task and Finish return to. */
@@ -121,6 +130,12 @@ type Store = {
   reviewByTask: Record<string, ReviewView>;
   /** HTML files open in a tab, per task, in tab order. */
   viewsByTask: Record<string, HtmlView[]>;
+  /** Files dropped on a brain and not sent in yet, per brain: they outlive the tab or screen they were dropped on. */
+  brainPending: Record<string, BrainPendingFile[]>;
+  setBrainPending(
+    brainId: string,
+    update: (files: BrainPendingFile[]) => BrainPendingFile[],
+  ): void;
   focus: boolean;
   navCollapsed: boolean;
   /** The left nav's width in px when not collapsed (#160). */
@@ -213,6 +228,14 @@ export const useStore = create<Store>((set, get) => ({
   docTarget: {},
   reviewByTask: {},
   viewsByTask: {},
+  brainPending: {},
+  setBrainPending: (brainId, update) =>
+    set((s) => ({
+      brainPending: {
+        ...s.brainPending,
+        [brainId]: update(s.brainPending[brainId] ?? []),
+      },
+    })),
   discardTaskId: null,
   askDiscard: (taskId) => {
     get().select(taskId);
