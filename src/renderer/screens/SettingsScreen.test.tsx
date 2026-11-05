@@ -431,7 +431,6 @@ describe('SettingsScreen', () => {
     const stored: AppSettings = {
       version: 1 as const,
       receiverPort: 4319,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
@@ -489,7 +488,6 @@ describe('SettingsScreen', () => {
     expect(calls.find((c) => c.channel === 'settings:save')?.args[0]).toEqual({
       version: 1,
       receiverPort: 4319,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: false,
@@ -527,7 +525,6 @@ describe('SettingsScreen', () => {
     let stored: AppSettings = {
       version: 1 as const,
       receiverPort: 4319,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
@@ -586,7 +583,6 @@ describe('SettingsScreen', () => {
     ).toEqual({
       version: 1,
       receiverPort: 4400,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: false,
