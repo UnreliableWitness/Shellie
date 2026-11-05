@@ -133,7 +133,7 @@ beforeEach(() => {
 
 describe('HeaderBar', () => {
   it('shows Shellie, the project and the task as breadcrumb links', async () => {
-    installFakeApi();
+    const { tracked } = installFakeApi();
     render(<HeaderBar />);
     expect(crumbs()).toEqual([
       'Shellie',
@@ -145,6 +145,11 @@ describe('HeaderBar', () => {
     ).toHaveAttribute('aria-current', 'page');
     await userEvent.click(screen.getByRole('button', { name: 'DXP' }));
     expect(useStore.getState().screen).toEqual({ kind: 'project' });
+    expect(tracked).toContainEqual({
+      type: 'event',
+      name: 'project.open',
+      props: { from: 'crumb' },
+    });
   });
   it('names the task environment after the task, coloured for UAT and Production', () => {
     installFakeApi();

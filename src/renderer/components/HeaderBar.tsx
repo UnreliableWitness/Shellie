@@ -12,6 +12,7 @@ import {
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { activeConnection, useStore } from '../store';
+import { track } from '../telemetry';
 import { TaskTypeIcon } from './TaskTypeIcon';
 import { IconButton, MindMark } from './ui';
 
@@ -191,7 +192,10 @@ export function HeaderBar() {
   });
   const sprintName = useStore((s) => s.sprintName);
   const openTask = useStore((s) => s.openTask);
-  const home = () => go({ kind: 'project' });
+  const home = () => {
+    track('project.open', { from: 'crumb' });
+    go({ kind: 'project' });
+  };
 
   const crumbs: ReactNode[] = [];
   if (
