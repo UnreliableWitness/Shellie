@@ -7,6 +7,7 @@ import type {
   Connection,
   Notice,
   Repo,
+  Sprint,
   TaskView,
   WorkItemRef,
 } from '../shared/types';
@@ -72,14 +73,31 @@ export type Screen =
   /** The Agents step as a page (from Get started; Settings shows the same section inline). */
   | { kind: 'agents'; from: 'settings' | 'get-started' }
   | { kind: 'sprint' }
+  /** The active project's overview page. */
+  | { kind: 'project' }
   /** A brain: the local knowledge folder of one Azure DevOps project. */
-  | { kind: 'brain'; brainId: string }
+  | {
+      kind: 'brain';
+      brainId: string;
+      /** Where the page puts the cursor on open: the Ask box, the Wiki tab or the drop zone. */
+      focus?: 'ask' | 'wiki' | 'drop';
+    }
   | { kind: 'task' }
-  | { kind: 'new-task'; workItem?: WorkItemRef; repoId?: string }
+  | {
+      kind: 'new-task';
+      workItem?: WorkItemRef;
+      repoId?: string;
+      connectionId?: string;
+    }
   | { kind: 'setup'; taskId: string }
   | { kind: 'finish'; taskId: string }
   /** `folder` is a folder already picked, inspected when the page opens. */
-  | { kind: 'add-repo'; from: 'settings' | 'get-started'; folder?: string }
+  | {
+      kind: 'add-repo';
+      from: 'settings' | 'get-started';
+      folder?: string;
+      connectionId?: string;
+    }
   /** With `connectionId`, adds projects to that connection's organization with its stored token. */
   | { kind: 'connect'; from: 'settings' | 'get-started'; connectionId?: string }
   /**
@@ -90,7 +108,8 @@ export type Screen =
       kind: 'settings';
       section?: string;
       repoId?: string;
-      scope?: 'user' | 'repo';
+      connectionId?: string;
+      scope?: 'user' | 'project' | 'repo';
     }
   | { kind: 'secrets'; repoId?: string }
   | { kind: 'secrets-import'; repoId: string };
@@ -120,6 +139,9 @@ type Store = {
   setAttention(attention: AttentionSnapshot): void;
   /** The current sprint's name once the Sprint page has loaded it, for the breadcrumb. */
   sprintName: string | null;
+  /** The current sprint per connection, as last fetched; `at` is when (ms). */
+  sprints: Record<string, { at: number; sprint: Sprint }>;
+  setSprint(connectionId: string, sprint: Sprint): void;
   notices: Notice[];
   tabByTask: Record<string, string>;
   /** A document a terminal link asked the Docs tab to open; the nonce makes repeats count. */
@@ -223,6 +245,7 @@ export const useStore = create<Store>((set, get) => ({
   attention: {},
   setAttention: (attention) => set({ attention }),
   sprintName: null,
+  sprints: {},
   notices: [],
   tabByTask: {},
   docTarget: {},
@@ -285,6 +308,10 @@ export const useStore = create<Store>((set, get) => ({
   setConnections: (connections) => set({ connections }),
   setConnectionId: (connectionId) => set({ connectionId }),
   setSprintName: (sprintName) => set({ sprintName }),
+  setSprint: (connectionId, sprint) =>
+    set((s) => ({
+      sprints: { ...s.sprints, [connectionId]: { at: Date.now(), sprint } },
+    })),
   setTasks: (tasks) => {
     // No auto-select: the app opens on Home and only the user picks a task.
     const selected = get().selectedTaskId;

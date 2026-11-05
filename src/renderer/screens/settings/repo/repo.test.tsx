@@ -6,6 +6,7 @@ import type { ConfigSource } from '../../../../shared/repoConfig';
 import type { Repo, ShellieConfig } from '../../../../shared/types';
 import { useStore } from '../../../store';
 import { installFakeApi, noOverrides } from '../../../test-helpers/fakeApi';
+import { useWorkItemTypes } from '../../../workItemTypes';
 import { RepoScope } from '../RepoScope';
 
 const webshop: Repo = {
@@ -39,6 +40,7 @@ const conn = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 
 const baseConfig: ShellieConfig = {
@@ -69,6 +71,7 @@ function configResult(
 }
 
 beforeEach(() => {
+  useWorkItemTypes.getState().reset();
   useStore.setState({
     repos: [webshop],
     tasks: [],
@@ -216,10 +219,79 @@ describe('RepoScope categories', () => {
       screen.getByRole('checkbox', { name: 'Assign it to me if unassigned' }),
     ).toBeDisabled();
     expect(
-      screen.getAllByText('Link a connection in General first').length,
+      screen.getAllByText('Link a project in General first').length,
     ).toBeGreaterThan(0);
+    expect(document.getElementById('repo-workitems-source')).toBeNull();
     await screen.findByLabelText('Base branch');
     expect(calls.some((c) => c.channel === 'workItems:types')).toBe(false);
+  });
+
+  it('inherited repo shows the project name and Override copies the value', async () => {
+    const projectValue = {
+      moveToInProgress: false,
+      assignToMe: true,
+      stateOverrides: { Task: 'Doing' },
+    };
+    const { calls } = installFakeApi({ 'repos:config': () => configResult() });
+    const inherited: Repo = {
+      ...webshop,
+      connectionId: 'c1',
+      workItemOnStart: undefined,
+    };
+    useStore.setState({
+      repos: [inherited],
+      connections: [{ ...conn, workItemOnStart: projectValue }],
+    });
+    render(<RepoScope repo={inherited} active />);
+    const source = document.getElementById('repo-workitems-source');
+    expect(source).toHaveTextContent('Inherited from Shellie');
+    expect(
+      screen.queryByRole('checkbox', {
+        name: 'Move the work item to In Progress on start',
+      }),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Override' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'repos:setWorkItemOnStart')?.args,
+      ).toEqual(['r1', projectValue]),
+    );
+  });
+
+  it('Reset to project default calls repos:clearWorkItemOnStart', async () => {
+    const { calls } = installFakeApi({ 'repos:config': () => configResult() });
+    const overriding: Repo = { ...webshop, connectionId: 'c1' };
+    useStore.setState({ repos: [overriding], connections: [conn] });
+    render(<RepoScope repo={overriding} active />);
+    expect(document.getElementById('repo-workitems-source')).toHaveTextContent(
+      'Overridden here',
+    );
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Move the work item to In Progress on start',
+      }),
+    ).toBeEnabled();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Reset to project default' }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'repos:clearWorkItemOnStart')?.args,
+      ).toEqual(['r1']),
+    );
+  });
+
+  it("General names the repo's project", async () => {
+    installFakeApi({ 'repos:config': () => configResult() });
+    useStore.setState({ connections: [conn] });
+    render(<RepoScope repo={webshop} active />);
+    const select = screen.getByLabelText('Project for webshop');
+    expect(
+      Array.from((select as HTMLSelectElement).options).map((o) => o.text)[0],
+    ).toBe('No project');
+    expect(
+      document.getElementById('repo-general-connection'),
+    ).toHaveTextContent('Project');
   });
 
   it('Create .shellie.yml shown only without a file', async () => {

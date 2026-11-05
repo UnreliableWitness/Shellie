@@ -11,7 +11,8 @@ import {
 } from '../../shared/workspaces';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useTaskUsage } from '../hooks/useTaskUsage';
-import { activeConnection, useStore } from '../store';
+import { activeConnection, type Screen, useStore } from '../store';
+import { track } from '../telemetry';
 import { TaskTypeIcon } from './TaskTypeIcon';
 import { IconButton, MindMark } from './ui';
 
@@ -19,6 +20,22 @@ const UP = String.fromCharCode(0x2191);
 const DOWN = String.fromCharCode(0x2193);
 const DOT = String.fromCharCode(0xb7);
 const SEP = String.fromCharCode(0x203a);
+
+/** The last crumb of the pages that are not a task's own (those show the task instead). */
+const PAGE_LABEL: Partial<Record<Screen['kind'], string>> = {
+  home: 'Home',
+  project: 'Project',
+  setup: 'Setup',
+  finish: 'Finish',
+  'new-task': 'New task',
+  settings: 'Settings',
+  connect: 'Connect',
+  'get-started': 'Get started',
+  agents: 'Agents',
+  'add-repo': 'Add repository',
+  secrets: 'Secrets',
+  'secrets-import': 'Secrets',
+};
 
 /** "Task 8125 PDP dynamic redirect logic", or the name of a blank task. */
 const taskLabel = (task: TaskView): string =>
@@ -191,7 +208,10 @@ export function HeaderBar() {
   });
   const sprintName = useStore((s) => s.sprintName);
   const openTask = useStore((s) => s.openTask);
-  const home = () => go({ kind: 'sprint' });
+  const home = () => {
+    track('project.open', { from: 'crumb' });
+    go({ kind: 'project' });
+  };
 
   const crumbs: ReactNode[] = [];
   if (
@@ -230,29 +250,7 @@ export function HeaderBar() {
         </span>
       </button>,
     );
-  const page =
-    screen.kind === 'home'
-      ? 'Home'
-      : screen.kind === 'setup'
-        ? 'Setup'
-        : screen.kind === 'finish'
-          ? 'Finish'
-          : screen.kind === 'new-task'
-            ? 'New task'
-            : screen.kind === 'settings'
-              ? 'Settings'
-              : screen.kind === 'connect'
-                ? 'Connect'
-                : screen.kind === 'get-started'
-                  ? 'Get started'
-                  : screen.kind === 'agents'
-                    ? 'Agents'
-                    : screen.kind === 'add-repo'
-                      ? 'Add repository'
-                      : screen.kind === 'secrets' ||
-                          screen.kind === 'secrets-import'
-                        ? 'Secrets'
-                        : null;
+  const page = PAGE_LABEL[screen.kind] ?? null;
   if (page)
     crumbs.push(
       <Crumb key="page" current onClick={() => undefined}>

@@ -29,6 +29,7 @@ import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { rebuildIndex } from './indexPage';
+import { readPages } from './pages';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
   applyTemplates,
@@ -59,6 +60,7 @@ export type BrainChannels =
   | 'brain:run'
   | 'brain:resumeQueue'
   | 'brain:sources'
+  | 'brain:counts'
   | 'brain:files'
   | 'brain:read'
   | 'brain:verify'
@@ -131,7 +133,7 @@ const OPENABLE = new Set([
 ]);
 const BUSY = 'A brain job is running; try again later';
 const ARCHIVED =
-  'This brain is archived; restore it in Settings › Brains first';
+  'This brain is archived; restore it in Settings › Project › Brains first';
 
 /** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
 const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];
@@ -562,6 +564,15 @@ export function createBrainHandlers(
     'brain:resumeQueue': async (id) => {
       live(id);
       d.runner.resume(id);
+    },
+    'brain:counts': async (id) => {
+      const b = brainOf(id);
+      const { state } = await readState(b.path);
+      const [sources, pages] = await Promise.all([
+        listSources(b.path, state).catch(() => []),
+        readPages(b.path).catch(() => []),
+      ]);
+      return { pages: pages.length, sources: sources.length };
     },
     'brain:sources': async (id) => {
       const b = brainOf(id);

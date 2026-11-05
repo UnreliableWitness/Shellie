@@ -46,6 +46,16 @@ export function inProgressState(
   );
 }
 
+function startSourceText(
+  source: 'repo' | 'project' | 'default',
+  project: string | null,
+): string {
+  if (source === 'repo') return 'set on this repo';
+  if (source === 'project')
+    return project ? `from project ${project}` : 'from project';
+  return 'default';
+}
+
 /** "This task will…": what a task is given, from the effective config, the New task choices and the repo's settings. */
 export function buildSetupSummary(args: {
   repoId: string;
@@ -57,6 +67,9 @@ export function buildSetupSummary(args: {
   tabs: string[];
   workItem: WorkItemRef | null;
   start: StartSettings;
+  /** Where `start` came from (`startSettingsSource`), and the repo's project name for "from project <name>". */
+  startSource: 'repo' | 'project' | 'default';
+  project: string | null;
   types: WorkItemTypeMeta[] | null;
   editor: EditorPrefs;
   /** The name of the project's brain whose context task.md gets; null when none (or not known yet). */
@@ -79,6 +92,7 @@ export function buildSetupSummary(args: {
             ? inProgressState(workItem.type, start, args.types)
             : null,
           assign: start.assignToMe,
+          source: startSourceText(args.startSource, args.project),
         }
       : null,
     editor: editorId ? EDITOR_LABELS[editorId] : null,

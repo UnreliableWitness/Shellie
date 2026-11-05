@@ -22,6 +22,7 @@ import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { PageHeader, Pivots, WorkItemTypeIcon } from '../components/ui';
 import { WorkItemPicker } from '../components/WorkItemPicker';
 import { useEscape } from '../hooks/useEscape';
+import { startOf } from '../../shared/startSettings';
 import { activeConnection, useStore } from '../store';
 import { useTypeMeta } from '../workItemTypes';
 
@@ -32,7 +33,11 @@ const TYPES: WorkItemType[] = ['Issue', 'User Story', 'Bug', 'Task', 'Epic'];
 export function NewTaskScreen({
   initial = {},
 }: {
-  initial?: { workItem?: WorkItemRef; repoId?: string };
+  initial?: {
+    workItem?: WorkItemRef;
+    repoId?: string;
+    connectionId?: string;
+  };
 }) {
   const repos = useStore((s) => s.repos);
   const go = useStore((s) => s.go);
@@ -43,11 +48,12 @@ export function NewTaskScreen({
   const active = useStore(activeConnection);
   // The active project's repos (and repos linked to none), never another project's (#225); a sprint row's own
   // repo always stays.
+  const projectId = initial.connectionId ?? active?.id;
   const candidates = repos.filter(
     (r) =>
-      !active ||
+      !projectId ||
       r.id === initial.repoId ||
-      r.connectionId === active.id ||
+      r.connectionId === projectId ||
       r.connectionId === null,
   );
 
@@ -254,7 +260,7 @@ export function NewTaskScreen({
             'Shell',
           ),
           workItem: mode === 'blank' || !workItem?.id ? null : workItem,
-          start: repo.workItemOnStart,
+          ...startOf(repo, connectionOf(repo.id)),
           types: typeMeta ? [typeMeta] : null,
           editor: editorPrefs,
           // Main fills it in when the task is created.

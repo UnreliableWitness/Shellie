@@ -1,3 +1,4 @@
+import { StartSettingsSchema } from '../../shared/types';
 import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
 import type { Channels, Events, ShellieApi } from '../../shared/ipc';
@@ -111,6 +112,7 @@ const defaults: FakeHandlers = {
   'brain:wikiPages': () => [],
   'brain:addFiles': () => [],
   'brain:sources': () => [],
+  'brain:counts': () => ({ pages: 0, sources: 0 }),
   'brain:files': () => [],
   'brain:read': () => ({ text: '' }),
   'brain:verify': () => ({ verified: '2026-11-04' }),
@@ -141,7 +143,6 @@ const defaults: FakeHandlers = {
   'settings:get': () => ({
     version: 1,
     receiverPort: 4319,
-    writeTimeToAdo: false,
     idleMinutes: 5,
     workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
     showSplash: true,
@@ -200,6 +201,7 @@ const defaults: FakeHandlers = {
   'app:whatsNew': () => null,
   'rates:list': () => ({ rates: [], officialAsOf: '2026-10-14' }),
   'usage:task': (taskId) => emptyUsage(taskId),
+  'usage:costs': () => ({}),
   'repos:list': () => [],
   'repos:inspect': (folder) => ({
     folder,
@@ -218,6 +220,20 @@ const defaults: FakeHandlers = {
   'workItems:types': () => [],
   'workItems:iterations': () => [],
   'connections:list': () => [],
+  'connections:update': (id, patch) => ({
+    id,
+    name: 'unreliablewitness',
+    organizationUrl: 'https://dev.azure.com/unreliablewitness',
+    project: 'Shellie',
+    user: 'Dries Hoebeke',
+    status: 'ok',
+    checkedAt: null,
+    userUniqueName: null,
+    provider: 'azure-devops',
+    workItemOnStart: StartSettingsSchema.parse({}),
+    writeTimeToAdo: false,
+    ...patch,
+  }),
   'secrets:list': () => [],
   'secrets:forget': () => undefined,
   'secrets:repoDefault': () => 'development',
@@ -254,6 +270,16 @@ const defaults: FakeHandlers = {
     discovered: false,
     overrides: {},
     workItemOnStart: settings,
+  }),
+  'repos:clearWorkItemOnStart': (repoId) => ({
+    id: repoId,
+    name: 'repo',
+    path: '/src/repo',
+    baseBranch: 'main',
+    connectionId: null,
+    configFound: false,
+    discovered: false,
+    overrides: {},
   }),
   'repos:setAgentCommands': (repoId, commands) => ({
     id: repoId,

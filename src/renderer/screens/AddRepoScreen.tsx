@@ -150,7 +150,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
   const canAdd = !!found && !problem && !busy;
 
   const leave = () =>
-    from === 'settings' ? go({ kind: 'settings', section: 'repos' }) : back();
+    from === 'settings' ? go({ kind: 'settings', scope: 'repo' }) : back();
 
   const goBack = () => {
     if (onboarding)
@@ -167,7 +167,10 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
         api().invoke('repos:add', found.folder, {
           ...(hasProposal && write ? { writeConfig: text } : {}),
           baseBranch: found.baseBranch,
-          connectionId: found.remote?.connectionId ?? null,
+          connectionId:
+            found.remote?.connectionId ??
+            (screen.kind === 'add-repo' ? screen.connectionId : undefined) ??
+            null,
         }),
       notify,
     );

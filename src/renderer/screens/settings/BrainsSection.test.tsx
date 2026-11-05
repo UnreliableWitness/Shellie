@@ -6,7 +6,7 @@ import type { AdoWiki, BrainView } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
-import { BrainsSection } from './BrainsSection';
+import { BrainsForConnection } from './BrainsSection';
 
 const conn: Connection = {
   id: 'c1',
@@ -23,6 +23,7 @@ const conn: Connection = {
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
 };
 
 const wiki: AdoWiki = {
@@ -57,7 +58,7 @@ const brain = {
 
 beforeEach(() => useStore.setState({ connections: [conn] }));
 
-describe('BrainsSection', () => {
+describe('BrainsForConnection', () => {
   it('creates a brain with the picked wiki', async () => {
     const { calls, tracked } = installFakeApi({
       'brain:wikis': () => [wiki],
@@ -66,7 +67,7 @@ describe('BrainsSection', () => {
       ],
       'brain:create': () => brain,
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     expect(screen.getByLabelText('Name')).toHaveValue('Acme brain');
     await user.selectOptions(
@@ -110,7 +111,7 @@ describe('BrainsSection', () => {
 
   it('disables the wiki picker until the typed project settles', async () => {
     installFakeApi({ 'brain:wikis': () => [wiki] });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     const picker = await screen.findByLabelText('Wiki');
     await waitFor(() => expect(picker).toBeEnabled());
@@ -127,7 +128,7 @@ describe('BrainsSection', () => {
       'brain:pickFolder': () => '/my/folder',
       'brain:create': () => brain,
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     expect(await screen.findByText(/Missing Code scope/)).toBeInTheDocument();
     expect(screen.getByText('Default location')).toBeInTheDocument();
@@ -146,7 +147,7 @@ describe('BrainsSection', () => {
       'brain:list': () => [brain],
       'brain:update': () => brain,
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     expect(await screen.findByText('/data/brains/b1')).toBeInTheDocument();
     expect(screen.getByText('No wiki')).toBeInTheDocument();
@@ -178,7 +179,7 @@ describe('BrainsSection', () => {
         { path: 'c.md', status: 'missing' },
       ],
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole('button', { name: 'Update skills' }),
@@ -194,7 +195,7 @@ describe('BrainsSection', () => {
 
   it('deletes after confirming, optionally with the folder', async () => {
     const { calls } = installFakeApi({ 'brain:list': () => [brain] });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Delete' }));
     expect(screen.getByText('Delete this brain?')).toBeInTheDocument();
@@ -210,7 +211,7 @@ describe('BrainsSection', () => {
 
   it('opens the folder', async () => {
     const { calls } = installFakeApi({ 'brain:list': () => [brain] });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     await userEvent.click(
       await screen.findByRole('button', { name: 'Open folder' }),
     );
@@ -228,7 +229,7 @@ describe('BrainsSection', () => {
       'brain:list': () => [brain],
       'brain:delete': () => gate as Promise<undefined>,
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Delete' }));
     const confirm = screen.getByRole('button', { name: 'Delete brain' });
@@ -249,7 +250,7 @@ describe('BrainsSection', () => {
       'brain:list': () => [brain],
       'brain:update': () => gate,
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     const user = userEvent.setup();
     const toggle = await screen.findByLabelText(
       'Run /sync after a wiki refresh that changed pages',
@@ -263,7 +264,7 @@ describe('BrainsSection', () => {
 
   it('queries wikis once after the project field settles', async () => {
     const { calls } = installFakeApi({ 'brain:wikis': () => [wiki] });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     await waitFor(() =>
       expect(calls.filter((c) => c.channel === 'brain:wikis')).toHaveLength(1),
     );
@@ -293,7 +294,7 @@ describe('BrainsSection', () => {
 describe('archiving', () => {
   it('archives from the card, and lists an archived brain apart with Restore', async () => {
     const { calls } = installFakeApi({ 'brain:list': () => [brain] });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     await userEvent.click(
       await screen.findByRole('button', { name: 'Archive' }),
     );
@@ -309,7 +310,7 @@ describe('archiving', () => {
     const { calls } = installFakeApi({
       'brain:list': () => [{ ...brain, archived: true }],
     });
-    render(<BrainsSection />);
+    render(<BrainsForConnection connection={conn} />);
     expect(await screen.findByLabelText('Archived brains')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
     await waitFor(() =>

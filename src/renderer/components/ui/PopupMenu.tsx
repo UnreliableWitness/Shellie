@@ -14,7 +14,7 @@ export function PopupMenu({
   label: string;
   /** Which edge of the anchor the menu lines up with. */
   align?: 'start' | 'end';
-  anchor: HTMLElement | null;
+  anchor: HTMLElement | SVGElement | null;
   open: boolean;
   onClose: () => void;
   children: ReactNode;

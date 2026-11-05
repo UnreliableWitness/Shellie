@@ -230,6 +230,7 @@ describe('matchConnection', () => {
       assignToMe: true,
       stateOverrides: {},
     },
+    writeTimeToAdo: false,
   });
   const other = conn('other', 'https://dev.azure.com/fabrikam', 'Web');
   const sameOrg = conn('org', 'https://dev.azure.com/contoso', 'Intranet');

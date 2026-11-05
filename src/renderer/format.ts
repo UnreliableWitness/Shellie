@@ -80,3 +80,9 @@ export const duration = (fromIso: string, toIso: string): string | null => {
 /** "1 file", "2 files"; pass `many` for an irregular plural. */
 export const plural = (n: number, one: string, many = `${one}s`): string =>
   `${n} ${n === 1 ? one : many}`;
+
+/** A task in a list: "#4312 Checkout address form", or the name of a task without a work item. */
+export const taskLabel = (t: {
+  workItem: { id: string; title: string } | null;
+  name: string;
+}): string => (t.workItem ? `#${t.workItem.id} ${t.workItem.title}` : t.name);

@@ -10,6 +10,7 @@ import {
   Delete16Regular,
   Delete20Regular,
   Document16Regular,
+  Grid20Regular,
   Home20Regular,
   PanelLeftContract20Regular,
   PanelLeftExpand20Regular,
@@ -35,6 +36,7 @@ import { eur, plural } from '../format';
 import { useBrains } from '../hooks/useBrains';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { activeConnection, useStore, useTaskConnectionId } from '../store';
+import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { AttentionDot } from './AttentionDot';
 import { WorkItemTypeIcon } from './ui';
@@ -427,7 +429,8 @@ function ProjectTile({ rail }: { rail: boolean }) {
               onClick={() => {
                 setConnectionId(c.id);
                 setOpen(false);
-                go({ kind: 'sprint' });
+                go({ kind: 'project' });
+                track('project.open', { from: 'switcher' });
               }}
             >
               <span className="menu-title">{c.project}</span>
@@ -545,6 +548,18 @@ export function TaskNav() {
         current={screenKind === 'home'}
         onClick={() => go({ kind: 'home' })}
       />
+      {connection && (
+        <NavItem
+          icon={<Grid20Regular aria-hidden="true" />}
+          label="Project"
+          rail={rail}
+          current={screenKind === 'project'}
+          onClick={() => {
+            go({ kind: 'project' });
+            track('project.open', { from: 'nav' });
+          }}
+        />
+      )}
       <NavItem
         icon={<ArrowSprint20Regular aria-hidden="true" />}
         label="Sprint"

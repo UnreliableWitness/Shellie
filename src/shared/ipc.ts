@@ -6,6 +6,7 @@ import type {
   BrainOptions,
   BrainPageRow,
   BrainSearchHit,
+  BrainCounts,
   BrainSourceRow,
   BrainView,
   BrainWiki,
@@ -35,6 +36,7 @@ import type {
   AgentCommands,
   Connection,
   ConnectionInput,
+  ConnectionPatch,
   CreateTaskInput,
   DiscardChecks,
   FinishChecks,
@@ -151,6 +153,11 @@ export type Channels = {
   };
   'connections:list': { args: []; result: Connection[] };
   'connections:save': { args: [input: ConnectionInput]; result: Connection };
+  /** Changes a connection's name or settings without its token; no sign-in, status kept. */
+  'connections:update': {
+    args: [id: string, patch: ConnectionPatch];
+    result: Connection;
+  };
   'connections:remove': { args: [id: string]; result: void };
   'connections:verify': { args: [id: string]; result: Connection };
   /** Signs in with a new token (`pat`) or a connection's stored one (`connectionId`, its own organization) and lists the projects; saves nothing. */
@@ -186,6 +193,11 @@ export type Channels = {
   };
   'repos:setWorkItemOnStart': {
     args: [repoId: string, settings: StartSettings];
+    result: Repo;
+  };
+  /** Drops the repo's own value, so it inherits its project's again. */
+  'repos:clearWorkItemOnStart': {
+    args: [repoId: string];
     result: Repo;
   };
   /** The repo's own Claude Code and OpenCode start commands; an empty one means the default. */
@@ -507,6 +519,8 @@ export type Channels = {
   /** Forgets the server and its key and stops sending; the ledger stays. */
   'costServer:disconnect': { args: []; result: CostServerStatus };
   'usage:task': { args: [taskId: string]; result: TaskUsage };
+  /** Billable EUR per task id; tasks without usage are absent. */
+  'usage:costs': { args: [taskIds: string[]]; result: Record<string, number> };
   'usage:setBillable': {
     args: [taskId: string, sessionId: string, billable: boolean];
     result: TaskUsage;
@@ -650,6 +664,8 @@ export type Channels = {
   'brain:resumeQueue': { args: [brainId: string]; result: void };
   /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
   'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
+  /** How many wiki pages and sources a brain has, without the health check's git and lint work. */
+  'brain:counts': { args: [brainId: string]; result: BrainCounts };
   /** Markdown files of the brain: under wiki/ or sources/, or root: index.md, log.md, SCHEMA.md. */
   'brain:files': {
     args: [brainId: string, dir: 'wiki' | 'sources' | 'root'];

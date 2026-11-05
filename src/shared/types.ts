@@ -74,7 +74,12 @@ export const SetupSummarySchema = z.object({
   run: z.array(z.string()),
   /** Null when the task has no work item; `move` is the state it moves to, null when it is not moved. */
   workItem: z
-    .object({ move: z.string().nullable(), assign: z.boolean() })
+    .object({
+      move: z.string().nullable(),
+      assign: z.boolean(),
+      /** Where the start settings came from ("from project DXP", "set on this repo", "default"); absent on older tasks. */
+      source: z.string().optional(),
+    })
     .nullable(),
   /** The chosen editor's label; null when Shellie picks one. */
   editor: z.string().nullable(),
@@ -257,11 +262,8 @@ const RepoObjectSchema = z.object({
   configFound: z.boolean(),
   /** Added by Shellie when a task's Claude session worked in it, not by the user; Start never picks it. */
   discovered: z.boolean().default(false),
-  workItemOnStart: StartSettingsSchema.default({
-    moveToInProgress: true,
-    assignToMe: true,
-    stateOverrides: {},
-  }),
+  /** The repo's own on-start options; absent means it inherits its project's (see `effectiveStartSettings`). */
+  workItemOnStart: StartSettingsSchema.optional(),
   /** The command line a Claude Code or OpenCode tab runs in this repo (#191); absent means `claude` or `opencode`. */
   agentCommands: AgentCommandsSchema.optional(),
   overrides: RepoOverridesSchema.default({}),
@@ -532,14 +534,19 @@ export const ConnectionSchema = z.object({
   checkedAt: z.string().nullable(),
   userUniqueName: z.string().nullable().default(null),
   provider: TrackerProviderSchema.default('azure-devops'),
-  /** On-start options chosen when the connection was added; copied into a repo when it is linked at add. */
+  /** The project's on-start options; every linked repo inherits them unless it has its own. */
   workItemOnStart: StartSettingsSchema.default({
     moveToInProgress: true,
     assignToMe: true,
     stateOverrides: {},
   }),
+  writeTimeToAdo: z.boolean().default(false),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+/** The settings of a connection the user changes in Settings > Project, saved without its token. */
+export type ConnectionPatch = Partial<
+  Pick<Connection, 'workItemOnStart' | 'writeTimeToAdo'>
+>;
 
 export const ConnectionsFileSchema = z.object({
   version: z.literal(1),

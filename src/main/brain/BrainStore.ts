@@ -52,6 +52,19 @@ export class BrainStore {
     return this.get(id) ?? (updated as Brain);
   }
 
+  /** Archives every live brain of a connection (its project was removed); returns the ids of those it changed. */
+  async archiveByConnection(connectionId: string): Promise<string[]> {
+    const ids: string[] = [];
+    await this.store.update((v) => {
+      for (const b of v.brains)
+        if (b.connectionId === connectionId && !b.archived) {
+          b.archived = true;
+          ids.push(b.id);
+        }
+    });
+    return ids;
+  }
+
   async remove(id: string): Promise<void> {
     await this.store.update((v) => {
       v.brains = v.brains.filter((b) => b.id !== id);

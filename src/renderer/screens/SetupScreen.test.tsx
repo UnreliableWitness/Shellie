@@ -233,6 +233,7 @@ describe('SetupScreen', () => {
             assignToMe: true,
             stateOverrides: {},
           },
+          writeTimeToAdo: false,
         },
       ],
     });

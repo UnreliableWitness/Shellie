@@ -7,12 +7,14 @@ import { openBrainTerminal, trackBrain } from './brainActions';
 export function AskBox({
   brainId,
   onTerminal,
+  initiallyOpen = false,
 }: {
   brainId: string;
   onTerminal: (def: TerminalDef) => void;
+  initiallyOpen?: boolean;
 }) {
   const notify = useStore((s) => s.notify);
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState(initiallyOpen);
   const [question, setQuestion] = useState('');
   const ask = async (e: FormEvent) => {
     e.preventDefault();

@@ -138,6 +138,7 @@ import { schemeOf } from './shared/theme';
 import { TITLE_BAR_HEIGHT, titleBarKind } from './shared/titleBar';
 import { errorMessage } from './shared/errors';
 import { HtmlViews, serveView, VIEW_SCHEME } from './main/htmlView';
+import { applyProjectScopeMigration } from './main/migrate/projectScope';
 import { migrateOnboarding } from './main/onboardingMigration';
 import { createWhatsNew, seenAtBoot } from './main/releaseNotes';
 import { userDataOverride } from './main/paths';
@@ -463,6 +464,13 @@ async function boot(): Promise<void> {
       await settings
         .save(migrated)
         .catch((err) => console.error('Onboarding migration failed', err));
+    // Once: the global write-time flag moves onto every project, and repo copies of a project's start options go.
+    await applyProjectScopeMigration({
+      settings,
+      connections,
+      store,
+      log: (msg, err) => console.error(msg, err),
+    });
     // A fresh install has seen the version it was installed with: What's new shows only after an update.
     const seen = seenAtBoot(settings.get(), app.getVersion());
     if (seen)

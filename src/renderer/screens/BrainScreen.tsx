@@ -25,10 +25,16 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 /** One brain: its inbox and health, its files and log, and its terminal. */
-export function BrainScreen({ brainId }: { brainId: string }) {
+export function BrainScreen({
+  brainId,
+  focus,
+}: {
+  brainId: string;
+  focus?: 'ask' | 'wiki' | 'drop';
+}) {
   const brain = useBrain(brainId);
   const notify = useStore((s) => s.notify);
-  const [tab, setTab] = useState<Tab>('sources');
+  const [tab, setTab] = useState<Tab>(focus === 'wiki' ? 'wiki' : 'sources');
   const [terminal, setTerminal] = useState<TerminalDef | null>(null);
 
   if (!brain)
@@ -99,7 +105,11 @@ export function BrainScreen({ brainId }: { brainId: string }) {
             >
               Digest
             </button>
-            <AskBox brainId={brain.id} onTerminal={setTerminal} />
+            <AskBox
+              brainId={brain.id}
+              onTerminal={setTerminal}
+              initiallyOpen={focus === 'ask'}
+            />
             <button
               type="button"
               className="btn btn-sm"
@@ -112,7 +122,11 @@ export function BrainScreen({ brainId }: { brainId: string }) {
       />
       <div className="page-body brain-body">
         <div className="brain-columns">
-          <BrainInbox brain={brain} onTerminal={setTerminal} />
+          <BrainInbox
+            brain={brain}
+            onTerminal={setTerminal}
+            focusChoose={focus === 'drop'}
+          />
           <BrainHealth brain={brain} onTerminal={setTerminal} />
         </div>
         <Pivots

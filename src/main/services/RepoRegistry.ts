@@ -136,6 +136,13 @@ export class RepoRegistry {
     });
   }
 
+  /** The repo inherits its project's start settings again. */
+  clearWorkItemOnStart(repoId: string): Promise<Repo> {
+    return this.patch(repoId, (r) => {
+      delete r.workItemOnStart;
+    });
+  }
+
   /** Stores a repo's own agent start commands, trimmed; an empty one is dropped, so the tab runs the default. */
   setAgentCommands(repoId: string, commands: AgentCommands): Promise<Repo> {
     const parsed = AgentCommandsSchema.parse(commands);
@@ -241,7 +248,7 @@ export class RepoRegistry {
       connectionId: base.connectionId,
       configFound: config.found,
       discovered: base.discovered ?? false,
-      workItemOnStart: base.workItemOnStart ?? StartSettingsSchema.parse({}),
+      workItemOnStart: base.workItemOnStart,
       overrides: base.overrides ?? {},
       ...(base.agentCommands && { agentCommands: base.agentCommands }),
     };

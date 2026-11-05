@@ -49,7 +49,26 @@ describe('TaskSummaryCard', () => {
     expect(line('Editor')).toHaveTextContent('VS Code');
   });
 
-  it('shows the brain row, with a link to the brain settings', async () => {
+  it("shows the brain row, with a link to the project's brain settings", async () => {
+    useStore.setState({
+      repos: [
+        {
+          id: 'r1',
+          name: 'webshop',
+          path: '/w',
+          baseBranch: 'main',
+          connectionId: 'c1',
+          configFound: true,
+          discovered: false,
+          overrides: {},
+          workItemOnStart: {
+            moveToInProgress: true,
+            assignToMe: true,
+            stateOverrides: {},
+          },
+        },
+      ],
+    });
     const { rerender } = render(
       <TaskSummaryCard summary={summary} repoId="r1" />,
     );
@@ -61,7 +80,9 @@ describe('TaskSummaryCard', () => {
     await userEvent.click(within(line('Brain')).getByText('Edit'));
     expect(useStore.getState().screen).toEqual({
       kind: 'settings',
-      section: 'brains',
+      scope: 'project',
+      connectionId: 'c1',
+      section: 'project-brains',
     });
   });
 
@@ -73,6 +94,21 @@ describe('TaskSummaryCard', () => {
       />,
     );
     expect(line('Work item')).toHaveTextContent('Unchanged');
+  });
+
+  it('names where the work item settings came from', () => {
+    render(
+      <TaskSummaryCard
+        summary={{
+          ...summary,
+          workItem: { move: 'Doing', assign: true, source: 'from project DXP' },
+        }}
+        repoId="r1"
+      />,
+    );
+    expect(line('Work item')).toHaveTextContent(
+      'Move to Doing, assign to me (from project DXP)',
+    );
   });
 
   it('Edit link opens Settings on the repo category', async () => {

@@ -158,7 +158,7 @@ describe('schemas', () => {
       version: 1,
       receiverPort: 4319,
     });
-    expect(s.writeTimeToAdo).toBe(false);
+    expect(s.writeTimeToAdo).toBeUndefined();
     expect(s.idleMinutes).toBe(5);
     expect(s.workHours).toEqual(hours);
   });

@@ -946,7 +946,7 @@ describe('handlers: finish every workspace of a task', () => {
 
   it('books the Time spent once and writes it once for a multi-repo Finish', async () => {
     const hx = await multiHarness([{ name: 'api' }]);
-    await hx.settings.save({ ...hx.settings.get(), writeTimeToAdo: true });
+    await hx.h['connections:update'](hx.c.id, { writeTimeToAdo: true });
     commitFile(hx.repos[0].wt, 'api.txt', 'a\n', 'API change');
     const client = hx.clients.get(hx.c.id)!;
     vi.spyOn(client, 'workItemEstimate').mockResolvedValue({
@@ -1492,5 +1492,33 @@ describe('handlers: finish every workspace of a task', () => {
     expect(ws(hx, hx.ids[0]).pullRequest).toMatchObject({
       url: 'https://dev.azure.com/fabrikam/P/_git/docs/pullrequest/100',
     });
+  });
+});
+
+describe('handlers: usage:costs', () => {
+  it('usage:costs sums billable EUR per task and skips unknown ids', async () => {
+    const hx = await harness();
+    const add = (id: string, taskId: string, sessionId: string) =>
+      hx.usage.add({
+        id,
+        taskId,
+        tool: 'claude-code',
+        sessionId,
+        model: 'claude-opus-5-5',
+        at: '2026-10-14T10:00:00.000Z',
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        fast: false,
+      });
+    await add('a', 'ta', 's1');
+    await add('b', 'ta', 's2');
+    await add('c', 'tb', 's3');
+    await hx.h['usage:setBillable']('ta', 's2', false);
+    const costs = await hx.h['usage:costs'](['ta', 'tb', 'nope']);
+    expect(Object.keys(costs).sort()).toEqual(['ta', 'tb']);
+    expect(costs['ta']).toBeCloseTo(3.68, 5);
+    expect(costs['tb']).toBeCloseTo(3.68, 5);
   });
 });

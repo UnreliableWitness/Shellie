@@ -18,6 +18,7 @@ import { SecretsImportScreen } from './screens/SecretsImportScreen';
 import { SecretsScreen } from './screens/SecretsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { HomeScreen } from './screens/HomeScreen';
+import { ProjectScreen } from './screens/ProjectScreen';
 import { SetupScreen } from './screens/SetupScreen';
 import { SprintScreen } from './screens/SprintScreen';
 import { TaskScreen, TaskTerminals } from './screens/TaskScreen';
@@ -35,14 +36,22 @@ function Page() {
       return <AgentsScreen />;
     case 'sprint':
       return <SprintScreen />;
+    case 'project':
+      return <ProjectScreen />;
     case 'brain':
-      return <BrainScreen key={screen.brainId} brainId={screen.brainId} />;
+      return (
+        <BrainScreen
+          key={`${screen.brainId}:${screen.focus ?? ''}`}
+          brainId={screen.brainId}
+          focus={screen.focus}
+        />
+      );
     case 'task':
       return <TaskScreen />;
     case 'new-task':
       return (
         <NewTaskScreen
-          key={`${screen.repoId ?? ''}:${screen.workItem?.id ?? ''}`}
+          key={`${screen.connectionId ?? ''}:${screen.repoId ?? ''}:${screen.workItem?.id ?? ''}`}
           initial={screen}
         />
       );

@@ -323,7 +323,7 @@ describe('AddRepoScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(useStore.getState().screen).toEqual({
       kind: 'settings',
-      section: 'repos',
+      scope: 'repo',
     });
   });
 

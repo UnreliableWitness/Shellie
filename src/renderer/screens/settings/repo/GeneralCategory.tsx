@@ -137,13 +137,13 @@ export function GeneralCategory({
         id="repo-general-connection"
         scope="repo"
         category="General"
-        title="Connection"
+        title="Project"
         description="The Azure DevOps project this repo's work items come from."
-        keywords={['Azure DevOps', 'project']}
+        keywords={['Azure DevOps', 'connection']}
       >
         <select
           className="field"
-          aria-label={`Connection for ${repo.name}`}
+          aria-label={`Project for ${repo.name}`}
           value={repo.connectionId ?? ''}
           onChange={async (e) => {
             const value = e.target.value || null;
@@ -154,7 +154,7 @@ export function GeneralCategory({
             );
           }}
         >
-          <option value="">No connection</option>
+          <option value="">No project</option>
           {connections.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name} / {c.project}

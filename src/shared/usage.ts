@@ -72,8 +72,8 @@ const OnboardingSchema = z.object({
 export const AppSettingsSchema = z.object({
   version: z.literal(1),
   receiverPort: z.number().int().min(1024).max(65535),
-  /** Write booked time to Azure DevOps (Completed and Remaining Work) at Finish. Off by default. */
-  writeTimeToAdo: z.boolean().default(false),
+  /** Legacy: moved to the connection (`Connection.writeTimeToAdo`); read once by the boot migration, then absent. */
+  writeTimeToAdo: z.boolean().optional(),
   /** Minutes without input before a terminal stops counting as active. */
   idleMinutes: z.number().int().min(1).max(60).default(5),
   workHours: WorkHoursSchema.default({

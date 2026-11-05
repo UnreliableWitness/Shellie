@@ -399,6 +399,7 @@ describe('NewTaskScreen', () => {
             assignToMe: true,
             stateOverrides: {},
           },
+          writeTimeToAdo: false,
         },
       ],
     });
@@ -477,6 +478,7 @@ describe('NewTaskScreen', () => {
             assignToMe: true,
             stateOverrides: {},
           },
+          writeTimeToAdo: false,
         },
       ],
     });
@@ -519,6 +521,7 @@ describe('NewTaskScreen', () => {
       assignToMe: true,
       stateOverrides: {},
     },
+    writeTimeToAdo: false,
   };
   const pickerApi = {
     'repos:config': () => config,

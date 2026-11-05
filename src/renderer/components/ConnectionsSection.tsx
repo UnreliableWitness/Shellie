@@ -8,103 +8,33 @@ import { errorMessage } from '../../shared/errors';
 import { ProviderPicker, type ProviderChoice } from './ProviderPicker';
 import { SettingRow, SettingsCategory } from './settings/SettingRow';
 
+/** One project of an organization: its name opens its Project scope (Verify, Remove and the rest live there). */
 function ConnectionRow({ connection }: { connection: Connection }) {
-  const notify = useStore((s) => s.notify);
-  const setConnections = useStore((s) => s.setConnections);
-  const repos = useStore((s) => s.repos);
-  const setRepos = useStore((s) => s.setRepos);
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const users = repos.filter((r) => r.connectionId === connection.id).length;
+  const go = useStore((s) => s.go);
   const status = statusText(connection);
-
-  const refresh = async () => {
-    const list = await tryInvoke(
-      () => api().invoke('connections:list'),
-      notify,
-    );
-    if (list) setConnections(list);
-  };
-  const verify = async () => {
-    setBusy(true);
-    try {
-      await tryInvoke(
-        () => api().invoke('connections:verify', connection.id),
-        notify,
-      );
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const remove = async () => {
-    if (users > 0 && !confirming) return setConfirming(true);
-    setBusy(true);
-    try {
-      const ok = await tryInvoke(async () => {
-        await api().invoke('connections:remove', connection.id);
-        return true;
-      }, notify);
-      setConfirming(false);
-      if (ok) {
-        await refresh();
-        const list = await tryInvoke(() => api().invoke('repos:list'), notify);
-        if (list) setRepos(list);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
-    <>
-      <div className="list-row" id={connectionSection(connection.id)}>
-        <div className="grow">
-          <span style={{ fontWeight: 600 }}>{connection.project}</span>
-          <span className="small muted">{connection.name}</span>
-          <span className={status.ok ? 'conn-status-ok' : 'conn-status-bad'}>
-            {status.text}
-          </span>
-        </div>
+    <div className="list-row" id={connectionSection(connection.id)}>
+      <div className="grow">
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={verify}
-          disabled={busy}
+          className="link"
+          style={{ fontWeight: 600 }}
+          onClick={() =>
+            go({
+              kind: 'settings',
+              scope: 'project',
+              connectionId: connection.id,
+            })
+          }
         >
-          Verify
+          {connection.project}
         </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={remove}
-          disabled={busy || confirming}
-        >
-          Remove
-        </button>
+        <span className="small muted">{connection.name}</span>
+        <span className={status.ok ? 'conn-status-ok' : 'conn-status-bad'}>
+          {status.text}
+        </span>
       </div>
-      {confirming && (
-        <div className="conn-confirm" role="status">
-          <span>{`${users} ${users === 1 ? 'repository uses' : 'repositories use'} this connection; they will be unlinked.`}</span>
-          <button
-            type="button"
-            className="btn btn-warn btn-sm"
-            onClick={remove}
-            disabled={busy}
-          >
-            Remove anyway
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setConfirming(false)}
-            disabled={busy}
-          >
-            Keep
-          </button>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 
@@ -159,7 +89,7 @@ function OrganizationGroup({ connections }: { connections: Connection[] }) {
 }
 
 /** `contoso` for `https://dev.azure.com/contoso` or `https://contoso.visualstudio.com`. */
-function organizationName(organizationUrl: string): string {
+export function organizationName(organizationUrl: string): string {
   try {
     const url = new URL(organizationUrl);
     return url.hostname.endsWith('.visualstudio.com')
@@ -171,7 +101,7 @@ function organizationName(organizationUrl: string): string {
 }
 
 /** Replaces the token of every connection of an organization, each checked against Azure DevOps like a new one. */
-function UpdateTokenForm({
+export function UpdateTokenForm({
   connections,
   onDone,
 }: {
@@ -292,7 +222,7 @@ export function ConnectionsSection() {
   return (
     <SettingsCategory
       id="ado"
-      title="Connections"
+      title="Projects"
       commands={
         noTracker ? undefined : (
           <button
@@ -300,14 +230,14 @@ export function ConnectionsSection() {
             className="btn"
             onClick={() => go({ kind: 'connect', from: 'settings' })}
           >
-            Add connection&hellip;
+            Add project&hellip;
           </button>
         )
       }
     >
       <SettingRow
         id="user-conn-tracker"
-        category="Connections"
+        category="Projects"
         title="Work item tracker"
         description="Where tasks get their work items from."
         keywords={['Azure DevOps', 'GitHub', 'No tracker', 'provider']}
@@ -321,7 +251,7 @@ export function ConnectionsSection() {
       </SettingRow>
       <SettingRow
         id="user-conn-ado"
-        category="Connections"
+        category="Projects"
         title="Azure DevOps"
         description="Organizations and projects Shellie reads work items from, with their personal access token."
         keywords={[
@@ -331,7 +261,7 @@ export function ConnectionsSection() {
           'PAT',
           'Update token',
           'Add a project',
-          'Verify',
+          'Connections',
         ]}
       >
         <div className="list">
@@ -339,7 +269,7 @@ export function ConnectionsSection() {
             <div className="empty">
               {noTracker
                 ? 'Tasks start blank on a branch: no work item, nothing written back.'
-                : 'No connections yet. Add your organization and pick its projects with a personal access token.'}
+                : 'No projects yet. Add your organization and pick its projects with a personal access token.'}
             </div>
           )}
           {[...groups].map(([key, list]) => (

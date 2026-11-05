@@ -12,7 +12,6 @@ type Draft = {
   end: string;
   days: number[];
   idleMinutes: string;
-  writeTimeToAdo: boolean;
 };
 
 const toDraft = (s: AppSettings): Draft => ({
@@ -20,7 +19,6 @@ const toDraft = (s: AppSettings): Draft => ({
   end: s.workHours.end,
   days: s.workHours.days,
   idleMinutes: String(s.idleMinutes),
-  writeTimeToAdo: s.writeTimeToAdo,
 });
 
 const sameDays = (a: number[], b: number[]) =>
@@ -66,7 +64,6 @@ export function TimeSection() {
       () =>
         saveSettings({
           idleMinutes: idle,
-          writeTimeToAdo: draft.writeTimeToAdo,
           workHours: {
             start: draft.start,
             end: draft.end,
@@ -207,31 +204,6 @@ export function TimeSection() {
                 setDraft({ ...draft, idleMinutes: e.target.value })
               }
             />
-          </SettingRow>
-          <SettingRow
-            id="user-time-ado"
-            category="Time tracking"
-            title="Write booked time to Azure DevOps"
-            description="Off: the time stays in Shellie (Usage tab, CSV export)."
-            keywords={['Completed Work', 'Remaining Work', 'book']}
-            modified={saved.writeTimeToAdo !== defaults.writeTimeToAdo}
-            onReset={() =>
-              void reset(() => ({ writeTimeToAdo: defaults.writeTimeToAdo }), {
-                writeTimeToAdo: defaults.writeTimeToAdo,
-              })
-            }
-          >
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={draft.writeTimeToAdo}
-                onChange={(e) =>
-                  setDraft({ ...draft, writeTimeToAdo: e.target.checked })
-                }
-              />
-              Write booked time to Azure DevOps (adds to Completed Work, lowers
-              Remaining Work)
-            </label>
           </SettingRow>
           <div className="settings-actions">
             <button type="button" className="btn btn-primary" onClick={save}>

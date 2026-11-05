@@ -62,6 +62,7 @@ const conn = (id: string, cipher: Buffer): Stored => ({
     assignToMe: true,
     stateOverrides: {},
   },
+  writeTimeToAdo: false,
   tokenCiphertext: cipher.toString('base64'),
 });
 

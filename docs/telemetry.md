@@ -26,12 +26,14 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 
 | Name | Properties / measurements |
 | --- | --- |
-| Screen views (page views) | `sprint`, `brain`, `task`, `new-task`, `setup`, `finish`, `settings`, `home`, `add-repo`, `connect`, `get-started`, `agents`, `secrets`, `secrets-import` |
+| Screen views (page views) | `sprint`, `project`, `brain`, `task`, `new-task`, `setup`, `finish`, `settings`, `home`, `add-repo`, `connect`, `get-started`, `agents`, `secrets`, `secrets-import` |
 | `app.started` | splash on/off; counts of repos, open tasks, connections; whether the usage receiver listens; boot step timings (see Performance) |
 | `app.quit` | session length in minutes |
 | `home.refreshed` | the Home page's data was rebuilt; number of connections, number that failed; duration in ms |
 | `home.failed` | a connection failed in a Home rebuild; `kind` (`unauthorized`, `unreachable`, `timeout`, `step`) |
 | `home.clicked` | a click on Home; `band` (`task`, `up-next`, `review`, `team-review`, `my-pr`, `sprint`, `stats-period`, `budget-month`, `budget-settings`) |
+| `project.open` | the Project page was opened; `from` (`nav`: the nav item, `switcher`: a project picked in the switcher, `home`, `crumb`: the project crumb in the header) |
+| `project.graph` | a click in the Project page's repositories graph; `target` (`node`: a repository, opening its settings, `edge`: a line, listing the tasks it stands for) |
 | `brain.screen.action` | a button or drop on a Brain page; `action` (`refresh`, `lint`, `digest`, `ask`, `drop` (files dropped or chosen, waiting for their type and note), `add` (the waiting files sent in), `paste`, `resolve`, `resume`, `retry`, `continue`, `capture` (a source captured from the inbox list or from an uncaptured finding on Health), `verify` (Mark verified on a wiki page), `remove-source`, `scrub` (a value redacted across the brain; never the value), `lessons-option` (the Finish option ticked), `open-page` (a page or source opened from a card, a search hit, a chip or a link), `search` (a search of 2+ characters ran; never the text), `back` (back or forward), `terminal` (Open terminal, or from a task its brain terminal), `close-terminal`, and from a task: `tab`, `capture-option`); never names, paths or content |
 | `budget.alert` | a budget alert fired (main); `vendor` (`claude`, `copilot`), `kind` (`at80`, `forecastOver`, `at100`) |
 | `costServer.connected`, `costServer.disconnected` | Settings › Cost server saved or forgot a connection; none (never the address, email or key) |
@@ -90,7 +92,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `settings.changed` | names of the changed settings (not their values) |
 | `settings.repoOverride` | `key`: which per-repo setting was overridden (`base`, `branch`, `copy`, `copyAgentConfig`, `setup`, `run`, `apm`, `reviewCollapse`, or `all` for Reset all), `reset`: true when it was removed; never the value |
 | `settings.copyEntries` | measurements: count per `copy:` entry state (`present`, `missing`, `holdsSecrets`, `notIgnored`, `outside`) and `suggestions`; no names or paths |
-| `settings.scope` | the Settings scope tab chosen (`user` or `repo`), by the tab or the other scope's results link |
+| `settings.scope` | the Settings scope tab chosen (`user`, `project` or `repo`), by the tab or the other scope's results link |
 | `settings.search` | a Settings search, sent once the box has been still for 1 s; measurement `results`: matching settings in the current scope. Never the query |
 | `settings.brain` | `action`: `create`, `update`, `delete`, `update-skills`, `open-folder`, `archive` or `restore`; never names, paths or wikis |
 | `workItems.search` | picker scope (`sprint` or `mine`); whether search text was typed (not the text) |

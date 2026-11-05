@@ -1,28 +1,31 @@
 import { Search16Regular } from '@fluentui/react-icons';
 import { useEffect, useRef, useState } from 'react';
+import type { Repo } from '../../shared/types';
 import { api, tryInvoke } from '../api';
-import {
-  SettingsSearchProvider,
-  useSettingsSearch,
-} from '../components/settings/settingsSearch';
+import { SettingsSearchProvider } from '../components/settings/settingsSearch';
 import { useScrollSpy } from '../components/settings/useScrollSpy';
 import { PageHeader, Pivots } from '../components/ui';
-import { type Screen, useStore } from '../store';
+import { activeConnection, type Screen, useStore } from '../store';
 import { track } from '../telemetry';
-import { REPO_CATEGORIES, RepoScope } from './settings/RepoScope';
-import { USER_CATEGORIES, UserScope } from './settings/UserScope';
+import { ProjectScope } from './settings/ProjectScope';
+import { RepoScope } from './settings/RepoScope';
+import {
+  CATEGORIES,
+  isScope,
+  SCOPE_LABEL,
+  SCOPES,
+  type Scope,
+  SearchStatus,
+  SearchTelemetry,
+  SettingsTree,
+} from './settings/scopeNav';
+import { UserScope } from './settings/UserScope';
 
-type Scope = 'user' | 'repo';
 type SettingsLink = Extract<Screen, { kind: 'settings' }>;
 
 const SCOPE_KEY = 'shellie.settings.scope';
 const REPO_KEY = 'shellie.settings.repoId';
-const SCOPE_LABEL: Record<Scope, string> = {
-  user: 'User',
-  repo: 'Repository',
-};
-const other = (s: Scope): Scope => (s === 'user' ? 'repo' : 'user');
-
+const CONNECTION_KEY = 'shellie.settings.connectionId';
 function readPref(key: string): string | null {
   try {
     return window.localStorage.getItem(key);
@@ -39,23 +42,34 @@ function writePref(key: string, value: string): void {
   }
 }
 
-/** Where a deep link opens: a repo or a `repo-*` (or the old `repos`) section is the Repository scope. */
+/**
+ * Where a deep link opens: a repo or a `repo-*` section is the Repository scope; a project or a `project-*`
+ * section is the Project scope; any other section is under User.
+ */
 function linkScope(link: SettingsLink | null): Scope | null {
   if (!link) return null;
   if (link.repoId) return 'repo';
-  if (link.section)
-    return link.section === 'repos' || link.section.startsWith('repo-')
-      ? 'repo'
-      : 'user';
+  if (link.connectionId) return 'project';
+  if (link.section) {
+    if (link.section.startsWith('project-')) return 'project';
+    if (link.section.startsWith('repo-')) return 'repo';
+    return 'user';
+  }
   return link.scope ?? null;
 }
 
 function initialScope(link: SettingsLink | null): Scope {
   const stored = readPref(SCOPE_KEY);
-  return (
-    linkScope(link) ??
-    (stored === 'repo' || stored === 'user' ? stored : 'user')
-  );
+  return linkScope(link) ?? (isScope(stored) ? stored : 'user');
+}
+
+/** The project a deep link asks for: its own, else that of the repo it opens. */
+function linkConnection(
+  link: SettingsLink | null,
+  repos: Repo[],
+): string | null {
+  if (link?.connectionId) return link.connectionId;
+  return repos.find((r) => r.id === link?.repoId)?.connectionId ?? null;
 }
 
 /** The repo a deep link asks for; without one (e.g. the old `repos` section) the remembered repo stays. */
@@ -63,96 +77,10 @@ function linkRepo(link: SettingsLink | null): string | null {
   return link?.repoId ?? null;
 }
 
-function SearchTelemetry({ scope }: { scope: Scope }) {
-  const search = useSettingsSearch();
-  const active = search.query.trim() !== '';
-  const results = useRef(0);
-  results.current = active ? search.countOther(other(scope)) : 0;
-  // Keyed on the query only: a scope switch or late row registration does not send it again.
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setTimeout(
-      () => track('settings.search', { results: results.current }),
-      1000,
-    );
-    return () => window.clearTimeout(timer);
-  }, [active, search.query]);
-  return null;
-}
-
-function SettingsTree({
-  scope,
-  activeId,
-}: {
-  scope: Scope;
-  activeId: string | null;
-}) {
-  const search = useSettingsSearch();
-  const repos = useStore((s) => s.repos);
-  const searching = search.query.trim() !== '';
-  const categories =
-    scope === 'user' ? USER_CATEGORIES : repos.length ? REPO_CATEGORIES : [];
-  return (
-    <nav className="settings-nav" aria-label="Settings sections">
-      {categories.map((c) => {
-        if (searching && search.categoryCount(c.id).matching === 0) return null;
-        return (
-          <a
-            key={c.id}
-            href={`#${c.id}`}
-            className={activeId === c.id ? 'active' : undefined}
-            aria-current={activeId === c.id ? 'true' : undefined}
-            onClick={(e) => {
-              e.preventDefault();
-              document
-                .getElementById(c.id)
-                ?.scrollIntoView?.({ block: 'start' });
-            }}
-          >
-            {c.title}
-          </a>
-        );
-      })}
-    </nav>
-  );
-}
-
-/** "N results in Repository" and the empty state, from the rows both scopes register. */
-function SearchStatus({
-  scope,
-  onSwitch,
-}: {
-  scope: Scope;
-  onSwitch: (s: Scope) => void;
-}) {
-  const search = useSettingsSearch();
-  const query = search.query.trim();
-  if (!query) return null;
-  const here = search.countOther(other(scope));
-  const there = search.countOther(scope);
-  return (
-    <>
-      {there > 0 && (
-        <button
-          type="button"
-          className="link"
-          onClick={() => onSwitch(other(scope))}
-        >
-          {there} {there === 1 ? 'result' : 'results'} in{' '}
-          {SCOPE_LABEL[other(scope)]}
-        </button>
-      )}
-      {here === 0 && (
-        <div className="settings-empty">
-          No settings match &ldquo;{query}&rdquo;
-        </div>
-      )}
-    </>
-  );
-}
-
 export function SettingsScreen() {
   const repos = useStore((s) => s.repos);
+  const connections = useStore((s) => s.connections);
+  const active = useStore(activeConnection);
   const go = useStore((s) => s.go);
   const notify = useStore((s) => s.notify);
   const link = useStore((s) =>
@@ -160,12 +88,22 @@ export function SettingsScreen() {
   );
   const section = link?.section;
 
-  const [scope, setScope] = useState<Scope>(() => initialScope(link));
+  const [picked, setScope] = useState<Scope>(() => initialScope(link));
   const [repoId, setRepoId] = useState<string | null>(
     () => linkRepo(link) ?? readPref(REPO_KEY),
   );
+  // Settings-local: picking a project here never switches the nav's project, and a nav switch while Settings
+  // is open does not move it. Opens on the deep link's project, else the active one, else the remembered one.
+  const [connectionId, setConnectionId] = useState<string | null>(
+    () =>
+      linkConnection(link, repos) ??
+      activeConnection(useStore.getState())?.id ??
+      readPref(CONNECTION_KEY) ??
+      connections[0]?.id ??
+      null,
+  );
   const [query, setQuery] = useState('');
-  // A new deep link while the page is open picks its scope and repo again.
+  // A new deep link while the page is open picks its scope, project and repo again.
   const [seenLink, setSeenLink] = useState(link);
   if (link !== seenLink) {
     setSeenLink(link);
@@ -173,14 +111,46 @@ export function SettingsScreen() {
     if (s) setScope(s);
     const r = linkRepo(link);
     if (r) setRepoId(r);
+    const c = linkConnection(link, repos);
+    if (c) setConnectionId(c);
     if (link?.section || link?.repoId) setQuery('');
   }
 
-  const repo = repos.find((r) => r.id === repoId) ?? repos[0] ?? null;
-  useEffect(() => writePref(SCOPE_KEY, scope), [scope]);
+  // In the Repository scope the picked repo's own project wins, so a repo moved to another project (its Project
+  // select) stays on screen; the pick follows it (below). Otherwise the pick, falling back to the active project
+  // only when the pick is gone (or none existed at open).
+  const pickedRepo = repos.find((r) => r.id === repoId);
+  const repoProject =
+    picked === 'repo' &&
+    pickedRepo?.connectionId &&
+    connections.some((c) => c.id === pickedRepo.connectionId)
+      ? pickedRepo.connectionId
+      : null;
+  const connection =
+    connections.find((c) => c.id === (repoProject ?? connectionId)) ??
+    active ??
+    null;
+  useEffect(() => {
+    if (connection && connection.id !== connectionId)
+      setConnectionId(connection.id);
+  }, [connection, connectionId]);
+  // Without a project there is no Project scope.
+  const scope: Scope = picked === 'project' && !connection ? 'user' : picked;
+  const scopes = SCOPES.filter((s) => s !== 'project' || connection);
+  const linked = (r: Repo) => connections.some((c) => c.id === r.connectionId);
+  const projectRepos = repos.filter(
+    (r) => connection && r.connectionId === connection.id,
+  );
+  const looseRepos = repos.filter((r) => !linked(r));
+  const shownRepos = [...projectRepos, ...looseRepos];
+  const repo = shownRepos.find((r) => r.id === repoId) ?? shownRepos[0] ?? null;
+  useEffect(() => writePref(SCOPE_KEY, picked), [picked]);
   useEffect(() => {
     if (repo) writePref(REPO_KEY, repo.id);
   }, [repo]);
+  useEffect(() => {
+    if (connection) writePref(CONNECTION_KEY, connection.id);
+  }, [connection]);
 
   const switchScope = (next: Scope) => {
     if (next === scope) return;
@@ -231,13 +201,17 @@ export function SettingsScreen() {
     return stop;
   }, [section, link]);
 
-  const spyIds = (scope === 'user' ? USER_CATEGORIES : REPO_CATEGORIES).map(
-    (c) => c.id,
-  );
+  const spyIds = CATEGORIES[scope].map((c) => c.id);
   const activeId = useScrollSpy(
     mainRef,
     spyIds,
-    `${scope}|${query}|${repo?.id ?? ''}`,
+    `${scope}|${query}|${connection?.id ?? ''}|${repo?.id ?? ''}`,
+  );
+  const repoOption = (r: Repo) => (
+    <option key={r.id} value={r.id}>
+      {r.name}
+      {r.discovered ? ' (found in a task)' : ''}
+    </option>
   );
 
   const addFolder = async () => {
@@ -278,13 +252,28 @@ export function SettingsScreen() {
             </label>
             <Pivots<Scope>
               label="Settings scope"
-              items={[
-                { key: 'user', label: SCOPE_LABEL.user },
-                { key: 'repo', label: SCOPE_LABEL.repo },
-              ]}
+              items={scopes.map((s) => ({ key: s, label: SCOPE_LABEL[s] }))}
               selected={scope}
               onSelect={switchScope}
             />
+            {scope !== 'user' && connection && (
+              <select
+                className="field"
+                aria-label="Project"
+                value={connection.id}
+                onChange={(e) => {
+                  // A picked project lists its own repos: the repo pick starts over there.
+                  setConnectionId(e.target.value);
+                  setRepoId(null);
+                }}
+              >
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {`${c.name} / ${c.project}`}
+                  </option>
+                ))}
+              </select>
+            )}
             {scope === 'repo' && repo && (
               <>
                 <select
@@ -293,24 +282,47 @@ export function SettingsScreen() {
                   value={repo.id}
                   onChange={(e) => setRepoId(e.target.value)}
                 >
-                  {repos.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                      {r.discovered ? ' (found in a task)' : ''}
-                    </option>
-                  ))}
+                  {connection ? (
+                    <>
+                      {projectRepos.map(repoOption)}
+                      {looseRepos.length > 0 && (
+                        <optgroup label="No project">
+                          {looseRepos.map(repoOption)}
+                        </optgroup>
+                      )}
+                    </>
+                  ) : (
+                    looseRepos.map(repoOption)
+                  )}
                 </select>
                 {addFolderButton}
               </>
             )}
           </div>
           <div className="settings-tree">
-            <SettingsTree scope={scope} activeId={activeId} />
+            <SettingsTree
+              scope={scope}
+              activeId={activeId}
+              empty={scope === 'repo' && !repo}
+            />
             <main className="settings-main" ref={mainRef}>
-              <SearchStatus scope={scope} onSwitch={switchScope} />
+              <SearchStatus
+                scope={scope}
+                scopes={scopes}
+                onSwitch={switchScope}
+              />
               <div className="settings-scope" hidden={scope !== 'user'}>
                 <UserScope />
               </div>
+              {connection && (
+                <div className="settings-scope" hidden={scope !== 'project'}>
+                  <ProjectScope
+                    key={connection.id}
+                    connection={connection}
+                    active={scope === 'project'}
+                  />
+                </div>
+              )}
               <div className="settings-scope" hidden={scope !== 'repo'}>
                 {repo ? (
                   <RepoScope
@@ -321,8 +333,10 @@ export function SettingsScreen() {
                 ) : (
                   <div className="list">
                     <div className="empty">
-                      No repositories yet. Add the folder of a git repository to
-                      start tasks in it.
+                      {repos.length
+                        ? `No repositories in ${connection?.project ?? 'this project'} yet.`
+                        : 'No repositories yet.'}{' '}
+                      Add the folder of a git repository to start tasks in it.
                       <div style={{ marginTop: 8 }}>{addFolderButton}</div>
                     </div>
                   </div>

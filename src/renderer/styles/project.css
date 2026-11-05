@@ -1,0 +1,229 @@
+/* The Project page: sprint and brains bands beside each other, the repositories graph below. */
+.home-band-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.home-band-head .home-band-title {
+  margin: 0;
+  margin-right: auto;
+}
+.project-status {
+  color: var(--muted);
+  margin-left: 12px;
+}
+.project-status.is-stale {
+  color: var(--warn);
+}
+.project-status.is-error {
+  color: var(--red);
+}
+.project-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 24px;
+}
+.project-warning {
+  color: var(--red);
+  margin: 0 0 8px;
+}
+.project-warning button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.project-sprint-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.project-progress {
+  height: 4px;
+  margin: 6px 0 8px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+.project-progress i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+.project-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.project-chip {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1px 10px;
+  font-size: 12px;
+}
+.project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.project-row-button {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.project-row-button:hover .project-row-title {
+  color: var(--link);
+}
+.project-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+.project-links {
+  display: flex;
+  gap: 12px;
+  margin-top: 2px;
+}
+.home-card.project-brain {
+  cursor: default;
+}
+.project-new-brain {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* The repositories graph: one hand-written SVG, laid out by screens/project/layout.ts. */
+.repo-graph {
+  width: 100%;
+}
+.repo-graph svg {
+  display: block;
+  overflow: visible;
+}
+.graph-node {
+  cursor: pointer;
+  outline: none;
+}
+.graph-node-box {
+  fill: var(--bg-card);
+  stroke: var(--line-strong);
+}
+.graph-node.is-elsewhere .graph-node-box {
+  stroke-dasharray: 4 3;
+}
+.graph-node:focus-visible .graph-node-box,
+.graph-node.is-hot .graph-node-box {
+  stroke: var(--link);
+}
+.graph-node-name {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.graph-node-mono {
+  fill: var(--muted);
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+.graph-node-warn {
+  fill: var(--warn);
+  font-size: 11px;
+}
+.graph-node-start {
+  fill: var(--link);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+.graph-node-start:hover,
+.graph-node-start:focus-visible {
+  text-decoration: underline;
+}
+.graph-edge-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+  outline: none;
+}
+.graph-edge {
+  fill: none;
+  stroke: var(--line-strong);
+  pointer-events: none;
+}
+.graph-edge-hit.is-hot + .graph-edge {
+  stroke: var(--link);
+}
+.graph-edge-count {
+  fill: var(--bg-card);
+  stroke: var(--line-strong);
+  pointer-events: none;
+}
+.graph-edge-count-text {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+/* While something is hovered, everything it does not join fades. */
+.repo-graph svg[data-hover] .graph-node:not(.is-hot),
+.repo-graph svg[data-hover] .graph-edge-hit:not(.is-hot) + .graph-edge {
+  opacity: 0.4;
+}
+.project-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.project-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-legend-node {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--repo-1);
+  border-radius: 2px;
+}
+.project-legend-node.is-elsewhere {
+  border-style: dashed;
+  border-left-width: 1px;
+}
+.project-legend-line {
+  display: inline-block;
+  width: 18px;
+  border-top: 2px solid var(--line-strong);
+}

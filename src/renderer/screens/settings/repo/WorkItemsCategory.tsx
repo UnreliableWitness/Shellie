@@ -1,19 +1,22 @@
-import { useEffect, useState } from 'react';
-import type {
-  Repo,
-  StartSettings,
-  WorkItemTypeMeta,
-} from '../../../../shared/types';
+import type { Repo, StartSettings } from '../../../../shared/types';
+import { effectiveStartSettings } from '../../../../shared/startSettings';
 import { api, tryInvoke } from '../../../api';
 import {
   SettingRow,
   SettingsCategory,
 } from '../../../components/settings/SettingRow';
+import {
+  StartSettingsRows,
+  useProjectTypes,
+} from '../../../components/settings/StartSettingsRows';
 import { useStore } from '../../../store';
 
-const NO_CONNECTION = 'Link a connection in General first';
+const CATEGORY = 'Work items on start';
 
-/** What Start does to the work item; stored on the repo (no file layer), Reset goes back to the app default. */
+/**
+ * What Start does to the work item for this repo: its project's default unless the repo overrides it. A repo
+ * with no project has only its own value (nothing to inherit).
+ */
 export function WorkItemsCategory({
   repo,
   active,
@@ -24,131 +27,69 @@ export function WorkItemsCategory({
   title: string;
 }) {
   const notify = useStore((s) => s.notify);
-  const settings = repo.workItemOnStart;
-  const connectionId = repo.connectionId;
-  const linked = connectionId !== null;
-  const [types, setTypes] = useState<WorkItemTypeMeta[] | null>(null);
+  const connections = useStore((s) => s.connections);
+  const project = connections.find((c) => c.id === repo.connectionId) ?? null;
+  const settings = effectiveStartSettings(repo, project);
+  const own = repo.workItemOnStart !== undefined;
+  const types = useProjectTypes(repo.connectionId, active && (own || !project));
 
-  useEffect(() => {
-    if (!active || !connectionId) return;
-    let live = true;
-    setTypes(null);
-    void tryInvoke(
-      () => api().invoke('workItems:types', connectionId),
-      notify,
-    ).then((result) => {
-      if (live && result) setTypes(result);
-    });
-    return () => {
-      live = false;
-    };
-  }, [active, connectionId, notify]);
-
-  // repos:changed is broadcast by the handler and refreshes the store.
+  // repos:changed is broadcast by the handlers and refreshes the store.
   const save = (next: StartSettings) =>
     void tryInvoke(
       () => api().invoke('repos:setWorkItemOnStart', repo.id, next),
       notify,
     );
-
-  const choose = (type: string, state: string) => {
-    const { [type]: _removed, ...rest } = settings.stateOverrides;
-    save({
-      ...settings,
-      stateOverrides: state ? { ...rest, [type]: state } : rest,
-    });
-  };
-
-  const hint = linked ? null : (
-    <div className="muted small">{NO_CONNECTION}</div>
-  );
-  const overridden = Object.keys(settings.stateOverrides).length > 0;
+  const clear = () =>
+    void tryInvoke(
+      () => api().invoke('repos:clearWorkItemOnStart', repo.id),
+      notify,
+    );
 
   return (
     <SettingsCategory id="repo-workitems" title={title}>
-      <SettingRow
-        id="repo-workitems-move"
-        scope="repo"
-        category="Work items on start"
-        title="Move to In Progress"
-        description="Start moves the work item to its type's In Progress state."
-        keywords={['Move the work item to In Progress on start', 'state']}
-        modified={!settings.moveToInProgress}
-        onReset={() => save({ ...settings, moveToInProgress: true })}
-      >
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            disabled={!linked}
-            checked={settings.moveToInProgress}
-            onChange={(e) =>
-              save({ ...settings, moveToInProgress: e.target.checked })
-            }
-          />{' '}
-          Move the work item to In Progress on start
-        </label>
-        {hint}
-      </SettingRow>
-      <SettingRow
-        id="repo-workitems-assign"
-        scope="repo"
-        category="Work items on start"
-        title="Assign to me"
-        description="Start assigns an unassigned work item to you."
-        keywords={['Assign it to me if unassigned']}
-        modified={!settings.assignToMe}
-        onReset={() => save({ ...settings, assignToMe: true })}
-      >
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            disabled={!linked}
-            checked={settings.assignToMe}
-            onChange={(e) =>
-              save({ ...settings, assignToMe: e.target.checked })
-            }
-          />{' '}
-          Assign it to me if unassigned
-        </label>
-        {hint}
-      </SettingRow>
-      <SettingRow
-        id="repo-workitems-states"
-        scope="repo"
-        category="Work items on start"
-        title="In Progress state per type"
-        description="The state Start moves each work item type to; Default is the type's first In Progress state."
-        keywords={['type', 'state', 'override']}
-        modified={overridden}
-        onReset={() => save({ ...settings, stateOverrides: {} })}
-      >
-        {!linked ? (
-          hint
-        ) : types === null ? (
-          <div className="muted small">Loading&hellip;</div>
-        ) : (
-          types.map((t) => (
-            <div key={t.name} className="small" style={{ marginTop: 4 }}>
-              <span>{t.name}</span>{' '}
-              <select
-                className="field"
-                aria-label={`In Progress state for ${t.name}`}
-                value={settings.stateOverrides[t.name] ?? ''}
-                onChange={(e) => choose(t.name, e.target.value)}
-              >
-                <option value="">Default</option>
-                {t.states
-                  .filter((s) => s.category === 'InProgress')
-                  .map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
+      {project && (
+        <SettingRow
+          id="repo-workitems-source"
+          scope="repo"
+          category={CATEGORY}
+          title="Source"
+          description="A repo inherits its project's settings unless it overrides them."
+          keywords={['inherit', 'override', 'project default']}
+        >
+          {own ? (
+            <div className="row small">
+              <span>Overridden here</span>
+              <button type="button" className="btn" onClick={clear}>
+                Reset to project default
+              </button>
             </div>
-          ))
-        )}
-      </SettingRow>
+          ) : (
+            <div className="row small">
+              <span>Inherited from {project.project}</span>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => save(settings)}
+              >
+                Override
+              </button>
+            </div>
+          )}
+        </SettingRow>
+      )}
+      {(own || !project) && (
+        <StartSettingsRows
+          value={settings}
+          onChange={save}
+          types={types}
+          scope="repo"
+          category={CATEGORY}
+          disabled={!repo.connectionId}
+          hint={
+            repo.connectionId ? undefined : 'Link a project in General first'
+          }
+        />
+      )}
     </SettingsCategory>
   );
 }

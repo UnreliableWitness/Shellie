@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../shared/usage';
-import type { Repo } from '../../shared/types';
+import type { Connection, Repo } from '../../shared/types';
 import { useStore } from '../store';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
+import { useWorkItemTypes } from '../workItemTypes';
 import { SettingsScreen } from './SettingsScreen';
 
 const ADD_FOLDER = `Add folder${String.fromCharCode(8230)}`;
@@ -27,7 +28,28 @@ const webshop: Repo = {
 
 const repoScope = { kind: 'settings' as const, scope: 'repo' as const };
 
+const conn = (id: string, project: string): Connection => ({
+  id,
+  name: 'contoso',
+  organizationUrl: 'https://dev.azure.com/contoso',
+  project,
+  user: null,
+  status: 'ok',
+  checkedAt: null,
+  userUniqueName: null,
+  provider: 'azure-devops',
+  workItemOnStart: {
+    moveToInProgress: true,
+    assignToMe: true,
+    stateOverrides: {},
+  },
+  writeTimeToAdo: false,
+});
+const shop = conn('c1', 'Shop');
+const platform = conn('c2', 'Platform');
+
 beforeEach(() => {
+  useWorkItemTypes.getState().reset();
   window.localStorage.clear();
   useStore.setState({
     repos: [],
@@ -160,13 +182,14 @@ describe('SettingsScreen', () => {
             assignToMe: true,
             stateOverrides: {},
           },
+          writeTimeToAdo: false,
         },
       ],
       screen: repoScope,
     });
     render(<SettingsScreen />);
     await userEvent.selectOptions(
-      screen.getByLabelText('Connection for webshop'),
+      screen.getByLabelText('Project for webshop'),
       'c1',
     );
     await waitFor(() =>
@@ -222,6 +245,7 @@ describe('SettingsScreen', () => {
         assignToMe: true,
         stateOverrides: {},
       },
+      writeTimeToAdo: false,
     };
     const linked: Repo = { ...webshop, connectionId: 'c1' };
     const types = [
@@ -429,7 +453,6 @@ describe('SettingsScreen', () => {
     const stored: AppSettings = {
       version: 1 as const,
       receiverPort: 4319,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
@@ -487,7 +510,6 @@ describe('SettingsScreen', () => {
     expect(calls.find((c) => c.channel === 'settings:save')?.args[0]).toEqual({
       version: 1,
       receiverPort: 4319,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: false,
@@ -525,7 +547,6 @@ describe('SettingsScreen', () => {
     let stored: AppSettings = {
       version: 1 as const,
       receiverPort: 4319,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
@@ -584,7 +605,6 @@ describe('SettingsScreen', () => {
     ).toEqual({
       version: 1,
       receiverPort: 4400,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: false,
@@ -721,7 +741,7 @@ describe('SettingsScreen', () => {
       );
       expect(screen.getByRole('combobox', { name: 'Theme' })).toBeVisible();
       expect(screen.queryByRole('combobox', { name: 'Repository' })).toBeNull();
-      expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
+      expect(screen.getByRole('link', { name: 'Projects' })).toBeVisible();
     });
 
     it('Repository tab shows the chosen repo', async () => {
@@ -791,12 +811,12 @@ describe('SettingsScreen', () => {
       );
     });
 
-    it('the old repos deep link opens the remembered repo', () => {
+    it('a Repository scope link opens the remembered repo', () => {
       installFakeApi();
       window.localStorage.setItem('shellie.settings.repoId', 'r2');
       useStore.setState({
         repos: [webshop, api2],
-        screen: { kind: 'settings', section: 'repos' },
+        screen: { kind: 'settings', scope: 'repo' },
       });
       render(<SettingsScreen />);
       expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
@@ -808,12 +828,12 @@ describe('SettingsScreen', () => {
       );
     });
 
-    it('the old repos deep link opens the first repo when the remembered one is gone', () => {
+    it('a Repository scope link opens the first repo when the remembered one is gone', () => {
       installFakeApi();
       window.localStorage.setItem('shellie.settings.repoId', 'gone');
       useStore.setState({
         repos: [webshop, api2],
-        screen: { kind: 'settings', section: 'repos' },
+        screen: { kind: 'settings', scope: 'repo' },
       });
       render(<SettingsScreen />);
       expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
@@ -868,7 +888,7 @@ describe('SettingsScreen', () => {
         screen.getByRole('searchbox', { name: 'Search settings' }),
         'connection',
       );
-      expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
+      expect(screen.getByRole('link', { name: 'Projects' })).toBeVisible();
       expect(screen.queryByRole('link', { name: 'Appearance' })).toBeNull();
       expect(screen.queryByRole('combobox', { name: 'Theme' })).toBeNull();
       const searches = () =>
@@ -876,7 +896,7 @@ describe('SettingsScreen', () => {
       await waitFor(
         () =>
           expect(searches()).toEqual([
-            expect.objectContaining({ props: { results: 3 } }),
+            expect.objectContaining({ props: { results: 2 } }),
           ]),
         { timeout: 2000 },
       );
@@ -887,9 +907,9 @@ describe('SettingsScreen', () => {
         'aria-selected',
         'true',
       );
-      expect(screen.getByLabelText('Connection for webshop')).toBeVisible();
+      expect(screen.getByLabelText('Project for webshop')).toBeVisible();
       expect(
-        screen.getByRole('button', { name: '3 results in User' }),
+        screen.getByRole('button', { name: '2 results in User' }),
       ).toBeVisible();
       // Same query in the other scope: not sent again.
       await new Promise((r) => setTimeout(r, 1200));
@@ -918,6 +938,244 @@ describe('SettingsScreen', () => {
       expect(
         screen.getByRole('searchbox', { name: 'Search settings' }),
       ).toHaveFocus();
+    });
+
+    it('the pivot has three scopes with connections and two without', () => {
+      installFakeApi();
+      const { unmount } = render(<SettingsScreen />);
+      expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+        'User',
+        'Repository',
+      ]);
+      expect(screen.queryByRole('combobox', { name: 'Project' })).toBeNull();
+      unmount();
+      useStore.setState({ connections: [shop, platform] });
+      render(<SettingsScreen />);
+      expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+        'User',
+        'Project',
+        'Repository',
+      ]);
+    });
+
+    it('the picked project starts at the active project, not the remembered one', async () => {
+      installFakeApi();
+      window.localStorage.setItem('shellie.settings.scope', 'project');
+      window.localStorage.setItem('shellie.settings.connectionId', 'c2');
+      useStore.setState({ connections: [shop, platform], connectionId: 'c1' });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'Project' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      const picker = screen.getByRole('combobox', { name: 'Project' });
+      expect(picker).toHaveValue('c1');
+      expect(
+        screen.getByRole('option', { name: 'contoso / Platform' }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Brains' })).toBeVisible();
+      expect(document.getElementById('project-connection')).toBeVisible();
+      await userEvent.selectOptions(picker, 'c2');
+      expect(window.localStorage.getItem('shellie.settings.connectionId')).toBe(
+        'c2',
+      );
+      // Settings-local: the nav's project stays.
+      expect(useStore.getState().connectionId).toBe('c1');
+    });
+
+    it('a nav project change while Settings is open leaves the picker alone', () => {
+      installFakeApi();
+      useStore.setState({
+        connections: [shop, platform],
+        connectionId: 'c1',
+        screen: { kind: 'settings', scope: 'project' },
+      });
+      render(<SettingsScreen />);
+      act(() => useStore.setState({ connectionId: 'c2' }));
+      expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
+        'c1',
+      );
+    });
+
+    it("a repoId deep link picks that repo's project", () => {
+      installFakeApi();
+      window.localStorage.setItem('shellie.settings.connectionId', 'c1');
+      const loose: Repo = { ...webshop, id: 'r3', name: 'scripts' };
+      useStore.setState({
+        connections: [shop, platform],
+        repos: [
+          { ...webshop, connectionId: 'c1' },
+          { ...api2, connectionId: 'c2' },
+          loose,
+        ],
+        screen: { kind: 'settings', repoId: 'r2' },
+      });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
+        'c2',
+      );
+      const repoPicker = screen.getByRole('combobox', { name: 'Repository' });
+      expect(repoPicker).toHaveValue('r2');
+      expect(screen.queryByRole('option', { name: 'webshop' })).toBeNull();
+      const group = screen.getByRole('group', { name: 'No project' });
+      expect(group).toContainElement(
+        screen.getByRole('option', { name: 'scripts' }),
+      );
+    });
+
+    it.each([
+      ['in the picked project', 'c1'],
+      ['in No project', null],
+    ])(
+      'a repo %s moved to another project stays on screen, and the picker follows it',
+      async (_, from) => {
+        const moved = { ...api2, connectionId: 'c2' };
+        const { emit } = installFakeApi({
+          'repos:setConnection': () => moved,
+        });
+        useStore.setState({
+          connections: [shop, platform],
+          connectionId: 'c1',
+          repos: [
+            { ...webshop, connectionId: 'c1' },
+            { ...api2, connectionId: from },
+          ],
+          screen: { kind: 'settings', repoId: 'r2' },
+        });
+        // A No project repo opens on the active project.
+        render(<SettingsScreen />);
+        expect(
+          screen.getByRole('combobox', { name: 'Repository' }),
+        ).toHaveValue('r2');
+        await userEvent.selectOptions(
+          screen.getByLabelText('Project for api'),
+          'c2',
+        );
+        const next = [{ ...webshop, connectionId: 'c1' }, moved];
+        act(() => {
+          useStore.setState({ repos: next });
+          emit('repos:changed', next);
+        });
+        expect(
+          screen.getByRole('combobox', { name: 'Repository' }),
+        ).toHaveValue('r2');
+        expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
+          'c2',
+        );
+        expect(window.localStorage.getItem('shellie.settings.repoId')).toBe(
+          'r2',
+        );
+        // Settings-local: the nav's project stays.
+        expect(useStore.getState().connectionId).toBe('c1');
+      },
+    );
+
+    it('the project-brains-new deep link opens Project > Brains with the create form focused', async () => {
+      installFakeApi();
+      const proto = Element.prototype as unknown as {
+        scrollIntoView?: () => void;
+      };
+      const original = proto.scrollIntoView;
+      const scrolled: string[] = [];
+      proto.scrollIntoView = function (this: Element) {
+        scrolled.push(this.id);
+      };
+      try {
+        useStore.setState({
+          connections: [shop, platform],
+          connectionId: 'c1',
+          screen: {
+            kind: 'settings',
+            scope: 'project',
+            connectionId: 'c2',
+            section: 'project-brains-new',
+          },
+        });
+        render(<SettingsScreen />);
+        expect(screen.getByRole('tab', { name: 'Project' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        const form = screen.getByRole('form', { name: 'New brain' });
+        await waitFor(() =>
+          expect(within(form).getByLabelText('Name')).toHaveFocus(),
+        );
+        expect(within(form).getByLabelText('Name')).toHaveValue(
+          'Platform brain',
+        );
+        expect(scrolled).toContain('project-brains-new');
+      } finally {
+        proto.scrollIntoView = original;
+      }
+    });
+
+    it('a project deep link opens the Project scope on that project', () => {
+      installFakeApi();
+      useStore.setState({
+        connections: [shop, platform],
+        connectionId: 'c1',
+        screen: {
+          kind: 'settings',
+          scope: 'project',
+          connectionId: 'c2',
+          section: 'project-brains',
+        },
+      });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'Project' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
+        'c2',
+      );
+    });
+
+    it('a project deep link without connections opens the User scope', () => {
+      installFakeApi();
+      useStore.setState({ screen: { kind: 'settings', scope: 'project' } });
+      render(<SettingsScreen />);
+      expect(screen.getByRole('tab', { name: 'User' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+
+    it('search counts name both other scopes', async () => {
+      installFakeApi();
+      useStore.setState({
+        connections: [shop],
+        repos: [webshop],
+        screen: { kind: 'settings', scope: 'project' },
+      });
+      render(<SettingsScreen />);
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: 'Search settings' }),
+        'connection',
+      );
+      expect(
+        screen.getByRole('button', { name: '2 results in User' }),
+      ).toBeVisible();
+      expect(
+        screen.getByRole('button', { name: '1 result in Repository' }),
+      ).toBeVisible();
+      await userEvent.click(
+        screen.getByRole('button', { name: '1 result in Repository' }),
+      );
+      expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(
+        screen.getByRole('button', { name: '2 results in User' }),
+      ).toBeVisible();
+      expect(
+        screen.getByRole('button', { name: '4 results in Project' }),
+      ).toBeVisible();
     });
 
     it('no repos: Repository tab shows Add folder', async () => {

@@ -89,6 +89,7 @@ import type {
   WorkspaceCheck,
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
+import { effectiveStartSettings, startOf } from '../../shared/startSettings';
 import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
 import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
@@ -98,6 +99,7 @@ import {
   HOME_ID,
   isReopening,
   taskConnectionId,
+  taskRepoIds,
   taskWorkspaces,
   workspaceById,
   type WorkspaceView,
@@ -115,7 +117,7 @@ import type { CostSender } from '../costServer/CostSender';
 import type { CostServerStore } from '../costServer/CostServerStore';
 import { type CostServerStatus, validServerUrl } from '../../shared/costServer';
 import { HomeService } from '../home/HomeService';
-import { homeStats } from '../home/homeStats';
+import { billableEurByTask, homeStats } from '../home/homeStats';
 import { DocsWatcher } from '../docs/DocsWatcher';
 import { GitDirWatcher } from '../review/GitDirWatcher';
 import type { AgentsDetected } from '../../shared/agents';
@@ -418,12 +420,6 @@ class LeakError extends Error {
     this.name = 'LeakError';
   }
 }
-
-/** The repos a task works in: its home and the ones it joined. */
-const taskRepoIds = (t: Task): string[] => [
-  ...(t.repoId === null ? [] : [t.repoId]),
-  ...t.extraWorkspaces.map((w) => w.repoId),
-];
 
 /** Keys (repo:branch, repo:worktree) of tasks being created right now, across handler bundles. */
 const creating = new Set<string>();
@@ -947,7 +943,18 @@ export function createHandlers(s: Services): Handlers {
     return types;
   };
   /** Booked time goes to Azure DevOps (Completed and Remaining Work) only when the user turned it on. */
-  const writeTime = () => s.settings.get().writeTimeToAdo;
+  const writeTimeFor = (task: Task): boolean => {
+    const target = adoTarget(task);
+    return (
+      target !== null && s.connections.get(target.connectionId).writeTimeToAdo
+    );
+  };
+  /** A connection by id, null when none or gone (a repo's project may have been removed). */
+  const projectOf = (id: string | null): Connection | null =>
+    id ? (s.connections.list().find((c) => c.id === id) ?? null) : null;
+  /** The start settings for a task's work item: its repo's own, else those of the project the work item is in. */
+  const startSettingsFor = (task: Task, repo: Repo) =>
+    effectiveStartSettings(repo, projectOf(taskConnectionId(task, [repo])));
   const timeWrites = new Map<string, Promise<unknown>>();
   /**
    * Writes the difference between the task's booked hours and what was written before to its work item, one write
@@ -1030,7 +1037,7 @@ export function createHandlers(s: Services): Handlers {
           wallClock: m.wallClockSeconds,
         }),
       });
-      if (!writeTime() || !task.workItem || !adoTarget(task)) return;
+      if (!writeTimeFor(task) || !task.workItem) return;
       const error = await syncTime(taskId);
       if (error)
         s.broadcast('notice', {
@@ -1957,6 +1964,7 @@ export function createHandlers(s: Services): Handlers {
     const details = await workItemDetails(task, repo);
     const brainOfTask = await setupBrain(task, repo, details);
     const reopening = isReopening(task);
+    const startSettings = startSettingsFor(task, repo);
     const defs = reopening ? restoredTerminals(task) : initialTerminals(task);
     const hasApm =
       config.apm !== false &&
@@ -1999,8 +2007,7 @@ export function createHandlers(s: Services): Handlers {
         Boolean(
           task.workItem &&
           taskConnectionId(task, [repo]) &&
-          (repo.workItemOnStart.moveToInProgress ||
-            repo.workItemOnStart.assignToMe),
+          (startSettings.moveToInProgress || startSettings.assignToMe),
         ),
       ...(task.reopen ? { restore: { from: task.reopen.from } } : {}),
       ...(reopening
@@ -2103,6 +2110,7 @@ export function createHandlers(s: Services): Handlers {
             const connection = s.connections.get(
               taskConnectionId(task, [repo])!,
             );
+            const startSettings = startSettingsFor(task, repo);
             const client = s.trackers.tracker(connection.id);
             const id = Number(task.workItem!.id);
             const current = await client.itemForStart(id);
@@ -2112,16 +2120,11 @@ export function createHandlers(s: Services): Handlers {
             );
             // Connections saved before the unique name was stored have none; look it up once.
             let user = connection.userUniqueName;
-            if (!user && repo.workItemOnStart.assignToMe)
+            if (!user && startSettings.assignToMe)
               user = await verifyConnection(connection.id)
                 .then((c) => c.userUniqueName)
                 .catch(() => null);
-            const plan = planStartUpdate(
-              current,
-              states,
-              repo.workItemOnStart,
-              user,
-            );
+            const plan = planStartUpdate(current, states, startSettings, user);
             if (plan.state || plan.assignTo)
               await client.updateItem(id, {
                 ...(plan.state ? { state: plan.state } : {}),
@@ -3009,14 +3012,8 @@ export function createHandlers(s: Services): Handlers {
       return { ...r, secretsFound };
     },
     'repos:add': async (folder, options) => {
-      const linked = options?.connectionId
-        ? s.connections.list().find((c) => c.id === options.connectionId)
-        : undefined;
-      // A new repo starts with its connection's on-start options; Settings stays the place to change them.
-      const repo = await s.repos.add(folder, {
-        ...options,
-        workItemOnStart: linked?.workItemOnStart,
-      });
+      // A new repo inherits its project's on-start options until it gets its own.
+      const repo = await s.repos.add(folder, options);
       reposChanged();
       tel.event('repo.added', {
         repos: s.repos.list().length,
@@ -3120,7 +3117,7 @@ export function createHandlers(s: Services): Handlers {
           commands: input.commands,
           tabs: setupTabLabels(input, s.platform.shellLabel),
           workItem: input.workItem,
-          start: repo.workItemOnStart,
+          ...startOf(repo, projectOf(repo.connectionId)),
           types: repo.connectionId
             ? (typesKnown.get(repo.connectionId) ?? null)
             : null,
@@ -4085,6 +4082,11 @@ export function createHandlers(s: Services): Handlers {
     },
     'connections:list': async () => s.connections.list(),
     'connections:save': saveConnection,
+    'connections:update': async (id, patch) => {
+      const updated = await s.connections.patch(id, patch);
+      connectionsChanged();
+      return updated;
+    },
     'connections:probe': async (input) => {
       // A stored token only ever goes to its own organization, whatever URL came with it.
       const organizationUrl = input.connectionId
@@ -4150,11 +4152,13 @@ export function createHandlers(s: Services): Handlers {
       s.connections.get(id);
       for (const r of s.repos.list())
         if (r.connectionId === id) await s.repos.setConnection(r.id, null);
+      const archived = await brain.store.archiveByConnection(id);
       await s.connections.remove(id);
       s.trackers.invalidate(id);
       dropTypes(id);
       connectionsChanged();
       reposChanged();
+      for (const brainId of archived) s.broadcast('brain:changed', { brainId });
       tel.event('connection.removed');
     },
     'connections:verify': async (id) => verifyConnection(id),
@@ -4167,6 +4171,11 @@ export function createHandlers(s: Services): Handlers {
     },
     'repos:setWorkItemOnStart': async (repoId, settings) => {
       const repo = await s.repos.setWorkItemOnStart(repoId, settings);
+      reposChanged();
+      return repo;
+    },
+    'repos:clearWorkItemOnStart': async (repoId) => {
+      const repo = await s.repos.clearWorkItemOnStart(repoId);
       reposChanged();
       return repo;
     },
@@ -4424,11 +4433,11 @@ export function createHandlers(s: Services): Handlers {
     },
 
     'time:sync': async (taskId) => {
-      if (!writeTime())
-        throw new Error(
-          'Writing time to Azure DevOps is off. Turn it on in Settings.',
-        );
       const task = taskById(taskId);
+      if (!writeTimeFor(task))
+        throw new Error(
+          'Writing time to Azure DevOps is off for this project. Turn it on in Settings > Project > Time.',
+        );
       if (task.status !== 'done' || !task.time)
         throw new Error('Only a finished task with booked time can be written');
       const error = await syncTime(taskId);
@@ -4503,6 +4512,7 @@ export function createHandlers(s: Services): Handlers {
         time: s.time,
       }),
     'usage:task': async (taskId) => s.usage.summarize(taskId),
+    'usage:costs': async (taskIds) => billableEurByTask(s.usage, taskIds),
     'usage:setBillable': async (taskId, sessionId, billable) => {
       await s.usage.setBillable(taskId, sessionId, billable);
       return s.usage.summarize(taskId);

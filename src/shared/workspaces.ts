@@ -92,6 +92,12 @@ export function workspaceById(
   return found;
 }
 
+/** The repos a task works in: its home and the ones it joined. */
+export const taskRepoIds = (t: Task): string[] => [
+  ...(t.repoId === null ? [] : [t.repoId]),
+  ...t.extraWorkspaces.map((w) => w.repoId),
+];
+
 /** The connection of the task's work item: its own, else the home repo's. */
 export function taskConnectionId(
   task: Pick<Task, 'connectionId' | 'repoId'>,

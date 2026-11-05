@@ -1,12 +1,8 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { BrainOptions, BrainView, BrainWiki } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
-import {
-  SettingRow,
-  SettingsCategory,
-} from '../../components/settings/SettingRow';
 import { useBrains } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { track } from '../../telemetry';
@@ -49,8 +45,22 @@ const TOGGLES: {
   },
 ];
 
-function CreateBrainForm({ connection }: { connection: Connection }) {
+/** The section a deep link ("+ New brain" on the project page) opens with this form focused. */
+export const NEW_BRAIN_SECTION = 'project-brains-new';
+
+function CreateBrainForm({
+  connection,
+  focus,
+}: {
+  connection: Connection;
+  /** Changes (a new deep link) to focus the name field again; null leaves focus alone. */
+  focus: object | null;
+}) {
   const id = useId();
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focus) nameRef.current?.focus({ preventScroll: true });
+  }, [focus]);
   const [name, setName] = useState(`${connection.project} brain`);
   const [project, setProject] = useState(connection.project);
   const [path, setPath] = useState<string | null>(null);
@@ -96,7 +106,9 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
 
   return (
     <form
+      id={NEW_BRAIN_SECTION}
       className="conn-form"
+      aria-label="New brain"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
@@ -104,6 +116,7 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
     >
       <label htmlFor={`${id}-name`}>Name</label>
       <input
+        ref={nameRef}
         id={`${id}-name`}
         className="field"
         value={name}
@@ -379,48 +392,40 @@ function BrainCard({ brain }: { brain: BrainView }) {
   );
 }
 
-/** Brains per Azure DevOps connection: create, configure, update skills, delete. */
-export function BrainsSection() {
-  const connections = useStore((s) => s.connections);
-  const brains = useBrains();
-  const ado = connections.filter((c) => c.provider === 'azure-devops');
+/** One project's brains: active ones, archived ones apart, and the form to create one. */
+export function BrainsForConnection({
+  connection,
+}: {
+  connection: Connection;
+}) {
+  const brains = useBrains().filter((b) => b.connectionId === connection.id);
+  const focusNew = useStore((s) =>
+    s.screen.kind === 'settings' && s.screen.section === NEW_BRAIN_SECTION
+      ? s.screen
+      : null,
+  );
+  const archived = brains.filter((b) => b.archived);
   return (
-    <SettingsCategory id="brains" title="Brains">
-      {ado.length === 0 ? (
-        <div className="small muted">Add a connection to create a brain.</div>
-      ) : null}
-      {ado.map((c) => (
-        <SettingRow
-          key={c.id}
-          id={`brain-conn-${c.id}`}
-          category="Brains"
-          title={`${c.name} / ${c.project}`}
-          description="Brains for this connection's project"
-          keywords={['brain', 'wiki', 'second brain']}
-        >
-          <div className="list">
-            {brains
-              .filter((b) => b.connectionId === c.id && !b.archived)
-              .map((b) => (
-                <BrainCard key={b.id} brain={b} />
-              ))}
+    <>
+      <div className="list">
+        {brains
+          .filter((b) => !b.archived)
+          .map((b) => (
+            <BrainCard key={b.id} brain={b} />
+          ))}
+      </div>
+      {archived.length > 0 && (
+        <div className="list" aria-label="Archived brains">
+          <div className="muted small">
+            Archived: out of the nav, no task gets them, nothing runs for them.
+            Restore to use again.
           </div>
-          {brains.some((b) => b.connectionId === c.id && b.archived) && (
-            <div className="list" aria-label="Archived brains">
-              <div className="muted small">
-                Archived: out of the nav, no task gets them, nothing runs for
-                them. Restore to use again.
-              </div>
-              {brains
-                .filter((b) => b.connectionId === c.id && b.archived)
-                .map((b) => (
-                  <BrainCard key={b.id} brain={b} />
-                ))}
-            </div>
-          )}
-          <CreateBrainForm connection={c} />
-        </SettingRow>
-      ))}
-    </SettingsCategory>
+          {archived.map((b) => (
+            <BrainCard key={b.id} brain={b} />
+          ))}
+        </div>
+      )}
+      <CreateBrainForm connection={connection} focus={focusNew} />
+    </>
   );
 }

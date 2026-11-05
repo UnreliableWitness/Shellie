@@ -91,7 +91,6 @@ describe('SettingsStore', () => {
     expect(s.get()).toEqual({
       version: 1,
       receiverPort: 5000,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
@@ -127,7 +126,6 @@ describe('SettingsStore', () => {
     expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual({
       version: 1,
       receiverPort: 5001,
-      writeTimeToAdo: false,
       idleMinutes: 5,
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,

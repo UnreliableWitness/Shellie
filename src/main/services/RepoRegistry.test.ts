@@ -73,12 +73,8 @@ describe('RepoRegistry', () => {
       configFound: false,
       discovered: false,
       overrides: {},
-      workItemOnStart: {
-        moveToInProgress: true,
-        assignToMe: true,
-        stateOverrides: {},
-      },
     });
+    expect(added.workItemOnStart).toBeUndefined();
     expect(reg.list()).toHaveLength(1);
     expect(reg.get(added.id)).toEqual(added);
   });
@@ -108,11 +104,7 @@ describe('RepoRegistry', () => {
     const store = new TaskStore(file);
     await store.load();
     const reg = new RepoRegistry(store, new GitClient());
-    expect(reg.get('r1').workItemOnStart).toEqual({
-      moveToInProgress: true,
-      assignToMe: true,
-      stateOverrides: {},
-    });
+    expect(reg.get('r1').workItemOnStart).toBeUndefined();
     expect(reg.get('r1').agentCommands).toBeUndefined();
   });
 
@@ -173,11 +165,6 @@ describe('RepoRegistry', () => {
       configFound: true,
       discovered: false,
       overrides: {},
-      workItemOnStart: {
-        moveToInProgress: true,
-        assignToMe: true,
-        stateOverrides: {},
-      },
     });
   });
 

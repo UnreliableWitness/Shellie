@@ -408,6 +408,7 @@ const iterationOption = (i: SprintIteration) => {
 
 function SprintPage({ connection }: { connection: Connection }) {
   const setSprintName = useStore((s) => s.setSprintName);
+  const setSprint = useStore((s) => s.setSprint);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -503,6 +504,7 @@ function SprintPage({ connection }: { connection: Connection }) {
         mine: assigned,
       });
       setSprintName(sprint.iteration?.name ?? null);
+      if (!selected) setSprint(connection.id, sprint);
     } catch (e) {
       if (mine !== seq.current) return;
       setSprintName(null);
@@ -513,7 +515,7 @@ function SprintPage({ connection }: { connection: Connection }) {
     } finally {
       if (mine === seq.current) setBusy(false);
     }
-  }, [connection.id, selected, setSprintName, loadTime]);
+  }, [connection.id, selected, setSprintName, setSprint, loadTime]);
 
   useEffect(() => {
     let live = true;
