@@ -112,6 +112,7 @@ const defaults: FakeHandlers = {
   'brain:wikiPages': () => [],
   'brain:addFiles': () => [],
   'brain:sources': () => [],
+  'brain:counts': () => ({ pages: 0, sources: 0 }),
   'brain:files': () => [],
   'brain:read': () => ({ text: '' }),
   'brain:verify': () => ({ verified: '2026-11-04' }),

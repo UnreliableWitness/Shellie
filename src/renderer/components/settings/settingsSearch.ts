@@ -22,8 +22,6 @@ export type SettingsSearch = {
     texts: string[],
     category?: string,
   ): () => void;
-  /** How many registered rows outside `scope` match the query. */
-  countOther(scope: string): number;
   /** How many registered rows of `scope` match the query. */
   countIn(scope: string): number;
   /** How many registered rows of a category match the query, and how many exist. */
@@ -41,7 +39,6 @@ const fallback: SettingsSearch = {
   query: '',
   matches: () => true,
   register: () => () => {},
-  countOther: () => 0,
   countIn: () => 0,
   categoryCount: () => ({ matching: 0, total: 0 }),
 };
@@ -76,10 +73,6 @@ export function SettingsSearchProvider({
       query,
       matches: (text) => matchesQuery(query, text),
       register,
-      countOther: (scope) =>
-        [...entries.current.values()].filter(
-          (e) => e.scope !== scope && matchesQuery(query, e.texts),
-        ).length,
       countIn: (scope) =>
         [...entries.current.values()].filter(
           (e) => e.scope === scope && matchesQuery(query, e.texts),

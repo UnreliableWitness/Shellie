@@ -26,7 +26,7 @@ export function migrateWriteTime(
 export function migrateStartSettings(
   repos: Repo[],
   connections: Connection[],
-): { id: string }[] {
+): string[] {
   const byId = new Map(connections.map((c) => [c.id, c]));
   return repos
     .filter((r) => {
@@ -37,7 +37,7 @@ export function migrateStartSettings(
         isDeepStrictEqual(r.workItemOnStart, c.workItemOnStart)
       );
     })
-    .map((r) => ({ id: r.id }));
+    .map((r) => r.id);
 }
 
 type ApplyDeps = {
@@ -81,9 +81,7 @@ export async function applyProjectScopeMigration(
   }
   try {
     const drop = new Set(
-      migrateStartSettings(store.state.repos, connections.list()).map(
-        (r) => r.id,
-      ),
+      migrateStartSettings(store.state.repos, connections.list()),
     );
     if (drop.size > 0)
       await store.update((s) => {

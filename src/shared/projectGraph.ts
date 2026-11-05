@@ -1,5 +1,5 @@
 import type { Connection, Repo, Task } from './types';
-import { taskRepoIds } from './workspaces';
+import { taskWorkspaces } from './workspaces';
 
 /** A finished task adds to the graph for this long after it finished. */
 export const EDGE_WINDOW_DAYS = 90;
@@ -55,20 +55,20 @@ export function projectTasks(
   );
 }
 
-/** The repo ids a task works in, without the ones it dropped, each once. */
+/** The repo ids a task works in, without the ones it dropped, each once (a task without a repo has an empty home). */
 function liveRepoIds(task: Task): string[] {
-  const all = taskRepoIds(task);
-  // taskRepoIds lists the home first (when there is one), then the extras in order.
-  const extrasStart = task.repoId === null ? 0 : 1;
-  const live = all.filter((_, i) => {
-    const isDropped =
-      i < extrasStart
-        ? task.homeDropped
-        : task.extraWorkspaces[i - extrasStart].dropped;
-    return !isDropped;
-  });
-  return [...new Set(live)];
+  return [
+    ...new Set(
+      taskWorkspaces(task)
+        .filter((w) => !w.dropped && w.repoId !== '')
+        .map((w) => w.repoId),
+    ),
+  ];
 }
+
+/** The map key of the edge between two repos, `a < b`. */
+export const edgeKey = (e: Pick<GraphEdge, 'a' | 'b'>): string =>
+  `${e.a}\u0000${e.b}`;
 
 export function projectGraph(input: {
   tasks: Task[];
@@ -129,7 +129,7 @@ export function projectGraph(input: {
     const ids = liveRepoIds(t).sort();
     for (let i = 0; i < ids.length; i++)
       for (let j = i + 1; j < ids.length; j++) {
-        const key = `${ids[i]}\u0000${ids[j]}`;
+        const key = edgeKey({ a: ids[i], b: ids[j] });
         const e = edges.get(key) ?? { a: ids[i], b: ids[j], taskIds: [] };
         e.taskIds.push(t.id);
         edges.set(key, e);

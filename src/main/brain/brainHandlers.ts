@@ -29,6 +29,7 @@ import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { rebuildIndex } from './indexPage';
+import { readPages } from './pages';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
   applyTemplates,
@@ -59,6 +60,7 @@ export type BrainChannels =
   | 'brain:run'
   | 'brain:resumeQueue'
   | 'brain:sources'
+  | 'brain:counts'
   | 'brain:files'
   | 'brain:read'
   | 'brain:verify'
@@ -562,6 +564,15 @@ export function createBrainHandlers(
     'brain:resumeQueue': async (id) => {
       live(id);
       d.runner.resume(id);
+    },
+    'brain:counts': async (id) => {
+      const b = brainOf(id);
+      const { state } = await readState(b.path);
+      const [sources, pages] = await Promise.all([
+        listSources(b.path, state).catch(() => []),
+        readPages(b.path).catch(() => []),
+      ]);
+      return { pages: pages.length, sources: sources.length };
     },
     'brain:sources': async (id) => {
       const b = brainOf(id);

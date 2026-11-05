@@ -543,8 +543,9 @@ export const ConnectionSchema = z.object({
   writeTimeToAdo: z.boolean().default(false),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+/** The settings of a connection the user changes in Settings > Project, saved without its token. */
 export type ConnectionPatch = Partial<
-  Pick<Connection, 'name' | 'workItemOnStart' | 'writeTimeToAdo'>
+  Pick<Connection, 'workItemOnStart' | 'writeTimeToAdo'>
 >;
 
 export const ConnectionsFileSchema = z.object({

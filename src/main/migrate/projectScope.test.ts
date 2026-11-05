@@ -65,11 +65,11 @@ describe('migrateStartSettings', () => {
       repo('r2', 'a', other),
       repo('r3', null, same),
     ];
-    expect(migrateStartSettings(repos, [c])).toEqual([{ id: 'r1' }]);
+    expect(migrateStartSettings(repos, [c])).toEqual(['r1']);
   });
   it('is idempotent', () => {
     const repos = [repo('r1', 'a', structuredClone(c.workItemOnStart))];
-    const ids = migrateStartSettings(repos, [c]).map((r) => r.id);
+    const ids = migrateStartSettings(repos, [c]);
     const after = repos.map((r) =>
       ids.includes(r.id) ? { ...r, workItemOnStart: undefined } : r,
     );

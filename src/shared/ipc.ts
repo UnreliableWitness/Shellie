@@ -6,6 +6,7 @@ import type {
   BrainOptions,
   BrainPageRow,
   BrainSearchHit,
+  BrainCounts,
   BrainSourceRow,
   BrainView,
   BrainWiki,
@@ -663,6 +664,8 @@ export type Channels = {
   'brain:resumeQueue': { args: [brainId: string]; result: void };
   /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
   'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
+  /** How many wiki pages and sources a brain has, without the health check's git and lint work. */
+  'brain:counts': { args: [brainId: string]; result: BrainCounts };
   /** Markdown files of the brain: under wiki/ or sources/, or root: index.md, log.md, SCHEMA.md. */
   'brain:files': {
     args: [brainId: string, dir: 'wiki' | 'sources' | 'root'];

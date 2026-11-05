@@ -27,7 +27,7 @@ export function isBillableRecord(
   usage: UsageSource,
   taskId: string,
   r: UsageRecord,
-): boolean {
+): r is UsageRecord & { costUsd: number } {
   return r.costUsd !== null && usage.isBillable(taskId, r.sessionId);
 }
 
@@ -42,7 +42,7 @@ export function billableEurByTask(
     let any = false;
     for (const r of usage.records(id)) {
       if (!isBillableRecord(usage, id, r)) continue;
-      eur += (r.costUsd ?? 0) * OFFICIAL_USD_TO_EUR;
+      eur += r.costUsd * OFFICIAL_USD_TO_EUR;
       any = true;
     }
     if (any) out[id] = eur;
@@ -92,7 +92,7 @@ export function homeStats(d: HomeStatsInput): HomeStats {
     const connectionId = taskConnectionId(task, d.repos);
     for (const r of d.usage.records(task.id)) {
       if (!inPeriod(r.at) || !isBillableRecord(d.usage, task.id, r)) continue;
-      const eur = (r.costUsd ?? 0) * OFFICIAL_USD_TO_EUR;
+      const eur = r.costUsd * OFFICIAL_USD_TO_EUR;
       costByTool[r.tool] += eur;
       byConnection.set(
         connectionId,

@@ -182,11 +182,9 @@ export class ConnectionStore {
       patch.workItemOnStart === undefined
         ? undefined
         : StartSettingsSchema.parse(patch.workItemOnStart);
-    const name = patch.name?.trim();
     await this.update((f) => {
       const c = f.connections.find((x) => x.id === id);
       if (!c) throw new Error(`Unknown connection ${id}`);
-      if (name) c.name = name;
       if (workItemOnStart) c.workItemOnStart = workItemOnStart;
       if (patch.writeTimeToAdo !== undefined)
         c.writeTimeToAdo = patch.writeTimeToAdo;

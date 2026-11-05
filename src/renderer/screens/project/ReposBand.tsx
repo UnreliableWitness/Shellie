@@ -3,6 +3,7 @@ import { type GraphEdge, projectGraph } from '../../../shared/projectGraph';
 import type { Connection } from '../../../shared/types';
 import { Band } from '../../components/home/Band';
 import { PopupMenu, StateDot } from '../../components/ui';
+import { taskLabel } from '../../format';
 import { useStore } from '../../store';
 import { taskStatusOf } from '../../taskStatus';
 import { track } from '../../telemetry';
@@ -29,7 +30,7 @@ export function ReposBand({ connection }: { connection: Connection }) {
   );
   const [open, setOpen] = useState<{
     edge: GraphEdge;
-    anchor: HTMLElement;
+    anchor: SVGElement;
   } | null>(null);
   const edgeTasks = open
     ? tasks.filter((t) => open.edge.taskIds.includes(t.id))
@@ -109,9 +110,7 @@ export function ReposBand({ connection }: { connection: Connection }) {
                 openTask(t.id);
               }}
             >
-              <span className="project-row-title">
-                {t.workItem ? `#${t.workItem.id} ${t.workItem.title}` : t.name}
-              </span>
+              <span className="project-row-title">{taskLabel(t)}</span>
               <StateDot state={s.label} color={s.color} />
             </button>
           );

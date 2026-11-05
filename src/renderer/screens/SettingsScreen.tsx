@@ -43,18 +43,16 @@ function writePref(key: string, value: string): void {
 }
 
 /**
- * Where a deep link opens: a repo or a `repo-*` (or the old `repos`) section is the Repository scope; a project
- * or a `project-*` (or the old `brains`) section is the Project scope.
+ * Where a deep link opens: a repo or a `repo-*` section is the Repository scope; a project or a `project-*`
+ * section is the Project scope; any other section is under User.
  */
 function linkScope(link: SettingsLink | null): Scope | null {
   if (!link) return null;
   if (link.repoId) return 'repo';
   if (link.connectionId) return 'project';
   if (link.section) {
-    if (link.section === 'brains' || link.section.startsWith('project-'))
-      return 'project';
-    if (link.section === 'repos' || link.section.startsWith('repo-'))
-      return 'repo';
+    if (link.section.startsWith('project-')) return 'project';
+    if (link.section.startsWith('repo-')) return 'repo';
     return 'user';
   }
   return link.scope ?? null;
@@ -118,24 +116,24 @@ export function SettingsScreen() {
     if (link?.section || link?.repoId) setQuery('');
   }
 
-  // Falls back to the active project only when the pick is gone (or none existed at open).
+  // In the Repository scope the picked repo's own project wins, so a repo moved to another project (its Project
+  // select) stays on screen; the pick follows it (below). Otherwise the pick, falling back to the active project
+  // only when the pick is gone (or none existed at open).
+  const pickedRepo = repos.find((r) => r.id === repoId);
+  const repoProject =
+    picked === 'repo' &&
+    pickedRepo?.connectionId &&
+    connections.some((c) => c.id === pickedRepo.connectionId)
+      ? pickedRepo.connectionId
+      : null;
   const connection =
-    connections.find((c) => c.id === connectionId) ?? active ?? null;
-  // The repo on screen and the project it was in. When it moves to another known project (its Project select),
-  // the Settings-local pick follows it, so the repo stays on screen instead of dropping out of the list.
-  const [shown, setShown] = useState<{
-    id: string;
-    connectionId: string | null;
-  } | null>(null);
-  const shownNow = shown && repos.find((r) => r.id === shown.id);
-  if (shownNow && shownNow.connectionId !== shown.connectionId) {
-    const to = shownNow.connectionId;
-    setShown({ id: shownNow.id, connectionId: to });
-    if (to && to !== connection?.id && connections.some((c) => c.id === to)) {
-      setConnectionId(to);
-      setRepoId(shownNow.id);
-    }
-  }
+    connections.find((c) => c.id === (repoProject ?? connectionId)) ??
+    active ??
+    null;
+  useEffect(() => {
+    if (connection && connection.id !== connectionId)
+      setConnectionId(connection.id);
+  }, [connection, connectionId]);
   // Without a project there is no Project scope.
   const scope: Scope = picked === 'project' && !connection ? 'user' : picked;
   const scopes = SCOPES.filter((s) => s !== 'project' || connection);
@@ -146,8 +144,6 @@ export function SettingsScreen() {
   const looseRepos = repos.filter((r) => !linked(r));
   const shownRepos = [...projectRepos, ...looseRepos];
   const repo = shownRepos.find((r) => r.id === repoId) ?? shownRepos[0] ?? null;
-  if (repo && repo.id !== shown?.id)
-    setShown({ id: repo.id, connectionId: repo.connectionId });
   useEffect(() => writePref(SCOPE_KEY, picked), [picked]);
   useEffect(() => {
     if (repo) writePref(REPO_KEY, repo.id);
@@ -265,7 +261,11 @@ export function SettingsScreen() {
                 className="field"
                 aria-label="Project"
                 value={connection.id}
-                onChange={(e) => setConnectionId(e.target.value)}
+                onChange={(e) => {
+                  // A picked project lists its own repos: the repo pick starts over there.
+                  setConnectionId(e.target.value);
+                  setRepoId(null);
+                }}
               >
                 {connections.map((c) => (
                   <option key={c.id} value={c.id}>

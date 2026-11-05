@@ -949,6 +949,12 @@ export function createHandlers(s: Services): Handlers {
       target !== null && s.connections.get(target.connectionId).writeTimeToAdo
     );
   };
+  /** A connection by id, null when none or gone (a repo's project may have been removed). */
+  const projectOf = (id: string | null): Connection | null =>
+    id ? (s.connections.list().find((c) => c.id === id) ?? null) : null;
+  /** The start settings for a task's work item: its repo's own, else those of the project the work item is in. */
+  const startSettingsFor = (task: Task, repo: Repo) =>
+    effectiveStartSettings(repo, projectOf(taskConnectionId(task, [repo])));
   const timeWrites = new Map<string, Promise<unknown>>();
   /**
    * Writes the difference between the task's booked hours and what was written before to its work item, one write
@@ -1958,10 +1964,7 @@ export function createHandlers(s: Services): Handlers {
     const details = await workItemDetails(task, repo);
     const brainOfTask = await setupBrain(task, repo, details);
     const reopening = isReopening(task);
-    const startSettings = effectiveStartSettings(
-      repo,
-      s.connections.list().find((c) => c.id === repo.connectionId) ?? null,
-    );
+    const startSettings = startSettingsFor(task, repo);
     const defs = reopening ? restoredTerminals(task) : initialTerminals(task);
     const hasApm =
       config.apm !== false &&
@@ -2107,7 +2110,7 @@ export function createHandlers(s: Services): Handlers {
             const connection = s.connections.get(
               taskConnectionId(task, [repo])!,
             );
-            const startSettings = effectiveStartSettings(repo, connection);
+            const startSettings = startSettingsFor(task, repo);
             const client = s.trackers.tracker(connection.id);
             const id = Number(task.workItem!.id);
             const current = await client.itemForStart(id);
@@ -3114,11 +3117,7 @@ export function createHandlers(s: Services): Handlers {
           commands: input.commands,
           tabs: setupTabLabels(input, s.platform.shellLabel),
           workItem: input.workItem,
-          ...startOf(
-            repo,
-            s.connections.list().find((c) => c.id === repo.connectionId) ??
-              null,
-          ),
+          ...startOf(repo, projectOf(repo.connectionId)),
           types: repo.connectionId
             ? (typesKnown.get(repo.connectionId) ?? null)
             : null,

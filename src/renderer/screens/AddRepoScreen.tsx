@@ -150,7 +150,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
   const canAdd = !!found && !problem && !busy;
 
   const leave = () =>
-    from === 'settings' ? go({ kind: 'settings', section: 'repos' }) : back();
+    from === 'settings' ? go({ kind: 'settings', scope: 'repo' }) : back();
 
   const goBack = () => {
     if (onboarding)

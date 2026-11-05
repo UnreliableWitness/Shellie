@@ -1,37 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { BrainView } from '../../../shared/brain';
+import type { BrainCounts, BrainView } from '../../../shared/brain';
 import { tasksOfProject } from '../../../shared/projectGraph';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
 import { Band } from '../../components/home/Band';
-import { ago, eur, plural } from '../../format';
+import { ago, eur, plural, taskLabel } from '../../format';
 import { useBrains } from '../../hooks/useBrains';
+import { useTaskCosts } from '../../hooks/useTaskCosts';
 import { useStore } from '../../store';
+import { NEW_BRAIN_SECTION } from '../settings/BrainsSection';
 
 const RECENT = 3;
 
-type Counts = { pages: number | null; sources: number | null };
-
-/** Page and source counts per brain: `brain:list` has none, so one `brain:get` and `brain:sources` each. */
-function useCounts(brains: BrainView[]): Record<string, Counts> {
-  const [counts, setCounts] = useState<Record<string, Counts>>({});
+/** Page and source counts per brain (`brain:list` has none), one light call each. */
+function useCounts(brains: BrainView[]): Record<string, BrainCounts> {
+  const [counts, setCounts] = useState<Record<string, BrainCounts>>({});
   const key = brains.map((b) => b.id).join(',');
   useEffect(() => {
     let live = true;
     for (const id of key ? key.split(',') : []) {
-      const put = (part: Partial<Counts>) =>
-        live &&
-        setCounts((c) => ({
-          ...c,
-          [id]: { ...(c[id] ?? { pages: null, sources: null }), ...part },
-        }));
       api()
-        .invoke('brain:get', id)
-        .then((b) => put({ pages: b.health?.pages ?? null }))
-        .catch(() => undefined);
-      api()
-        .invoke('brain:sources', id)
-        .then((rows) => put({ sources: rows.length }))
+        .invoke('brain:counts', id)
+        .then((c) => {
+          if (live) setCounts((all) => ({ ...all, [id]: c }));
+        })
         .catch(() => undefined);
     }
     return () => {
@@ -57,7 +49,7 @@ export function BrainsBand({ connection }: { connection: Connection }) {
     [all, id],
   );
   const counts = useCounts(brains);
-  const manage = (section: 'project-brains' | 'project-brains-new') =>
+  const manage = (section: 'project-brains' | typeof NEW_BRAIN_SECTION) =>
     go({ kind: 'settings', scope: 'project', connectionId: id, section });
 
   const finished = useMemo(
@@ -68,19 +60,7 @@ export function BrainsBand({ connection }: { connection: Connection }) {
         .slice(0, RECENT),
     [tasks, repos, id],
   );
-  const finishedKey = finished.map((t) => t.id).join(',');
-  const [costs, setCosts] = useState<Record<string, number>>({});
-  useEffect(() => {
-    if (!finishedKey) return;
-    let live = true;
-    api()
-      .invoke('usage:costs', finishedKey.split(','))
-      .then((c) => live && setCosts(c))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [finishedKey]);
+  const costs = useTaskCosts(finished.map((t) => t.id));
 
   return (
     <Band
@@ -99,8 +79,8 @@ export function BrainsBand({ connection }: { connection: Connection }) {
         {brains.map((b) => {
           const c = counts[b.id];
           const facts = [
-            c?.pages != null && plural(c.pages, 'page'),
-            c?.sources != null && plural(c.sources, 'source'),
+            c && plural(c.pages, 'page'),
+            c && plural(c.sources, 'source'),
             b.lastRefreshAt
               ? `refreshed ${ago(b.lastRefreshAt)}`
               : 'never refreshed',
@@ -146,7 +126,7 @@ export function BrainsBand({ connection }: { connection: Connection }) {
         <button
           type="button"
           className="home-card project-new-brain"
-          onClick={() => manage('project-brains-new')}
+          onClick={() => manage(NEW_BRAIN_SECTION)}
         >
           + New brain
         </button>
@@ -162,11 +142,7 @@ export function BrainsBand({ connection }: { connection: Connection }) {
                   className="project-row project-row-button"
                   onClick={() => openTask(t.id)}
                 >
-                  <span className="project-row-title">
-                    {t.workItem
-                      ? `#${t.workItem.id} ${t.workItem.title}`
-                      : t.name}
-                  </span>
+                  <span className="project-row-title">{taskLabel(t)}</span>
                   <span className="muted small">
                     {t.finishedAt && shortDate(t.finishedAt)}
                   </span>

@@ -9,7 +9,7 @@ Spec `docs/superpowers/specs/2026-11-05-project-scope-design.md`, plan `docs/sup
 - **Work items on start**: inherited from the project, overridable per repository and resettable back to the project's value.
 - **Time write-back** is per project (`writeTimeToAdo` lives on the connection).
 - **Migration** (`src/main/migrate/projectScope.ts`, at boot): moves the global `writeTimeToAdo` onto each connection and strips repository "work items on start" copies that equal their project's.
-- **New IPC channels**: `connections:update`, `usage:costs`, `repos:clearWorkItemOnStart`. `connections:remove` now also archives the project's brains and broadcasts `brain:changed` for each, so open brain views reload; an archived brain's error points at Settings › Project › Brains.
+- **New IPC channels**: `connections:update`, `usage:costs`, `repos:clearWorkItemOnStart`, and `brain:counts` (a brain's page and source counts without the health check's index rebuild, git and lint work; the Project page's brain cards use it). `connections:remove` now also archives the project's brains and broadcasts `brain:changed` for each, so open brain views reload; an archived brain's error points at Settings › Project › Brains.
 - Telemetry: screen `project`; events `project.open` (`from`: `nav`, `switcher`, `home`, `crumb`) and `project.graph` (`target`); `settings.scope` can be `project`. `docs/telemetry.md` updated and checked against the code.
 
 ## Verified

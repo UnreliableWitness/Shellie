@@ -108,7 +108,6 @@ describe('ConnectionStore', () => {
     });
     await store.setStatus(c.id, 'ok', 'Dries', 'd@x.com');
     const patched = await store.patch(c.id, {
-      name: 'Renamed',
       writeTimeToAdo: true,
       workItemOnStart: {
         moveToInProgress: true,
@@ -117,7 +116,6 @@ describe('ConnectionStore', () => {
       },
     });
     expect(patched).toMatchObject({
-      name: 'Renamed',
       writeTimeToAdo: true,
       status: 'ok',
       user: 'Dries',

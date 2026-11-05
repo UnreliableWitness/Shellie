@@ -10,6 +10,7 @@ import type {
   GraphNode,
   ProjectGraph,
 } from '../../../shared/projectGraph';
+import { edgeKey } from '../../../shared/projectGraph';
 import { plural } from '../../format';
 import { layoutGraph, type Placed } from './layout';
 
@@ -19,7 +20,6 @@ const MAX_NAME = 28;
 /** The width of an edge's invisible hit line, so a 1px line is easy to click. */
 const HIT_WIDTH = 12;
 
-const edgeKey = (e: GraphEdge) => `${e.a}\u0000${e.b}`;
 const short = (s: string) =>
   s.length > MAX_NAME ? `${s.slice(0, MAX_NAME - 1)}…` : s;
 
@@ -48,7 +48,7 @@ export function RepoGraph({
 }: {
   graph: ProjectGraph;
   onNode(repoId: string): void;
-  onEdge(edge: GraphEdge, anchor: HTMLElement): void;
+  onEdge(edge: GraphEdge, anchor: SVGElement): void;
   onStart(repoId: string): void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -104,7 +104,7 @@ export function RepoGraph({
           const n = p.edge.taskIds.length;
           const label = `${plural(n, 'task')} in ${names.get(p.edge.a)} and ${names.get(p.edge.b)}`;
           const click = (e: SyntheticEvent) =>
-            onEdge(p.edge, e.currentTarget as unknown as HTMLElement);
+            onEdge(p.edge, e.currentTarget as SVGElement);
           return (
             <g key={edgeKey(p.edge)} className="graph-edge-group">
               {/* A wide invisible line takes the clicks; the thin drawn line next to it is only for show. */}

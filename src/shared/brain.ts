@@ -130,6 +130,9 @@ export type BrainJob = {
   result: string | null;
   error: string | null;
 };
+/** How many wiki pages and sources a brain has (`brain:counts`). */
+export type BrainCounts = { pages: number; sources: number };
+
 export type BrainSourceRow = {
   path: string;
   type: SourceType;

@@ -3,6 +3,7 @@ import type {
   GraphNode,
   ProjectGraph,
 } from '../../../shared/projectGraph';
+import { REPO_COLORS } from '../../../shared/workspaces';
 
 export type Placed = {
   node: GraphNode;
@@ -55,7 +56,7 @@ export function layoutGraph(
       w: NODE_W,
       h: NODE_H,
       column,
-      colour: (i % 6) + 1,
+      colour: (i % REPO_COLORS) + 1,
     }));
   const nodes = [
     ...place(g.linked, 'linked', leftX),

@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { HomeConnection } from '../../../shared/home';
 import { projectTasks } from '../../../shared/projectGraph';
 import type { Connection } from '../../../shared/types';
-import { api } from '../../api';
 import { Band } from '../../components/home/Band';
 import { daysLeft } from '../../components/home/SprintsBand';
 import { StateDot, WorkItemTypeIcon } from '../../components/ui';
 import { statusText } from '../../connectionStatus';
 import { eur, sprintDates } from '../../format';
 import { useSprint } from '../../hooks/useSprint';
+import { useTaskCosts } from '../../hooks/useTaskCosts';
 import { chipState, sprintTotals, taskForItem } from '../../homeView';
 import { useStore } from '../../store';
 import { taskStatusOf } from '../../taskStatus';
@@ -59,21 +59,8 @@ export function SprintBand({
       .filter((t) => t.workItem && inSprint.has(t.workItem.id))
       .map((t) => t.id);
   }, [sprint, tasks, repos, id]);
-  const idsKey = sprintTaskIds.join(',');
-  const [aiEur, setAiEur] = useState<number | null>(null);
-  useEffect(() => {
-    let live = true;
-    const ids = idsKey ? idsKey.split(',') : [];
-    api()
-      .invoke('usage:costs', ids)
-      .then((costs) => {
-        if (live) setAiEur(ids.reduce((sum, t) => sum + (costs[t] ?? 0), 0));
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [idsKey]);
+  const costs = useTaskCosts(sprintTaskIds);
+  const aiEur = sprintTaskIds.reduce((sum, t) => sum + (costs[t] ?? 0), 0);
 
   const health = chipState(home, connection);
   const left = daysLeft(iteration?.finishDate ?? null);

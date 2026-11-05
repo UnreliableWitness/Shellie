@@ -811,12 +811,12 @@ describe('SettingsScreen', () => {
       );
     });
 
-    it('the old repos deep link opens the remembered repo', () => {
+    it('a Repository scope link opens the remembered repo', () => {
       installFakeApi();
       window.localStorage.setItem('shellie.settings.repoId', 'r2');
       useStore.setState({
         repos: [webshop, api2],
-        screen: { kind: 'settings', section: 'repos' },
+        screen: { kind: 'settings', scope: 'repo' },
       });
       render(<SettingsScreen />);
       expect(screen.getByRole('tab', { name: 'Repository' })).toHaveAttribute(
@@ -828,12 +828,12 @@ describe('SettingsScreen', () => {
       );
     });
 
-    it('the old repos deep link opens the first repo when the remembered one is gone', () => {
+    it('a Repository scope link opens the first repo when the remembered one is gone', () => {
       installFakeApi();
       window.localStorage.setItem('shellie.settings.repoId', 'gone');
       useStore.setState({
         repos: [webshop, api2],
-        screen: { kind: 'settings', section: 'repos' },
+        screen: { kind: 'settings', scope: 'repo' },
       });
       render(<SettingsScreen />);
       expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue(
@@ -1132,19 +1132,6 @@ describe('SettingsScreen', () => {
       );
       expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
         'c2',
-      );
-    });
-
-    it('a brains deep link opens the Project scope', () => {
-      installFakeApi();
-      useStore.setState({
-        connections: [shop],
-        screen: { kind: 'settings', section: 'brains' },
-      });
-      render(<SettingsScreen />);
-      expect(screen.getByRole('tab', { name: 'Project' })).toHaveAttribute(
-        'aria-selected',
-        'true',
       );
     });
 

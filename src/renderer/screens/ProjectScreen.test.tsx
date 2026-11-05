@@ -239,8 +239,7 @@ const fake = (over: FakeHandlers = {}) =>
       listedBrain({ id: 'b2', name: 'Elsewhere', connectionId: 'c2' }),
       listedBrain({ id: 'b3', name: 'Old', archived: true }),
     ],
-    'brain:get': () => brainView(),
-    'brain:sources': () => [],
+    'brain:counts': () => ({ pages: 7, sources: 0 }),
     'usage:costs': () => ({ t1: 1.5, t2: 0.25 }),
     'repos:config': () => ({
       worktreeRoot: '/w',
@@ -299,9 +298,7 @@ describe('Project page', () => {
       contents: null,
       note: null,
     });
-    fake({
-      'brain:sources': () => [source('sources/a.md'), source('sources/b.md')],
-    });
+    fake({ 'brain:counts': () => ({ pages: 7, sources: 2 }) });
     render(<Shell />);
     const b = await band('Brains');
     expect(await within(b).findByText('Acme')).toBeInTheDocument();
