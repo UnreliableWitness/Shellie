@@ -3,6 +3,7 @@ import {
   ConnectionsFileSchema,
   StartSettingsSchema,
   type Connection,
+  type ConnectionPatch,
   type ConnectionInput,
   type ConnectionStatus,
   type ConnectionsFile,
@@ -173,6 +174,24 @@ export class ConnectionStore {
     });
     this.invalidUrls.delete(record.id);
     return strip(record);
+  }
+
+  /** Changes only the given fields; the token, status and user stay as they were. */
+  async patch(id: string, patch: ConnectionPatch): Promise<Connection> {
+    const workItemOnStart =
+      patch.workItemOnStart === undefined
+        ? undefined
+        : StartSettingsSchema.parse(patch.workItemOnStart);
+    const name = patch.name?.trim();
+    await this.update((f) => {
+      const c = f.connections.find((x) => x.id === id);
+      if (!c) throw new Error(`Unknown connection ${id}`);
+      if (name) c.name = name;
+      if (workItemOnStart) c.workItemOnStart = workItemOnStart;
+      if (patch.writeTimeToAdo !== undefined)
+        c.writeTimeToAdo = patch.writeTimeToAdo;
+    });
+    return this.get(id);
   }
 
   async remove(id: string): Promise<void> {

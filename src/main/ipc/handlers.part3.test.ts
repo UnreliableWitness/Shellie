@@ -198,6 +198,25 @@ describe('handlers: connections', () => {
     ).rejects.toThrow(/rejected the token/);
     expect(await h['connections:list']()).toEqual([]);
   });
+  it('connections:update patches without a PAT and broadcasts connections:changed', async () => {
+    const { h, server, broadcasts } = await harness();
+    routeHealthyOrg(server);
+    const c = await h['connections:save']({
+      organizationUrl: `${server.url}/unreliablewitness`,
+      project: 'Shellie',
+      pat: 'p',
+    });
+    broadcasts.length = 0;
+    const before = server.requests.length;
+    const updated = await h['connections:update'](c.id, {
+      writeTimeToAdo: true,
+    });
+    expect(updated.writeTimeToAdo).toBe(true);
+    expect(updated.status).toBe('ok');
+    expect((await h['connections:list']())[0].writeTimeToAdo).toBe(true);
+    expect(broadcasts.map((b) => b.event)).toContain('connections:changed');
+    expect(server.requests.length).toBe(before);
+  });
   it('verify flips status to unauthorized on 401 and back to ok', async () => {
     const { h, server } = await harness();
     routeHealthyOrg(server);

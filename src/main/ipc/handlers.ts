@@ -943,7 +943,12 @@ export function createHandlers(s: Services): Handlers {
     return types;
   };
   /** Booked time goes to Azure DevOps (Completed and Remaining Work) only when the user turned it on. */
-  const writeTime = () => s.settings.get().writeTimeToAdo;
+  const writeTimeFor = (task: Task): boolean => {
+    const target = adoTarget(task);
+    return (
+      target !== null && s.connections.get(target.connectionId).writeTimeToAdo
+    );
+  };
   const timeWrites = new Map<string, Promise<unknown>>();
   /**
    * Writes the difference between the task's booked hours and what was written before to its work item, one write
@@ -1026,7 +1031,7 @@ export function createHandlers(s: Services): Handlers {
           wallClock: m.wallClockSeconds,
         }),
       });
-      if (!writeTime() || !task.workItem || !adoTarget(task)) return;
+      if (!writeTimeFor(task) || !task.workItem) return;
       const error = await syncTime(taskId);
       if (error)
         s.broadcast('notice', {
@@ -4078,6 +4083,11 @@ export function createHandlers(s: Services): Handlers {
     },
     'connections:list': async () => s.connections.list(),
     'connections:save': saveConnection,
+    'connections:update': async (id, patch) => {
+      const updated = await s.connections.patch(id, patch);
+      connectionsChanged();
+      return updated;
+    },
     'connections:probe': async (input) => {
       // A stored token only ever goes to its own organization, whatever URL came with it.
       const organizationUrl = input.connectionId
@@ -4417,11 +4427,11 @@ export function createHandlers(s: Services): Handlers {
     },
 
     'time:sync': async (taskId) => {
-      if (!writeTime())
-        throw new Error(
-          'Writing time to Azure DevOps is off. Turn it on in Settings.',
-        );
       const task = taskById(taskId);
+      if (!writeTimeFor(task))
+        throw new Error(
+          'Writing time to Azure DevOps is off for this project. Turn it on in Settings > Project > Time.',
+        );
       if (task.status !== 'done' || !task.time)
         throw new Error('Only a finished task with booked time can be written');
       const error = await syncTime(taskId);

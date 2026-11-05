@@ -49,8 +49,8 @@ describe('handlers: time booking and write-back', () => {
     hx: Awaited<ReturnType<typeof harness>>,
     writeTime: boolean,
   ) {
-    await hx.settings.save({ ...hx.settings.get(), writeTimeToAdo: writeTime });
     const { t, c } = await linkedTask(hx);
+    await hx.h['connections:update'](c.id, { writeTimeToAdo: writeTime });
     hx.server.route(
       'GET',
       '/unreliablewitness/Shellie/_apis/wit/workitemtypes',
@@ -103,7 +103,23 @@ describe('handlers: time booking and write-back', () => {
     expect(patches(hx)).toEqual([]);
     expect(events).toContainEqual(['time.booked', { closest: 'custom' }]);
     await expect(hx.h['time:sync'](t.id)).rejects.toThrow(
-      'Writing time to Azure DevOps is off',
+      'Writing time to Azure DevOps is off for this project. Turn it on in Settings > Project > Time.',
+    );
+  });
+
+  it("time:sync throws when the task's project has write-back off even if another project has it on", async () => {
+    const hx = await harness();
+    const { t } = await timeTask(hx, false);
+    await hx.h['tasks:finish'](t.id, finishOpts(7200));
+    routeHealthyOrg(hx.server, 'other');
+    const other = await hx.h['connections:save']({
+      organizationUrl: `${hx.server.url}/other`,
+      project: 'Shellie',
+      pat: 'p2',
+    });
+    await hx.h['connections:update'](other.id, { writeTimeToAdo: true });
+    await expect(hx.h['time:sync'](t.id)).rejects.toThrow(
+      'Writing time to Azure DevOps is off for this project',
     );
   });
 

@@ -98,6 +98,37 @@ describe('ConnectionStore', () => {
     expect(await store.token(c.id)).toBe('secret-pat');
   });
 
+  it('patch changes workItemOnStart and writeTimeToAdo and keeps the token and status', async () => {
+    const store = new ConnectionStore(file(), fakeCrypto());
+    await store.load();
+    const c = await store.save({
+      organizationUrl: 'https://dev.azure.com/unreliablewitness/',
+      project: 'Shellie',
+      pat: 'secret-pat',
+    });
+    await store.setStatus(c.id, 'ok', 'Dries', 'd@x.com');
+    const patched = await store.patch(c.id, {
+      name: 'Renamed',
+      writeTimeToAdo: true,
+      workItemOnStart: {
+        moveToInProgress: true,
+        assignToMe: false,
+        stateOverrides: {},
+      },
+    });
+    expect(patched).toMatchObject({
+      name: 'Renamed',
+      writeTimeToAdo: true,
+      status: 'ok',
+      user: 'Dries',
+    });
+    expect(patched.workItemOnStart.assignToMe).toBe(false);
+    expect(store.get(c.id).status).toBe('ok');
+    expect(await store.token(c.id)).toBe('secret-pat');
+    await expect(store.patch('ghost', {})).rejects.toThrow(
+      /Unknown connection/,
+    );
+  });
   it('reloads from disk and still decrypts', async () => {
     const f = file();
     const a = new ConnectionStore(f, fakeCrypto());

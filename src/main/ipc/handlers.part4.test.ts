@@ -946,7 +946,7 @@ describe('handlers: finish every workspace of a task', () => {
 
   it('books the Time spent once and writes it once for a multi-repo Finish', async () => {
     const hx = await multiHarness([{ name: 'api' }]);
-    await hx.settings.save({ ...hx.settings.get(), writeTimeToAdo: true });
+    await hx.h['connections:update'](hx.c.id, { writeTimeToAdo: true });
     commitFile(hx.repos[0].wt, 'api.txt', 'a\n', 'API change');
     const client = hx.clients.get(hx.c.id)!;
     vi.spyOn(client, 'workItemEstimate').mockResolvedValue({

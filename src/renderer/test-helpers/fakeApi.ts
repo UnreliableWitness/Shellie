@@ -1,3 +1,4 @@
+import { StartSettingsSchema } from '../../shared/types';
 import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
 import type { Channels, Events, ShellieApi } from '../../shared/ipc';
@@ -218,6 +219,20 @@ const defaults: FakeHandlers = {
   'workItems:types': () => [],
   'workItems:iterations': () => [],
   'connections:list': () => [],
+  'connections:update': (id, patch) => ({
+    id,
+    name: 'unreliablewitness',
+    organizationUrl: 'https://dev.azure.com/unreliablewitness',
+    project: 'Shellie',
+    user: 'Dries Hoebeke',
+    status: 'ok',
+    checkedAt: null,
+    userUniqueName: null,
+    provider: 'azure-devops',
+    workItemOnStart: StartSettingsSchema.parse({}),
+    writeTimeToAdo: false,
+    ...patch,
+  }),
   'secrets:list': () => [],
   'secrets:forget': () => undefined,
   'secrets:repoDefault': () => 'development',

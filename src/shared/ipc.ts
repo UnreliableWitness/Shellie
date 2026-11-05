@@ -35,6 +35,7 @@ import type {
   AgentCommands,
   Connection,
   ConnectionInput,
+  ConnectionPatch,
   CreateTaskInput,
   DiscardChecks,
   FinishChecks,
@@ -151,6 +152,11 @@ export type Channels = {
   };
   'connections:list': { args: []; result: Connection[] };
   'connections:save': { args: [input: ConnectionInput]; result: Connection };
+  /** Changes a connection's name or settings without its token; no sign-in, status kept. */
+  'connections:update': {
+    args: [id: string, patch: ConnectionPatch];
+    result: Connection;
+  };
   'connections:remove': { args: [id: string]; result: void };
   'connections:verify': { args: [id: string]; result: Connection };
   /** Signs in with a new token (`pat`) or a connection's stored one (`connectionId`, its own organization) and lists the projects; saves nothing. */
