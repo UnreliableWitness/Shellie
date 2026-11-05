@@ -17,9 +17,13 @@ import { LeakNotice } from './secrets/LeakNotice';
 import {
   followColorScheme,
   loadRenderer,
+  loadWebgl,
   terminalOptions,
   windowsBuild,
 } from '../terminalSetup';
+
+/** How long a hidden terminal gathers output before writing it in one go (#236). */
+const HIDDEN_WRITE_MS = 100;
 
 export function TerminalView({
   terminalId,
@@ -41,8 +45,11 @@ export function TerminalView({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
-  /** Fits the terminal to its box and tells the pty; a no-op while hidden. */
-  const sendSize = useRef<() => void>(() => undefined);
+  /** Fits the terminal to its box and tells the pty when the size changed (or `force`); a no-op while hidden. */
+  const sendSize = useRef<(force?: boolean) => void>(() => undefined);
+  /** Shown or hidden: a hidden terminal has no WebGL renderer and gathers its output (#236). */
+  const setShown = useRef<(shown: boolean) => void>(() => undefined);
+  const activeNow = useRef(active);
   const notify = useStore((s) => s.notify);
   const [exitCode, setExitCode] = useState<number | null>(null);
   /** Why an agent tab stopped, when main could tell (#109). */
@@ -89,13 +96,44 @@ export function TerminalView({
     const unregister = registerTerminal(terminalId, t);
     let live = true;
     let links: { dispose(): void } | null = null;
+    let opened = false;
+    let shown = activeNow.current;
+    let webgl: { dispose(): void } | null = null;
+    // Output of a hidden terminal, written in one go every HIDDEN_WRITE_MS and when shown.
+    const pending: string[] = [];
+    let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    const writePending = () => {
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = null;
+      if (pending.length) t.write(pending.join(''));
+      pending.length = 0;
+    };
+    setShown.current = (on) => {
+      shown = on;
+      if (!on) {
+        // Frees the GPU context and glyph atlas; xterm falls back to its DOM renderer, which does not draw while hidden.
+        webgl?.dispose();
+        webgl = null;
+        return;
+      }
+      writePending();
+      if (opened && !webgl) {
+        webgl = loadWebgl(t);
+        t.refresh(0, t.rows - 1);
+      }
+    };
 
-    sendSize.current = () => {
+    let lastSize = '';
+    sendSize.current = (force = false) => {
       // A hidden box has no layout: FitAddon would read its width and height as the literal "100%", fit to
       // 100 x 100 px (12 columns) and ConPTY would draw the prompt wrapped at that width for good (#70).
       if (el.clientWidth === 0 || el.clientHeight === 0) return;
       try {
         f.fit();
+        // Switching back to a task at the same size must not make its program redraw its whole screen (#236).
+        const size = `${t.cols}x${t.rows}`;
+        if (!force && size === lastSize) return;
+        lastSize = size;
         void api().invoke('terminals:resize', terminalId, t.cols, t.rows);
       } catch {
         /* not opened yet */
@@ -109,8 +147,12 @@ export function TerminalView({
     const queued: string[] = [];
     const offData = api().on('terminal:data', (e) => {
       if (e.id !== terminalId) return;
-      if (replayed) t.write(e.data);
-      else queued.push(e.data);
+      if (!replayed) queued.push(e.data);
+      else if (shown) t.write(e.data);
+      else {
+        pending.push(e.data);
+        pendingTimer ??= setTimeout(writePending, HIDDEN_WRITE_MS);
+      }
     });
     const offExit = api().on('terminal:exit', (e) => {
       if (e.id !== terminalId) return;
@@ -119,10 +161,12 @@ export function TerminalView({
     });
     const offReset = api().on('terminal:reset', (e) => {
       if (e.id !== terminalId) return;
+      // Output gathered while hidden belongs to the old process.
+      pending.length = 0;
       t.reset();
       setExitCode(null);
       setFailure(null);
-      sendSize.current();
+      sendSize.current(true);
     });
     void api()
       .invoke('terminals:buffer', terminalId)
@@ -161,7 +205,9 @@ export function TerminalView({
       if (!live) return;
       if (build) t.options.windowsPty = terminalOptions(build).windowsPty;
       t.open(el);
+      opened = true;
       loadRenderer(t);
+      if (shown) webgl = loadWebgl(t);
       // A brain's terminal has no repo to resolve links against.
       if (!brainIdOf(taskId))
         links = t.registerLinkProvider(
@@ -176,6 +222,7 @@ export function TerminalView({
 
     return () => {
       live = false;
+      if (pendingTimer) clearTimeout(pendingTimer);
       observer.disconnect();
       onData.dispose();
       links?.dispose();
@@ -190,13 +237,20 @@ export function TerminalView({
   }, [terminalId, taskId, workspaceId]);
 
   useEffect(() => {
+    activeNow.current = active;
+    // Writes what came in while hidden before the refit.
+    setShown.current(active);
     if (active) {
+      const mark = `terminal shown ${terminalId}`;
+      if (import.meta.env.DEV) performance.mark(mark);
       requestAnimationFrame(() => {
         sendSize.current();
         term.current?.focus();
+        // Dev builds: the cost of a switch, in the DevTools Performance panel (#236).
+        if (import.meta.env.DEV) performance.measure(mark, mark);
       });
     }
-  }, [active]);
+  }, [active, terminalId]);
 
   const restart = async (options?: RestartOptions) => {
     // Reset first so a fast exit of the new process is not wiped afterwards.
@@ -210,7 +264,7 @@ export function TerminalView({
         ? api().invoke('terminals:restart', terminalId, options)
         : api().invoke('terminals:restart', terminalId));
       // The box did not change size, so the ResizeObserver stays quiet: tell the new process its size (#162).
-      sendSize.current();
+      sendSize.current(true);
       return true;
     }, notify);
     if (!ok) {
