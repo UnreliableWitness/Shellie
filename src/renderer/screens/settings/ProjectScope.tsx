@@ -1,9 +1,9 @@
 import type { Connection } from '../../../shared/types';
-import { SettingsCategory } from '../../components/settings/SettingRow';
 import { BrainsCategory } from './project/BrainsCategory';
 import { ConnectionCategory } from './project/ConnectionCategory';
 import { DangerCategory } from './project/DangerCategory';
 import { TimeCategory } from './project/TimeCategory';
+import { WorkItemsCategory } from './project/WorkItemsCategory';
 import type { SettingsCategoryInfo } from './UserScope';
 
 /** The Project scope's categories, in tree order. */
@@ -32,12 +32,11 @@ export function ProjectScope({
         connection={connection}
         title={title('project-connection')}
       />
-      <SettingsCategory
-        id="project-workitems"
+      <WorkItemsCategory
+        connection={connection}
+        active={active}
         title={title('project-workitems')}
-      >
-        {null}
-      </SettingsCategory>
+      />
       <TimeCategory connection={connection} title={title('project-time')} />
       <BrainsCategory
         connection={connection}

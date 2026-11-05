@@ -10,6 +10,22 @@ export function startSettingsSource(
   return connection ? 'project' : 'default';
 }
 
+/** The setup summary's start arguments: the effective settings, where they came from and the project's name. */
+export function startOf(
+  repo: Pick<Repo, 'workItemOnStart'>,
+  connection: Pick<Connection, 'workItemOnStart' | 'project'> | null,
+): {
+  start: StartSettings;
+  startSource: 'repo' | 'project' | 'default';
+  project: string | null;
+} {
+  return {
+    start: effectiveStartSettings(repo, connection),
+    startSource: startSettingsSource(repo, connection),
+    project: connection?.project ?? null,
+  };
+}
+
 export function effectiveStartSettings(
   repo: Pick<Repo, 'workItemOnStart'>,
   connection: Pick<Connection, 'workItemOnStart'> | null,

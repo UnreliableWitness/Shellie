@@ -96,6 +96,21 @@ describe('TaskSummaryCard', () => {
     expect(line('Work item')).toHaveTextContent('Unchanged');
   });
 
+  it('names where the work item settings came from', () => {
+    render(
+      <TaskSummaryCard
+        summary={{
+          ...summary,
+          workItem: { move: 'Doing', assign: true, source: 'from project DXP' },
+        }}
+        repoId="r1"
+      />,
+    );
+    expect(line('Work item')).toHaveTextContent(
+      'Move to Doing, assign to me (from project DXP)',
+    );
+  });
+
   it('Edit link opens Settings on the repo category', async () => {
     render(<TaskSummaryCard summary={summary} repoId="r1" />);
     await userEvent.click(

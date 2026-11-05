@@ -761,7 +761,11 @@ describe('handlers: task setup summary', () => {
       apm: ['claude'],
       tabs: ['Claude Code', testPlatform().shellLabel],
       run: ['npm run dev'],
-      workItem: { move: 'Doing', assign: false },
+      workItem: {
+        move: 'Doing',
+        assign: false,
+        source: 'set on this repo',
+      },
       editor: 'VS Code',
       brain: null,
     });

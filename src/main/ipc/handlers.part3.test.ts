@@ -254,6 +254,22 @@ describe('handlers: connections', () => {
   });
 });
 
+describe('handlers: work items on start override', () => {
+  it('repos:clearWorkItemOnStart removes the override', async () => {
+    const { h, added, broadcasts } = await harness();
+    await h['repos:setWorkItemOnStart'](added.id, {
+      moveToInProgress: false,
+      assignToMe: true,
+      stateOverrides: {},
+    });
+    broadcasts.length = 0;
+    const cleared = await h['repos:clearWorkItemOnStart'](added.id);
+    expect(cleared.workItemOnStart).toBeUndefined();
+    expect((await h['repos:list']())[0].workItemOnStart).toBeUndefined();
+    expect(broadcasts.map((b) => b.event)).toContain('repos:changed');
+  });
+});
+
 describe('handlers: removing a connection and its brains', () => {
   it('removing a connection archives its brains', async () => {
     const b = await brainServices();

@@ -98,6 +98,59 @@ beforeEach(() => {
 });
 
 describe('ProjectScope categories', () => {
+  it('saves the default on the connection', async () => {
+    const { calls } = installFakeApi({
+      'workItems:types': () => [
+        {
+          name: 'Task',
+          color: null,
+          icon: null,
+          states: [
+            { name: 'To Do', color: null, category: 'Proposed' },
+            { name: 'Doing', color: null, category: 'InProgress' },
+          ],
+        },
+      ],
+    });
+    render(<ProjectScope connection={conn} active />);
+    const move = row('project-workitems-move');
+    expect(move).not.toHaveAttribute('data-modified');
+    await userEvent.click(
+      within(move).getByRole('checkbox', {
+        name: 'Move the work item to In Progress on start',
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'connections:update')?.args,
+      ).toEqual([
+        'c1',
+        {
+          workItemOnStart: {
+            moveToInProgress: false,
+            assignToMe: true,
+            stateOverrides: {},
+          },
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        useStore.getState().connections.find((c) => c.id === 'c1')
+          ?.workItemOnStart.moveToInProgress,
+      ).toBe(false),
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText('In Progress state for Task'),
+      'Doing',
+    );
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.channel === 'workItems:types')[0]?.args,
+      ).toEqual(['c1']),
+    );
+  });
+
   it('time write-back saves with connections:update', async () => {
     const { calls } = installFakeApi();
     render(<ProjectScope connection={conn} active />);

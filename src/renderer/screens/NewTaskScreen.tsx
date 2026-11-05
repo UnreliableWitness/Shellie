@@ -22,7 +22,7 @@ import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { PageHeader, Pivots, WorkItemTypeIcon } from '../components/ui';
 import { WorkItemPicker } from '../components/WorkItemPicker';
 import { useEscape } from '../hooks/useEscape';
-import { effectiveStartSettings } from '../../shared/startSettings';
+import { startOf } from '../../shared/startSettings';
 import { activeConnection, useStore } from '../store';
 import { useTypeMeta } from '../workItemTypes';
 
@@ -260,7 +260,7 @@ export function NewTaskScreen({
             'Shell',
           ),
           workItem: mode === 'blank' || !workItem?.id ? null : workItem,
-          start: effectiveStartSettings(repo, connectionOf(repo.id)),
+          ...startOf(repo, connectionOf(repo.id)),
           types: typeMeta ? [typeMeta] : null,
           editor: editorPrefs,
           // Main fills it in when the task is created.

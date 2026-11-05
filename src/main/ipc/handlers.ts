@@ -89,7 +89,7 @@ import type {
   WorkspaceCheck,
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
-import { effectiveStartSettings } from '../../shared/startSettings';
+import { effectiveStartSettings, startOf } from '../../shared/startSettings';
 import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
 import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
@@ -3114,7 +3114,7 @@ export function createHandlers(s: Services): Handlers {
           commands: input.commands,
           tabs: setupTabLabels(input, s.platform.shellLabel),
           workItem: input.workItem,
-          start: effectiveStartSettings(
+          ...startOf(
             repo,
             s.connections.list().find((c) => c.id === repo.connectionId) ??
               null,
@@ -4171,6 +4171,11 @@ export function createHandlers(s: Services): Handlers {
     },
     'repos:setWorkItemOnStart': async (repoId, settings) => {
       const repo = await s.repos.setWorkItemOnStart(repoId, settings);
+      reposChanged();
+      return repo;
+    },
+    'repos:clearWorkItemOnStart': async (repoId) => {
+      const repo = await s.repos.clearWorkItemOnStart(repoId);
       reposChanged();
       return repo;
     },

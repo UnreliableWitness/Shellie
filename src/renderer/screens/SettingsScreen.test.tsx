@@ -187,7 +187,7 @@ describe('SettingsScreen', () => {
     });
     render(<SettingsScreen />);
     await userEvent.selectOptions(
-      screen.getByLabelText('Connection for webshop'),
+      screen.getByLabelText('Project for webshop'),
       'c1',
     );
     await waitFor(() =>
@@ -905,7 +905,7 @@ describe('SettingsScreen', () => {
         'aria-selected',
         'true',
       );
-      expect(screen.getByLabelText('Connection for webshop')).toBeVisible();
+      expect(screen.getByLabelText('Project for webshop')).toBeVisible();
       expect(
         screen.getByRole('button', { name: '2 results in User' }),
       ).toBeVisible();

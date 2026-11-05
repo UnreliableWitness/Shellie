@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inProgressState } from './setupSummary';
+import { buildSetupSummary, inProgressState } from './setupSummary';
 import type { StartSettings, WorkItemTypeMeta } from './types';
 
 const bug: WorkItemTypeMeta = {
@@ -42,5 +42,36 @@ describe('inProgressState', () => {
   it('takes the override as it is when the types are unknown', () => {
     expect(inProgressState('Bug', start({ Bug: 'Doing' }), null)).toBe('Doing');
     expect(inProgressState('Bug', start({}), null)).toBe('In Progress');
+  });
+});
+
+describe('buildSetupSummary', () => {
+  const summarize = (
+    startSource: 'repo' | 'project' | 'default',
+    project: string | null,
+  ) =>
+    buildSetupSummary({
+      repoId: 'r1',
+      branch: 'feature/1-x',
+      base: 'origin/main',
+      config: { copy: [], run: {} },
+      copy: false,
+      commands: [],
+      tabs: [],
+      workItem: { id: '1', title: 'X', type: 'Bug', url: null, project: null },
+      start: start({}),
+      startSource,
+      project,
+      types: [bug],
+      editor: { default: null, repos: {} },
+      brain: null,
+    });
+
+  it('the start line says where the settings came from', () => {
+    expect(summarize('project', 'DXP').workItem?.source).toBe(
+      'from project DXP',
+    );
+    expect(summarize('repo', 'DXP').workItem?.source).toBe('set on this repo');
+    expect(summarize('default', null).workItem?.source).toBe('default');
   });
 });

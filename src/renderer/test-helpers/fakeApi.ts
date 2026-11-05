@@ -270,6 +270,16 @@ const defaults: FakeHandlers = {
     overrides: {},
     workItemOnStart: settings,
   }),
+  'repos:clearWorkItemOnStart': (repoId) => ({
+    id: repoId,
+    name: 'repo',
+    path: '/src/repo',
+    baseBranch: 'main',
+    connectionId: null,
+    configFound: false,
+    discovered: false,
+    overrides: {},
+  }),
   'repos:setAgentCommands': (repoId, commands) => ({
     id: repoId,
     name: 'repo',

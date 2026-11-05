@@ -53,7 +53,8 @@ function workItemText(w: SetupSummary['workItem']): string {
     ...(w.move ? [`Move to ${w.move}`] : []),
     ...(w.assign ? [w.move ? 'assign to me' : 'Assign to me'] : []),
   ];
-  return parts.length > 0 ? parts.join(', ') : 'Unchanged';
+  const text = parts.length > 0 ? parts.join(', ') : 'Unchanged';
+  return w.source ? `${text} (${w.source})` : text;
 }
 
 function setupText(s: SetupSummary): string {

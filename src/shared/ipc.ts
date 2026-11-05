@@ -194,6 +194,11 @@ export type Channels = {
     args: [repoId: string, settings: StartSettings];
     result: Repo;
   };
+  /** Drops the repo's own value, so it inherits its project's again. */
+  'repos:clearWorkItemOnStart': {
+    args: [repoId: string];
+    result: Repo;
+  };
   /** The repo's own Claude Code and OpenCode start commands; an empty one means the default. */
   'repos:setAgentCommands': {
     args: [repoId: string, commands: AgentCommands];

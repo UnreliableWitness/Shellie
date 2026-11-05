@@ -74,7 +74,12 @@ export const SetupSummarySchema = z.object({
   run: z.array(z.string()),
   /** Null when the task has no work item; `move` is the state it moves to, null when it is not moved. */
   workItem: z
-    .object({ move: z.string().nullable(), assign: z.boolean() })
+    .object({
+      move: z.string().nullable(),
+      assign: z.boolean(),
+      /** Where the start settings came from ("from project DXP", "set on this repo", "default"); absent on older tasks. */
+      source: z.string().optional(),
+    })
     .nullable(),
   /** The chosen editor's label; null when Shellie picks one. */
   editor: z.string().nullable(),
