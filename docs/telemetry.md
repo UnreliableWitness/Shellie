@@ -26,7 +26,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 
 | Name | Properties / measurements |
 | --- | --- |
-| Screen views (page views) | `sprint`, `brain`, `task`, `new-task`, `setup`, `finish`, `settings`, `home`, `add-repo`, `connect`, `get-started`, `agents`, `secrets`, `secrets-import` |
+| Screen views (page views) | `sprint`, `project`, `brain`, `task`, `new-task`, `setup`, `finish`, `settings`, `home`, `add-repo`, `connect`, `get-started`, `agents`, `secrets`, `secrets-import` |
 | `app.started` | splash on/off; counts of repos, open tasks, connections; whether the usage receiver listens; boot step timings (see Performance) |
 | `app.quit` | session length in minutes |
 | `home.refreshed` | the Home page's data was rebuilt; number of connections, number that failed; duration in ms |

@@ -167,7 +167,10 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
         api().invoke('repos:add', found.folder, {
           ...(hasProposal && write ? { writeConfig: text } : {}),
           baseBranch: found.baseBranch,
-          connectionId: found.remote?.connectionId ?? null,
+          connectionId:
+            found.remote?.connectionId ??
+            (screen.kind === 'add-repo' ? screen.connectionId : undefined) ??
+            null,
         }),
       notify,
     );

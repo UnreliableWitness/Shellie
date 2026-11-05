@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   BrainJob,
   BrainSourceRow,
@@ -142,10 +142,17 @@ function SourcesToCapture({ brain }: { brain: BrainView }) {
 export function BrainInbox({
   brain,
   onTerminal,
+  focusChoose = false,
 }: {
   brain: BrainView;
   onTerminal?: (def: TerminalDef) => void;
+  /** Put the cursor on Choose files once mounted (a deep link to the drop zone). */
+  focusChoose?: boolean;
 }) {
+  const chooseRef = useRef<HTMLLabelElement>(null);
+  useEffect(() => {
+    if (focusChoose) chooseRef.current?.focus();
+  }, [focusChoose]);
   const notify = useStore((s) => s.notify);
   const drop = useBrainDrop(brain.id);
   const { over, problems, setProblems, notes, addFiles, dropProps } = drop;
@@ -186,7 +193,7 @@ export function BrainInbox({
             PDF, Word, PowerPoint, Excel, draw.io, VTT transcripts, Markdown,
             text
           </span>
-          <label className="btn btn-sm">
+          <label className="btn btn-sm" ref={chooseRef} tabIndex={-1}>
             Choose files
             <input
               type="file"

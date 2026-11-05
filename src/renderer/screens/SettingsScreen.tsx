@@ -47,7 +47,8 @@ function linkScope(link: SettingsLink | null): Scope | null {
     return link.section === 'repos' || link.section.startsWith('repo-')
       ? 'repo'
       : 'user';
-  return link.scope ?? null;
+  // until the Project scope lands
+  return link.scope === 'project' ? 'user' : (link.scope ?? null);
 }
 
 function initialScope(link: SettingsLink | null): Scope {

@@ -144,7 +144,7 @@ describe('HeaderBar', () => {
       screen.getByRole('button', { name: /User Story 48213/ }),
     ).toHaveAttribute('aria-current', 'page');
     await userEvent.click(screen.getByRole('button', { name: 'DXP' }));
-    expect(useStore.getState().screen).toEqual({ kind: 'sprint' });
+    expect(useStore.getState().screen).toEqual({ kind: 'project' });
   });
   it('names the task environment after the task, coloured for UAT and Production', () => {
     installFakeApi();
@@ -172,6 +172,7 @@ describe('HeaderBar', () => {
       return crumbs();
     };
     expect(at({ kind: 'sprint' })).toEqual(['Shellie', 'DXP', 'Sprint']);
+    expect(at({ kind: 'project' })).toEqual(['Shellie', 'DXP', 'Project']);
     expect(at({ kind: 'settings' })).toEqual(['Shellie', 'Settings']);
     expect(at({ kind: 'new-task' })).toEqual(['Shellie', 'DXP', 'New task']);
     expect(at({ kind: 'setup', taskId: 'a' })).toEqual([

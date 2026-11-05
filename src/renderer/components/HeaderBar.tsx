@@ -191,7 +191,7 @@ export function HeaderBar() {
   });
   const sprintName = useStore((s) => s.sprintName);
   const openTask = useStore((s) => s.openTask);
-  const home = () => go({ kind: 'sprint' });
+  const home = () => go({ kind: 'project' });
 
   const crumbs: ReactNode[] = [];
   if (
@@ -233,26 +233,28 @@ export function HeaderBar() {
   const page =
     screen.kind === 'home'
       ? 'Home'
-      : screen.kind === 'setup'
-        ? 'Setup'
-        : screen.kind === 'finish'
-          ? 'Finish'
-          : screen.kind === 'new-task'
-            ? 'New task'
-            : screen.kind === 'settings'
-              ? 'Settings'
-              : screen.kind === 'connect'
-                ? 'Connect'
-                : screen.kind === 'get-started'
-                  ? 'Get started'
-                  : screen.kind === 'agents'
-                    ? 'Agents'
-                    : screen.kind === 'add-repo'
-                      ? 'Add repository'
-                      : screen.kind === 'secrets' ||
-                          screen.kind === 'secrets-import'
-                        ? 'Secrets'
-                        : null;
+      : screen.kind === 'project'
+        ? 'Project'
+        : screen.kind === 'setup'
+          ? 'Setup'
+          : screen.kind === 'finish'
+            ? 'Finish'
+            : screen.kind === 'new-task'
+              ? 'New task'
+              : screen.kind === 'settings'
+                ? 'Settings'
+                : screen.kind === 'connect'
+                  ? 'Connect'
+                  : screen.kind === 'get-started'
+                    ? 'Get started'
+                    : screen.kind === 'agents'
+                      ? 'Agents'
+                      : screen.kind === 'add-repo'
+                        ? 'Add repository'
+                        : screen.kind === 'secrets' ||
+                            screen.kind === 'secrets-import'
+                          ? 'Secrets'
+                          : null;
   if (page)
     crumbs.push(
       <Crumb key="page" current onClick={() => undefined}>

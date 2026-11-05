@@ -153,6 +153,24 @@ const tasks: TaskView[] = [
   },
 ];
 
+const conn = (id: string, project: string) => ({
+  id,
+  name: 'unreliablewitness',
+  organizationUrl: 'https://dev.azure.com/unreliablewitness',
+  project,
+  user: 'D',
+  status: 'ok' as const,
+  checkedAt: null,
+  userUniqueName: null,
+  provider: 'azure-devops' as const,
+  workItemOnStart: {
+    moveToInProgress: true,
+    assignToMe: true,
+    stateOverrides: {},
+  },
+  writeTimeToAdo: false,
+});
+
 beforeEach(() => {
   localStorage.clear();
   useStore.setState({
@@ -461,25 +479,28 @@ describe('TaskNav', () => {
     expect(useStore.getState().screen).toEqual({ kind: 'settings' });
   });
 
+  it('has a Project item that opens the project page', async () => {
+    installFakeApi();
+    useStore.setState({ connections: [conn('c1', 'Shellie')] });
+    render(<TaskNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'Project' }));
+    expect(useStore.getState().screen).toEqual({ kind: 'project' });
+    expect(screen.getByRole('button', { name: 'Project' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('has no Project item without connections', () => {
+    installFakeApi();
+    render(<TaskNav />);
+    expect(
+      screen.queryByRole('button', { name: 'Project' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('switches project when there is more than one connection', async () => {
     installFakeApi();
-    const conn = (id: string, project: string) => ({
-      id,
-      name: 'unreliablewitness',
-      organizationUrl: 'https://dev.azure.com/unreliablewitness',
-      project,
-      user: 'D',
-      status: 'ok' as const,
-      checkedAt: null,
-      userUniqueName: null,
-      provider: 'azure-devops' as const,
-      workItemOnStart: {
-        moveToInProgress: true,
-        assignToMe: true,
-        stateOverrides: {},
-      },
-      writeTimeToAdo: false,
-    });
     useStore.setState({
       connections: [conn('c1', 'Shellie'), conn('c2', 'DXP')],
       selectedTaskId: null,
@@ -493,6 +514,7 @@ describe('TaskNav', () => {
       within(menu).getByRole('menuitemradio', { name: /DXP/ }),
     );
     expect(useStore.getState().connectionId).toBe('c2');
+    expect(useStore.getState().screen).toEqual({ kind: 'project' });
     expect(
       screen.getByRole('button', { name: 'Project DXP, switch project' }),
     ).toBeInTheDocument();

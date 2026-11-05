@@ -33,7 +33,11 @@ const TYPES: WorkItemType[] = ['Issue', 'User Story', 'Bug', 'Task', 'Epic'];
 export function NewTaskScreen({
   initial = {},
 }: {
-  initial?: { workItem?: WorkItemRef; repoId?: string };
+  initial?: {
+    workItem?: WorkItemRef;
+    repoId?: string;
+    connectionId?: string;
+  };
 }) {
   const repos = useStore((s) => s.repos);
   const go = useStore((s) => s.go);
@@ -44,11 +48,12 @@ export function NewTaskScreen({
   const active = useStore(activeConnection);
   // The active project's repos (and repos linked to none), never another project's (#225); a sprint row's own
   // repo always stays.
+  const projectId = initial.connectionId ?? active?.id;
   const candidates = repos.filter(
     (r) =>
-      !active ||
+      !projectId ||
       r.id === initial.repoId ||
-      r.connectionId === active.id ||
+      r.connectionId === projectId ||
       r.connectionId === null,
   );
 
