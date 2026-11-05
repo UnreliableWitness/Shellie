@@ -128,13 +128,19 @@ describe('Home page', () => {
     ).toBeTruthy();
   });
 
-  it('a chip opens Settings', async () => {
-    installFakeApi({ 'home:get': () => snapshot() });
+  it("a connection chip opens that project's page", async () => {
+    const { tracked } = installFakeApi({ 'home:get': () => snapshot() });
     render(<Shell />);
     await userEvent.click(
       await screen.findByRole('button', { name: 'uw: Shellie, connected' }),
     );
-    expect(useStore.getState().screen.kind).toBe('settings');
+    expect(useStore.getState().screen.kind).toBe('project');
+    expect(useStore.getState().connectionId).toBe(connection.id);
+    expect(tracked).toContainEqual({
+      type: 'event',
+      name: 'project.open',
+      props: { from: 'home' },
+    });
   });
 
   it('the refused-token notice has a Settings button', async () => {

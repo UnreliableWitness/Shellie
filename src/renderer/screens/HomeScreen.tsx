@@ -14,6 +14,7 @@ import { useClock } from '../hooks/useClock';
 import { useHome } from '../hooks/useHome';
 import { chipState } from '../homeView';
 import { useStore } from '../store';
+import { track } from '../telemetry';
 import { useWorkItemTypes } from '../workItemTypes';
 
 const CHIP_TEXT = {
@@ -38,6 +39,7 @@ export function HomeScreen() {
     [raw, connections],
   );
   const go = useStore((s) => s.go);
+  const setConnectionId = useStore((s) => s.setConnectionId);
   const loadTypes = useWorkItemTypes((s) => s.load);
   useEffect(() => {
     for (const c of snapshot?.connections ?? []) loadTypes(c.connectionId);
@@ -72,7 +74,11 @@ export function HomeScreen() {
                     className={`home-chip is-${state}`}
                     aria-label={`${c.name}: ${c.project}, ${detail}`}
                     title={detail}
-                    onClick={() => go({ kind: 'settings' })}
+                    onClick={() => {
+                      setConnectionId(c.id);
+                      go({ kind: 'project' });
+                      track('project.open', { from: 'home' });
+                    }}
                   >
                     <span className="dot" />
                     {c.name}/{c.project}
