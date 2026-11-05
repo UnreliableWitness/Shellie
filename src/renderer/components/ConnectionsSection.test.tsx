@@ -102,15 +102,18 @@ describe('ConnectionsSection', () => {
     });
   });
 
-  it('shows the provider picker and opens the Connect page to add a connection', async () => {
+  it('shows the provider picker and opens the Connect page to add a project', async () => {
     installFakeApi();
     render(<ConnectionsSection />);
     expect(screen.getByRole('heading', { name: 'Projects' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Azure DevOps/ })).toBeChecked();
     expect(screen.getByRole('radio', { name: /GitHub/ })).toBeDisabled();
-    await userEvent.click(
-      screen.getByRole('button', { name: /Add connection/ }),
-    );
+    expect(
+      screen.getByText(
+        'No projects yet. Add your organization and pick its projects with a personal access token.',
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Add project/ }));
     expect(useStore.getState().screen).toEqual({
       kind: 'connect',
       from: 'settings',
@@ -127,7 +130,7 @@ describe('ConnectionsSection', () => {
       ).toMatchObject({ onboarding: { tracker: 'none' } }),
     );
     expect(screen.getByRole('radio', { name: /No tracker/ })).toBeChecked();
-    expect(screen.queryByRole('button', { name: /Add connection/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Add project/ })).toBeNull();
   });
 
   it('updates the token of every connection of the organization with the same token', async () => {

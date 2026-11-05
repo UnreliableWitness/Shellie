@@ -230,7 +230,7 @@ export function ConnectionsSection() {
             className="btn"
             onClick={() => go({ kind: 'connect', from: 'settings' })}
           >
-            Add connection&hellip;
+            Add project&hellip;
           </button>
         )
       }
@@ -269,7 +269,7 @@ export function ConnectionsSection() {
             <div className="empty">
               {noTracker
                 ? 'Tasks start blank on a branch: no work item, nothing written back.'
-                : 'No connections yet. Add your organization and pick its projects with a personal access token.'}
+                : 'No projects yet. Add your organization and pick its projects with a personal access token.'}
             </div>
           )}
           {[...groups].map(([key, list]) => (
