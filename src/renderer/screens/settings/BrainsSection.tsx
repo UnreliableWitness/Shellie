@@ -3,12 +3,7 @@ import type { BrainOptions, BrainView, BrainWiki } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
-import {
-  SettingRow,
-  SettingsCategory,
-} from '../../components/settings/SettingRow';
 import { useBrains } from '../../hooks/useBrains';
-import { useStore } from '../../store';
 import { track } from '../../telemetry';
 
 type Action =
@@ -379,48 +374,35 @@ function BrainCard({ brain }: { brain: BrainView }) {
   );
 }
 
-/** Brains per Azure DevOps connection: create, configure, update skills, delete. */
-export function BrainsSection() {
-  const connections = useStore((s) => s.connections);
-  const brains = useBrains();
-  const ado = connections.filter((c) => c.provider === 'azure-devops');
+/** One project's brains: active ones, archived ones apart, and the form to create one. */
+export function BrainsForConnection({
+  connection,
+}: {
+  connection: Connection;
+}) {
+  const brains = useBrains().filter((b) => b.connectionId === connection.id);
+  const archived = brains.filter((b) => b.archived);
   return (
-    <SettingsCategory id="brains" title="Brains">
-      {ado.length === 0 ? (
-        <div className="small muted">Add a connection to create a brain.</div>
-      ) : null}
-      {ado.map((c) => (
-        <SettingRow
-          key={c.id}
-          id={`brain-conn-${c.id}`}
-          category="Brains"
-          title={`${c.name} / ${c.project}`}
-          description="Brains for this connection's project"
-          keywords={['brain', 'wiki', 'second brain']}
-        >
-          <div className="list">
-            {brains
-              .filter((b) => b.connectionId === c.id && !b.archived)
-              .map((b) => (
-                <BrainCard key={b.id} brain={b} />
-              ))}
+    <>
+      <div className="list">
+        {brains
+          .filter((b) => !b.archived)
+          .map((b) => (
+            <BrainCard key={b.id} brain={b} />
+          ))}
+      </div>
+      {archived.length > 0 && (
+        <div className="list" aria-label="Archived brains">
+          <div className="muted small">
+            Archived: out of the nav, no task gets them, nothing runs for them.
+            Restore to use again.
           </div>
-          {brains.some((b) => b.connectionId === c.id && b.archived) && (
-            <div className="list" aria-label="Archived brains">
-              <div className="muted small">
-                Archived: out of the nav, no task gets them, nothing runs for
-                them. Restore to use again.
-              </div>
-              {brains
-                .filter((b) => b.connectionId === c.id && b.archived)
-                .map((b) => (
-                  <BrainCard key={b.id} brain={b} />
-                ))}
-            </div>
-          )}
-          <CreateBrainForm connection={c} />
-        </SettingRow>
-      ))}
-    </SettingsCategory>
+          {archived.map((b) => (
+            <BrainCard key={b.id} brain={b} />
+          ))}
+        </div>
+      )}
+      <CreateBrainForm connection={connection} />
+    </>
   );
 }

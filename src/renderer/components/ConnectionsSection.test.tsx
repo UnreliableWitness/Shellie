@@ -105,7 +105,7 @@ describe('ConnectionsSection', () => {
   it('shows the provider picker and opens the Connect page to add a connection', async () => {
     installFakeApi();
     render(<ConnectionsSection />);
-    expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Azure DevOps/ })).toBeChecked();
     expect(screen.getByRole('radio', { name: /GitHub/ })).toBeDisabled();
     await userEvent.click(
@@ -179,69 +179,18 @@ describe('ConnectionsSection', () => {
     );
   });
 
-  it('verifies and removes', async () => {
-    const { calls } = installFakeApi({
-      'connections:verify': () => ({ ...ok, checkedAt: 'later' }),
-      'connections:remove': () => undefined,
-      'connections:list': () => [ok],
-    });
-    useStore.setState({
-      connections: [ok],
-      repos: [
-        {
-          id: 'r1',
-          name: 'webshop',
-          path: '/w',
-          baseBranch: 'main',
-          connectionId: 'c1',
-          configFound: true,
-          discovered: false,
-          overrides: {},
-          workItemOnStart: {
-            moveToInProgress: true,
-            assignToMe: true,
-            stateOverrides: {},
-          },
-        },
-      ],
-    });
+  it('a project name opens its Project scope; Verify and Remove live there', async () => {
+    installFakeApi();
+    useStore.setState({ connections: [ok] });
     render(<ConnectionsSection />);
-    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
-    await waitFor(() =>
-      expect(calls.some((c) => c.channel === 'connections:verify')).toBe(true),
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(
-      screen.getByText(/1 repository uses this connection/),
-    ).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Remove anyway' }),
-    );
-    await waitFor(() =>
-      expect(
-        calls.some(
-          (c) => c.channel === 'connections:remove' && c.args[0] === 'c1',
-        ),
-      ).toBe(true),
-    );
-  });
-
-  it('removes an unused connection without a confirm row', async () => {
-    const { calls } = installFakeApi({
-      'connections:remove': () => undefined,
-      'connections:list': () => [],
+    expect(screen.queryByRole('button', { name: 'Verify' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Shellie' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      scope: 'project',
+      connectionId: 'c1',
     });
-    useStore.setState({ connections: [ok], repos: [] });
-    render(<ConnectionsSection />);
-    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    await waitFor(() =>
-      expect(
-        calls.some(
-          (c) => c.channel === 'connections:remove' && c.args[0] === 'c1',
-        ),
-      ).toBe(true),
-    );
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('replaces the token of an existing connection, checked like a new one', async () => {

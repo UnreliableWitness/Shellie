@@ -739,7 +739,7 @@ describe('SettingsScreen', () => {
       );
       expect(screen.getByRole('combobox', { name: 'Theme' })).toBeVisible();
       expect(screen.queryByRole('combobox', { name: 'Repository' })).toBeNull();
-      expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
+      expect(screen.getByRole('link', { name: 'Projects' })).toBeVisible();
     });
 
     it('Repository tab shows the chosen repo', async () => {
@@ -886,7 +886,7 @@ describe('SettingsScreen', () => {
         screen.getByRole('searchbox', { name: 'Search settings' }),
         'connection',
       );
-      expect(screen.getByRole('link', { name: 'Connections' })).toBeVisible();
+      expect(screen.getByRole('link', { name: 'Projects' })).toBeVisible();
       expect(screen.queryByRole('link', { name: 'Appearance' })).toBeNull();
       expect(screen.queryByRole('combobox', { name: 'Theme' })).toBeNull();
       const searches = () =>
@@ -894,7 +894,7 @@ describe('SettingsScreen', () => {
       await waitFor(
         () =>
           expect(searches()).toEqual([
-            expect.objectContaining({ props: { results: 3 } }),
+            expect.objectContaining({ props: { results: 2 } }),
           ]),
         { timeout: 2000 },
       );
@@ -907,7 +907,7 @@ describe('SettingsScreen', () => {
       );
       expect(screen.getByLabelText('Connection for webshop')).toBeVisible();
       expect(
-        screen.getByRole('button', { name: '3 results in User' }),
+        screen.getByRole('button', { name: '2 results in User' }),
       ).toBeVisible();
       // Same query in the other scope: not sent again.
       await new Promise((r) => setTimeout(r, 1200));
@@ -1083,7 +1083,7 @@ describe('SettingsScreen', () => {
         'connection',
       );
       expect(
-        screen.getByRole('button', { name: '4 results in User' }),
+        screen.getByRole('button', { name: '2 results in User' }),
       ).toBeVisible();
       expect(
         screen.getByRole('button', { name: '1 result in Repository' }),
@@ -1096,11 +1096,11 @@ describe('SettingsScreen', () => {
         'true',
       );
       expect(
-        screen.getByRole('button', { name: '4 results in User' }),
+        screen.getByRole('button', { name: '2 results in User' }),
       ).toBeVisible();
       expect(
-        screen.queryByRole('button', { name: /results? in Project/ }),
-      ).toBeNull();
+        screen.getByRole('button', { name: '4 results in Project' }),
+      ).toBeVisible();
     });
 
     it('no repos: Repository tab shows Add folder', async () => {

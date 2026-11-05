@@ -79,19 +79,34 @@ export function TaskSummaryCard({
   collapsible?: boolean;
 }) {
   const go = useStore((s) => s.go);
+  const connectionId = useStore(
+    (s) => s.repos.find((r) => r.id === repoId)?.connectionId ?? null,
+  );
   const [open, setOpen] = useState(false);
   const shown = !collapsible || open;
 
-  const edit = (name: string, section: string, user = false) => (
+  /** An Edit link to a setting of the repo, of the user, or of the repo's project. */
+  const edit = (
+    name: string,
+    section: string,
+    scope: 'repo' | 'user' | 'project' = 'repo',
+  ) => (
     <button
       type="button"
       className="link small"
       aria-label={`Edit ${name}`}
       onClick={() =>
         go(
-          user
+          scope === 'user'
             ? { kind: 'settings', section }
-            : { kind: 'settings', repoId, section },
+            : scope === 'project'
+              ? {
+                  kind: 'settings',
+                  scope: 'project',
+                  ...(connectionId ? { connectionId } : {}),
+                  section,
+                }
+              : { kind: 'settings', repoId, section },
         )
       }
     >
@@ -193,7 +208,7 @@ export function TaskSummaryCard({
           {row(
             'Opens',
             <span>{list(summary.tabs, 'No tabs')}</span>,
-            edit('Opens', 'terminals', true),
+            edit('Opens', 'terminals', 'user'),
           )}
           {row(
             'Run',
@@ -208,7 +223,7 @@ export function TaskSummaryCard({
           {row(
             'Brain',
             <span>{summary.brain ?? 'None for this project'}</span>,
-            edit('Brain', 'brains', true),
+            edit('Brain', 'project-brains', 'project'),
           )}
           {row(
             'Editor',

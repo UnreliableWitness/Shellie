@@ -8,15 +8,13 @@ import { EditorSection } from '../../components/EditorSection';
 import { TimeSection } from '../../components/TimeSection';
 import { AboutCategory } from './AboutCategory';
 import { AppearanceCategory } from './AppearanceCategory';
-import { BrainsSection } from './BrainsSection';
 import { SecretsCategory } from './SecretsCategory';
 
 export type SettingsCategoryInfo = { id: string; title: string };
 
 /** The User scope's categories, in tree order. Each renders its own `<section id>` and rows. */
 export const USER_CATEGORIES: SettingsCategoryInfo[] = [
-  { id: 'ado', title: 'Connections' },
-  { id: 'brains', title: 'Brains' },
+  { id: 'ado', title: 'Projects' },
   { id: 'secrets', title: 'Secrets' },
   { id: 'editor', title: 'Editor' },
   { id: 'terminals', title: 'Agents and terminals' },
@@ -30,7 +28,6 @@ export const USER_CATEGORIES: SettingsCategoryInfo[] = [
 
 const SECTIONS: Record<string, () => ReactNode> = {
   ado: () => <ConnectionsSection />,
-  brains: () => <BrainsSection />,
   secrets: () => <SecretsCategory />,
   editor: () => <EditorSection />,
   terminals: () => <AgentsSection />,

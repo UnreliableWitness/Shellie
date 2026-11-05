@@ -133,8 +133,39 @@ describe('UserScope rows', () => {
     );
     expect(screen.getByLabelText('New personal access token')).toBeVisible();
     expect(document.getElementById('conn-c1')).toBeVisible();
-    expect(row('Connections: Azure DevOps')).toContainElement(
+    expect(row('Projects: Azure DevOps')).toContainElement(
       document.getElementById('conn-c1'),
     );
+  });
+
+  it('Projects lists connections and a project name opens its scope', async () => {
+    installFakeApi();
+    useStore.setState({ connections: [conn] });
+    render(<SettingsScreen />);
+    const projects = row('Projects: Azure DevOps');
+    expect(projects).toHaveTextContent('Connected as Dries Hoebeke');
+    expect(
+      within(projects).queryByRole('button', { name: 'Verify' }),
+    ).toBeNull();
+    expect(
+      within(projects).queryByRole('button', { name: 'Remove' }),
+    ).toBeNull();
+    await userEvent.click(
+      within(projects).getByRole('button', { name: 'Shellie' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      scope: 'project',
+      connectionId: 'c1',
+    });
+  });
+
+  it('User has no Brains category', async () => {
+    installFakeApi();
+    render(<SettingsScreen />);
+    await screen.findByLabelText('Idle minutes');
+    expect(document.getElementById('brains')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Brains' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeVisible();
   });
 });

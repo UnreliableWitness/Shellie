@@ -1,5 +1,9 @@
 import type { Connection } from '../../../shared/types';
 import { SettingsCategory } from '../../components/settings/SettingRow';
+import { BrainsCategory } from './project/BrainsCategory';
+import { ConnectionCategory } from './project/ConnectionCategory';
+import { DangerCategory } from './project/DangerCategory';
+import { TimeCategory } from './project/TimeCategory';
 import type { SettingsCategoryInfo } from './UserScope';
 
 /** The Project scope's categories, in tree order. */
@@ -11,10 +15,10 @@ export const PROJECT_CATEGORIES: SettingsCategoryInfo[] = [
   { id: 'project-danger', title: 'Danger zone' },
 ];
 
-/**
- * One project's (connection's) settings. `active` is false while the scope is mounted hidden (for search
- * counts). The categories are empty until their rows land.
- */
+const title = (id: string) =>
+  PROJECT_CATEGORIES.find((c) => c.id === id)?.title ?? id;
+
+/** One project's (connection's) settings. `active` is false while the scope is mounted hidden (for search counts). */
 export function ProjectScope({
   connection,
   active,
@@ -22,15 +26,25 @@ export function ProjectScope({
   connection: Connection;
   active: boolean;
 }) {
-  void connection;
-  void active;
   return (
     <>
-      {PROJECT_CATEGORIES.map((c) => (
-        <SettingsCategory key={c.id} id={c.id} title={c.title}>
-          {null}
-        </SettingsCategory>
-      ))}
+      <ConnectionCategory
+        connection={connection}
+        title={title('project-connection')}
+      />
+      <SettingsCategory
+        id="project-workitems"
+        title={title('project-workitems')}
+      >
+        {null}
+      </SettingsCategory>
+      <TimeCategory connection={connection} title={title('project-time')} />
+      <BrainsCategory
+        connection={connection}
+        active={active}
+        title={title('project-brains')}
+      />
+      <DangerCategory connection={connection} title={title('project-danger')} />
     </>
   );
 }
