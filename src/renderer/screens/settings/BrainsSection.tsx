@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { BrainOptions, BrainView, BrainWiki } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
 import { useBrains } from '../../hooks/useBrains';
+import { useStore } from '../../store';
 import { track } from '../../telemetry';
 
 type Action =
@@ -44,8 +45,22 @@ const TOGGLES: {
   },
 ];
 
-function CreateBrainForm({ connection }: { connection: Connection }) {
+/** The section a deep link ("+ New brain" on the project page) opens with this form focused. */
+export const NEW_BRAIN_SECTION = 'project-brains-new';
+
+function CreateBrainForm({
+  connection,
+  focus,
+}: {
+  connection: Connection;
+  /** Changes (a new deep link) to focus the name field again; null leaves focus alone. */
+  focus: object | null;
+}) {
   const id = useId();
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focus) nameRef.current?.focus({ preventScroll: true });
+  }, [focus]);
   const [name, setName] = useState(`${connection.project} brain`);
   const [project, setProject] = useState(connection.project);
   const [path, setPath] = useState<string | null>(null);
@@ -91,7 +106,9 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
 
   return (
     <form
+      id={NEW_BRAIN_SECTION}
       className="conn-form"
+      aria-label="New brain"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
@@ -99,6 +116,7 @@ function CreateBrainForm({ connection }: { connection: Connection }) {
     >
       <label htmlFor={`${id}-name`}>Name</label>
       <input
+        ref={nameRef}
         id={`${id}-name`}
         className="field"
         value={name}
@@ -381,6 +399,11 @@ export function BrainsForConnection({
   connection: Connection;
 }) {
   const brains = useBrains().filter((b) => b.connectionId === connection.id);
+  const focusNew = useStore((s) =>
+    s.screen.kind === 'settings' && s.screen.section === NEW_BRAIN_SECTION
+      ? s.screen
+      : null,
+  );
   const archived = brains.filter((b) => b.archived);
   return (
     <>
@@ -402,7 +425,7 @@ export function BrainsForConnection({
           ))}
         </div>
       )}
-      <CreateBrainForm connection={connection} />
+      <CreateBrainForm connection={connection} focus={focusNew} />
     </>
   );
 }

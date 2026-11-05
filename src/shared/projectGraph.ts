@@ -23,9 +23,24 @@ export type ProjectGraph = {
 };
 
 /**
- * The tasks of a project: those whose home repo is linked to it now (a task without a repo
- * follows its own connection), unless finished longer ago than the edge window.
+ * The tasks of a project, finished ones of any age: those whose home repo is linked to it now (a task without a
+ * repo follows its own connection).
  */
+export function tasksOfProject(
+  tasks: Task[],
+  repos: Repo[],
+  connectionId: string,
+): Task[] {
+  return tasks.filter((t) => {
+    const home =
+      t.repoId === null
+        ? t.connectionId
+        : (repos.find((r) => r.id === t.repoId)?.connectionId ?? null);
+    return home === connectionId;
+  });
+}
+
+/** The tasks of a project ({@link tasksOfProject}), unless finished longer ago than the edge window. */
 export function projectTasks(
   tasks: Task[],
   repos: Repo[],
@@ -33,15 +48,11 @@ export function projectTasks(
   now: Date,
 ): Task[] {
   const cutoff = now.getTime() - EDGE_WINDOW_DAYS * 86_400_000;
-  return tasks.filter((t) => {
-    const home =
-      t.repoId === null
-        ? t.connectionId
-        : (repos.find((r) => r.id === t.repoId)?.connectionId ?? null);
-    if (home !== connectionId) return false;
-    if (t.status !== 'done') return true;
-    return t.finishedAt !== null && Date.parse(t.finishedAt) >= cutoff;
-  });
+  return tasksOfProject(tasks, repos, connectionId).filter(
+    (t) =>
+      t.status !== 'done' ||
+      (t.finishedAt !== null && Date.parse(t.finishedAt) >= cutoff),
+  );
 }
 
 /** The repo ids a task works in, without the ones it dropped, each once. */

@@ -6,7 +6,12 @@ import {
   type Task,
   type Workspace,
 } from './types';
-import { EDGE_WINDOW_DAYS, projectGraph, projectTasks } from './projectGraph';
+import {
+  EDGE_WINDOW_DAYS,
+  projectGraph,
+  projectTasks,
+  tasksOfProject,
+} from './projectGraph';
 
 const mkTask = (over: Partial<Task> = {}): Task =>
   TaskSchema.parse({
@@ -103,6 +108,23 @@ describe('projectGraph', () => {
     expect(graph([old]).edges).toEqual([]);
     expect(graph([recent]).edges).toEqual([
       { a: 'r1', b: 'r2', taskIds: ['new'] },
+    ]);
+  });
+
+  it('tasksOfProject keeps finished tasks of any age; projectTasks drops those past the window', () => {
+    const old = mkTask({ id: 'old', status: 'done', finishedAt: daysAgo(400) });
+    const open = mkTask({ id: 'open' });
+    const loose = mkTask({ id: 'loose', repoId: null, connectionId: 'c1' });
+    const elsewhere = mkTask({ id: 'else', repoId: 'r2' });
+    const all = [old, open, loose, elsewhere];
+    expect(tasksOfProject(all, repos, 'c1').map((t) => t.id)).toEqual([
+      'old',
+      'open',
+      'loose',
+    ]);
+    expect(projectTasks(all, repos, 'c1', now).map((t) => t.id)).toEqual([
+      'open',
+      'loose',
     ]);
   });
 

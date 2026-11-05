@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../shared/usage';
@@ -1071,6 +1071,45 @@ describe('SettingsScreen', () => {
         expect(useStore.getState().connectionId).toBe('c1');
       },
     );
+
+    it('the project-brains-new deep link opens Project > Brains with the create form focused', async () => {
+      installFakeApi();
+      const proto = Element.prototype as unknown as {
+        scrollIntoView?: () => void;
+      };
+      const original = proto.scrollIntoView;
+      const scrolled: string[] = [];
+      proto.scrollIntoView = function (this: Element) {
+        scrolled.push(this.id);
+      };
+      try {
+        useStore.setState({
+          connections: [shop, platform],
+          connectionId: 'c1',
+          screen: {
+            kind: 'settings',
+            scope: 'project',
+            connectionId: 'c2',
+            section: 'project-brains-new',
+          },
+        });
+        render(<SettingsScreen />);
+        expect(screen.getByRole('tab', { name: 'Project' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        const form = screen.getByRole('form', { name: 'New brain' });
+        await waitFor(() =>
+          expect(within(form).getByLabelText('Name')).toHaveFocus(),
+        );
+        expect(within(form).getByLabelText('Name')).toHaveValue(
+          'Platform brain',
+        );
+        expect(scrolled).toContain('project-brains-new');
+      } finally {
+        proto.scrollIntoView = original;
+      }
+    });
 
     it('a project deep link opens the Project scope on that project', () => {
       installFakeApi();

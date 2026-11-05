@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BrainView } from '../../../shared/brain';
-import { projectTasks } from '../../../shared/projectGraph';
+import { tasksOfProject } from '../../../shared/projectGraph';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
 import { Band } from '../../components/home/Band';
@@ -57,17 +57,12 @@ export function BrainsBand({ connection }: { connection: Connection }) {
     [all, id],
   );
   const counts = useCounts(brains);
-  const manage = () =>
-    go({
-      kind: 'settings',
-      scope: 'project',
-      connectionId: id,
-      section: 'project-brains',
-    });
+  const manage = (section: 'project-brains' | 'project-brains-new') =>
+    go({ kind: 'settings', scope: 'project', connectionId: id, section });
 
   const finished = useMemo(
     () =>
-      projectTasks(tasks, repos, id, new Date())
+      tasksOfProject(tasks, repos, id)
         .filter((t) => t.status === 'done' && t.finishedAt !== null)
         .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))
         .slice(0, RECENT),
@@ -91,7 +86,11 @@ export function BrainsBand({ connection }: { connection: Connection }) {
     <Band
       title="Brains"
       aside={
-        <button type="button" className="btn" onClick={manage}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => manage('project-brains')}
+        >
           Manage
         </button>
       }
@@ -147,7 +146,7 @@ export function BrainsBand({ connection }: { connection: Connection }) {
         <button
           type="button"
           className="home-card project-new-brain"
-          onClick={manage}
+          onClick={() => manage('project-brains-new')}
         >
           + New brain
         </button>

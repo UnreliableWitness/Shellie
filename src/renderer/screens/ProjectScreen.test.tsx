@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HomeItem, HomeSnapshot } from '../../shared/home';
@@ -326,6 +326,19 @@ describe('Project page', () => {
     expect(
       await within(b).findByRole('button', { name: /Old checkout/ }),
     ).toHaveTextContent('€0.25');
+    await userEvent.click(within(b).getByRole('button', { name: 'Manage' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      scope: 'project',
+      connectionId: 'c1',
+      section: 'project-brains',
+    });
+  });
+
+  it('+ New brain opens Settings with the create form', async () => {
+    fake();
+    render(<Shell />);
+    const b = await band('Brains');
     await userEvent.click(
       within(b).getByRole('button', { name: '+ New brain' }),
     );
@@ -333,8 +346,37 @@ describe('Project page', () => {
       kind: 'settings',
       scope: 'project',
       connectionId: 'c1',
-      section: 'project-brains',
+      section: 'project-brains-new',
     });
+  });
+
+  it('recently finished lists the last 3 finished tasks, newest first, however long ago', async () => {
+    const done = (id: string, title: string, days: number) =>
+      task({
+        id,
+        workItem: { id, type: 'Issue', title, url: null, project: null },
+        status: 'done',
+        finishedAt: recent(days),
+      });
+    fake();
+    render(<Shell />);
+    act(() =>
+      useStore.setState({
+        tasks: [
+          done('d1', 'Oldest', 400),
+          done('d2', 'Last spring', 200),
+          done('d3', 'Last year', 300),
+          done('d4', 'Last month', 30),
+        ],
+      }),
+    );
+    const b = await band('Brains');
+    const list = await within(b).findByRole('list');
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((x) => x.querySelector('.project-row-title')?.textContent),
+    ).toEqual(['#d4 Last month', '#d2 Last spring', '#d3 Last year']);
   });
 
   it('repositories band meta counts linked and elsewhere', async () => {
