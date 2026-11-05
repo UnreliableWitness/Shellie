@@ -1025,6 +1025,53 @@ describe('SettingsScreen', () => {
       );
     });
 
+    it.each([
+      ['in the picked project', 'c1'],
+      ['in No project', null],
+    ])(
+      'a repo %s moved to another project stays on screen, and the picker follows it',
+      async (_, from) => {
+        const moved = { ...api2, connectionId: 'c2' };
+        const { emit } = installFakeApi({
+          'repos:setConnection': () => moved,
+        });
+        useStore.setState({
+          connections: [shop, platform],
+          connectionId: 'c1',
+          repos: [
+            { ...webshop, connectionId: 'c1' },
+            { ...api2, connectionId: from },
+          ],
+          screen: { kind: 'settings', repoId: 'r2' },
+        });
+        // A No project repo opens on the active project.
+        render(<SettingsScreen />);
+        expect(
+          screen.getByRole('combobox', { name: 'Repository' }),
+        ).toHaveValue('r2');
+        await userEvent.selectOptions(
+          screen.getByLabelText('Project for api'),
+          'c2',
+        );
+        const next = [{ ...webshop, connectionId: 'c1' }, moved];
+        act(() => {
+          useStore.setState({ repos: next });
+          emit('repos:changed', next);
+        });
+        expect(
+          screen.getByRole('combobox', { name: 'Repository' }),
+        ).toHaveValue('r2');
+        expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(
+          'c2',
+        );
+        expect(window.localStorage.getItem('shellie.settings.repoId')).toBe(
+          'r2',
+        );
+        // Settings-local: the nav's project stays.
+        expect(useStore.getState().connectionId).toBe('c1');
+      },
+    );
+
     it('a project deep link opens the Project scope on that project', () => {
       installFakeApi();
       useStore.setState({

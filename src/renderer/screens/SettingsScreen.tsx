@@ -121,6 +121,21 @@ export function SettingsScreen() {
   // Falls back to the active project only when the pick is gone (or none existed at open).
   const connection =
     connections.find((c) => c.id === connectionId) ?? active ?? null;
+  // The repo on screen and the project it was in. When it moves to another known project (its Project select),
+  // the Settings-local pick follows it, so the repo stays on screen instead of dropping out of the list.
+  const [shown, setShown] = useState<{
+    id: string;
+    connectionId: string | null;
+  } | null>(null);
+  const shownNow = shown && repos.find((r) => r.id === shown.id);
+  if (shownNow && shownNow.connectionId !== shown.connectionId) {
+    const to = shownNow.connectionId;
+    setShown({ id: shownNow.id, connectionId: to });
+    if (to && to !== connection?.id && connections.some((c) => c.id === to)) {
+      setConnectionId(to);
+      setRepoId(shownNow.id);
+    }
+  }
   // Without a project there is no Project scope.
   const scope: Scope = picked === 'project' && !connection ? 'user' : picked;
   const scopes = SCOPES.filter((s) => s !== 'project' || connection);
@@ -131,6 +146,8 @@ export function SettingsScreen() {
   const looseRepos = repos.filter((r) => !linked(r));
   const shownRepos = [...projectRepos, ...looseRepos];
   const repo = shownRepos.find((r) => r.id === repoId) ?? shownRepos[0] ?? null;
+  if (repo && repo.id !== shown?.id)
+    setShown({ id: repo.id, connectionId: repo.connectionId });
   useEffect(() => writePref(SCOPE_KEY, picked), [picked]);
   useEffect(() => {
     if (repo) writePref(REPO_KEY, repo.id);
