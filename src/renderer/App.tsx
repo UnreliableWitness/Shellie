@@ -41,7 +41,7 @@ function Page() {
     case 'brain':
       return (
         <BrainScreen
-          key={screen.brainId}
+          key={`${screen.brainId}:${screen.focus ?? ''}`}
           brainId={screen.brainId}
           focus={screen.focus}
         />

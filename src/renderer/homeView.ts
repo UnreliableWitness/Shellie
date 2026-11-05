@@ -73,7 +73,7 @@ export function upNext(
 
 /** My items of a sprint by state category, and their spent and estimated time (the Sprint page's rules per item). */
 export function sprintTotals(
-  sprint: HomeSprint,
+  sprint: Pick<HomeSprint, 'items'>,
   local: Record<string, LocalItemTime>,
   categoryOf: (type: string, state: string) => string | null | undefined,
 ): {

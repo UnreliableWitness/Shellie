@@ -15,7 +15,7 @@ import { Band } from './Band';
 
 const REFETCH_MS = 5_000;
 
-const daysLeft = (finish: string | null): string | null => {
+export const daysLeft = (finish: string | null): string | null => {
   if (!finish) return null;
   const days = Math.ceil((Date.parse(finish) - Date.now()) / 86_400_000);
   return days <= 0
