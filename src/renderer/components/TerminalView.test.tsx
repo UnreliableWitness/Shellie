@@ -3,8 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { TerminalView } from './TerminalView';
 
+const xterm = vi.hoisted(() => ({
+  terminals: [] as { write: (d: string) => void; refresh: () => void }[],
+  webgl: [] as { dispose: () => void }[],
+}));
+
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    constructor() {
+      xterm.terminals.push(this);
+    }
     options: Record<string, unknown> = {};
     modes = {};
     loadAddon() {}
@@ -12,6 +20,7 @@ vi.mock('@xterm/xterm', () => ({
     rows = 24;
     open() {}
     write() {}
+    refresh() {}
     reset() {}
     focus() {}
     paste() {}
@@ -33,6 +42,11 @@ vi.mock('@xterm/addon-fit', () => ({
 vi.mock('../terminalSetup', () => ({
   followColorScheme: () => () => undefined,
   loadRenderer: () => undefined,
+  loadWebgl: () => {
+    const addon = { dispose: vi.fn() };
+    xterm.webgl.push(addon);
+    return addon;
+  },
   terminalOptions: () => ({}),
   windowsBuild: async () => null,
 }));
@@ -299,5 +313,92 @@ describe('TerminalView leak watch', () => {
         fake.calls.find((c) => c.channel === 'terminals:stop')?.args,
       ).toEqual(['t1']),
     );
+  });
+});
+
+describe('TerminalView while hidden (#236)', () => {
+  const running = () =>
+    installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => true,
+      'terminals:resize': () => undefined,
+    });
+  const opened = async () => {
+    // Opened once the Windows build is known; live output is written once the buffer is.
+    await new Promise((r) => setTimeout(r, 20));
+    return xterm.terminals[xterm.terminals.length - 1];
+  };
+
+  it('releases the WebGL renderer while hidden and loads it again on show', async () => {
+    running();
+    xterm.webgl.length = 0;
+    const { rerender } = render(
+      <TerminalView terminalId="t1" taskId="a" active />,
+    );
+    const t = await opened();
+    const refresh = vi.spyOn(t, 'refresh');
+    expect(xterm.webgl).toHaveLength(1);
+    rerender(<TerminalView terminalId="t1" taskId="a" active={false} />);
+    expect(xterm.webgl[0].dispose).toHaveBeenCalledTimes(1);
+    rerender(<TerminalView terminalId="t1" taskId="a" active />);
+    expect(xterm.webgl).toHaveLength(2);
+    expect(xterm.webgl[1].dispose).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('batches output while hidden and writes it in order on show', async () => {
+    const { emit } = running();
+    const { rerender } = render(
+      <TerminalView terminalId="t1" taskId="a" active={false} />,
+    );
+    const t = await opened();
+    const write = vi.spyOn(t, 'write');
+    emit('terminal:data', { id: 't1', data: 'one ' });
+    emit('terminal:data', { id: 't2', data: 'other ' });
+    emit('terminal:data', { id: 't1', data: 'two ' });
+    emit('terminal:data', { id: 't1', data: 'three' });
+    expect(write).not.toHaveBeenCalled();
+    rerender(<TerminalView terminalId="t1" taskId="a" active />);
+    expect(write.mock.calls).toEqual([['one two three']]);
+    // Shown: live output is written as it comes.
+    emit('terminal:data', { id: 't1', data: '!' });
+    expect(write.mock.calls).toEqual([['one two three'], ['!']]);
+  });
+
+  it('writes hidden output on its own after a short while', async () => {
+    const { emit } = running();
+    render(<TerminalView terminalId="t1" taskId="a" active={false} />);
+    const t = await opened();
+    const write = vi.spyOn(t, 'write');
+    emit('terminal:data', { id: 't1', data: 'a' });
+    emit('terminal:data', { id: 't1', data: 'b' });
+    await waitFor(() => expect(write.mock.calls).toEqual([['ab']]));
+  });
+
+  it('does not resize the pty again when shown at the same size', async () => {
+    const { calls } = running();
+    const width = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(800);
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(600);
+    const resizes = () =>
+      calls.filter((c) => c.channel === 'terminals:resize').length;
+    try {
+      const { rerender } = render(
+        <TerminalView terminalId="t1" taskId="a" active />,
+      );
+      await waitFor(() => expect(resizes()).toBeGreaterThan(0));
+      await new Promise((r) => setTimeout(r, 50));
+      const before = resizes();
+      rerender(<TerminalView terminalId="t1" taskId="a" active={false} />);
+      rerender(<TerminalView terminalId="t1" taskId="a" active />);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(resizes()).toBe(before);
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
   });
 });

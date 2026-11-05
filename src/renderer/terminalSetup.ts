@@ -59,7 +59,7 @@ export function windowsBuild(): Promise<number | null> {
   return info;
 }
 
-/** Wide-character widths per Unicode 11 (emoji, CJK), and the WebGL renderer when the GPU allows it; the DOM renderer otherwise. */
+/** Wide-character widths per Unicode 11 (emoji, CJK). */
 export function loadRenderer(t: Terminal): void {
   try {
     t.loadAddon(new Unicode11Addon());
@@ -67,11 +67,26 @@ export function loadRenderer(t: Terminal): void {
   } catch {
     /* keep the default widths */
   }
+}
+
+/**
+ * The WebGL renderer when the GPU allows it; the DOM renderer otherwise (null). Disposing it, or losing the GPU context,
+ * returns the terminal to the DOM renderer; disposing twice is harmless.
+ */
+export function loadWebgl(t: Terminal): { dispose(): void } | null {
   try {
     const webgl = new WebglAddon();
-    webgl.onContextLoss(() => webgl.dispose());
+    let gone = false;
+    const dispose = () => {
+      if (gone) return;
+      gone = true;
+      webgl.dispose();
+    };
+    webgl.onContextLoss(dispose);
     t.loadAddon(webgl);
+    return { dispose };
   } catch {
     /* no WebGL: the DOM renderer stays */
+    return null;
   }
 }
