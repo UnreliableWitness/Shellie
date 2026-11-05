@@ -6,12 +6,11 @@ import {
   SettingsCategory,
 } from '../../../components/settings/SettingRow';
 import { ConfirmBar } from '../../../components/ui/ConfirmBar';
+import { plural } from '../../../format';
 import { useBrains } from '../../../hooks/useBrains';
 import { useStore } from '../../../store';
 
-const count = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
-
+/** Removing the project: Shellie forgets the connection, unlinks its repos and archives its brains. */
 export function DangerCategory({
   connection,
   title,
@@ -21,8 +20,6 @@ export function DangerCategory({
 }) {
   const notify = useStore((s) => s.notify);
   const go = useStore((s) => s.go);
-  const setConnections = useStore((s) => s.setConnections);
-  const setRepos = useStore((s) => s.setRepos);
   const repos = useStore(
     (s) => s.repos.filter((r) => r.connectionId === connection.id).length,
   );
@@ -32,23 +29,19 @@ export function DangerCategory({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // connections:changed and repos:changed are broadcast by the handler and refresh the store.
   const remove = async () => {
     setBusy(true);
-    const ok = await tryInvoke(async () => {
-      await api().invoke('connections:remove', connection.id);
-      return true;
-    }, notify);
-    setBusy(false);
-    setConfirming(false);
-    if (!ok) return;
-    const list = await tryInvoke(
-      () => api().invoke('connections:list'),
-      notify,
-    );
-    if (list) setConnections(list);
-    const repoList = await tryInvoke(() => api().invoke('repos:list'), notify);
-    if (repoList) setRepos(repoList);
-    go({ kind: 'settings', scope: 'user', section: 'ado' });
+    try {
+      const ok = await tryInvoke(async () => {
+        await api().invoke('connections:remove', connection.id);
+        return true;
+      }, notify);
+      if (ok) go({ kind: 'settings', scope: 'user', section: 'ado' });
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
   };
 
   return (
@@ -64,7 +57,7 @@ export function DangerCategory({
         {confirming ? (
           <ConfirmBar
             message={`Remove ${connection.project} from Shellie?`}
-            details={`${count(repos, 'repository', 'repositories')} will be unlinked and ${count(brains, 'brain', 'brains')} archived.`}
+            details={`${plural(repos, 'repository', 'repositories')} will be unlinked and ${plural(brains, 'brain')} archived.`}
             confirmLabel="Remove"
             busy={busy}
             onConfirm={() => void remove()}

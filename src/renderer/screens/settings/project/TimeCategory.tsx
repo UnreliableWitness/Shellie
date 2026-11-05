@@ -17,21 +17,14 @@ export function TimeCategory({
   title: string;
 }) {
   const notify = useStore((s) => s.notify);
-  const setConnections = useStore((s) => s.setConnections);
 
-  const save = async (writeTimeToAdo: boolean) => {
-    const saved = await tryInvoke(
+  // connections:changed is broadcast by the handler and refreshes the store.
+  const save = (writeTimeToAdo: boolean) =>
+    void tryInvoke(
       () =>
         api().invoke('connections:update', connection.id, { writeTimeToAdo }),
       notify,
     );
-    if (saved)
-      setConnections(
-        useStore
-          .getState()
-          .connections.map((c) => (c.id === saved.id ? saved : c)),
-      );
-  };
 
   return (
     <SettingsCategory id="project-time" title={title}>
@@ -43,13 +36,13 @@ export function TimeCategory({
         description="Booked hours go to the work item's Completed Work and Remaining Work."
         keywords={['time tracking', 'completed work', 'hours']}
         modified={connection.writeTimeToAdo}
-        onReset={() => void save(false)}
+        onReset={() => save(false)}
       >
         <label className="row small">
           <input
             type="checkbox"
             checked={connection.writeTimeToAdo}
-            onChange={(e) => void save(e.target.checked)}
+            onChange={(e) => save(e.target.checked)}
           />
           {LABEL}
         </label>

@@ -1,43 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { StartSettings, WorkItemTypeMeta } from '../../../shared/types';
-import { api, tryInvoke } from '../../api';
-import { useStore } from '../../store';
+import { useWorkItemTypes } from '../../workItemTypes';
 import { SettingRow } from './SettingRow';
 
-/** A project's work item types, loaded while `active`; null while loading or without a project. */
-export function useWorkItemTypes(
+/** A project's work item types from the session cache, loaded while `active`; null while loading or without a project. */
+export function useProjectTypes(
   connectionId: string | null,
   active: boolean,
 ): WorkItemTypeMeta[] | null {
-  const notify = useStore((s) => s.notify);
-  const [types, setTypes] = useState<WorkItemTypeMeta[] | null>(null);
+  const load = useWorkItemTypes((s) => s.load);
+  const entry = useWorkItemTypes((s) =>
+    connectionId ? s.byConnection[connectionId] : undefined,
+  );
   useEffect(() => {
-    if (!active || !connectionId) return;
-    let live = true;
-    setTypes(null);
-    void tryInvoke(
-      () => api().invoke('workItems:types', connectionId),
-      notify,
-    ).then((result) => {
-      if (live && result) setTypes(result);
-    });
-    return () => {
-      live = false;
-    };
-  }, [active, connectionId, notify]);
-  return types;
+    if (active && connectionId) load(connectionId);
+  }, [active, connectionId, load]);
+  return useMemo(
+    () =>
+      active && entry?.status === 'ok' ? [...entry.types.values()] : null,
+    [active, entry],
+  );
 }
 
 /**
  * The three "work items on start" controls, shared by the Project scope (the default) and the Repository scope
  * (an override). Reset goes back to the app default. `types` null means still loading; `disabled` greys the
- * controls and shows `hint` in their place.
+ * controls and shows `hint` in their place. Row ids are `<scope>-workitems-*`.
  */
 export function StartSettingsRows({
   value,
   onChange,
   types,
-  idPrefix,
   scope,
   category,
   disabled = false,
@@ -46,12 +39,12 @@ export function StartSettingsRows({
   value: StartSettings;
   onChange(next: StartSettings): void;
   types: WorkItemTypeMeta[] | null;
-  idPrefix: 'project-workitems' | 'repo-workitems';
   scope: 'project' | 'repo';
   category: string;
   disabled?: boolean;
   hint?: string;
 }) {
+  const idPrefix = `${scope}-workitems`;
   const choose = (type: string, state: string) => {
     const { [type]: _removed, ...rest } = value.stateOverrides;
     onChange({

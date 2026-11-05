@@ -5,6 +5,7 @@ import type { BrainView } from '../../../../shared/brain';
 import type { Connection, Repo } from '../../../../shared/types';
 import { useStore } from '../../../store';
 import { installFakeApi } from '../../../test-helpers/fakeApi';
+import { useWorkItemTypes } from '../../../workItemTypes';
 import { ProjectScope } from '../ProjectScope';
 
 const conn: Connection = {
@@ -88,6 +89,7 @@ const row = (id: string) => {
 };
 
 beforeEach(() => {
+  useWorkItemTypes.getState().reset();
   useStore.setState({
     repos: [],
     tasks: [],
@@ -134,12 +136,6 @@ describe('ProjectScope categories', () => {
         },
       ]),
     );
-    await waitFor(() =>
-      expect(
-        useStore.getState().connections.find((c) => c.id === 'c1')
-          ?.workItemOnStart.moveToInProgress,
-      ).toBe(false),
-    );
     await userEvent.selectOptions(
       await screen.findByLabelText('In Progress state for Task'),
       'Doing',
@@ -165,12 +161,6 @@ describe('ProjectScope categories', () => {
       expect(
         calls.find((c) => c.channel === 'connections:update')?.args,
       ).toEqual(['c1', { writeTimeToAdo: true }]),
-    );
-    await waitFor(() =>
-      expect(
-        useStore.getState().connections.find((c) => c.id === 'c1')
-          ?.writeTimeToAdo,
-      ).toBe(true),
     );
   });
 
@@ -202,8 +192,6 @@ describe('ProjectScope categories', () => {
         brain('b3', 'Webshop brain', 'c2'),
       ],
       'connections:remove': () => undefined,
-      'connections:list': () => [sibling, other],
-      'repos:list': () => [repo('r3', null)],
     });
     useStore.setState({
       repos: [repo('r1', 'c1'), repo('r2', 'c1'), repo('r3', 'c2')],
@@ -230,8 +218,6 @@ describe('ProjectScope categories', () => {
     expect(calls.find((c) => c.channel === 'connections:remove')?.args).toEqual(
       ['c1'],
     );
-    expect(useStore.getState().connections).toEqual([sibling, other]);
-    expect(useStore.getState().repos).toEqual([repo('r3', null)]);
   });
 
   it('token row names the organization’s project count and updates them all', async () => {

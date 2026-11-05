@@ -10,6 +10,7 @@ import {
   SettingsCategory,
 } from '../../../components/settings/SettingRow';
 import { statusText } from '../../../connectionStatus';
+import { plural } from '../../../format';
 import { useStore } from '../../../store';
 
 /** The project's link to Azure DevOps: its status, the organization's token and who I am there. */
@@ -21,7 +22,6 @@ export function ConnectionCategory({
   title: string;
 }) {
   const notify = useStore((s) => s.notify);
-  const setConnections = useStore((s) => s.setConnections);
   const connections = useStore((s) => s.connections);
   const [busy, setBusy] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -34,6 +34,7 @@ export function ConnectionCategory({
   );
   const organization = organizationName(connection.organizationUrl);
 
+  // connections:changed is broadcast by the handler and refreshes the store.
   const verify = async () => {
     setBusy(true);
     try {
@@ -41,11 +42,6 @@ export function ConnectionCategory({
         () => api().invoke('connections:verify', connection.id),
         notify,
       );
-      const list = await tryInvoke(
-        () => api().invoke('connections:list'),
-        notify,
-      );
-      if (list) setConnections(list);
     } finally {
       setBusy(false);
     }
@@ -82,7 +78,7 @@ export function ConnectionCategory({
         scope="project"
         category={title}
         title="Token"
-        description={`One token for all ${siblings.length} ${siblings.length === 1 ? 'project' : 'projects'} of ${organization}`}
+        description={`One token for all ${plural(siblings.length, 'project')} of ${organization}`}
         keywords={['personal access token', 'PAT', 'Update token']}
       >
         {updating ? (

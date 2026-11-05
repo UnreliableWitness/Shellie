@@ -6,6 +6,7 @@ import type { ConfigSource } from '../../../../shared/repoConfig';
 import type { Repo, ShellieConfig } from '../../../../shared/types';
 import { useStore } from '../../../store';
 import { installFakeApi, noOverrides } from '../../../test-helpers/fakeApi';
+import { useWorkItemTypes } from '../../../workItemTypes';
 import { RepoScope } from '../RepoScope';
 
 const webshop: Repo = {
@@ -70,6 +71,7 @@ function configResult(
 }
 
 beforeEach(() => {
+  useWorkItemTypes.getState().reset();
   useStore.setState({
     repos: [webshop],
     tasks: [],

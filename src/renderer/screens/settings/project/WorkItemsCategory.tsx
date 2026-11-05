@@ -3,7 +3,7 @@ import { api, tryInvoke } from '../../../api';
 import { SettingsCategory } from '../../../components/settings/SettingRow';
 import {
   StartSettingsRows,
-  useWorkItemTypes,
+  useProjectTypes,
 } from '../../../components/settings/StartSettingsRows';
 import { useStore } from '../../../store';
 
@@ -18,30 +18,22 @@ export function WorkItemsCategory({
   title: string;
 }) {
   const notify = useStore((s) => s.notify);
-  const setConnections = useStore((s) => s.setConnections);
-  const types = useWorkItemTypes(connection.id, active);
+  const types = useProjectTypes(connection.id, active);
 
-  const save = async (workItemOnStart: StartSettings) => {
-    const saved = await tryInvoke(
+  // connections:changed is broadcast by the handler and refreshes the store.
+  const save = (workItemOnStart: StartSettings) =>
+    void tryInvoke(
       () =>
         api().invoke('connections:update', connection.id, { workItemOnStart }),
       notify,
     );
-    if (saved)
-      setConnections(
-        useStore
-          .getState()
-          .connections.map((c) => (c.id === saved.id ? saved : c)),
-      );
-  };
 
   return (
     <SettingsCategory id="project-workitems" title={title}>
       <StartSettingsRows
         value={connection.workItemOnStart}
-        onChange={(next) => void save(next)}
+        onChange={save}
         types={types}
-        idPrefix="project-workitems"
         scope="project"
         category={title}
       />

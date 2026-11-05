@@ -7,7 +7,7 @@ import {
 } from '../../../components/settings/SettingRow';
 import {
   StartSettingsRows,
-  useWorkItemTypes,
+  useProjectTypes,
 } from '../../../components/settings/StartSettingsRows';
 import { useStore } from '../../../store';
 
@@ -31,7 +31,7 @@ export function WorkItemsCategory({
   const project = connections.find((c) => c.id === repo.connectionId) ?? null;
   const settings = effectiveStartSettings(repo, project);
   const own = repo.workItemOnStart !== undefined;
-  const types = useWorkItemTypes(
+  const types = useProjectTypes(
     repo.connectionId,
     active && (own || !project),
   );
@@ -85,7 +85,6 @@ export function WorkItemsCategory({
           value={settings}
           onChange={save}
           types={types}
-          idPrefix="repo-workitems"
           scope="repo"
           category={CATEGORY}
           disabled={!repo.connectionId}

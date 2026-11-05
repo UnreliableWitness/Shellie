@@ -5,6 +5,7 @@ import type { AppSettings } from '../../shared/usage';
 import type { Connection, Repo } from '../../shared/types';
 import { useStore } from '../store';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
+import { useWorkItemTypes } from '../workItemTypes';
 import { SettingsScreen } from './SettingsScreen';
 
 const ADD_FOLDER = `Add folder${String.fromCharCode(8230)}`;
@@ -48,6 +49,7 @@ const shop = conn('c1', 'Shop');
 const platform = conn('c2', 'Platform');
 
 beforeEach(() => {
+  useWorkItemTypes.getState().reset();
   window.localStorage.clear();
   useStore.setState({
     repos: [],
