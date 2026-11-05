@@ -92,7 +92,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `settings.changed` | names of the changed settings (not their values) |
 | `settings.repoOverride` | `key`: which per-repo setting was overridden (`base`, `branch`, `copy`, `copyAgentConfig`, `setup`, `run`, `apm`, `reviewCollapse`, or `all` for Reset all), `reset`: true when it was removed; never the value |
 | `settings.copyEntries` | measurements: count per `copy:` entry state (`present`, `missing`, `holdsSecrets`, `notIgnored`, `outside`) and `suggestions`; no names or paths |
-| `settings.scope` | the Settings scope tab chosen (`user` or `repo`), by the tab or the other scope's results link |
+| `settings.scope` | the Settings scope tab chosen (`user`, `project` or `repo`), by the tab or the other scope's results link |
 | `settings.search` | a Settings search, sent once the box has been still for 1 s; measurement `results`: matching settings in the current scope. Never the query |
 | `settings.brain` | `action`: `create`, `update`, `delete`, `update-skills`, `open-folder`, `archive` or `restore`; never names, paths or wikis |
 | `workItems.search` | picker scope (`sprint` or `mine`); whether search text was typed (not the text) |
