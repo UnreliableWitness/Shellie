@@ -191,7 +191,7 @@ describe('BrainScreen', () => {
     expect(names(a).filter((c) => c === 'brain:get')).toHaveLength(2);
   });
 
-  it('shows the wiki as cards, opens a page, and renders the log', async () => {
+  it('shows the wiki in the Read view, opens a page, and renders the log', async () => {
     const a = setup(brainView(), {
       'brain:pages': () => [
         {

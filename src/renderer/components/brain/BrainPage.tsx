@@ -195,7 +195,9 @@ export function BrainPage({
   );
 
   return (
-    <div className={`brain-page${rail ? ' with-rail' : ''}`}>
+    <div
+      className={`brain-page${rail ? ' with-rail' : ''}${rail && !row ? ' no-rail' : ''}`}
+    >
       <div className="brain-page-bar" ref={bar}>
         <button
           type="button"

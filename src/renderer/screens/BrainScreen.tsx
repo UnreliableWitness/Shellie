@@ -4,10 +4,10 @@ import { brainTaskId } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainFiles } from '../components/brain/BrainFiles';
-import { BrainWiki } from '../components/brain/BrainWiki';
 import { BrainHealth } from '../components/brain/BrainHealth';
 import { BrainInbox } from '../components/brain/BrainInbox';
 import { BrainLog } from '../components/brain/BrainLog';
+import { BrainRead } from '../components/brain/BrainRead';
 import {
   openBrainTerminal,
   trackBrain,
@@ -15,6 +15,7 @@ import {
 import { PageHeader, Pivots } from '../components/ui';
 import { TerminalView } from '../components/TerminalView';
 import { useBrain } from '../hooks/useBrains';
+import { local } from '../localStorage';
 import { useStore } from '../store';
 
 type Tab = 'sources' | 'wiki' | 'log';
@@ -23,6 +24,23 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'wiki', label: 'Wiki' },
   { key: 'log', label: 'Log' },
 ];
+
+const LAST_OPENED = (brainId: string) => `brain-last-opened:${brainId}`;
+
+/** When this brain was last opened (a convenience in localStorage), and marks now: read once per Brain screen mount. */
+function useLastOpened(brainId: string): string | null {
+  const [last] = useState<string | null>(() => {
+    try {
+      const storage = local();
+      const prev = storage?.getItem(LAST_OPENED(brainId)) ?? null;
+      storage?.setItem(LAST_OPENED(brainId), new Date().toISOString());
+      return prev;
+    } catch {
+      return null;
+    }
+  });
+  return last;
+}
 
 /** One brain: its inbox and health, its files and log, and its terminal. */
 export function BrainScreen({
@@ -36,6 +54,7 @@ export function BrainScreen({
   const notify = useStore((s) => s.notify);
   const [tab, setTab] = useState<Tab>(focus === 'wiki' ? 'wiki' : 'sources');
   const [terminal, setTerminal] = useState<TerminalDef | null>(null);
+  const since = useLastOpened(brainId);
 
   if (!brain)
     return (
@@ -136,7 +155,7 @@ export function BrainScreen({
           onSelect={setTab}
         />
         {tab === 'sources' && <BrainFiles brainId={brain.id} dir="sources" />}
-        {tab === 'wiki' && <BrainWiki brainId={brain.id} />}
+        {tab === 'wiki' && <BrainRead brainId={brain.id} since={since} />}
         {tab === 'log' && <BrainLog brainId={brain.id} />}
         {terminal && (
           <div className="brain-terminal">
