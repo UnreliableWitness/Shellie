@@ -5,7 +5,7 @@ import { useBrainChanged } from '../../hooks/useBrains';
 import { isAfter, shortDay, type RecentEntry } from './recent';
 
 /** The rows the Read view and the task tab share, refetched when the brain changes. */
-export function useBrainPages(brainId: string) {
+export function useBrainPages(brainId: string): BrainPages {
   const [rows, setRows] = useState<BrainPageRow[]>([]);
   const [sources, setSources] = useState<BrainSourceRow[]>([]);
   const [log, setLog] = useState('');
@@ -30,6 +30,15 @@ export function useBrainPages(brainId: string) {
   useBrainChanged(brainId, load);
   return { rows, sources, log, loaded };
 }
+
+/** A brain's pages, sources and log, as useBrainPages loads them. */
+export type BrainPages = {
+  rows: BrainPageRow[];
+  sources: BrainSourceRow[];
+  log: string;
+  /** Whether `brain:pages` has answered once, so an empty list means an empty brain. */
+  loaded: boolean;
+};
 
 /** The last log entries that name pages, each page a link; entries since `since` are tagged new. */
 export function RecentList({

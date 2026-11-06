@@ -4,7 +4,7 @@ import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
 import { BrainTree, type TreeSpecial } from './BrainTreeView';
 import { pageGroups, pinnedPages, sourceGroup } from './brainTree';
-import { RecentList, useBrainPages } from './BrainWiki';
+import { RecentList, type BrainPages } from './BrainWiki';
 import { PageCard } from './PageCards';
 import { isAfter, recentEntries } from './recent';
 import { useBrainNav } from './useBrainNav';
@@ -16,14 +16,20 @@ import { useBrainNav } from './useBrainNav';
  */
 export function BrainRead({
   brainId,
+  pages,
   since,
   openRequest,
+  active,
 }: {
   brainId: string;
+  /** The brain's pages, sources and log, loaded once by the screen. */
+  pages: BrainPages;
   since: string | null;
   openRequest?: { path: string; n: number } | null;
+  /** Whether the view is shown: only then does ⌘K/Ctrl+K anywhere on the page go to its search. */
+  active: boolean;
 }) {
-  const { rows, sources, log, loaded } = useBrainPages(brainId);
+  const { rows, sources, log, loaded } = pages;
   const nav = useBrainNav();
   const [special, setSpecial] = useState<TreeSpecial | null>(null);
   const [searching, setSearching] = useState(false);
@@ -69,16 +75,21 @@ export function BrainRead({
     if (openRequest) openRef.current(openRequest.path);
   }, [openRequest]);
 
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey)) return;
+      const search = searchPane.current?.querySelector('input');
+      if (!search || typedElsewhere(e.target, search)) return;
+      e.preventDefault();
+      search.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [active]);
+
   return (
-    <div
-      className="brain-read"
-      onKeyDown={(e) => {
-        if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          searchPane.current?.querySelector('input')?.focus();
-        }
-      }}
-    >
+    <div className="brain-read">
       <nav className="brain-read-tree" aria-label="Brain pages">
         <div ref={searchPane}>
           <BrainSearch
@@ -156,5 +167,16 @@ export function BrainRead({
         )}
       </section>
     </div>
+  );
+}
+
+/** Whether a key went to the terminal, a field other than the search box, or editable text: there ⌘K is not ours. */
+function typedElsewhere(target: EventTarget | null, search: HTMLInputElement) {
+  if (!(target instanceof HTMLElement) || target === search) return false;
+  return (
+    !!target.closest('.brain-terminal') ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
   );
 }

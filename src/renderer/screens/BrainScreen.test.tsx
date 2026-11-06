@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -240,6 +241,56 @@ describe('BrainScreen', () => {
     a.emit('brain:changed', { brainId: 'b1' });
     expect(await screen.findByText('Acme 2')).toBeInTheDocument();
     expect(names(a).filter((c) => c === 'brain:get')).toHaveLength(2);
+  });
+
+  it('loads pages, sources and the log once for both views, and once more per change', async () => {
+    const a = setup(brainView(), {
+      'brain:pages': () => [page('wiki/a.md', 'Page A')],
+      'brain:sources': () => [],
+      'brain:read': () => ({ text: '# Log\n' }),
+    });
+    render(<BrainScreen brainId="b1" />);
+    await screen.findByRole('button', { name: /Page A/ });
+    const count = (channel: string) =>
+      names(a).filter((c) => c === channel).length;
+    await waitFor(() => expect(count('brain:read')).toBe(1));
+    expect(count('brain:pages')).toBe(1);
+    expect(count('brain:sources')).toBe(1);
+    a.emit('brain:changed', { brainId: 'b1' });
+    await waitFor(() => expect(count('brain:pages')).toBe(2));
+    expect(count('brain:sources')).toBe(2);
+    expect(count('brain:read')).toBe(2);
+  });
+
+  it('Cmd+K or Ctrl+K anywhere focuses the Read search, but not while Add is shown', async () => {
+    setup(brainView(), { 'brain:pages': () => [page('wiki/a.md', 'Page A')] });
+    render(<BrainScreen brainId="b1" />);
+    await screen.findByRole('button', { name: /Page A/ });
+    const search = screen.getByLabelText('Search the brain');
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    await userEvent.keyboard('{Meta>}k{/Meta}');
+    expect(search).toHaveFocus();
+    search.blur();
+    await userEvent.keyboard('{Control>}k{/Control}');
+    expect(search).toHaveFocus();
+    await openAdd();
+    (document.activeElement as HTMLElement | null)?.blur();
+    // fireEvent answers false when a handler took the key (preventDefault).
+    expect(fireEvent.keyDown(document.body, { key: 'k', metaKey: true })).toBe(
+      true,
+    );
+    expect(search).not.toHaveFocus();
+  });
+
+  it('Cmd+K typed in another field stays there', async () => {
+    setup(brainView(), { 'brain:pages': () => [page('wiki/a.md', 'Page A')] });
+    render(<BrainScreen brainId="b1" focus="ask" />);
+    await screen.findByRole('button', { name: /Page A/ });
+    const question = screen.getByLabelText('Question');
+    question.focus();
+    await userEvent.keyboard('{Meta>}k{/Meta}');
+    expect(question).toHaveFocus();
   });
 
   it('opens on Read, opens a page from the tree, and renders the log', async () => {

@@ -275,9 +275,10 @@ export function WaitingToCapture({
       <div className="brain-card-head">
         <h2 id="brain-waiting-h">Waiting to capture · {rows.length}</h2>
         <HelpTip label="Waiting to capture">
-          Dropped and pasted sources are captured automatically. This list holds
-          the ones that were not: a capture that failed, the queue paused by the
-          token cap, or a file put in the folder by hand.
+          Dropped and pasted sources are captured automatically; while that runs
+          they show here as queued or capturing. The rest wait for you: a
+          capture that failed, the queue paused by the token cap, or a file put
+          in the folder by hand. The Add badge counts only those.
         </HelpTip>
         <button
           type="button"

@@ -65,7 +65,7 @@ export function BrainScreen({
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
   const since = useLastOpened(brainId);
-  const { sources } = useBrainPages(brainId);
+  const pages = useBrainPages(brainId);
 
   if (!brain)
     return (
@@ -96,7 +96,7 @@ export function BrainScreen({
     setTerminal(null);
     await tryInvoke(() => api().invoke('terminals:kill', id), notify);
   };
-  const waiting = badgeCount(sources, brain.jobs);
+  const waiting = badgeCount(pages.sources, brain.jobs);
 
   return (
     <div className="page brain-page">
@@ -195,13 +195,16 @@ export function BrainScreen({
         <div className="brain-view brain-view-read" hidden={view !== 'read'}>
           <BrainRead
             brainId={brain.id}
+            pages={pages}
             since={since}
             openRequest={openRequest}
+            active={view === 'read'}
           />
         </div>
         <div className="brain-view brain-view-add" hidden={view !== 'add'}>
           <BrainAdd
             brain={brain}
+            pages={pages}
             onTerminal={setTerminal}
             onOpenPage={openPage}
             focusChoose={focus === 'drop'}

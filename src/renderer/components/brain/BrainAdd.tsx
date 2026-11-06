@@ -3,7 +3,7 @@ import type { TerminalDef } from '../../../shared/types';
 import { AutoRuns } from './AutoRuns';
 import { BrainHealth } from './BrainHealth';
 import { AddToBrain, RecentWork, WaitingToCapture } from './BrainInbox';
-import { useBrainPages } from './BrainWiki';
+import type { BrainPages } from './BrainWiki';
 import { HowItWorks } from './HowItWorks';
 import { RunNow } from './RunNow';
 import { useBrainDrop } from './useBrainDrop';
@@ -16,9 +16,12 @@ export function BrainAdd({
   brain,
   onTerminal,
   onOpenPage,
+  pages,
   focusChoose = false,
 }: {
   brain: BrainView;
+  /** The brain's pages, sources and log, loaded once by the screen. */
+  pages: BrainPages;
   onTerminal?: (def: TerminalDef) => void;
   /** Switches to Read and opens the page. */
   onOpenPage: (path: string) => void;
@@ -26,7 +29,7 @@ export function BrainAdd({
   focusChoose?: boolean;
 }) {
   const drop = useBrainDrop(brain.id);
-  const { rows, sources, log } = useBrainPages(brain.id);
+  const { rows, sources, log } = pages;
   return (
     <div className="brain-add" {...drop.dropProps}>
       <div className="brain-add-main">

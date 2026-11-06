@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
 import { installFakeApi, type FakeHandlers } from '../../test-helpers/fakeApi';
-import { BrainRead } from './BrainRead';
+import { BrainRead as BrainReadView } from './BrainRead';
+import { useBrainPages } from './BrainWiki';
 
 const row = (over: Partial<BrainPageRow> & { path: string }): BrainPageRow => ({
   title: over.path,
@@ -78,6 +79,14 @@ const setup = (over: FakeHandlers = {}) =>
   });
 const tree = () => screen.getByRole('navigation', { name: 'Brain pages' });
 const reading = () => screen.getByRole('region', { name: 'Reading' });
+
+/** BrainRead, shown, with its pages loaded the way the Brain screen loads them. */
+function BrainRead(
+  props: Omit<React.ComponentProps<typeof BrainReadView>, 'pages' | 'active'>,
+) {
+  const pages = useBrainPages(props.brainId);
+  return <BrainReadView {...props} pages={pages} active />;
+}
 
 beforeEach(() => {
   try {

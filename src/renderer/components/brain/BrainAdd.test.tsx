@@ -16,7 +16,8 @@ import type {
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { brainJob, brainView } from '../../test-helpers/brainFixture';
-import { BrainAdd } from './BrainAdd';
+import { BrainAdd as BrainAddView } from './BrainAdd';
+import { useBrainPages } from './BrainWiki';
 
 const file = (name: string, path = `/dl/${name}`) =>
   Object.assign(new File(['x'], name), { path });
@@ -43,6 +44,14 @@ const page = (path: string, title: string): BrainPageRow => ({
   sources: [],
   linkedFrom: [],
 });
+
+/** BrainAdd with its pages loaded the way the Brain screen loads them. */
+function BrainAdd(
+  props: Omit<React.ComponentProps<typeof BrainAddView>, 'pages'>,
+) {
+  const pages = useBrainPages(props.brain.id);
+  return <BrainAddView {...props} pages={pages} />;
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -574,7 +583,7 @@ describe('BrainAdd', () => {
       screen.getByRole('button', { name: 'Help: Waiting to capture' }),
     );
     expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Dropped and pasted sources are captured automatically.',
+      'Dropped and pasted sources are captured automatically; while that runs they show here as queued or capturing. The rest wait for you: a capture that failed, the queue paused by the token cap, or a file put in the folder by hand. The Add badge counts only those.',
     );
     expect(document.body.textContent).not.toMatch(/claude|opencode/i);
     expect(container.innerHTML).not.toMatch(/claude|opencode/i);
