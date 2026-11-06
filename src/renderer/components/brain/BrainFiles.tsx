@@ -6,55 +6,9 @@ import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { trackBrain } from './brainActions';
+import { SourceBar } from './SourceBar';
 import { VerifiedBar } from './VerifiedBar';
 import { DocsBody, type Doc } from '../docs/DocsBody';
-
-/** Remove a source (two clicks): the file, its original and pictures go; a /retract job takes its claims out. */
-function SourceBar({ path, onRemove }: { path: string; onRemove: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <div className="brain-verified small" role="status">
-      {confirming ? (
-        <>
-          <span>
-            Remove {path}? Its claims are taken out of the pages; the file stays
-            in the brain&apos;s git history.
-          </span>
-          <span className="brain-bar-actions">
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                setConfirming(false);
-                onRemove();
-              }}
-            >
-              Remove source
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setConfirming(false)}
-            >
-              Keep
-            </button>
-          </span>
-        </>
-      ) : (
-        <>
-          <span className="muted">Source</span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setConfirming(true)}
-          >
-            Remove…
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
 
 /** A brain's Markdown files: a list on the left, the chosen file rendered on the right. */
 export function BrainFiles({
