@@ -32,13 +32,39 @@ export type BrainAction =
   /** Browsing: a page or source opened (card, hit, chip, link), a search ran, back or forward. */
   | 'open-page'
   | 'search'
-  | 'back';
+  | 'back'
+  /** Run now: a sync; a `?` opened; an option switched in What runs by itself. */
+  | 'sync'
+  | 'help'
+  | 'option'
+  /** The Read or Add view chosen. */
+  | 'view-read'
+  | 'view-add';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>
   track('brain.screen.action', { action });
 
 type Notify = (level: 'error', message: string) => void;
+
+/** Copies the linked DevOps wiki into the brain's sources and says what changed. */
+export const refreshWiki = async (
+  brainId: string,
+  notify: (level: 'info' | 'error', message: string) => void,
+) => {
+  trackBrain('refresh');
+  const r = await tryInvoke(
+    () => api().invoke('brain:refresh', brainId),
+    notify,
+  );
+  if (!r) return;
+  if (r.ok)
+    notify(
+      'info',
+      `Wiki refreshed: ${r.added} added, ${r.changed} changed, ${r.removed} removed`,
+    );
+  else notify('error', r.message);
+};
 
 /**
  * Starts (or resumes) the brain's terminal; the caller shows it. `prompt` is submitted to Claude by main: the first

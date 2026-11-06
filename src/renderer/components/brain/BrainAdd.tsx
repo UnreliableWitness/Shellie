@@ -1,11 +1,17 @@
 import type { BrainView } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
+import { AutoRuns } from './AutoRuns';
+import { BrainHealth } from './BrainHealth';
 import { AddToBrain, RecentWork, WaitingToCapture } from './BrainInbox';
 import { useBrainPages } from './BrainWiki';
 import { HowItWorks } from './HowItWorks';
+import { RunNow } from './RunNow';
 import { useBrainDrop } from './useBrainDrop';
 
-/** The Add view's feeding column: how it works, the drop zone and paste form, what waits to be captured, and recent work. The whole view takes drops. */
+/**
+ * The Add view. Left, feeding the brain: how it works, the drop zone and paste form, what waits to be captured,
+ * and recent work. Right, what runs by itself, Run now and Health. The whole view takes drops.
+ */
 export function BrainAdd({
   brain,
   onTerminal,
@@ -23,16 +29,23 @@ export function BrainAdd({
   const { rows, sources, log } = useBrainPages(brain.id);
   return (
     <div className="brain-add" {...drop.dropProps}>
-      <HowItWorks />
-      <AddToBrain brain={brain} drop={drop} focusChoose={focusChoose} />
-      <WaitingToCapture brain={brain} sources={sources} />
-      <RecentWork
-        brain={brain}
-        rows={rows}
-        log={log}
-        onTerminal={onTerminal}
-        onOpenPage={onOpenPage}
-      />
+      <div className="brain-add-main">
+        <HowItWorks />
+        <AddToBrain brain={brain} drop={drop} focusChoose={focusChoose} />
+        <WaitingToCapture brain={brain} sources={sources} />
+        <RecentWork
+          brain={brain}
+          rows={rows}
+          log={log}
+          onTerminal={onTerminal}
+          onOpenPage={onOpenPage}
+        />
+      </div>
+      <div className="brain-add-side">
+        <AutoRuns brain={brain} />
+        <RunNow brain={brain} onTerminal={onTerminal} />
+        <BrainHealth brain={brain} onTerminal={onTerminal} />
+      </div>
     </div>
   );
 }

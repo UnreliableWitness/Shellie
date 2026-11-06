@@ -11,6 +11,7 @@ import type {
   AddSourceResult,
   BrainPageRow,
   BrainSourceRow,
+  BrainWiki,
 } from '../../../shared/brain';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
@@ -577,5 +578,164 @@ describe('BrainAdd', () => {
     );
     expect(document.body.textContent).not.toMatch(/claude|opencode/i);
     expect(container.innerHTML).not.toMatch(/claude|opencode/i);
+  });
+});
+
+const wiki: BrainWiki = {
+  wikiId: 'w1',
+  wikiName: 'Shellie.wiki',
+  type: 'projectWiki',
+  repositoryId: 'r1',
+  gitUrl: 'https://dev.azure.com/x/_git/w',
+  version: 'wikiMaster',
+  mappedPath: '/',
+  rootPath: '/',
+};
+const withOptions = (
+  over: Partial<ReturnType<typeof brainView>['options']>,
+  wikiOf: BrainWiki | null = wiki,
+) => {
+  const b = brainView({ wiki: wikiOf });
+  return { ...b, options: { ...b.options, ...over } };
+};
+
+describe('BrainAdd right column', () => {
+  it('lists what runs by itself, with the task-start refresh when Context in task.md is on', async () => {
+    installFakeApi({});
+    render(
+      <BrainAdd
+        brain={withOptions({ contextInTaskMd: true })}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const card = await screen.findByRole('region', {
+      name: 'What runs by itself',
+    });
+    expect(card).toHaveTextContent('Capture after you addautoalways');
+    expect(card).toHaveTextContent(
+      'Lint after each captureautoafter each successful capture',
+    );
+    expect(card).toHaveTextContent(
+      'Refresh the DevOps wikiautowhen older than a day, while Shellie is open · at task start',
+    );
+    expect(card).toHaveTextContent('Sync after a refresh');
+    expect(card).toHaveTextContent('Weekly digest');
+    expect(card).toHaveTextContent(
+      'Daily token cap12,345 of 500,000 tokens · €0.42 today',
+    );
+    expect(
+      within(card).getByRole('switch', { name: 'Sync after a refresh' }),
+    ).not.toBeChecked();
+  });
+
+  it('leaves out the task-start refresh when Context in task.md is off', async () => {
+    installFakeApi({});
+    render(
+      <BrainAdd
+        brain={withOptions({ contextInTaskMd: false })}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const card = await screen.findByRole('region', {
+      name: 'What runs by itself',
+    });
+    expect(card).toHaveTextContent(
+      'when older than a day, while Shellie is open',
+    );
+    expect(card).not.toHaveTextContent('at task start');
+  });
+
+  it('without a wiki: no refresh row, no sync switch, no Refresh wiki button', async () => {
+    installFakeApi({});
+    render(
+      <BrainAdd brain={withOptions({}, null)} onOpenPage={() => undefined} />,
+    );
+    const card = await screen.findByRole('region', {
+      name: 'What runs by itself',
+    });
+    expect(card).not.toHaveTextContent('Refresh the DevOps wiki');
+    expect(
+      screen.queryByRole('switch', { name: 'Sync after a refresh' }),
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refresh wiki' })).toBeNull();
+    expect(
+      screen.getByRole('switch', { name: 'Weekly digest' }),
+    ).toBeInTheDocument();
+  });
+
+  it('toggling Weekly digest writes the option', async () => {
+    const a = installFakeApi({ 'brain:update': () => brainView() });
+    render(<BrainAdd brain={withOptions({})} onOpenPage={() => undefined} />);
+    await userEvent.click(
+      screen.getByRole('switch', { name: 'Weekly digest' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:update',
+        args: ['b1', { options: { weeklyDigest: true } }],
+      }),
+    );
+    expect(a.tracked).toContainEqual(
+      expect.objectContaining({
+        name: 'brain.screen.action',
+        props: { action: 'option' },
+      }),
+    );
+  });
+
+  it('a paused queue shows paused and Resume on the token cap row', async () => {
+    const a = installFakeApi({ 'brain:resumeQueue': () => undefined });
+    const brain = withOptions({});
+    brain.health = { ...brain.health!, queuePaused: 'cap' };
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    const card = screen.getByRole('region', { name: 'What runs by itself' });
+    expect(card).toHaveTextContent('paused');
+    await userEvent.click(within(card).getByRole('button', { name: 'Resume' }));
+    expect(a.calls).toContainEqual({
+      channel: 'brain:resumeQueue',
+      args: ['b1'],
+    });
+  });
+
+  it('Run now: Sync runs a sync, and its ? explains it', async () => {
+    const a = installFakeApi({
+      'brain:run': (brainId, kind) => brainJob({ brainId, kind }),
+    });
+    render(<BrainAdd brain={withOptions({})} onOpenPage={() => undefined} />);
+    const run = screen.getByRole('region', { name: 'Run now' });
+    await userEvent.click(within(run).getByRole('button', { name: 'Sync' }));
+    expect(a.calls).toContainEqual({
+      channel: 'brain:run',
+      args: ['b1', 'sync'],
+    });
+    expect(a.tracked).toContainEqual(
+      expect.objectContaining({ props: { action: 'sync' } }),
+    );
+    await userEvent.hover(
+      within(run).getByRole('button', { name: 'Help: Sync' }),
+    );
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Compares what changed in the sources and the wiki since the last sync and updates the pages that cite it. Use it after editing pages by hand or after a large wiki refresh. Uses tokens and takes a few minutes.',
+    );
+    expect(a.tracked).toContainEqual(
+      expect.objectContaining({ props: { action: 'help' } }),
+    );
+  });
+
+  it('Run now: Open terminal hands the terminal to the caller', async () => {
+    installFakeApi({ 'brain:terminal': () => def });
+    const onTerminal = vi.fn();
+    render(
+      <BrainAdd
+        brain={withOptions({})}
+        onTerminal={onTerminal}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const run = screen.getByRole('region', { name: 'Run now' });
+    await userEvent.click(
+      within(run).getByRole('button', { name: 'Open terminal' }),
+    );
+    await waitFor(() => expect(onTerminal).toHaveBeenCalledWith(def));
   });
 });

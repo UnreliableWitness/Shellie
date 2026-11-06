@@ -5,11 +5,11 @@ import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainAdd } from '../components/brain/BrainAdd';
 import { BrainFiles } from '../components/brain/BrainFiles';
-import { BrainHealth } from '../components/brain/BrainHealth';
 import { BrainLog } from '../components/brain/BrainLog';
 import { BrainRead } from '../components/brain/BrainRead';
 import {
   openBrainTerminal,
+  refreshWiki,
   trackBrain,
 } from '../components/brain/brainActions';
 import { PageHeader, Pivots } from '../components/ui';
@@ -70,20 +70,6 @@ export function BrainScreen({
     trackBrain(kind);
     void tryInvoke(() => api().invoke('brain:run', brain.id, kind), notify);
   };
-  const refresh = async () => {
-    trackBrain('refresh');
-    const r = await tryInvoke(
-      () => api().invoke('brain:refresh', brain.id),
-      notify,
-    );
-    if (!r) return;
-    if (r.ok)
-      notify(
-        'info',
-        `Wiki refreshed: ${r.added} added, ${r.changed} changed, ${r.removed} removed`,
-      );
-    else notify('error', r.message);
-  };
   const openTerminal = async () => {
     trackBrain('terminal');
     const def = await openBrainTerminal(brain.id, notify);
@@ -106,7 +92,7 @@ export function BrainScreen({
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => void refresh()}
+              onClick={() => void refreshWiki(brain.id, notify)}
             >
               Refresh wiki
             </button>
@@ -140,15 +126,12 @@ export function BrainScreen({
         }
       />
       <div className="page-body brain-body">
-        <div className="brain-columns">
-          <BrainAdd
-            brain={brain}
-            onTerminal={setTerminal}
-            onOpenPage={() => undefined}
-            focusChoose={focus === 'drop'}
-          />
-          <BrainHealth brain={brain} onTerminal={setTerminal} />
-        </div>
+        <BrainAdd
+          brain={brain}
+          onTerminal={setTerminal}
+          onOpenPage={() => undefined}
+          focusChoose={focus === 'drop'}
+        />
         <Pivots
           label="Brain files"
           items={TABS}

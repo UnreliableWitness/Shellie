@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '../store';
@@ -23,6 +23,11 @@ const setup = (brain = brainView(), over: FakeHandlers = {}) =>
   });
 const names = (a: { calls: { channel: string }[] }) =>
   a.calls.map((c) => c.channel);
+/** The page header's commands; the Add view's Run now has buttons of the same names. */
+const header = async () => {
+  await screen.findByText('Acme');
+  return within(screen.getByRole('banner'));
+};
 
 beforeEach(() =>
   useStore.setState({ notices: [], screen: { kind: 'brain', brainId: 'b1' } }),
@@ -42,7 +47,9 @@ describe('BrainScreen', () => {
   it('Lint button queues a lint', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Lint' }));
+    await userEvent.click(
+      (await header()).getByRole('button', { name: 'Lint' }),
+    );
     expect(a.calls).toContainEqual({
       channel: 'brain:run',
       args: ['b1', 'lint'],
@@ -66,10 +73,9 @@ describe('BrainScreen', () => {
       }),
     });
     render(<BrainScreen brainId="b1" />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Digest' }),
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Refresh wiki' }));
+    const head = await header();
+    await userEvent.click(head.getByRole('button', { name: 'Digest' }));
+    await userEvent.click(head.getByRole('button', { name: 'Refresh wiki' }));
     expect(a.calls).toContainEqual({
       channel: 'brain:run',
       args: ['b1', 'digest'],
@@ -105,7 +111,7 @@ describe('BrainScreen', () => {
     const a = setup(brainView(), { 'terminals:kill': () => undefined });
     render(<BrainScreen brainId="b1" />);
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Open terminal' }),
+      (await header()).getByRole('button', { name: 'Open terminal' }),
     );
     expect(await screen.findByTestId('terminal')).toHaveTextContent(
       'brain:b1/bt1',
@@ -166,13 +172,16 @@ describe('BrainScreen', () => {
     expect(names(a)).not.toContain('terminals:write');
   });
 
-  it('shows the cap pause and resumes the queue', async () => {
+  it('shows the cap pause in What runs by itself and resumes the queue', async () => {
     const paused = brainView();
     paused.health!.queuePaused = 'cap';
     const a = setup(paused);
     render(<BrainScreen brainId="b1" />);
-    expect(await screen.findByText(/paused/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    const auto = await screen.findByRole('region', {
+      name: 'What runs by itself',
+    });
+    expect(within(auto).getByText('paused')).toBeInTheDocument();
+    await userEvent.click(within(auto).getByRole('button', { name: 'Resume' }));
     expect(a.calls).toContainEqual({
       channel: 'brain:resumeQueue',
       args: ['b1'],

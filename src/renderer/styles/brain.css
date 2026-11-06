@@ -5,12 +5,6 @@
   gap: 16px;
   padding: 0 32px 32px;
 }
-.brain-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-  align-items: start;
-}
 .brain-card {
   background: var(--bg-card);
   border-radius: var(--radius-card);
@@ -33,9 +27,55 @@
 }
 .brain-add {
   display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  min-width: 0;
+}
+/* Two columns like the mockup; the side column drops below the main one when there is no room. */
+.brain-add-main,
+.brain-add-side {
+  display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+}
+.brain-add-main {
+  flex: 2 1 480px;
+}
+.brain-add-side {
+  flex: 1 1 300px;
+}
+.brain-auto {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-auto-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.brain-auto-row:last-child {
+  border-bottom: 0;
+}
+.brain-auto-value {
+  margin-left: auto;
+  text-align: right;
+}
+.brain-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.brain-run-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .brain-card-head {
   display: flex;
@@ -143,15 +183,6 @@
 }
 .brain-ask .field {
   flex: 1;
-}
-.brain-pause {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
 }
 .brain-error,
 .brain-problems {

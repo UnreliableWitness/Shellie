@@ -3,7 +3,7 @@ import type { BrainView } from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
-import { dateTime, eur } from '../../format';
+import { dateTime } from '../../format';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
 
@@ -12,7 +12,7 @@ const MAX_SHOWN = 50;
 
 const when = (iso: string | null) => (iso ? dateTime(iso) : 'never');
 
-/** Lint findings, what still has to be captured, the wiki mirror, and the day's spend. */
+/** Lint findings, what still has to be captured, and the wiki mirror. The day's spend and the cap pause live in What runs by itself. */
 export function BrainHealth({
   brain,
   onTerminal,
@@ -46,10 +46,6 @@ export function BrainHealth({
     );
     if (def) onTerminal?.(def);
   };
-  const resume = () => {
-    trackBrain('resume');
-    void tryInvoke(() => api().invoke('brain:resumeQueue', brain.id), notify);
-  };
 
   // Only brain:get carries health; a view from a list has none.
   if (!h)
@@ -63,14 +59,6 @@ export function BrainHealth({
   return (
     <section className="brain-card" aria-labelledby="brain-health-h">
       <h2 id="brain-health-h">Health</h2>
-      {h.queuePaused === 'cap' && (
-        <div className="brain-pause" role="status">
-          <span>Queue paused: the daily token cap was reached.</span>
-          <button type="button" className="btn btn-sm" onClick={resume}>
-            Resume
-          </button>
-        </div>
-      )}
       {h.stateError && <p className="brain-error small">{h.stateError}</p>}
       <dl className="facts">
         <dt>Last lint</dt>
@@ -84,10 +72,6 @@ export function BrainHealth({
         <dt>Wiki mirror</dt>
         <dd>
           {h.mirrorPages} pages, refreshed {when(brain.lastRefreshAt)}
-        </dd>
-        <dt>Today</dt>
-        <dd>
-          {h.tokensToday.toLocaleString('en-US')} tokens, {eur(h.costEurToday)}
         </dd>
       </dl>
       {h.outsideEdits.length > 0 && (
