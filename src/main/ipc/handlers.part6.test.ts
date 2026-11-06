@@ -152,8 +152,9 @@ describe('handlers: environment per task', () => {
       expect(info.tabs.map((t) => t.id)).toEqual([e.dev.id]);
       e.clock.now = T0 + 61 * 60_000;
       for (const tick of e.ticks) tick();
-      await vi.waitFor(() =>
-        expect(e.stored().environment).toBe('development'),
+      await vi.waitFor(
+        () => expect(e.stored().environment).toBe('development'),
+        PTY_WAIT,
       );
       // The expiry's respawn holds the task until the shell restarted (seconds on Windows); switch once it lets go.
       await vi.waitFor(
@@ -210,8 +211,9 @@ describe('handlers: environment per task', () => {
       e.killedIds().length = 0;
       e.clock.now = T0 + 61 * 60_000;
       for (const tick of e.ticks) tick();
-      await vi.waitFor(() =>
-        expect(e.stored().environment).toBe('development'),
+      await vi.waitFor(
+        () => expect(e.stored().environment).toBe('development'),
+        PTY_WAIT,
       );
       // The environment is stored first; the shell is killed and spawned again after it.
       await vi.waitFor(
@@ -463,10 +465,15 @@ describe('handlers: environment per task', () => {
     expect(e.stopRuns).not.toHaveBeenCalled();
     e.clock.now = T0 + 60 * 60_000;
     for (const tick of e.ticks) tick();
-    await vi.waitFor(() => expect(e.stored().environment).toBe('development'));
+    await vi.waitFor(
+      () => expect(e.stored().environment).toBe('development'),
+      PTY_WAIT,
+    );
     expect(e.stored().environmentUntil).toBeNull();
-    await vi.waitFor(() =>
-      expect(e.stopRuns).toHaveBeenCalledWith(e.task.id, 'Production ended'),
+    await vi.waitFor(
+      () =>
+        expect(e.stopRuns).toHaveBeenCalledWith(e.task.id, 'Production ended'),
+      PTY_WAIT,
     );
     await vi.waitFor(
       () => expect(e.envOf(e.shellId()).DB).toBe('dev-db'),
@@ -481,14 +488,16 @@ describe('handlers: environment per task', () => {
       expect(e.killedIds()).not.toContain(id);
       expect(e.hx.terminals.isRunning(id)).toBe(true);
     }
-    await vi.waitFor(() =>
-      expect(e.hx.broadcasts).toContainEqual({
-        event: 'notice',
-        payload: {
-          level: 'info',
-          message: 'Production ended for 48231 Show estimated delivery date',
-        },
-      }),
+    await vi.waitFor(
+      () =>
+        expect(e.hx.broadcasts).toContainEqual({
+          event: 'notice',
+          payload: {
+            level: 'info',
+            message: 'Production ended for 48231 Show estimated delivery date',
+          },
+        }),
+      PTY_WAIT,
     );
     expect(
       e.hx.broadcasts.some(
@@ -523,12 +532,17 @@ describe('handlers: environment per task', () => {
     expect(tel.named('secrets.productionExpired')).toEqual([]);
     e.clock.now = T0 + 60 * 60_000;
     for (const tick of e.ticks) tick();
-    await vi.waitFor(() =>
-      expect(tel.named('secrets.productionExpired')).toEqual([
-        ['secrets.productionExpired', undefined, undefined],
-      ]),
+    await vi.waitFor(
+      () =>
+        expect(tel.named('secrets.productionExpired')).toEqual([
+          ['secrets.productionExpired', undefined, undefined],
+        ]),
+      PTY_WAIT,
     );
-    await vi.waitFor(() => expect(e.stored().environment).toBe('development'));
+    await vi.waitFor(
+      () => expect(e.stored().environment).toBe('development'),
+      PTY_WAIT,
+    );
     writeFileSync(
       path.join(e.task.worktreePath, '.env'),
       'PORT=1\nDB=old-plaintext\n',
@@ -552,7 +566,10 @@ describe('handlers: environment per task', () => {
     await e.hx.h['tasks:setEnvironment'](e.task.id, 'production', true);
     e.clock.now = T0 + 3 * 60 * 60_000;
     for (const resume of e.resumes) resume();
-    await vi.waitFor(() => expect(e.stored().environment).toBe('development'));
+    await vi.waitFor(
+      () => expect(e.stored().environment).toBe('development'),
+      PTY_WAIT,
+    );
     expect(e.stopRuns).toHaveBeenCalledWith(e.task.id, 'Production ended');
     await e.hx.terminals.killAllForTask(e.task.id);
   });
@@ -889,10 +906,12 @@ describe('handlers: leak watch', () => {
         `printf '${LONG.slice(0, 40)}\\033[39m\\r\\n    ${LONG.slice(40)}\\n'`,
         LONG,
       );
-      await vi.waitFor(() =>
-        expect(hx.leaks().map((b) => b.payload)).toEqual([
-          { id: hx.claude.id, names: ['WRAPPED_KEY'], paused: true },
-        ]),
+      await vi.waitFor(
+        () =>
+          expect(hx.leaks().map((b) => b.payload)).toEqual([
+            { id: hx.claude.id, names: ['WRAPPED_KEY'], paused: true },
+          ]),
+        PTY_WAIT,
       );
       expect(hx.terminals.buffer(hx.claude.id)).toContain('[WRAPPED_KEY]');
       expect(hx.terminals.buffer(hx.claude.id)).not.toContain(
@@ -1073,10 +1092,14 @@ describe('handlers: shellie run', () => {
     expect(await r.code).toBe(0);
     expect(r.text()).toContain('db=[DB]');
     expect(r.text()).not.toContain(DB_VALUE);
-    const tab = hx.store.state.tasks
-      .find((t) => t.id === hx.task.id)!
-      .terminals.find((d) => d.label === 'agent · show')!;
-    expect(tab).toMatchObject({ kind: 'run' });
+    // The tab is recorded just after its spawn, so a command this quick can end before it is listed.
+    const tab = await vi.waitFor(() => {
+      const t = hx.store.state.tasks
+        .find((t) => t.id === hx.task.id)!
+        .terminals.find((d) => d.label === 'agent · show');
+      expect(t).toMatchObject({ kind: 'run' });
+      return t!;
+    }, PTY_WAIT);
     // The tab itself is the developer's: it shows what ran.
     expect(hx.terminals.buffer(tab.id)).toContain(`db=${DB_VALUE}`);
     // The agent got [DB], never the value: no "the model read it" notice on the tab that asked, nor on the run tab.
@@ -1132,8 +1155,9 @@ describe('handlers: shellie run', () => {
     const hx = await runHarness();
     await hx.h['tasks:setEnvironment'](hx.task.id, 'production', true);
     const r = hx.run('show');
-    await vi.waitFor(async () =>
-      expect(await hx.h['runs:pending']()).toHaveLength(1),
+    await vi.waitFor(
+      async () => expect(await hx.h['runs:pending']()).toHaveLength(1),
+      PTY_WAIT,
     );
     const [p] = await hx.h['runs:pending']();
     expect(p).toMatchObject({
@@ -1152,8 +1176,9 @@ describe('handlers: shellie run', () => {
     ).toBe(false);
     // Approved, it runs with the Production value, masked for the agent.
     const ok = hx.run('show');
-    await vi.waitFor(async () =>
-      expect(await hx.h['runs:pending']()).toHaveLength(1),
+    await vi.waitFor(
+      async () => expect(await hx.h['runs:pending']()).toHaveLength(1),
+      PTY_WAIT,
     );
     await hx.h['runs:approve']((await hx.h['runs:pending']())[0]!.id, true);
     expect(await ok.code).toBe(0);
@@ -1207,7 +1232,7 @@ describe('handlers: shellie run', () => {
         .find((t) => t.id === hx.task.id)!
         .terminals.find((d) => d.label === 'agent · wait')?.id;
       expect(tab && hx.terminals.isRunning(tab)).toBe(true);
-    });
+    }, PTY_WAIT);
     await hx.h['terminals:stop'](tab!);
     expect(await r.code).toBe(1);
     expect(r.text()).toContain('Stopped in Shellie');
