@@ -528,6 +528,41 @@ fieldset.group legend {
   background: var(--bg-selected);
 }
 
+/* HelpTip: a ? button with a popover */
+.helptip {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: help;
+}
+.helptip:hover,
+.helptip[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.helptip-pop {
+  position: fixed;
+  z-index: 30;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 320px;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .notices {
   position: fixed;
   right: 16px;

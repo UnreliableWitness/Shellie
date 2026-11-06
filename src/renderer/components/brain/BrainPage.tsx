@@ -5,9 +5,12 @@ import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { MarkdownView } from '../docs/MarkdownView';
+import { trackBrain } from './brainActions';
 import { Lightbox } from './Lightbox';
 import { PageTags } from './PageCards';
+import { PageRail, type RailHeading } from './PageRail';
 import { folderOf, shortDay, sourceLabel } from './recent';
+import { SourceBar } from './SourceBar';
 import { VerifiedBar } from './VerifiedBar';
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
@@ -15,7 +18,9 @@ const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 
 /**
  * One page or source of the brain, presented: a bar with back and forward, a header from its frontmatter (sources
- * and backlinks as chips), the body with working links, pictures in a lightbox.
+ * and backlinks as chips), the body with working links, pictures in a lightbox. With `layout="rail"` (the Read view)
+ * the sources, backlinks and Mark verified move to a rail beside the body, with the page's outline, and a source
+ * can be removed.
  */
 export function BrainPage({
   brainId,
@@ -28,6 +33,8 @@ export function BrainPage({
   onOpen,
   onBack,
   onForward,
+  layout = 'chips',
+  onRemoved,
 }: {
   brainId: string;
   path: string;
@@ -39,6 +46,10 @@ export function BrainPage({
   onOpen: (path: string, anchor?: string) => void;
   onBack: () => void;
   onForward: () => void;
+  /** Where the sources, backlinks and Mark verified go: chips in the header, or a rail beside the body. */
+  layout?: 'chips' | 'rail';
+  /** After the source shown was removed (rail layout only). */
+  onRemoved?: () => void;
 }) {
   const notify = useStore((s) => s.notify);
   const [text, setText] = useState<string | null>(null);
@@ -47,6 +58,8 @@ export function BrainPage({
     null,
   );
   const body = useRef<HTMLDivElement>(null);
+  const rail = layout === 'rail';
+  const [headings, setHeadings] = useState<RailHeading[]>([]);
   const row = rows.find((r) => r.path === path) ?? null;
   const source = sources.find((s) => s.path === path) ?? null;
 
@@ -93,6 +106,26 @@ export function BrainPage({
     el?.scrollIntoView?.({ block: 'start' });
   }, [text, anchor, path]);
 
+  // The outline is read from the rendered body: the heading ids are the ones MarkdownView gave them.
+  useEffect(() => {
+    if (!rail || text === null) {
+      setHeadings([]);
+      return;
+    }
+    const found = body.current?.querySelectorAll('h2[id], h3[id]') ?? [];
+    setHeadings(
+      Array.from(found, (h) => ({
+        id: h.id,
+        text: h.textContent ?? '',
+        level: h.tagName === 'H3' ? 3 : 2,
+      })),
+    );
+  }, [rail, text]);
+  const jump = (id: string) =>
+    body.current
+      ?.querySelector(`[id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView?.({ block: 'start' });
+
   const asset = useCallback(
     (p: string) => api().invoke('brain:asset', brainId, p),
     [brainId],
@@ -126,9 +159,45 @@ export function BrainPage({
       ? [top, ...folderOf(path)]
       : folderOf(path);
   const title = row?.title ?? source?.path.split('/').pop() ?? path;
+  const verifiedBar = text !== null && (
+    <VerifiedBar text={text} brainId={brainId} path={path} onChanged={load} />
+  );
+  const removeSource = () =>
+    api()
+      .invoke('brain:removeSource', brainId, path)
+      .then(
+        () => {
+          trackBrain('remove-source');
+          onRemoved?.();
+        },
+        (e: unknown) => notify('error', errorMessage(e)),
+      );
+  const main = (
+    <>
+      {error && <p className="brain-error small">{error}</p>}
+      {text === null && !error && <p className="muted small">Loading</p>}
+      {text !== null && (
+        <div
+          className="brain-doc brain-page-body"
+          ref={body}
+          onClick={onBodyClick}
+        >
+          <MarkdownView
+            asset={asset}
+            path={path}
+            text={text.replace(FRONTMATTER, '')}
+            onOpenDoc={onOpen}
+            onOpenFile={openFile}
+          />
+        </div>
+      )}
+    </>
+  );
 
   return (
-    <div className="brain-page">
+    <div
+      className={`brain-page${rail ? ' with-rail' : ''}${rail && !row ? ' no-rail' : ''}`}
+    >
       <div className="brain-page-bar" ref={bar}>
         <button
           type="button"
@@ -160,7 +229,7 @@ export function BrainPage({
           <h2>{row.title}</h2>
           {row.summary && <p className="brain-page-lead">{row.summary}</p>}
           <PageTags row={row} />
-          {row.sources.length > 0 && (
+          {!rail && row.sources.length > 0 && (
             <div className="brain-chips">
               <span className="muted small">Sources</span>
               {row.sources.map((s) => (
@@ -176,7 +245,7 @@ export function BrainPage({
               ))}
             </div>
           )}
-          {row.linkedFrom.length > 0 && (
+          {!rail && row.linkedFrom.length > 0 && (
             <div className="brain-chips">
               <span className="muted small">Linked from</span>
               {row.linkedFrom.map((p) => (
@@ -192,12 +261,7 @@ export function BrainPage({
               ))}
             </div>
           )}
-          <VerifiedBar
-            text={text}
-            brainId={brainId}
-            path={path}
-            onChanged={load}
-          />
+          {!rail && verifiedBar}
         </header>
       )}
       {text !== null && !row && source && (
@@ -236,22 +300,28 @@ export function BrainPage({
           )}
         </header>
       )}
-      {error && <p className="brain-error small">{error}</p>}
-      {text === null && !error && <p className="muted small">Loading</p>}
-      {text !== null && (
-        <div
-          className="brain-doc brain-page-body"
-          ref={body}
-          onClick={onBodyClick}
-        >
-          <MarkdownView
-            asset={asset}
-            path={path}
-            text={text.replace(FRONTMATTER, '')}
-            onOpenDoc={onOpen}
-            onOpenFile={openFile}
-          />
+      {rail ? (
+        <div className="brain-page-main">
+          {text !== null &&
+            !row &&
+            source &&
+            !path.startsWith('sources/wiki/') && (
+              <SourceBar path={path} onRemove={() => void removeSource()} />
+            )}
+          {main}
         </div>
+      ) : (
+        main
+      )}
+      {rail && text !== null && row && (
+        <PageRail
+          headings={headings}
+          row={row}
+          titleOf={titleOf}
+          onOpen={onOpen}
+          onJump={jump}
+          verified={verifiedBar}
+        />
       )}
       {picture && (
         <Lightbox

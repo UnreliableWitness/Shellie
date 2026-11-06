@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { BrainPageRow } from '../../../shared/brain';
+import type { BrainJob, BrainPageRow } from '../../../shared/brain';
 import {
   folderOf,
   isAfter,
   matchPage,
+  pagesChangedBy,
   recentEntries,
   shortDay,
   sourceLabel,
@@ -41,6 +42,7 @@ describe('recentEntries', () => {
       {
         at: '2026-11-04T10:00:00Z',
         skill: 'capture',
+        source: 'sources/2026-11-04-deck.md',
         pages: [
           { label: 'account', path: 'wiki/account.md' },
           {
@@ -52,6 +54,7 @@ describe('recentEntries', () => {
       {
         at: '2026-11-03T09:00:00Z',
         skill: 'sync',
+        source: '',
         pages: [
           {
             label: '`Database choice`',
@@ -97,5 +100,54 @@ describe('after review', () => {
       isAfter('2026-11-04T12:30:00+01:00', '2026-11-04T11:00:00.000Z'),
     ).toBe(true);
     expect(isAfter('later', 'earlier')).toBe(true);
+  });
+});
+
+describe('pagesChangedBy', () => {
+  const log = [
+    '- 2026-11-05T09:30:00Z /capture sources/2026-11-05-deck.md → pages: decision-2026-11-03-db; takeaway: later',
+    '- 2026-11-05T08:40:00Z /capture sources/2026-11-05-deck.md → pages: a, account; takeaway: x',
+    '- 2026-11-05T08:00:00Z /lint → pages: week 45',
+  ].join('\n');
+  const job = (over: Partial<BrainJob>): BrainJob => ({
+    id: 'j',
+    brainId: 'b',
+    kind: 'capture',
+    source: 'sources/2026-11-05-deck.md',
+    status: 'done',
+    startedAt: '2026-11-05T08:39:00Z',
+    endedAt: '2026-11-05T08:41:00Z',
+    sessionId: null,
+    result: null,
+    error: null,
+    ...over,
+  });
+
+  it('keeps the source of a log entry', () => {
+    const l =
+      '- 2026-11-05T08:40:00Z /capture sources/2026-11-05-deck.md → pages: a, b; takeaway: x';
+    expect(recentEntries(l, rows)[0].source).toBe('sources/2026-11-05-deck.md');
+  });
+
+  it('gives the pages of the entry written by that job, not a later one', () => {
+    expect(pagesChangedBy(job({}), log, rows)).toEqual([
+      { label: 'a', path: null },
+      { label: 'account', path: 'wiki/account.md' },
+    ]);
+  });
+
+  it('does not filter by time while the job has no end', () => {
+    expect(pagesChangedBy(job({ endedAt: null }), log, rows)[0].label).toBe(
+      'decision-2026-11-03-db',
+    );
+  });
+
+  it('gives nothing for a failed job, a lint job, or an unnamed source', () => {
+    expect(pagesChangedBy(job({ status: 'failed' }), log, rows)).toEqual([]);
+    expect(pagesChangedBy(job({ kind: 'lint' }), log, rows)).toEqual([]);
+    expect(
+      pagesChangedBy(job({ source: 'sources/other.md' }), log, rows),
+    ).toEqual([]);
+    expect(pagesChangedBy(job({ source: null }), log, rows)).toEqual([]);
   });
 });

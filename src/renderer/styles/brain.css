@@ -1,15 +1,67 @@
-/* Brain page: inbox and health side by side, then files, then the brain terminal. `.page-body` scrolls (pinned nav). */
+/* Brain page: the Read or Add view fills the height under the header, the brain terminal below it. Each view
+   scrolls on its own (Read per pane, Add as a whole), so the header stays put. */
 .brain-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 0 32px 32px;
 }
-.brain-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-  align-items: start;
+.brain-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.brain-view[hidden] {
+  display: none;
+}
+.brain-view-read {
+  padding: 0 24px;
+}
+.brain-view-add {
+  overflow: auto;
+  padding: 16px 32px 32px;
+}
+/* The Read | Add switch in the header; Add carries the waiting count. */
+.brain-switch {
+  display: inline-flex;
+  margin-left: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.brain-switch > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.brain-switch > button:hover {
+  background: var(--bg-hover);
+}
+.brain-switch > button.is-on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.brain-switch-badge {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+.brain-switch > button.is-on .brain-switch-badge {
+  background: var(--on-accent);
+  color: var(--accent);
 }
 .brain-card {
   background: var(--bg-card);
@@ -30,6 +82,85 @@
 }
 .brain-card h3 {
   font-size: 14px;
+}
+.brain-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  min-width: 0;
+}
+/* Two columns like the mockup; the side column drops below the main one when there is no room. */
+.brain-add-main,
+.brain-add-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.brain-add-main {
+  flex: 2 1 480px;
+}
+.brain-add-side {
+  flex: 1 1 300px;
+}
+.brain-auto {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-auto-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.brain-auto-row:last-child {
+  border-bottom: 0;
+}
+.brain-auto-value {
+  margin-left: auto;
+  text-align: right;
+}
+.brain-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.brain-run-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.brain-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brain-card-action {
+  margin-left: auto;
+}
+.brain-howto-show {
+  align-self: flex-start;
+}
+.brain-howto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-howto li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 .brain-drop {
   display: flex;
@@ -98,9 +229,6 @@
   background: var(--bg-hover);
   border-radius: var(--radius);
 }
-.brain-file-note {
-  font-style: italic;
-}
 .brain-paste .btn {
   justify-self: start;
 }
@@ -110,15 +238,6 @@
 }
 .brain-ask .field {
   flex: 1;
-}
-.brain-pause {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
 }
 .brain-error,
 .brain-problems {
@@ -138,15 +257,6 @@
 .brain-status-done {
   color: var(--green);
 }
-.brain-files {
-  display: flex;
-  min-height: 280px;
-  max-height: 480px;
-  background: var(--bg-card);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-1);
-  overflow: hidden;
-}
 .brain-doc {
   flex: 1;
   min-width: 0;
@@ -154,6 +264,8 @@
   padding: 0 16px;
 }
 .brain-terminal {
+  flex: none;
+  margin: 0 32px 16px;
   height: 360px;
   min-height: 200px;
   border-radius: var(--radius-card);
@@ -189,10 +301,6 @@
   align-items: baseline;
   gap: 12px;
 }
-.brain-tab .brain-files {
-  flex: 1;
-  max-height: none;
-}
 .brain-tab.is-over {
   outline: 1px dashed var(--accent);
   outline-offset: -4px;
@@ -210,7 +318,6 @@
   white-space: pre-wrap;
 }
 
-.docs-file-contents,
 .brain-contents {
   display: block;
   white-space: normal;
@@ -224,7 +331,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
 }
 
 .brain-bar-actions {
@@ -260,7 +367,7 @@
   gap: 4px;
   text-align: left;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
   padding: 8px 10px;
   color: inherit;
@@ -302,7 +409,7 @@
   text-align: left;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
   padding: 6px 4px;
   color: inherit;
   font: inherit;
@@ -337,7 +444,7 @@
   text-align: left;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
   padding: 6px 4px;
   color: inherit;
   font: inherit;
@@ -360,7 +467,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 0 0 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
 }
 .brain-page-head h2 {
   font-size: 18px;
@@ -393,6 +500,192 @@
 }
 .brain-page-body .doc-md img {
   cursor: zoom-in;
+}
+
+/* The Read view's page: the body at reading width, a rail beside it (outline, backlinks, sources, verified). */
+.brain-page.with-rail {
+  display: grid;
+  grid-template-columns: minmax(0, 72ch) 240px;
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    'bar rail'
+    'head rail'
+    'main rail';
+  column-gap: 32px;
+  row-gap: 12px;
+  align-items: start;
+}
+.with-rail > .brain-page-bar {
+  grid-area: bar;
+}
+.with-rail > .brain-page-head {
+  grid-area: head;
+}
+.with-rail > .brain-page-main {
+  grid-area: main;
+  min-width: 0;
+}
+.brain-rail {
+  grid-area: rail;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.brain-rail-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.brain-rail-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+.brain-rail-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--link);
+  cursor: pointer;
+  text-decoration: none;
+}
+.brain-rail-link:hover {
+  text-decoration: underline;
+}
+.brain-rail-outline {
+  color: inherit;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+.brain-rail-outline.is-sub {
+  padding-left: 22px;
+}
+.brain-rail .brain-verified {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  border-bottom: 0;
+}
+/* A source page has no rail: the body keeps the whole reading width. */
+.brain-page.with-rail.no-rail {
+  grid-template-columns: minmax(0, 72ch);
+  grid-template-areas:
+    'bar'
+    'head'
+    'main';
+}
+/* A narrow reading column (not the window: the tree takes its share): the rail folds under the page header. */
+@container brain-reading (max-width: 820px) {
+  .brain-page.with-rail {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      'bar'
+      'head'
+      'rail'
+      'main';
+  }
+  .brain-page.with-rail.no-rail {
+    grid-template-areas:
+      'bar'
+      'head'
+      'main';
+  }
+  .brain-rail {
+    position: static;
+  }
+}
+
+/* The Read view: the tree, the reading column (the page and its rail), each scrolling on its own. */
+.brain-read {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  border-top: 1px solid var(--line);
+}
+.brain-read-tree {
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  padding: 12px 12px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.brain-read-main {
+  container: brain-reading / inline-size;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 0 32px 32px;
+}
+.brain-read-main > .brain-page.with-rail {
+  justify-content: center;
+}
+.brain-read-landing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 960px;
+}
+.brain-tree,
+.brain-tree-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-tree-list {
+  padding-left: 14px;
+}
+.brain-tree-toggle,
+.brain-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: 4px 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.brain-tree-toggle {
+  font-weight: 600;
+}
+.brain-tree-toggle:hover,
+.brain-tree-item:hover {
+  background: var(--bg-hover);
+}
+.brain-tree-item[aria-current='page'] {
+  background: var(--bg-selected);
+  border-left-color: var(--accent);
+}
+.brain-tree-caret {
+  width: 10px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.brain-tree-count {
+  margin-left: auto;
+  font-weight: 400;
+}
+.brain-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
 }
 .brain-lightbox {
   position: fixed;
