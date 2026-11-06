@@ -1,10 +1,15 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { GitClient } from '../services/GitClient';
 import { cleanupTempRepos, git, makeRepo } from '../test-helpers/gitRepo';
-import { resolveCandidate, scanBranch, siblingRepos } from './resolve';
+import {
+  mayHaveBranch,
+  resolveCandidate,
+  scanBranch,
+  siblingRepos,
+} from './resolve';
 
 const client = new GitClient();
 afterAll(cleanupTempRepos);
@@ -72,6 +77,36 @@ describe('scanBranch', () => {
       { repoPath: repo, worktreePath: wt, branch, mainCheckout: false },
     ]);
     expect(await scanBranch(client, [repo], 'other')).toEqual([]);
+  });
+
+  it('runs git only for repos with a checkout on the branch, keeping their order', async () => {
+    const a = withWorktree('feat/y');
+    const b = withWorktree('feat/y');
+    const idle = makeRepo();
+    const spy = vi.spyOn(client, 'worktreeList');
+    try {
+      const found = await scanBranch(client, [b.repo, idle, a.repo], 'feat/y');
+      expect(found.map((c) => c.repoPath)).toEqual([b.repo, a.repo]);
+      expect(spy.mock.calls.map((c) => c[0])).not.toContain(idle);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('mayHaveBranch', () => {
+  it('reads the main checkout and each linked worktree HEAD', async () => {
+    const { repo, branch } = withWorktree('feat/z');
+    expect(await mayHaveBranch(repo, branch)).toBe(true);
+    expect(await mayHaveBranch(repo, 'feat/none')).toBe(false);
+    const main = git(repo, 'branch', '--show-current').trim();
+    expect(await mayHaveBranch(repo, main)).toBe(true);
+  });
+
+  it('leaves a .git file or a missing repo to git', async () => {
+    const { wt } = withWorktree('feat/w');
+    expect(await mayHaveBranch(wt, 'feat/none')).toBe(true);
+    expect(await mayHaveBranch(path.join(wt, 'nope'), 'feat/none')).toBe(true);
   });
 });
 

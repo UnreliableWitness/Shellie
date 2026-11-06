@@ -48,28 +48,75 @@ export async function resolveCandidate(
   }
 }
 
-/** Worktrees on `branch` in each repo; repos that fail are skipped. */
+const SCAN_CONCURRENCY = 8;
+
+/**
+ * Whether any checkout of the repo may be on `branch`, from the files git keeps: `.git/HEAD` for the main
+ * checkout, `.git/worktrees/<name>/HEAD` for each linked worktree. Saves a `git worktree list` for each of
+ * the dozens of sibling repos a scan looks at. Says true whenever it cannot tell, so git decides.
+ */
+export async function mayHaveBranch(
+  repoPath: string,
+  branch: string,
+): Promise<boolean> {
+  const gitDir = path.join(repoPath, '.git');
+  const want = `ref: refs/heads/${branch}`;
+  const onBranch = async (headFile: string) =>
+    (await fs.readFile(headFile, 'utf8')).trim() === want;
+  try {
+    // A `.git` file (a worktree or submodule as the repo) or anything unusual: let git answer.
+    if (!(await fs.stat(gitDir)).isDirectory()) return true;
+    if (await onBranch(path.join(gitDir, 'HEAD'))) return true;
+    let names: string[];
+    try {
+      names = await fs.readdir(path.join(gitDir, 'worktrees'));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw e;
+    }
+    for (const name of names)
+      if (await onBranch(path.join(gitDir, 'worktrees', name, 'HEAD')))
+        return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Worktrees on `branch` in each repo, in the order of `repoPaths`; repos that fail are skipped. */
 export async function scanBranch(
   git: GitClient,
   repoPaths: string[],
   branch: string,
 ): Promise<Candidate[]> {
-  const found: Candidate[] = [];
-  for (const repoPath of repoPaths) {
-    try {
-      for (const wt of await git.worktreeList(repoPath))
-        if (wt.branch === branch)
-          found.push({
-            repoPath,
-            worktreePath: wt.path,
-            branch,
-            mainCheckout: samePath(wt.path, repoPath),
-          });
-    } catch {
-      // missing or broken repo: skipped
+  const perRepo: Candidate[][] = repoPaths.map(() => []);
+  let next = 0;
+  const worker = async () => {
+    while (next < repoPaths.length) {
+      const i = next++;
+      const repoPath = repoPaths[i];
+      try {
+        if (!(await mayHaveBranch(repoPath, branch))) continue;
+        for (const wt of await git.worktreeList(repoPath))
+          if (wt.branch === branch)
+            perRepo[i].push({
+              repoPath,
+              worktreePath: wt.path,
+              branch,
+              mainCheckout: samePath(wt.path, repoPath),
+            });
+      } catch {
+        // missing or broken repo: skipped
+      }
     }
-  }
-  return found;
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(SCAN_CONCURRENCY, repoPaths.length) },
+      worker,
+    ),
+  );
+  return perRepo.flat();
 }
 
 const realReaddir = async (dir: string): Promise<string[]> =>
@@ -97,13 +144,14 @@ export async function siblingRepos(
     } catch {
       continue;
     }
-    for (const name of names) {
-      if (name.endsWith('.worktrees')) continue;
-      const dir = path.join(parent, name);
-      if (repoPaths.some((r) => samePath(r, dir))) continue;
-      if (out.some((o) => samePath(o, dir))) continue;
-      if (await isRepo(dir)) out.push(dir);
-    }
+    const dirs = names
+      .filter((name) => !name.endsWith('.worktrees'))
+      .map((name) => path.join(parent, name))
+      .filter((dir) => !repoPaths.some((r) => samePath(r, dir)));
+    const repos = await Promise.all(dirs.map((dir) => isRepo(dir)));
+    dirs.forEach((dir, i) => {
+      if (repos[i] && !out.some((o) => samePath(o, dir))) out.push(dir);
+    });
   }
   return out;
 }

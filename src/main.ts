@@ -810,6 +810,7 @@ async function boot(): Promise<void> {
           })),
         ),
       isBillable: (taskId, sessionId) => usage.isBillable(taskId, sessionId),
+      billableVersion: () => usage.billableVersion(),
       // The email saved in Settings › Cost server; null when not connected.
       developer: () => costServer.get()?.email ?? null,
       version: app.getVersion(),

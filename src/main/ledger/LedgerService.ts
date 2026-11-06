@@ -31,6 +31,8 @@ export type LedgerServiceDeps = {
   usageRecords: () => UsageRecord[];
   context: () => AttributionContext;
   isBillable: (taskId: string, sessionId: string) => boolean;
+  /** Changes whenever `isBillable` may answer differently; without it every pass re-checks every stored record. */
+  billableVersion?: () => number;
   developer: () => string | null;
   version: string;
   /** OpenCode requests attributed to a task, for the Usage tab (the usage store dedupes by id). */
@@ -91,6 +93,8 @@ export class LedgerService {
   private readonly inputs = new Map<string, Input>();
   /** The attribution context of the last pass; stored records are re-attributed when it changes. */
   private lastKey: string | null = null;
+  /** What the stored-record sweep depended on last time; an unchanged one means the sweep would change nothing. */
+  private lastSweepKey: string | null = null;
   private readonly sentToUsage = new Set<string>();
   private firstPass = true;
   private reportedDay: string | null = null;
@@ -275,8 +279,17 @@ export class LedgerService {
       });
     }
     // Stored records the readers did not bring again: move up when the context changed, re-apply billable.
+    // Each step reads only the context, the developer and the billable flags, so with none of them changed
+    // since the last sweep it would change nothing: skip it rather than walk every record every 30 s.
     const reattribute = ctx.key !== this.lastKey;
-    for (const prev of store.all()) {
+    const billableVersion = this.d.billableVersion?.();
+    const sweepKey =
+      billableVersion === undefined
+        ? null
+        : JSON.stringify([ctx.key, developer, billableVersion]);
+    const sweep =
+      this.firstPass || sweepKey === null || sweepKey !== this.lastSweepKey;
+    for (const prev of sweep ? store.all() : []) {
       if (++n % WORK_CHUNK === 0) await tick();
       if (out.has(prev.id)) continue;
       const input = this.inputs.get(prev.id);
@@ -349,6 +362,7 @@ export class LedgerService {
     }
     this.report();
     this.lastKey = ctx.key;
+    this.lastSweepKey = sweepKey;
     this.firstPass = false;
     if (changed.length > 0) this.d.changed();
   }

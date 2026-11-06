@@ -77,6 +77,8 @@ function setup(
     openCode?: BudgetRecord[][];
     usage?: UsageRecord[];
     now?: () => Date;
+    /** Wire `billableVersion` to `state.billableVersion`, as main does. */
+    versioned?: boolean;
   } = {},
 ) {
   const state = {
@@ -86,6 +88,7 @@ function setup(
     /** Claude sessions per task from the usage store (OTLP). */
     usageSessions: {} as Record<string, string[]>,
     developer: null as string | null,
+    billableVersion: 0,
     brains: [] as {
       id: string;
       organization: string;
@@ -128,6 +131,7 @@ function setup(
     isBillable: (taskId, sessionId) =>
       !state.notBillable.has(`${taskId}/${sessionId}`),
     developer: () => state.developer,
+    ...(o.versioned ? { billableVersion: () => state.billableVersion } : {}),
     version: '9.9.0',
     toUsage,
     changed,
@@ -310,6 +314,27 @@ describe('LedgerService', () => {
     s.state.tasks = [];
     await s.svc.pass();
     expect(s.store.get('cc:m1')).toEqual(after);
+  });
+
+  it('skips the stored-record sweep while context, developer and billable flags are unchanged', async () => {
+    const s = setup({ claude: [[rec()]], versioned: true });
+    s.state.tasks = [task1];
+    await s.svc.pass();
+    expect(s.store.get('cc:m1')!.billable).toBe(true);
+    const all = vi.spyOn(s.store, 'all');
+    await s.svc.pass();
+    expect(all).not.toHaveBeenCalled();
+    // A billable change without a version bump is not seen; the bump re-applies it.
+    s.state.notBillable.add('t1/S1');
+    await s.svc.pass();
+    expect(s.store.get('cc:m1')!.billable).toBe(true);
+    s.state.billableVersion++;
+    await s.svc.pass();
+    expect(s.store.get('cc:m1')!.billable).toBe(false);
+    // A new developer email sweeps again.
+    s.state.developer = 'dev@example.com';
+    await s.svc.pass();
+    expect(s.store.get('cc:m1')!.developer).toBe('dev@example.com');
   });
 
   it('sends OpenCode task usage to the Usage tab once', async () => {
