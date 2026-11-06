@@ -814,13 +814,19 @@ async function boot(): Promise<void> {
       // The email saved in Settings › Cost server; null when not connected.
       developer: () => costServer.get()?.email ?? null,
       version: app.getVersion(),
-      toUsage: (e) => ingest([e]),
+      toUsage: ingest,
       changed: () => sender.kick(),
       telemetry: (event, props) => telemetry.event(event, props),
     });
     stopLedger = () => {
       ledger.stop();
       sender.stop();
+      // will-quit holds the quit for this write.
+      const p = ledgerStore.flushSent().catch((err) => {
+        console.warn('[ledger] could not save sent marks on quit', err);
+      });
+      timeWrites.add(p);
+      void p.finally(() => timeWrites.delete(p));
     };
     // Brains: headless skill runs per brain, the brain's Claude terminal, and the daily refresh and weekly digest.
     const brainEnv = (id: string) =>

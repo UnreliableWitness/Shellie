@@ -222,6 +222,7 @@ import { addSource } from '../brain/sources';
 import type { Brain, BrainJobKind, RefreshResult } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { withTimeout } from '../async';
+import { throttleByKey } from './throttleByKey';
 
 export type Services = {
   /** The brain's own Claude terminal (main); absent in most tests. */
@@ -1100,7 +1101,12 @@ export function createHandlers(s: Services): Handlers {
     }
   };
 
-  s.usage.on('changed', (taskId) => s.broadcast('usage:changed', { taskId }));
+  // At most one usage:changed per task per 250 ms, the first at once: a busy agent exports every 2 s per
+  // terminal, and each event makes the renderer fetch that task's usage summaries again.
+  s.usage.on(
+    'changed',
+    throttleByKey((taskId) => s.broadcast('usage:changed', { taskId }), 250),
+  );
   const receiverStatus = () => ({
     ...s.receiver.status,
     copilot: s.copilot.stats,

@@ -36,7 +36,7 @@ export type LedgerServiceDeps = {
   developer: () => string | null;
   version: string;
   /** OpenCode requests attributed to a task, for the Usage tab (the usage store dedupes by id). */
-  toUsage: (e: UsageEvent) => void;
+  toUsage: (events: UsageEvent[]) => void;
   changed: () => void;
   /** Counts only, never amounts. */
   telemetry?: (event: string, props: Record<string, number>) => void;
@@ -337,6 +337,8 @@ export class LedgerService {
       await writeAtomic(this.cursorsFile, JSON.stringify(next));
       this.cursors = next;
     }
+    // Handed over in one batch: the usage store writes and announces each batch once.
+    const toUsage: UsageEvent[] = [];
     for (const r of this.firstPass ? store.all() : out.values()) {
       const a = r.attribution;
       if (r.tool !== 'opencode' || a.level !== 'task') continue;
@@ -344,7 +346,7 @@ export class LedgerService {
       const input = this.inputs.get(r.id);
       if (!input) continue;
       this.sentToUsage.add(r.id);
-      this.d.toUsage({
+      toUsage.push({
         id: r.id,
         taskId: a.taskId,
         tool: 'opencode',
@@ -360,6 +362,7 @@ export class LedgerService {
         ...(input.a ? { agent: input.a } : {}),
       });
     }
+    if (toUsage.length > 0) this.d.toUsage(toUsage);
     this.report();
     this.lastKey = ctx.key;
     this.lastSweepKey = sweepKey;
