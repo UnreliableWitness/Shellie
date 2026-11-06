@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import type {
   DiscardedCleanup,
   PendingCleanup,
   Task,
 } from '../../shared/types';
-import { GitError } from './GitClient';
+import {
+  cleanupTempRepos,
+  commitFile,
+  git,
+  makeRepo,
+} from '../test-helpers/gitRepo';
+import { GitClient, GitError } from './GitClient';
 import {
   cleanupErrorCode,
   GIVE_UP_MS,
@@ -47,6 +55,8 @@ function fakeGit() {
 }
 
 const T0 = Date.parse('2026-10-23T08:00:00Z');
+
+afterAll(cleanupTempRepos);
 
 describe('cleanupErrorCode', () => {
   it('names the fs code, also through a cause', () => {
@@ -132,6 +142,23 @@ describe('removeWorkspace', () => {
     });
     expect(left).toBeNull();
     expect(f.branches.has('feature/x')).toBe(false);
+  });
+
+  it('still deletes uncommitted files and unpushed commits: the user chose that at Finish or Discard (#244)', async () => {
+    const repo = makeRepo();
+    const wt = path.join(path.dirname(repo), 'wt');
+    git(repo, 'worktree', 'add', '-q', '-b', 'feature/x', wt);
+    commitFile(wt, 'work.txt', 'work');
+    writeFileSync(path.join(wt, 'draft.txt'), 'draft');
+    const real = new GitClient();
+    const left = await removeWorkspace(
+      real,
+      { ...ws, repoPath: repo, worktreePath: wt },
+      { now: () => T0 },
+    );
+    expect(left).toBeNull();
+    expect(existsSync(wt)).toBe(false);
+    expect(await real.branchExists(repo, 'feature/x')).toBe(false);
   });
 });
 

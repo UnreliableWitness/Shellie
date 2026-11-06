@@ -1082,6 +1082,7 @@ describe('handlers: usage', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     await new Promise((r) => setTimeout(r, 200));
     expect(

@@ -130,7 +130,7 @@ describe('handlers: environment per task', () => {
     const ids = e.tabs().map((t) => t.id);
     const forget = vi.spyOn(LeakWatch.prototype, 'forget');
     const dropTask = vi.spyOn(LeakWatch.prototype, 'dropTask');
-    await e.hx.h['tasks:discard'](e.task.id);
+    await e.hx.h['tasks:discard'](e.task.id, true);
     expect(e.stopRuns).toHaveBeenCalledWith(
       e.task.id,
       'The task was discarded',
@@ -733,6 +733,7 @@ describe('handlers: environment per task', () => {
       removeWorktree: true,
       deleteBranch: true,
       createPullRequest: true,
+      confirmDiscardUnsaved: true,
     });
     expect(create.mock.calls[0][2].description).toContain('Run against UAT');
   });
@@ -1308,7 +1309,8 @@ describe('handlers: discard a task (#124)', () => {
       unpushed: 1,
       uncommitted: 1,
     });
-    await hx.h['tasks:discard'](hx.t.id);
+    // The confirm bar's "Discard anyway" (#244).
+    await hx.h['tasks:discard'](hx.t.id, true);
     expect(hx.event).toHaveBeenCalledWith(
       'task.discarded',
       { blank: false },
@@ -1385,6 +1387,121 @@ describe('handlers: discard a task (#124)', () => {
     expect(await new GitClient().branchExists(other, hx.t.branch)).toBe(false);
     expect(existsSync(devWt)).toBe(true);
     expect(await new GitClient().branchExists(dev, 'dev')).toBe(true);
+    expect(hx.store.state.tasks).toEqual([]);
+  });
+});
+
+describe('handlers: no deleting unsaved work (#244)', () => {
+  async function ready() {
+    const hx = await harness(fakeCrypto());
+    // The copied .env is ignored, as in a real repo: a task nobody worked in has nothing uncommitted.
+    commitFile(hx.repo, '.gitignore', '.env\n');
+    const done = hx.setupDone();
+    const t = await hx.h['tasks:create'](hx.input({ name: 'try' }));
+    await done;
+    return { ...hx, t };
+  }
+  const cleanUp = {
+    closeTerminals: true,
+    removeWorktree: true,
+    deleteBranch: true,
+  };
+  const branchExists = (hx: { repo: string; t: { branch: string } }) =>
+    new GitClient().branchExists(hx.repo, hx.t.branch);
+
+  it('Finish refuses to remove a folder with uncommitted files, and leaves the task ready', async () => {
+    const hx = await ready();
+    writeFileSync(path.join(hx.t.worktreePath, 'draft.txt'), 'draft');
+    await expect(hx.h['tasks:finish'](hx.t.id, cleanUp)).rejects.toThrow(
+      /Nothing was removed.*1 uncommitted file/,
+    );
+    expect(existsSync(hx.t.worktreePath)).toBe(true);
+    expect(await branchExists(hx)).toBe(true);
+    expect(hx.store.state.tasks[0].status).toBe('ready');
+    await hx.terminals.killAllForTask(hx.t.id);
+  });
+
+  it('Finish refuses to delete a branch with commits no remote has', async () => {
+    const hx = await ready();
+    addOrigin(hx.repo);
+    commitFile(hx.t.worktreePath, 'work.txt', 'work');
+    await expect(hx.h['tasks:finish'](hx.t.id, cleanUp)).rejects.toThrow(
+      /1 commit on no remote/,
+    );
+    expect(existsSync(hx.t.worktreePath)).toBe(true);
+    expect(await branchExists(hx)).toBe(true);
+    expect(hx.store.state.tasks[0].status).toBe('ready');
+    // Pushed, nothing is lost: Finish cleans up.
+    git(hx.t.worktreePath, 'push', '-q', 'origin', hx.t.branch);
+    await hx.h['tasks:finish'](hx.t.id, cleanUp);
+    expect(existsSync(hx.t.worktreePath)).toBe(false);
+    expect(await branchExists(hx)).toBe(false);
+  });
+
+  it('keeping the branch keeps its commits, so only the folder counts', async () => {
+    const hx = await ready();
+    commitFile(hx.t.worktreePath, 'work.txt', 'work');
+    await hx.h['tasks:finish'](hx.t.id, { ...cleanUp, deleteBranch: false });
+    expect(existsSync(hx.t.worktreePath)).toBe(false);
+    expect(await branchExists(hx)).toBe(true);
+  });
+
+  it('Finish removes them anyway when the developer confirmed', async () => {
+    const hx = await ready();
+    commitFile(hx.t.worktreePath, 'work.txt', 'work');
+    writeFileSync(path.join(hx.t.worktreePath, 'draft.txt'), 'draft');
+    await hx.h['tasks:finish'](hx.t.id, {
+      ...cleanUp,
+      confirmDiscardUnsaved: true,
+    });
+    expect(hx.store.state.tasks[0].status).toBe('done');
+    expect(existsSync(hx.t.worktreePath)).toBe(false);
+    expect(await branchExists(hx)).toBe(false);
+  });
+
+  it('Finish per workspace refuses too, naming the repo, before anything is pushed', async () => {
+    const hx = await ready();
+    const other = makeRepo('api');
+    const wt = path.join(path.dirname(other), 'api-wt');
+    git(other, 'worktree', 'add', '-q', '-b', hx.t.branch, wt);
+    await hx.h['tasks:addWorkspace'](hx.t.id, wt);
+    commitFile(wt, 'work.txt', 'work');
+    const ids = hx.store.state.tasks[0].extraWorkspaces.map((w) => w.id);
+    expect(ids).toHaveLength(1);
+    const options = {
+      ...cleanUp,
+      workspaces: ['home', ...ids].map((workspaceId) => ({
+        workspaceId,
+        action: 'keep' as const,
+      })),
+    };
+    await expect(hx.h['tasks:finish'](hx.t.id, options)).rejects.toThrow(
+      /api: 1 commit on no remote/,
+    );
+    expect(existsSync(wt)).toBe(true);
+    expect(existsSync(hx.t.worktreePath)).toBe(true);
+    expect(await new GitClient().branchExists(other, hx.t.branch)).toBe(true);
+    expect(hx.store.state.tasks[0].status).toBe('ready');
+    await hx.h['tasks:finish'](hx.t.id, {
+      ...options,
+      confirmDiscardUnsaved: true,
+    });
+    expect(existsSync(wt)).toBe(false);
+    expect(await new GitClient().branchExists(other, hx.t.branch)).toBe(false);
+  });
+
+  it('Discard refuses a task with unsaved work unless confirmed', async () => {
+    const hx = await ready();
+    writeFileSync(path.join(hx.t.worktreePath, 'draft.txt'), 'draft');
+    await expect(hx.h['tasks:discard'](hx.t.id)).rejects.toThrow(
+      /1 uncommitted file/,
+    );
+    expect(existsSync(hx.t.worktreePath)).toBe(true);
+    expect(await branchExists(hx)).toBe(true);
+    expect(hx.store.state.tasks).toHaveLength(1);
+    expect(hx.store.state.tasks[0].status).toBe('ready');
+    await hx.h['tasks:discard'](hx.t.id, true);
+    expect(existsSync(hx.t.worktreePath)).toBe(false);
     expect(hx.store.state.tasks).toEqual([]);
   });
 });

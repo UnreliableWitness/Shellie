@@ -455,6 +455,8 @@ describe('handlers: reopen a finished task', () => {
     deleteBranch: boolean;
   }) => ({
     closeTerminals: true,
+    // The feature commit and the copied .env would be lost: confirmed, as Finish's danger button does (#244).
+    confirmDiscardUnsaved: true,
     ...o,
   });
   const recording = () => {

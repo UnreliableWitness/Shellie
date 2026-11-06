@@ -12,6 +12,7 @@ import type {
   TaskView,
   WorkspaceCheck,
 } from '../../shared/types';
+import { UNSAVED_WORK } from '../../shared/workspaces';
 import { readPrChoice, readPushChoice, writePrChoice } from '../uiPrefs';
 import { CHANGES_TAB, useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
@@ -273,6 +274,58 @@ describe('FinishScreen', () => {
       expect(useStore.getState().notices[0]?.message).toMatch(/locked/),
     );
     expect(useStore.getState().screen).toEqual({ kind: 'finish', taskId: 'a' });
+  });
+
+  it('confirms losing the work it warned about with the danger button (#244)', async () => {
+    const { calls } = installFakeApi({
+      'tasks:finishChecks': () => dirty,
+      'tasks:finish': () => undefined,
+    });
+    render(<FinishScreen taskId="a" />);
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'Discard changes and clean up',
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'tasks:finish')?.args[1],
+      ).toMatchObject({ confirmDiscardUnsaved: true }),
+    );
+  });
+
+  it('shows a refusal for work found since the page loaded, and the danger button confirms it (#244)', async () => {
+    let refuse = true;
+    const { calls } = installFakeApi({
+      'tasks:finishChecks': () => clean,
+      'tasks:finish': () => {
+        if (refuse) {
+          refuse = false;
+          throw new Error(
+            `Error invoking remote method 'tasks:finish': Error: ${UNSAVED_WORK} 1 commit on no remote.`,
+          );
+        }
+      },
+    });
+    render(<FinishScreen taskId="a" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Finish and clean up' }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `${UNSAVED_WORK} 1 commit on no remote.`,
+    );
+    expect(useStore.getState().notices).toEqual([]);
+    expect(
+      calls.find((c) => c.channel === 'tasks:finish')?.args[1],
+    ).not.toHaveProperty('confirmDiscardUnsaved');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Discard changes and clean up' }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.channel === 'tasks:finish')[1]?.args[1],
+      ).toMatchObject({ confirmDiscardUnsaved: true }),
+    );
   });
 
   it('lets you clean up without checks when inspecting fails', async () => {

@@ -18,15 +18,20 @@ export function DiscardBar({ task }: { task: TaskView }) {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let live = true;
+  const loadChecks = (live: () => boolean) =>
     api()
       .invoke('tasks:discardChecks', task.id)
-      .then((c) => live && setChecks(c))
-      .catch(() => live && setFailed(true));
+      .then((c) => live() && setChecks(c))
+      .catch(() => live() && setFailed(true));
+
+  useEffect(() => {
+    let live = true;
+    void loadChecks(() => live);
     return () => {
       live = false;
     };
+    // loadChecks only closes over task.id, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task.id]);
 
   const name = task.workItem
@@ -45,11 +50,13 @@ export function DiscardBar({ task }: { task: TaskView }) {
   const discard = async () => {
     setBusy(true);
     const ok = await tryInvoke(async () => {
-      await api().invoke('tasks:discard', task.id);
+      // What the bar warned of is confirmed by its Discard anyway; main refuses anything else (#244).
+      await api().invoke('tasks:discard', task.id, lost.length > 0);
       return true;
     }, notify);
     setBusy(false);
-    if (!ok) return;
+    // A refusal for work done since the bar opened: show that work, so Discard anyway can follow.
+    if (!ok) return void loadChecks(() => true);
     cancelDiscard();
     go({ kind: 'home' });
     notify('info', `Discarded ${name}`);

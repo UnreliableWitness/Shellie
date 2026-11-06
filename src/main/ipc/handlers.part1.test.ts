@@ -901,6 +901,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     return { ...hx, t, event, remove, retryAll: () => retryAll!() };
   };
@@ -991,6 +992,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     expect(order).toEqual(['terminals exited', 'remove']);
   });
@@ -1019,6 +1021,7 @@ describe('handlers: finish', () => {
       closeTerminals: false,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     expect(order).toEqual(['terminals exited', 'remove']);
     expect(terminals.runningCount(t.id)).toBe(0);
@@ -1088,6 +1091,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     expect(order).toEqual(['remove:false']);
   });
@@ -1123,6 +1127,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     const [view] = await h['tasks:list']();
     expect(view.status).toBe('done');
@@ -1146,6 +1151,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     const [view] = await h['tasks:list']();
     expect(view.summary).toMatchObject({
@@ -1172,6 +1178,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: false,
+      confirmDiscardUnsaved: true,
     });
     const [view] = await h['tasks:list']();
     expect(view.summary).toMatchObject({
@@ -1192,6 +1199,7 @@ describe('handlers: finish', () => {
       closeTerminals: true,
       removeWorktree: true,
       deleteBranch: true,
+      confirmDiscardUnsaved: true,
     });
     const [view] = await h['tasks:list']();
     expect(view.status).toBe('done');
