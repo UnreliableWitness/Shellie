@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { clip } from '../../shared/text';
+import { writeAtomic } from '../fsRetry';
 import { readPages, type WikiPage } from './pages';
 
 const SUMMARY_LENGTH = 160;
@@ -16,9 +18,6 @@ const TYPE_ORDER = [
 /** Dated names (`decision-2026-11-04-…`, `2026-w45`) list newest first within their prefix. */
 const DATED = /^(?:[a-z]+-)?\d{4}-/;
 const datePrefix = (name: string) => name.replace(/\d{4}-.*$/, '');
-
-const clip = (s: string, n: number) =>
-  s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 /**
  * One line of plain text: links and images reduced to their text (a page-relative link would be broken at the
@@ -143,8 +142,6 @@ export async function rebuildIndex(
   if (existing !== null && existing.replace(/\r\n/g, '\n') === next)
     return false;
   // Unique per write: two rebuilds at once (a Health read and a job start) must not share a temp file.
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, next, 'utf8');
-  await fs.rename(tmp, file);
+  await writeAtomic(file, next, `.${randomUUID()}.tmp`);
   return true;
 }

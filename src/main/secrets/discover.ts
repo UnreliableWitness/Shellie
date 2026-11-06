@@ -8,7 +8,7 @@ import {
   type Environment,
   type Found,
 } from '../../shared/secrets';
-import { isInside } from '../paths';
+import { isInside, toRel } from '../paths';
 import type { GitClient } from '../services/GitClient';
 import { environmentOf, looksSecret } from './classify';
 import { parseAppsettings } from './sources/appsettings';
@@ -41,9 +41,6 @@ const SKIP_DIRS = new Set([
 ]);
 /** Templates carry placeholders, not values. */
 const TEMPLATE = /\.(example|sample|template|dist)$/i;
-
-const rel = (root: string, file: string) =>
-  path.relative(root, file).split(path.sep).join('/');
 
 /** `.env` and `.env.local` are Development; any other name is mapped by its words. */
 function dotenvEnvironment(file: string): Environment | null {
@@ -141,7 +138,7 @@ export async function discoverSecrets(
   };
   const visited = new Set<string>();
   const dotenvFile = async (file: string) => {
-    const r = rel(root, file);
+    const r = toRel(root, file);
     if (visited.has(r) || !isInside(root, file)) return;
     visited.add(r);
     const text = await readInRepo(file);
@@ -156,7 +153,7 @@ export async function discoverSecrets(
   const handle = async (file: string, inSecrets: boolean) => {
     const base = path.basename(file);
     const dir = path.dirname(file);
-    const r = rel(root, file);
+    const r = toRel(root, file);
     const isTracked = tracked.has(r);
     if (TEMPLATE.test(base)) return;
     if (/^\.env(\..+)?$/.test(base)) return dotenvFile(file);
@@ -231,7 +228,7 @@ export async function discoverSecrets(
         (depth < MAX_DEPTH || (inSecrets && depth < MAX_SECRETS_DEPTH)) &&
         !SKIP_DIRS.has(e.name)
       ) {
-        const r = rel(root, full);
+        const r = toRel(root, full);
         if (
           e.name === 'secrets' &&
           ![...tracked].some((t) => t.startsWith(`${r}/`))

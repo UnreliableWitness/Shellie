@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Channels } from '../../shared/ipc';
-import { api, ipcErrorMessage, saveSettings, tryInvoke } from '../api';
+import { api, saveSettings, tryInvoke } from '../api';
+import { errorMessage } from '../../shared/errors';
 import {
   ProviderPicker,
   type ProviderChoice,
@@ -36,7 +37,7 @@ function organizationOf(input: string): string | null {
 }
 
 /** The organization's personal access tokens page; null until the URL reads as an organization. */
-export function tokensPageUrl(input: string): string | null {
+function tokensPageUrl(input: string): string | null {
   const org = organizationOf(input);
   return org ? `${org}/_usersSettings/tokens` : null;
 }
@@ -104,7 +105,7 @@ export function ConnectScreen() {
       );
       setTicked(result.projects.length === 1 ? fresh.map((p) => p.name) : []);
     } catch (e) {
-      if (id === latest.current) setError(redact(ipcErrorMessage(e)));
+      if (id === latest.current) setError(redact(errorMessage(e)));
     } finally {
       if (id === latest.current) setTesting(false);
     }
@@ -184,7 +185,7 @@ export function ConnectScreen() {
           provider: 'azure-devops',
         });
       } catch (e) {
-        setError(redact(ipcErrorMessage(e)));
+        setError(redact(errorMessage(e)));
         return;
       }
       if (saved.length === 0) {

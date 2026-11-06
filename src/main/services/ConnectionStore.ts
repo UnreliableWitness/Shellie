@@ -137,6 +137,12 @@ export class ConnectionStore {
     return strip(this.stored(id));
   }
 
+  /** A connection by id; null for no id or one that is gone (a repo's project may have been removed). */
+  find(id: string | null): Connection | null {
+    const c = id ? this.current.connections.find((x) => x.id === id) : null;
+    return c ? strip(c) : null;
+  }
+
   async save(input: ConnectionInput): Promise<Connection> {
     this.assertCanSave(input);
     const organizationUrl = this.normalizeUrl(input.organizationUrl);

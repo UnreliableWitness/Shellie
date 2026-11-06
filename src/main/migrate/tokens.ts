@@ -3,7 +3,7 @@ import { createDecipheriv, pbkdf2Sync } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ConnectionsFileSchema } from '../../shared/types';
-import { renameWithRetry } from '../fsRetry';
+import { writeAtomic } from '../fsRetry';
 
 // One-off migration helpers for the rename from MIAC; kept out of the Platform interface on purpose, they go when the migration goes.
 
@@ -42,7 +42,7 @@ export function decryptChromiumWin(cipher: Buffer, key: Buffer): string {
   ]).toString('utf8');
 }
 
-export function decryptOld(cipher: Buffer, key: OldKey): string {
+function decryptOld(cipher: Buffer, key: OldKey): string {
   return key.kind === 'mac'
     ? decryptChromiumMac(cipher, key.password)
     : decryptChromiumWin(cipher, key.key);
@@ -170,9 +170,7 @@ export async function migrateTokens(opts: {
       failed++;
     }
   }
-  const tmp = `${opts.file}.tokens`;
-  await fs.writeFile(tmp, JSON.stringify(doc, null, 2), 'utf8');
-  await renameWithRetry(tmp, opts.file);
+  await writeAtomic(opts.file, JSON.stringify(doc, null, 2), '.tokens');
   if (key === null) return 'refused';
   return failed === 0 ? 'migrated' : 'partial';
 }

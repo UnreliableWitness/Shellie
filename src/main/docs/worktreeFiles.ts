@@ -1,12 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { DocFile } from '../../shared/types';
-import { isInside } from '../paths';
+import { isInside, toRel } from '../paths';
 import type { GitClient } from '../services/GitClient';
 
 export const MAX_DOC_BYTES = 2 * 1024 * 1024;
-export const MAX_ASSET_BYTES = 10 * 1024 * 1024;
-export const MAX_DOCS = 2000;
+const MAX_ASSET_BYTES = 10 * 1024 * 1024;
+const MAX_DOCS = 2000;
 export const TASK_FILE = '.shellie/task.md';
 const SPECS = [':(icase)*.md', ':(icase)*.markdown'];
 export const MD = /\.(md|markdown)$/i;
@@ -19,9 +19,6 @@ const IMAGE_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
 };
-
-export const toRel = (root: string, abs: string): string =>
-  path.relative(root, abs).split(path.sep).join('/');
 
 /** The real path of a regular file inside the worktree, after following symlinks. */
 export async function resolveInWorktree(

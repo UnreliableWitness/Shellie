@@ -2,14 +2,20 @@ import { existsSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+/** Claude Code's config folder: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+export function claudeConfigDir(
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir(),
+): string {
+  return env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
+}
+
 /** Where Claude Code keeps its sessions: `<config dir>/projects/<folder per cwd>/<session id>.jsonl`. */
 export function claudeProjectsDir(
   env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir(),
 ): string {
-  return path.join(
-    env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
-    'projects',
-  );
+  return path.join(claudeConfigDir(env, home), 'projects');
 }
 
 /** Claude Code's folder for a cwd: every character that is not a letter or digit becomes "-". */

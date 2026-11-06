@@ -30,8 +30,6 @@ import type {
 import type { TrackerProvider } from './trackers';
 import type { TerminalFailure } from './terminalFailure';
 import type { ConfigSource, OverrideKey } from './repoConfig';
-
-export type RestartOptions = { withoutProjectConfig?: boolean };
 import type {
   AgentCommands,
   Connection,
@@ -87,6 +85,8 @@ import type {
   ReviewState,
   ReviewSummary,
 } from './review';
+
+export type RestartOptions = { withoutProjectConfig?: boolean };
 
 /** Request/response channels. `args` is the tuple the renderer passes; `result` is what main resolves. */
 export type Channels = {
@@ -419,7 +419,6 @@ export type Channels = {
     result: GitSummary;
   };
   'tasks:finishChecks': { args: [taskId: string]; result: FinishChecks };
-  /** Each row's outcome of the last Finish with workspaces (null before one ran); read after a failed Finish. */
   /**
    * Writes the "what changed and why" of the workspace's PR with Claude Code (#111); `text` is null, with the reason
    * in `error`, when it could not.
@@ -428,6 +427,7 @@ export type Channels = {
     args: [taskId: string, workspaceId?: string];
     result: { text: string | null; error: string | null };
   };
+  /** Each row's outcome of the last Finish with workspaces (null before one ran); read after a failed Finish. */
   'tasks:finishResults': {
     args: [taskId: string];
     result: FinishRowResult[] | null;

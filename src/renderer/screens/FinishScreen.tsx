@@ -3,6 +3,7 @@ import type {
   FinishChecks,
   FinishOptions,
   FinishRowResult,
+  TaskView,
   WorkspaceAction,
   WorkspaceCheck,
 } from '../../shared/types';
@@ -113,6 +114,124 @@ export function FinishScreen({ taskId }: { taskId: string }) {
   );
 }
 
+/** The Finish page while setup has not succeeded: nothing to finish yet. */
+function NotReadyPage({
+  status,
+  back,
+}: {
+  status: TaskView['status'];
+  back: () => void;
+}) {
+  return (
+    <div className="page">
+      <PageHeader title="Finish task" />
+      <div className="page-body finish">
+        <div className="muted">{`This task is ${status}. Finish it once setup has succeeded; use the Setup screen to retry or remove it.`}</div>
+        <div className="finish-foot">
+          <button type="button" className="btn" onClick={back}>
+            Keep task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The task's work item (or its name) followed by `children`: its branch, or "No repo". */
+function TaskHeading({
+  task,
+  children,
+}: {
+  task: TaskView;
+  children: ReactNode;
+}) {
+  return (
+    <div className="muted">
+      {task.workItem
+        ? `${task.workItem.type} ${task.workItem.id} ${task.workItem.title}`
+        : task.name}{' '}
+      {children}
+    </div>
+  );
+}
+
+/** The "Close N terminals (labels)" tick; disabled, and off, when the task has none. */
+function CloseTerminalsOption({
+  terminals,
+  checked,
+  onChange,
+}: {
+  terminals: TaskView['terminals'];
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const n = terminals.length;
+  return (
+    <label className="checkbox">
+      <input
+        type="checkbox"
+        checked={checked && n > 0}
+        disabled={n === 0}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      {`Close ${plural(n, 'terminal')}${n > 0 ? ` (${terminals.map((t) => t.label).join(', ')})` : ''}`}
+    </label>
+  );
+}
+
+/** The two brain captures a Finish can run, each tracked the first time it is ticked; `help` adds a line under each. */
+function BrainCaptureOptions({
+  taskMd,
+  lessons,
+  onTaskMd,
+  onLessons,
+  help = false,
+}: {
+  taskMd: boolean;
+  lessons: boolean;
+  onTaskMd: (checked: boolean) => void;
+  onLessons: (checked: boolean) => void;
+  help?: boolean;
+}) {
+  return (
+    <>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={taskMd}
+          onChange={(e) => {
+            if (e.target.checked) trackBrain('capture-option');
+            onTaskMd(e.target.checked);
+          }}
+        />
+        Capture task.md into the brain
+      </label>
+      {help && (
+        <div className="muted small">
+          Adds this task&apos;s task.md as a source and runs a capture.
+        </div>
+      )}
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={lessons}
+          onChange={(e) => {
+            if (e.target.checked) trackBrain('lessons-option');
+            onLessons(e.target.checked);
+          }}
+        />
+        Save what this task taught into the brain
+      </label>
+      {help && (
+        <div className="muted small">
+          A digest of this task&apos;s Claude sessions becomes a source and the
+          brain writes lesson pages from it.
+        </div>
+      )}
+    </>
+  );
+}
+
 /**
  * Finish for a task without a repo (#225): nothing to commit, push or review. It stops the terminals, can capture
  * task.md into the brain, and deletes the scratch folder only when ticked (it may hold the only copy of notes).
@@ -131,19 +250,7 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
   useEscape(back);
   if (!task) return null;
   if (task.status !== 'ready')
-    return (
-      <div className="page">
-        <PageHeader title="Finish task" />
-        <div className="page-body finish">
-          <div className="muted">{`This task is ${task.status}. Finish it once setup has succeeded; use the Setup screen to retry or remove it.`}</div>
-          <div className="finish-foot">
-            <button type="button" className="btn" onClick={back}>
-              Keep task
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return <NotReadyPage status={task.status} back={back} />;
   const nTerm = task.terminals.length;
   const finish = async () => {
     setBusy(true);
@@ -165,23 +272,16 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
     <div className="page">
       <PageHeader title="Finish task" />
       <div className="page-body finish">
-        <div className="muted">
-          {task.workItem
-            ? `${task.workItem.type} ${task.workItem.id} ${task.workItem.title}`
-            : task.name}{' '}
+        <TaskHeading task={task}>
           <span className="small">No repo</span>
-        </div>
+        </TaskHeading>
         <div className="finish-section">
           <h2>Clean up</h2>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={closeTerminals && nTerm > 0}
-              disabled={nTerm === 0}
-              onChange={(e) => setCloseTerminals(e.target.checked)}
-            />
-            {`Close ${plural(nTerm, 'terminal')}${nTerm > 0 ? ` (${task.terminals.map((t) => t.label).join(', ')})` : ''}`}
-          </label>
+          <CloseTerminalsOption
+            terminals={task.terminals}
+            checked={closeTerminals}
+            onChange={setCloseTerminals}
+          />
           <label className="checkbox">
             <input
               type="checkbox"
@@ -197,30 +297,12 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
             </div>
           )}
           {brain && (
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={captureTaskMd}
-                onChange={(e) => {
-                  if (e.target.checked) trackBrain('capture-option');
-                  setCaptureTaskMd(e.target.checked);
-                }}
-              />
-              Capture task.md into the brain
-            </label>
-          )}
-          {brain && (
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={captureLessons}
-                onChange={(e) => {
-                  if (e.target.checked) trackBrain('lessons-option');
-                  setCaptureLessons(e.target.checked);
-                }}
-              />
-              Save what this task taught into the brain
-            </label>
+            <BrainCaptureOptions
+              taskMd={captureTaskMd}
+              lessons={captureLessons}
+              onTaskMd={setCaptureTaskMd}
+              onLessons={setCaptureLessons}
+            />
           )}
         </div>
         <div className="finish-foot">
@@ -308,27 +390,26 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
   const workItemId = task?.workItem?.id ?? null;
   const estimateHours = useEstimateHours(connectionId, workItemId, time, ready);
   // The starting value is fixed when the time first loads: a later refetch updates the marks, never the booking.
-  const [frozenTime, setFrozenTime] = useState<number | undefined>();
+  const frozenTime = useRef<number | undefined>(undefined);
   const [chosenTime, setChosenTime] = useState<number | null | undefined>();
-  if (time && frozenTime === undefined)
-    setFrozenTime(
-      time.booking
-        ? time.booking.bookedSeconds + time.measuredSinceReopenSeconds
-        : time.activeSeconds,
-    );
+  if (time && frozenTime.current === undefined)
+    frozenTime.current = time.booking
+      ? time.booking.bookedSeconds + time.measuredSinceReopenSeconds
+      : time.activeSeconds;
   const bookValue =
-    chosenTime === undefined ? (frozenTime ?? null) : chosenTime;
+    chosenTime === undefined ? (frozenTime.current ?? null) : chosenTime;
   // Finish waits for the time (or an explicit "without booking"), and for a valid entry.
   const timeBlocks = !time || bookValue === null;
 
-  // The workspaces Finish would open a PR for: each gets a "what changed and why" (#111).
-  const multiTask = task
+  // A task with other repos finishes per workspace; a single-repo task keeps the page as it was. Repos dropped at
+  // an earlier Finish do not count, but a dropped home does: the single-repo path works on the home.
+  const multi = task
     ? activeWorkspaces(task).length > 1 || task.homeDropped
     : false;
   const prWorkspaces =
     !task || !ready
       ? []
-      : multiTask
+      : multi
         ? (checks?.workspaces ?? [])
             .filter((c) => actionOf(c, rowChoice, task.branch) === 'pr')
             .map((c) => c.workspaceId)
@@ -450,21 +531,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
 
   if (!task) return null;
 
-  if (!ready) {
-    return (
-      <div className="page">
-        <PageHeader title="Finish task" />
-        <div className="page-body finish">
-          <div className="muted">{`This task is ${task.status}. Finish it once setup has succeeded; use the Setup screen to retry or remove it.`}</div>
-          <div className="finish-foot">
-            <button type="button" className="btn" onClick={back}>
-              Keep task
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!ready) return <NotReadyPage status={task.status} back={back} />;
 
   const openGit = async (
     label: string,
@@ -571,9 +638,6 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     await finish(true);
   };
 
-  // A task with other repos finishes per workspace; a single-repo task keeps the page as it was. Repos dropped at
-  // an earlier Finish do not count, but a dropped home does: the single-repo path works on the home.
-  const multi = multiTask;
   // The single-repo push error reaches the page as text; the repo's connection is the one whose token git used.
   const singleConnectionId =
     repos.find((r) => r.id === task.repoId)?.connectionId ?? null;
@@ -703,18 +767,14 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     ? dirtyRows(rows, Boolean(checksFailed), rowChoice)
     : dirtyWith(checks, Boolean(checksFailed), createPr);
   const nTerm = task.terminals.length;
-  const terminalLabels = task.terminals.map((t) => t.label).join(', ');
 
   return (
     <div className="page">
       <PageHeader title="Finish task" />
       <div className="page-body finish">
-        <div className="muted">
-          {task.workItem
-            ? `${task.workItem.type} ${task.workItem.id} ${task.workItem.title}`
-            : task.name}{' '}
+        <TaskHeading task={task}>
           <span className="mono small">{task.branch}</span>
-        </div>
+        </TaskHeading>
 
         <div className="finish-section">
           <h2>Safety checks</h2>
@@ -966,15 +1026,11 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
             </label>
           )}
           {!multi && createPr && prField(HOME_ID)}
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={closeTerminals && nTerm > 0}
-              disabled={nTerm === 0}
-              onChange={(e) => setCloseTerminals(e.target.checked)}
-            />
-            {`Close ${plural(nTerm, 'terminal')}${nTerm > 0 ? ` (${terminalLabels})` : ''}`}
-          </label>
+          <CloseTerminalsOption
+            terminals={task.terminals}
+            checked={closeTerminals}
+            onChange={setCloseTerminals}
+          />
           <label className="checkbox">
             <input
               type="checkbox"
@@ -1019,37 +1075,13 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
             )}
           </label>
           {brain && (
-            <>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={captureTaskMd}
-                  onChange={(e) => {
-                    if (e.target.checked) trackBrain('capture-option');
-                    setCaptureTaskMd(e.target.checked);
-                  }}
-                />
-                Capture task.md into the brain
-              </label>
-              <div className="muted small">
-                Adds this task&apos;s task.md as a source and runs a capture.
-              </div>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={captureLessons}
-                  onChange={(e) => {
-                    if (e.target.checked) trackBrain('lessons-option');
-                    setCaptureLessons(e.target.checked);
-                  }}
-                />
-                Save what this task taught into the brain
-              </label>
-              <div className="muted small">
-                A digest of this task&apos;s Claude sessions becomes a source
-                and the brain writes lesson pages from it.
-              </div>
-            </>
+            <BrainCaptureOptions
+              taskMd={captureTaskMd}
+              lessons={captureLessons}
+              onTaskMd={setCaptureTaskMd}
+              onLessons={setCaptureLessons}
+              help
+            />
           )}
         </div>
 

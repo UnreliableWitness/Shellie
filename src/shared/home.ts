@@ -8,7 +8,7 @@ export const HOME_MAX_AGE_MS = 60_000;
 /** While Home shows and the window has focus, it rebuilds this often. */
 export const HOME_POLL_MS = 300_000;
 
-export const HomePrSchema = z.object({
+const HomePrSchema = z.object({
   id: z.number().int(),
   repo: z.string(),
   title: z.string(),
@@ -28,7 +28,7 @@ export const HomePrSchema = z.object({
 });
 export type HomePr = z.infer<typeof HomePrSchema>;
 
-export const HomeItemSchema = z.object({
+const HomeItemSchema = z.object({
   id: z.string(),
   type: z.string(),
   title: z.string(),
@@ -44,7 +44,7 @@ export const HomeItemSchema = z.object({
 });
 export type HomeItem = z.infer<typeof HomeItemSchema>;
 
-export const HomeSprintSchema = z.object({
+const HomeSprintSchema = z.object({
   iterationId: z.string(),
   name: z.string(),
   path: z.string(),
@@ -54,7 +54,7 @@ export const HomeSprintSchema = z.object({
 });
 export type HomeSprint = z.infer<typeof HomeSprintSchema>;
 
-export const HomeConnectionSchema = z.object({
+const HomeConnectionSchema = z.object({
   connectionId: z.string(),
   name: z.string(),
   project: z.string(),

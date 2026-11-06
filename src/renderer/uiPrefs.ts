@@ -1,10 +1,10 @@
+import { local } from './localStorage';
+
 export type UiPrefs = { navCollapsed: boolean; focus: boolean };
 const KEY: Record<keyof UiPrefs, string> = {
   navCollapsed: 'shellie.ui.navCollapsed',
   focus: 'shellie.ui.focus',
 };
-const local = (): Storage | undefined =>
-  typeof localStorage === 'undefined' ? undefined : localStorage;
 
 /** A stored true/false; false when absent or unreadable. */
 export const readFlag = (

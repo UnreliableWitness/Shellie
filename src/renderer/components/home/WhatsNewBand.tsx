@@ -5,7 +5,7 @@ import { useStore } from '../../store';
 import { track } from '../../telemetry';
 
 /** Short notes shown at most; the rest are on GitHub. */
-export const MAX_NOTES = 8;
+const MAX_NOTES = 8;
 
 /**
  * Home's What's new card after an update (#126): the PR titles of the releases installed since the card was last

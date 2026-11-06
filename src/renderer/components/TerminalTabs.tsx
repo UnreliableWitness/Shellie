@@ -12,7 +12,7 @@ import {
   FullScreenMinimize16Regular,
   Globe16Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { Events } from '../../shared/ipc';
 import { brainTaskId } from '../../shared/brain';
 import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
@@ -21,7 +21,7 @@ import { eur } from '../format';
 import { useTaskBrain } from '../hooks/useBrains';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useRepoConfig } from '../hooks/useRepoConfig';
-import { useTaskUsage } from '../hooks/useTaskUsage';
+import { useTaskCost } from '../hooks/useTaskCosts';
 import { holdWatch } from '../review/holdWatch';
 import { useChangeCount } from '../review/useReview';
 import {
@@ -149,18 +149,63 @@ function RunChips({
 /** The task's AI cost; opens the Usage tab. */
 function CostButton({ taskId }: { taskId: string }) {
   const openUsage = useStore((s) => s.openUsage);
-  const usage = useTaskUsage(taskId);
-  const cost = usage?.billable.costEur ?? 0;
+  const cost = useTaskCost(taskId);
+  const shown = cost === null ? null : eur(cost);
   return (
     <button
       type="button"
       className="btn btn-subtle btn-sm taskbar-cost"
-      aria-label={`AI cost ${usage ? eur(cost) : 'unknown'}, open usage`}
+      aria-label={`AI cost ${shown ?? 'unknown'}, open usage`}
       title="AI cost, open usage"
       onClick={() => openUsage(taskId)}
     >
-      <span className="mono">{usage ? eur(cost) : DASH}</span>
+      <span className="mono">{shown ?? DASH}</span>
     </button>
+  );
+}
+
+/** A tab with a close button: a terminal, an HTML view or the brain terminal. Middle click closes, as in browsers and VS Code. */
+function ClosableTab({
+  selected,
+  label,
+  title,
+  onSelect,
+  onClose,
+  children,
+}: {
+  selected: boolean;
+  /** Names the close button: "Close <label>". */
+  label: string;
+  title?: string;
+  onSelect: () => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <span className="term-tab">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={selected}
+        className="pivot"
+        title={title}
+        onClick={onSelect}
+        onAuxClick={(e) => {
+          if (e.button === 1) onClose();
+        }}
+      >
+        {children}
+      </button>
+      <button
+        type="button"
+        className="term-tab-close"
+        aria-label={`Close ${label}`}
+        title={`Close ${label}`}
+        onClick={onClose}
+      >
+        <Dismiss12Regular aria-hidden="true" />
+      </button>
+    </span>
   );
 }
 
@@ -395,86 +440,45 @@ export function TerminalTabs({
               </button>
             )}
             {task.terminals.map((t) => (
-              <span key={t.id} className="term-tab">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active === t.id}
-                  className="pivot"
-                  onClick={() => setTab(task.id, t.id)}
-                  // Middle click closes, as in browsers and VS Code.
-                  onAuxClick={(e) => {
-                    if (e.button === 1) void closeTerminal(t.id);
-                  }}
-                >
-                  {t.label}
-                  {(t.kind === 'shell' || t.kind === 'run') &&
-                    task.environment !== 'development' && (
-                      <span
-                        className={`tab-env tab-env-${task.environment}`}
-                      >{` · ${ENVIRONMENT_LABEL[task.environment]}`}</span>
-                    )}
-                  {attention[t.id] && <AttentionDot entry={attention[t.id]} />}
-                </button>
-                <button
-                  type="button"
-                  className="term-tab-close"
-                  aria-label={`Close ${t.label}`}
-                  title={`Close ${t.label}`}
-                  onClick={() => void closeTerminal(t.id)}
-                >
-                  <Dismiss12Regular aria-hidden="true" />
-                </button>
-              </span>
+              <ClosableTab
+                key={t.id}
+                selected={active === t.id}
+                label={t.label}
+                onSelect={() => setTab(task.id, t.id)}
+                onClose={() => void closeTerminal(t.id)}
+              >
+                {t.label}
+                {(t.kind === 'shell' || t.kind === 'run') &&
+                  task.environment !== 'development' && (
+                    <span
+                      className={`tab-env tab-env-${task.environment}`}
+                    >{` · ${ENVIRONMENT_LABEL[task.environment]}`}</span>
+                  )}
+                {attention[t.id] && <AttentionDot entry={attention[t.id]} />}
+              </ClosableTab>
             ))}
             {views.map((v) => (
-              <span key={v.id} className="term-tab">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active === v.id}
-                  className="pivot"
-                  title={v.path}
-                  onClick={() => setTab(task.id, v.id)}
-                  onAuxClick={(e) => {
-                    if (e.button === 1) closeView(task.id, v.id);
-                  }}
-                >
-                  <Globe16Regular aria-hidden="true" />
-                  {v.name}
-                </button>
-                <button
-                  type="button"
-                  className="term-tab-close"
-                  aria-label={`Close ${v.name}`}
-                  title={`Close ${v.name}`}
-                  onClick={() => closeView(task.id, v.id)}
-                >
-                  <Dismiss12Regular aria-hidden="true" />
-                </button>
-              </span>
+              <ClosableTab
+                key={v.id}
+                selected={active === v.id}
+                label={v.name}
+                title={v.path}
+                onSelect={() => setTab(task.id, v.id)}
+                onClose={() => closeView(task.id, v.id)}
+              >
+                <Globe16Regular aria-hidden="true" />
+                {v.name}
+              </ClosableTab>
             ))}
             {brainTerm && (
-              <span className="term-tab">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active === brainTerm.id}
-                  className="pivot"
-                  onClick={() => setTab(task.id, brainTerm.id)}
-                >
-                  {`${brain?.name ?? 'Brain'} brain`}
-                </button>
-                <button
-                  type="button"
-                  className="term-tab-close"
-                  aria-label={`Close ${brain?.name ?? 'Brain'} brain`}
-                  title={`Close ${brain?.name ?? 'Brain'} brain`}
-                  onClick={closeBrainTerminal}
-                >
-                  <Dismiss12Regular aria-hidden="true" />
-                </button>
-              </span>
+              <ClosableTab
+                selected={active === brainTerm.id}
+                label={`${brain?.name ?? 'Brain'} brain`}
+                onSelect={() => setTab(task.id, brainTerm.id)}
+                onClose={closeBrainTerminal}
+              >
+                {`${brain?.name ?? 'Brain'} brain`}
+              </ClosableTab>
             )}
             {runFrom.map((w) => (
               <RunChips

@@ -21,7 +21,11 @@ import {
   TimeBar,
   WorkItemTypeIcon,
 } from '../components/ui';
-import { sprintTime, type SprintTimeCell } from '../../shared/sprintTime';
+import {
+  progress,
+  sprintTime,
+  type SprintTimeCell,
+} from '../../shared/sprintTime';
 import { formatDuration, type LocalItemTime } from '../../shared/time';
 import { eur, sprintDates } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
@@ -55,7 +59,7 @@ function TimeCell({
   const spent = cell?.spentSeconds ?? null;
   const est = cell?.estimateHours ?? null;
   if (spent === null && est === null) return <span className="muted">–</span>;
-  const over = spent !== null && est !== null && est > 0 && spent > est * 3600;
+  const { pct, over } = progress(spent, est);
   const text =
     est === null
       ? formatDuration(spent ?? 0)
@@ -70,10 +74,6 @@ function TimeCell({
       local.booked ? 'booked' : 'not booked yet',
     );
   if (cell?.rolledUp) parts.push('includes child items');
-  const pct =
-    spent !== null && est !== null && est > 0
-      ? Math.round((spent / (est * 3600)) * 100)
-      : null;
   return (
     <span
       className={over ? 'sprint-time over' : 'sprint-time'}
@@ -458,16 +458,12 @@ function SprintPage({ connection }: { connection: Connection }) {
     setBusy(true);
     try {
       const [sprint] = await Promise.all([
-        selected?.team
-          ? api().invoke(
-              'workItems:sprint',
-              connection.id,
-              selected.id,
-              selected.team,
-            )
-          : selected
-            ? api().invoke('workItems:sprint', connection.id, selected.id)
-            : api().invoke('workItems:sprint', connection.id),
+        api().invoke(
+          'workItems:sprint',
+          connection.id,
+          selected?.id,
+          selected?.team,
+        ),
         loadTime(),
       ]);
       // The picked sprint is gone: go back to the current one.

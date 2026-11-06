@@ -10,6 +10,21 @@ function forms(dir: string): string[] {
   return [...out].filter((f) => f.length > 1);
 }
 
+/** The patterns of the last set of sensitive values: the same values are scrubbed from every event, so they are built once. */
+let cached: { key: string; patterns: RegExp[] } | null = null;
+
+function sensitivePatterns(secrets: string[]): RegExp[] {
+  const key = secrets.join('\0');
+  if (cached?.key !== key)
+    cached = {
+      key,
+      patterns: secrets.flatMap((s) =>
+        forms(s).map((f) => new RegExp(escape(f), 'gi')),
+      ),
+    };
+  return cached.patterns;
+}
+
 /**
  * Makes a stack trace or message safe to send: the home folder becomes `~`, any other user
  * folder (`/Users/x`, `/home/x`, `C:\Users\x`) becomes `~` too, and every sensitive value
@@ -25,9 +40,8 @@ export function scrub(
     .filter((s) => s.length >= 3)
     // Longest first, so a repo path is replaced before the repo name inside it.
     .sort((a, b) => b.length - a.length);
-  for (const s of secrets)
-    for (const f of forms(s))
-      out = out.replace(new RegExp(escape(f), 'gi'), '<redacted>');
+  for (const re of sensitivePatterns(secrets))
+    out = out.replace(re, '<redacted>');
   out = out.replace(/([A-Za-z]:)?[\\/](Users|home)[\\/][^\\/\s'"`:)]+/gi, '~');
   if (opts.home)
     for (const f of forms(opts.home))

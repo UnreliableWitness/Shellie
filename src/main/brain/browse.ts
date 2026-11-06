@@ -14,6 +14,7 @@ import {
 import { citedSources, localTarget } from './check';
 import { pageOrder, pageSummary, pageTitle } from './indexPage';
 import { parsePage, readPages, splitFrontmatter } from './pages';
+import { absPath } from './paths';
 import { parseSourceFrontmatter } from './sourceFile';
 
 const DAY = /^\d{4}-\d{2}-\d{2}/;
@@ -82,8 +83,8 @@ export async function pageRows(brainDir: string): Promise<BrainPageRow[]> {
 }
 
 export const SEARCH_MIN = 2;
-export const SEARCH_MAX_HITS = 50;
-export const SEARCH_PER_FILE = 3;
+const SEARCH_MAX_HITS = 50;
+const SEARCH_PER_FILE = 3;
 const SEARCH_MAX_BYTES = 2 * 1024 * 1024;
 const SNIPPET = 160;
 
@@ -95,7 +96,7 @@ async function markdownFiles(
   const walk = async (rel: string) => {
     let entries;
     try {
-      entries = await fs.readdir(path.join(brainDir, ...rel.split('/')), {
+      entries = await fs.readdir(absPath(brainDir, rel), {
         withFileTypes: true,
       });
     } catch {
@@ -178,7 +179,7 @@ export async function searchBrain(
   ];
   for (const { rel, kind } of files) {
     if (out.length >= SEARCH_MAX_HITS) break;
-    const abs = path.join(brainDir, ...rel.split('/'));
+    const abs = absPath(brainDir, rel);
     if ((await fs.stat(abs)).size > SEARCH_MAX_BYTES) continue;
     const text = await fs.readFile(abs, 'utf8');
     const { body } = splitFrontmatter(text);
@@ -276,7 +277,7 @@ export function taskWords(texts: string[]): string[] {
   return out;
 }
 
-export const RELEVANT_MAX = 5;
+const RELEVANT_MAX = 5;
 
 /** The pages that mention the task's words: title words count twice, summary words once; the top 5 with a score. */
 export function relevantPages(rows: BrainPageRow[], words: string[]): string[] {

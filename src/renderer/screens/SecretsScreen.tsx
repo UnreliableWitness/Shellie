@@ -11,6 +11,7 @@ import type {
   SecretsStatus,
 } from '../../shared/secrets';
 import { api, tryInvoke } from '../api';
+import { plural } from '../format';
 import { SecretEditor } from '../components/secrets/SecretEditor';
 import { GIVEN_LABEL, SecretRow } from '../components/secrets/SecretRow';
 import { ConfirmBar, PageHeader } from '../components/ui';
@@ -20,9 +21,6 @@ import { useStore } from '../store';
 type Editing =
   | { kind: 'new'; env?: Environment }
   | { kind: 'edit'; secret: SecretView; env?: Environment };
-
-const plural = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
 
 /** A repo's secrets status: the protected sentence, or a warning card per reason with its action. */
 export function StatusPanel({

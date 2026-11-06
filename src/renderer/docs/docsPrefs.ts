@@ -1,10 +1,9 @@
+import { local } from '../localStorage';
 import { readFlag, writeFlag } from '../uiPrefs';
 
 export type DocView = 'rendered' | 'source';
 export type DocState = { path: string | null; view: DocView; scroll: number };
 const DEFAULT: DocState = { path: null, view: 'rendered', scroll: 0 };
-const local = (): Storage | undefined =>
-  typeof localStorage === 'undefined' ? undefined : localStorage;
 
 export function readDocState(taskId: string, storage = local()): DocState {
   try {

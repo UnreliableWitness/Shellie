@@ -9,7 +9,7 @@ import { errorMessage } from '../../../shared/errors';
 import type { ColorScheme } from '../../../shared/theme';
 import { currentColorScheme, useColorScheme } from '../../colorScheme';
 
-export const monacoTheme = (s: ColorScheme) => `shellie-${s}`;
+const monacoTheme = (s: ColorScheme) => `shellie-${s}`;
 
 export type DiffZone = {
   id: string;

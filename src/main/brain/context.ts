@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Brain } from '../../shared/brain';
+import { sleep } from '../async';
 import type { GitClient } from '../services/GitClient';
 import type { BrainStore } from './BrainStore';
 import { withBrainGit } from './gitMutex';
@@ -99,7 +100,7 @@ async function appendLogLocked(
       );
       return;
     }
-    await new Promise((r) => setTimeout(r, pollMs));
+    await sleep(pollMs);
   }
   try {
     const file = path.join(brainDir, 'log.md');

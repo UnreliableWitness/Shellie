@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CostServerStatus } from '../../shared/costServer';
 import { api, tryInvoke } from '../api';
+import { dateTime } from '../format';
 import { useStore } from '../store';
 import { SettingRow, SettingsCategory } from './settings/SettingRow';
 
@@ -167,7 +168,7 @@ export function CostServerSection() {
               <div style={{ gridColumn: '1 / -1' }} className="small muted">
                 <span>
                   {status.lastSentAt
-                    ? `Last sent ${new Date(status.lastSentAt).toLocaleString()}`
+                    ? `Last sent ${dateTime(status.lastSentAt)}`
                     : 'Nothing sent yet'}
                 </span>
                 {' · '}

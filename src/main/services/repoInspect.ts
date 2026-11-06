@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Connection } from '../../shared/types';
 import type { RepoFacts, RepoInspection } from '../../shared/repoInspection';
-import { pathExists } from '../fsRetry';
+import { pathExists, readJson } from '../fsRetry';
 import { matchConnection, parseAzureReposRemote } from './azureRepos';
 import type { GitClient } from './GitClient';
 import { configFileFor, DEFAULT_BRANCH_TEMPLATE } from './ShellieConfig';
@@ -82,15 +82,11 @@ async function readFacts(
         ? 'yarn'
         : null;
   let devScript: RepoFacts['devScript'] = null;
-  try {
-    const pkg = JSON.parse(
-      await fs.readFile(path.join(top, 'package.json'), 'utf8'),
-    ) as { scripts?: Record<string, unknown> };
-    if (typeof pkg.scripts?.dev === 'string') devScript = 'dev';
-    else if (typeof pkg.scripts?.start === 'string') devScript = 'start';
-  } catch {
-    // no or unreadable package.json
-  }
+  const pkg = await readJson<{ scripts?: Record<string, unknown> }>(
+    path.join(top, 'package.json'),
+  );
+  if (typeof pkg?.scripts?.dev === 'string') devScript = 'dev';
+  else if (typeof pkg?.scripts?.start === 'string') devScript = 'start';
   const envFiles = await findEnvCandidates(top, git, entries);
   const existingFile = await configFileFor(top);
   return {

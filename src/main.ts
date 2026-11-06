@@ -23,7 +23,7 @@ import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
-import { brainTaskId } from './shared/brain';
+import { brainTaskId, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
@@ -37,7 +37,10 @@ import {
 import { telemetryEnv } from './main/usage/telemetryEnv';
 import { colorFgBg } from './main/services/claudeTheme';
 import { runWithInput } from './main/services/prSummary';
-import { claudeSessionExists } from './main/services/claudeSessions';
+import {
+  claudeProjectsDir,
+  claudeSessionExists,
+} from './main/services/claudeSessions';
 import {
   createHandlers,
   pruneDanglingConnectionLinks,
@@ -62,14 +65,12 @@ import {
   type TokenMigration,
 } from './main/migrate/tokens';
 import { budgetMonth, VENDORS, type Vendor } from './shared/budget';
+import { sleep } from './main/async';
 import { BudgetService, inShellieFor } from './main/budget/BudgetService';
 import { effectiveBudget } from './main/budget/serverBudgets';
 import { BudgetStore } from './main/budget/BudgetStore';
 import { budgetRecordsFromUsage } from './main/budget/usageRecords';
-import {
-  ClaudeTranscriptReader,
-  claudeProjectsDir,
-} from './main/budget/claudeTranscripts';
+import { ClaudeTranscriptReader } from './main/budget/claudeTranscripts';
 import { OpenCodeReader, openCodeDbPath } from './main/budget/openCode';
 import { CostSender } from './main/costServer/CostSender';
 import { CostServerStore } from './main/costServer/CostServerStore';
@@ -433,19 +434,20 @@ async function boot(): Promise<void> {
   try {
     reporter.step('Loading tasks');
     const store = new TaskStore(path.join(userData, 'state.json'));
+    /** Secrets at rest (tokens, the cost server key) go through Electron's safeStorage. */
+    const safeCrypto = {
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (plain: string) => safeStorage.encryptString(plain),
+      decrypt: (cipher: Buffer) => safeStorage.decryptString(cipher),
+    };
     const connections = new ConnectionStore(
       path.join(userData, 'connections.json'),
-      {
-        available: () => safeStorage.isEncryptionAvailable(),
-        encrypt: (plain) => safeStorage.encryptString(plain),
-        decrypt: (cipher) => safeStorage.decryptString(cipher),
-      },
+      safeCrypto,
     );
-    const secrets = new SecretStore(path.join(userData, 'secrets.json'), {
-      available: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (plain) => safeStorage.encryptString(plain),
-      decrypt: (cipher) => safeStorage.decryptString(cipher),
-    });
+    const secrets = new SecretStore(
+      path.join(userData, 'secrets.json'),
+      safeCrypto,
+    );
     // The brains load before the ledger's first pass, so their records are attributed to them.
     const brains = new BrainStore(path.join(userData, 'brains.json'));
     const [loaded, connectionsLoaded, secretsLoaded] = await Promise.all([
@@ -523,7 +525,9 @@ async function boot(): Promise<void> {
       });
     lap('tasksMs');
     const usageDir = path.join(userData, 'usage');
-    await fs.mkdir(path.join(usageDir, 'copilot'), { recursive: true });
+    const copilotDirMade = fs.mkdir(path.join(usageDir, 'copilot'), {
+      recursive: true,
+    });
     // Per-run secret for the attention route, so other local programs cannot raise notifications.
     const attentionToken = randomBytes(24).toString('hex');
     const opencodePlugin = path.join(
@@ -532,7 +536,7 @@ async function boot(): Promise<void> {
       'shellie-attention.js',
     );
     let opencodePluginReady = false;
-    await fs
+    const opencodePluginWritten = fs
       .mkdir(path.dirname(opencodePlugin), { recursive: true })
       .then(() => fs.writeFile(opencodePlugin, OPENCODE_PLUGIN_SOURCE))
       .then(() => {
@@ -545,7 +549,7 @@ async function boot(): Promise<void> {
     const runs = new RunHub();
     const shimDir = path.join(userData, 'bin');
     let shimsReady = false;
-    await writeShims(shimDir)
+    const shimsWritten = writeShims(shimDir)
       .then(() => {
         shimsReady = true;
       })
@@ -572,19 +576,19 @@ async function boot(): Promise<void> {
     };
     const usage = new UsageStore(usageDir, () => OFFICIAL_RATES);
     const time = new TimeStore(path.join(usageDir, 'time.json'));
-    // usageMs covers both stores, loaded together.
+    // usageMs covers both stores and the folders and shims above, none of which needs another: loaded together.
     const [usageLoaded, timeLoaded] = await Promise.all([
       usage.load(),
       time.load(),
+      copilotDirMade,
+      opencodePluginWritten,
+      shimsWritten,
     ]);
     lap('usageMs');
     const ingest = (events: UsageEvent[]) => {
-      for (const e of events)
-        usage
-          .add(e)
-          .catch((err) =>
-            console.error('[usage] could not store a record', err),
-          );
+      usage
+        .addMany(events)
+        .catch((err) => console.error('[usage] could not store records', err));
     };
     const keep = (write: Promise<void>) => {
       const p = write.catch((err: unknown) =>
@@ -615,6 +619,15 @@ async function boot(): Promise<void> {
       onInterval: (taskId, iv) => keep(time.addAgent(taskId, 'opencode', iv)),
     });
     time.on('changed', (taskId) => broadcast('time:changed', { taskId }));
+    /** Brings the main window to the front for a notification click; false when there is no window to show. */
+    const focusMain = (): boolean => {
+      const w = mainWindow;
+      if (!w || w.isDestroyed()) return false;
+      if (w.isMinimized()) w.restore();
+      w.show();
+      w.focus();
+      return true;
+    };
     const taskTitle = (t: Task) =>
       t.workItem ? `${t.workItem.id} ${t.workItem.title}` : t.name;
     // Claude Code tabs with a colour-blind or ANSI-only theme start again in the new variant after a scheme change.
@@ -670,12 +683,7 @@ async function boot(): Promise<void> {
       changed: (snapshot) => broadcast('attention:changed', snapshot),
       status: (id, state) => retheme.status(id, state),
       open: (taskId, terminalId) => {
-        const w = mainWindow;
-        if (!w || w.isDestroyed()) return;
-        if (w.isMinimized()) w.restore();
-        w.show();
-        w.focus();
-        broadcast('attention:open', { taskId, terminalId });
+        if (focusMain()) broadcast('attention:open', { taskId, terminalId });
       },
     });
     const receiver = new UsageReceiver(
@@ -697,21 +705,16 @@ async function boot(): Promise<void> {
       path.join(usageDir, 'budget.json'),
       () => OFFICIAL_RATES,
     );
-    await budgetStore.load();
     // The cost server's address, key and last `hello` answer; a changed answer moves the budgets.
     const costServer = new CostServerStore(
       path.join(userData, 'cost-server.json'),
-      {
-        available: () => safeStorage.isEncryptionAvailable(),
-        encrypt: (plain) => safeStorage.encryptString(plain),
-        decrypt: (cipher) => safeStorage.decryptString(cipher),
-      },
+      safeCrypto,
       () => {
         void budget.pass().catch(() => undefined);
         broadcast('budget:changed', {});
       },
     );
-    await costServer.load();
+    await Promise.all([budgetStore.load(), costServer.load()]);
     // With a cost server, its tier for the developer sets each budget's amount and start day.
     const budgetSettings = (v: Vendor) =>
       effectiveBudget(
@@ -752,12 +755,7 @@ async function boot(): Promise<void> {
         try {
           const n = new Notification({ title, body });
           n.on('click', () => {
-            const w = mainWindow;
-            if (!w || w.isDestroyed()) return;
-            if (w.isMinimized()) w.restore();
-            w.show();
-            w.focus();
-            broadcast('budget:open', {});
+            if (focusMain()) broadcast('budget:open', {});
           });
           n.show();
         } catch (err) {
@@ -824,6 +822,11 @@ async function boot(): Promise<void> {
         'brain',
       );
     const brainToday = (id: string) => ledgerToday(ledgerStore.all(), id);
+    const brainOf = (id: string): Brain => {
+      const b = brains.get(id);
+      if (!b) throw new Error(`Unknown brain ${id}`);
+      return b;
+    };
     const brainJobEvents = jobTelemetry((name, props) =>
       telemetry.event(name, props),
     );
@@ -832,25 +835,15 @@ async function boot(): Promise<void> {
       run: runWithInput,
       env: (id) => brainJobEnv(id, brainEnv(id)),
       tokensToday: (id) => brainToday(id).tokens,
-      cap: (id) => {
-        const b = brains.get(id);
-        if (!b) throw new Error(`Unknown brain ${id}`);
-        return b.options.dailyTokenCap;
-      },
-      brainDir: (id) => {
-        const b = brains.get(id);
-        if (!b) throw new Error(`Unknown brain ${id}`);
-        return b.path;
-      },
+      cap: (id) => brainOf(id).options.dailyTokenCap,
+      brainDir: (id) => brainOf(id).path,
       model: (id) => brains.get(id)?.options.model ?? 'sonnet',
       commit: async (id, message) => {
-        const b = brains.get(id);
-        if (!b) throw new Error(`Unknown brain ${id}`);
+        const b = brainOf(id);
         await commitJobOutput(git, b.path, message, b.name);
       },
       beforeJob: async (id) => {
-        const b = brains.get(id);
-        if (!b) throw new Error(`Unknown brain ${id}`);
+        const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
       onChange: (brainId, jobs) => {
@@ -864,21 +857,24 @@ async function boot(): Promise<void> {
       stopBrainScheduler();
       brainRunner.stop();
     };
+    /** The settings file Claude Code tabs start with (the theme, and a tab's deny rules); null when it could not be written. */
+    const claudeSettings = (deny?: string[]): string | null => {
+      try {
+        return claudeSettingsFile(path.join(userData, 'claude'), {
+          theme: claudeThemeFor(readClaudeTheme(), scheme()),
+          deny,
+        });
+      } catch (e) {
+        console.error('[terminals] could not write the Claude theme file', e);
+        return null;
+      }
+    };
     brainTerminals = createBrainTerminals({
       brains,
       terminals,
       platform,
       env: (id) => ({ ...brainEnv(id), COLORFGBG: colorFgBg(scheme()) }),
-      themeFile: () => {
-        try {
-          return claudeSettingsFile(path.join(userData, 'claude'), {
-            theme: claudeThemeFor(readClaudeTheme(), scheme()),
-          });
-        } catch (e) {
-          console.error('[brain] could not write the Claude theme file', e);
-          return null;
-        }
-      },
+      themeFile: () => claudeSettings(),
       sessionExists: claudeSessionExists,
     });
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
@@ -916,18 +912,7 @@ async function boot(): Promise<void> {
         nativeTheme.themeSource = theme;
       },
       colorScheme: scheme,
-      claudeThemeSettings: (deny) => {
-        const theme = claudeThemeFor(readClaudeTheme(), scheme());
-        try {
-          return claudeSettingsFile(path.join(userData, 'claude'), {
-            theme,
-            deny,
-          });
-        } catch (e) {
-          console.error('[terminals] could not write the Claude theme file', e);
-          return null;
-        }
-      },
+      claudeThemeSettings: claudeSettings,
       claudeSpawned: (id) =>
         retheme.spawned(
           id,
@@ -1370,6 +1355,6 @@ app.on('will-quit', (e) => {
       ...timeWrites,
       ...(sendTelemetry ? [telemetry.flush()] : []),
     ]),
-    new Promise((r) => setTimeout(r, 2000)),
+    sleep(2000),
   ]).finally(() => app.exit(0));
 });

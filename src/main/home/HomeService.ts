@@ -11,6 +11,7 @@ import { AdoError, type AdoClient } from '../services/AdoClient';
 import { JsonFileStore } from '../usage/JsonFileStore';
 import { toHomePr } from './homePr';
 import { errorMessage } from '../../shared/errors';
+import { withTimeout } from '../async';
 
 export type HomeClient = Pick<
   AdoClient,
@@ -50,8 +51,6 @@ export type HomeFailureKind =
   | 'unreachable'
   | 'timeout'
   | 'step';
-
-class HomeTimeout extends Error {}
 
 type Call = <T>(run: () => Promise<T>) => Promise<T>;
 
@@ -135,37 +134,35 @@ export class HomeService {
     return this.d.now?.() ?? new Date();
   }
 
-  private connection(
+  private async connection(
     c: Connection,
     prev: HomeConnection | null,
     failures: { kind: HomeFailureKind }[],
   ): Promise<HomeConnection> {
     const ms = this.d.timeoutMs ?? HOME_TIMEOUT_MS;
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () =>
-          reject(
-            new HomeTimeout(
-              `Azure DevOps did not answer within ${ms / 1000} s`,
-            ),
-          ),
+    const fail = (kind: HomeFailureKind, error: string) => {
+      failures.push({ kind });
+      return this.failed(c, prev, error);
+    };
+    let fetched: HomeConnection | null;
+    try {
+      fetched = await withTimeout<HomeConnection | null>(
+        this.fetch(c, prev),
         ms,
+        () => null,
       );
-    });
-    return Promise.race([this.fetch(c, prev), timeout])
-      .catch((e: unknown) => {
-        failures.push({
-          kind:
-            e instanceof HomeTimeout
-              ? 'timeout'
-              : e instanceof AdoError && e.kind === 'unauthorized'
-                ? 'unauthorized'
-                : 'unreachable',
-        });
-        return this.failed(c, prev, errorMessage(e));
-      })
-      .finally(() => clearTimeout(timer));
+    } catch (e) {
+      return fail(
+        e instanceof AdoError && e.kind === 'unauthorized'
+          ? 'unauthorized'
+          : 'unreachable',
+        errorMessage(e),
+      );
+    }
+    return (
+      fetched ??
+      fail('timeout', `Azure DevOps did not answer within ${ms / 1000} s`)
+    );
   }
 
   private failed(

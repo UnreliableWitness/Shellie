@@ -11,6 +11,10 @@ export function nativePath(p: string): string {
   return path.resolve(p);
 }
 
+/** `abs` relative to `root` with forward slashes, the form git and our configs use on every platform. */
+export const toRel = (root: string, abs: string): string =>
+  path.relative(root, abs).split(path.sep).join('/');
+
 /** Compares two paths in native form; case-insensitive on Windows. */
 export function samePath(a: string, b: string): boolean {
   const x = nativePath(a);

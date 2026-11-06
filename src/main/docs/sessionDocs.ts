@@ -2,11 +2,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { SessionDoc, Task } from '../../shared/types';
 import { activeWorkspaces } from '../../shared/workspaces';
+import { isFile } from '../fsRetry';
 import { isInside, samePath } from '../paths';
 import type { GitClient } from '../services/GitClient';
 import { claudeProjectFolder } from '../services/claudeSessions';
 import { SessionLogReader } from '../workspaces/sessionLog';
-import { changedDocs, MD, TASK_FILE, toRel } from './worktreeFiles';
+import { toRel } from '../paths';
+import { changedDocs, MD, TASK_FILE } from './worktreeFiles';
 
 const EDIT_TOOLS: Record<string, string> = {
   Write: 'file_path',
@@ -18,7 +20,7 @@ const WIN_ABS = /^(?:[A-Za-z]:[\\/]|\\\\)/;
 /** Chunks read per transcript per refresh (each at most MAX_READ_BYTES), so a huge log catches up over a few refreshes. */
 const MAX_CHUNKS = 8;
 /** Session docs kept per task; a session that wrote more is not a docs session. */
-export const MAX_SESSION_DOCS = 500;
+const MAX_SESSION_DOCS = 500;
 /** How long a git scan of the worktrees is reused; a change the DocsWatcher sees drops it sooner. */
 const GIT_TTL_MS = 5000;
 /** How long a computed list answers whitelist checks (docs:read polls every 2 s). */
@@ -348,12 +350,6 @@ export class SessionDocs {
     return files;
   }
 }
-
-const isFile = (f: string) =>
-  fs.stat(f).then(
-    (s) => s.isFile(),
-    () => false,
-  );
 
 /** What the renderer gets. */
 export const toWire = ({ real: _real, ...doc }: SessionEntry): SessionDoc =>

@@ -10,6 +10,7 @@ import type {
   WorkItemTypeMeta,
 } from '../../shared/types';
 import { errorMessage } from '../../shared/errors';
+import { sleep } from '../async';
 
 export type AdoErrorKind =
   | 'unauthorized'
@@ -56,7 +57,7 @@ const MAX_ICON_BYTES = 256 * 1024;
 const ICON_TYPES = new Set(['image/svg+xml', 'image/png']);
 
 /** ADO sends colors as `rrggbb` without the hash; null for anything else. */
-export const hexColor = (c: unknown): string | null =>
+const hexColor = (c: unknown): string | null =>
   typeof c === 'string' && /^#?[0-9a-f]{6}$/i.test(c)
     ? `#${c.replace('#', '').toLowerCase()}`
     : null;
@@ -126,6 +127,21 @@ export type RawHomePr = {
 type Json = Record<string, unknown>;
 type RawWorkItem = { id: number; fields: Json; _links?: Json };
 type RawState = { name?: string; color?: string; category?: string };
+/** A work item type as `/_apis/wit/workitemtypes` lists it. */
+type RawWorkItemType = {
+  name: string;
+  color?: string;
+  isDisabled?: boolean;
+  icon?: { url?: string };
+  fields?: { referenceName: string }[];
+  states?: RawState[];
+};
+
+/** The team-settings route prefix: the project, or the project and team when the view is a team's. */
+const teamScope = (project: string, team?: string): string =>
+  team
+    ? `${encodeURIComponent(project)}/${encodeURIComponent(team)}`
+    : encodeURIComponent(project);
 
 /** The estimate fields of a work item in hours, null when unset. */
 const estimatesOf = (f: Json) => ({
@@ -276,9 +292,7 @@ export class AdoClient {
     team: string | undefined,
     filter: string,
   ): Promise<SprintIteration[]> {
-    const scope = team
-      ? `${encodeURIComponent(project)}/${encodeURIComponent(team)}`
-      : encodeURIComponent(project);
+    const scope = teamScope(project, team);
     const data = await this.request<{
       value?: {
         id: string;
@@ -387,9 +401,7 @@ export class AdoClient {
     iterationId: string,
     team?: string,
   ): Promise<SprintRelation[]> {
-    const scope = team
-      ? `${encodeURIComponent(project)}/${encodeURIComponent(team)}`
-      : encodeURIComponent(project);
+    const scope = teamScope(project, team);
     const data = await this.request<{ workItemRelations?: SprintRelation[] }>(
       `/${scope}/_apis/work/teamsettings/iterations/${encodeURIComponent(iterationId)}/workitems?${API}`,
     );
@@ -496,37 +508,28 @@ export class AdoClient {
     return items.map((w) => this.summary(opts.project, w));
   }
 
+  /** The project's enabled work item types as the API lists them. */
+  private async rawWorkItemTypes(project: string): Promise<RawWorkItemType[]> {
+    const data = await this.request<{ value?: RawWorkItemType[] }>(
+      `/${encodeURIComponent(project)}/_apis/wit/workitemtypes?${API}`,
+    );
+    return (data.value ?? []).filter((t) => !t.isDisabled);
+  }
+
   async workItemTypeFields(
     project: string,
   ): Promise<{ type: string; fields: string[] }[]> {
-    const data = await this.request<{
-      value?: {
-        name: string;
-        isDisabled?: boolean;
-        fields?: { referenceName: string }[];
-      }[];
-    }>(`/${encodeURIComponent(project)}/_apis/wit/workitemtypes?${API}`);
-    return (data.value ?? [])
-      .filter((t) => !t.isDisabled)
-      .map((t) => ({
-        type: t.name,
-        fields: (t.fields ?? []).map((f) => f.referenceName),
-      }));
+    return (await this.rawWorkItemTypes(project)).map((t) => ({
+      type: t.name,
+      fields: (t.fields ?? []).map((f) => f.referenceName),
+    }));
   }
 
   /** The enabled work item types with their color, icon URL and states (from the list, or per type when the list leaves them out). */
   async workItemTypes(
     project: string,
   ): Promise<(Omit<WorkItemTypeMeta, 'icon'> & { iconUrl: string | null })[]> {
-    const data = await this.request<{
-      value?: {
-        name: string;
-        color?: string;
-        isDisabled?: boolean;
-        icon?: { url?: string };
-        states?: RawState[];
-      }[];
-    }>(`/${encodeURIComponent(project)}/_apis/wit/workitemtypes?${API}`);
+    const types = await this.rawWorkItemTypes(project);
     const states = (raw: RawState[]): WorkItemStateMeta[] =>
       raw.flatMap((st) =>
         st.name
@@ -540,18 +543,16 @@ export class AdoClient {
           : [],
       );
     return Promise.all(
-      (data.value ?? [])
-        .filter((t) => !t.isDisabled)
-        .map(async (t) => ({
-          name: t.name,
-          color: hexColor(t.color),
-          iconUrl: t.icon?.url ?? null,
-          states: t.states
-            ? states(t.states)
-            : await this.rawStates(project, t.name)
-                .then(states)
-                .catch(() => []),
-        })),
+      types.map(async (t) => ({
+        name: t.name,
+        color: hexColor(t.color),
+        iconUrl: t.icon?.url ?? null,
+        states: t.states
+          ? states(t.states)
+          : await this.rawStates(project, t.name)
+              .then(states)
+              .catch(() => []),
+      })),
     );
   }
 
@@ -973,7 +974,7 @@ export class AdoClient {
     if (res.status === 429 && !opts.retried) {
       const header = Number(res.headers.get('retry-after') ?? '1');
       const wait = Math.min(10, Math.max(0, Number.isNaN(header) ? 1 : header));
-      await new Promise((r) => setTimeout(r, wait * 1000));
+      await sleep(wait * 1000);
       return this.request<T>(path, init, { ...opts, retried: true });
     }
     const redirected =

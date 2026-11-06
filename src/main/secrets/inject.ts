@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Environment, GivenTo } from '../../shared/secrets';
 import type { ShellieConfig, TerminalDef } from '../../shared/types';
+import { readJson } from '../fsRetry';
 import { environmentOf, parseJsonc } from './classify';
 import { isRecord } from './sources/types';
 
@@ -84,15 +85,9 @@ export async function testCommandFor(
   config: ShellieConfig,
 ): Promise<string | null> {
   if (config.run.test) return config.run.test;
-  try {
-    const pkg: unknown = JSON.parse(
-      await fs.readFile(path.join(repoPath, 'package.json'), 'utf8'),
-    );
-    if (isRecord(pkg) && isRecord(pkg.scripts) && pkg.scripts.test)
-      return 'npm test';
-  } catch {
-    // No package.json, or not JSON.
-  }
+  const pkg = await readJson(path.join(repoPath, 'package.json'));
+  if (isRecord(pkg) && isRecord(pkg.scripts) && pkg.scripts.test)
+    return 'npm test';
   return (await hasTestProject(repoPath, 3)) ? 'dotnet test' : null;
 }
 

@@ -1,5 +1,5 @@
-import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { readJson } from '../fsRetry';
 import { isRecord } from './sources/types';
 
 /**
@@ -86,9 +86,7 @@ export async function packageScripts(
   const name = packageScriptName(command);
   if (name === null) return null;
   try {
-    const pkg: unknown = JSON.parse(
-      await fs.readFile(path.join(worktreePath, 'package.json'), 'utf8'),
-    );
+    const pkg = await readJson(path.join(worktreePath, 'package.json'));
     const scripts =
       isRecord(pkg) && isRecord(pkg.scripts) ? pkg.scripts : undefined;
     if (!scripts) return null;

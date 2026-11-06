@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import * as pty from 'node-pty';
 import type { ColorScheme } from '../../shared/theme';
+import { withTimeout } from '../async';
 
 export type SpawnOptions = {
   id: string;
@@ -261,16 +262,12 @@ export class TerminalManager extends EventEmitter<{
     this.entries.delete(id);
     clearTimeout(e.flushTimer);
     if (e.exited) return Promise.resolve();
-    let timer: NodeJS.Timeout | undefined;
-    const fallback = new Promise<void>((r) => {
-      timer = setTimeout(r, this.killWaitMs);
-    });
     try {
       e.proc.kill();
     } catch {
-      // Already gone; the exit (or the fallback) settles the wait.
+      // Already gone; the exit (or the timeout) settles the wait.
     }
-    return Promise.race([e.exit, fallback]).finally(() => clearTimeout(timer));
+    return withTimeout(e.exit, this.killWaitMs, () => undefined);
   }
 
   restart(id: string): void {

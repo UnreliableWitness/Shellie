@@ -7,7 +7,7 @@ export const isObj = (v: unknown): v is Obj =>
 export const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 /** One OTLP JSON AnyValue. int64 arrives as a string or a number. */
-export function anyValue(v: unknown): Scalar {
+function anyValue(v: unknown): Scalar {
   if (!isObj(v)) return null;
   if (typeof v.stringValue === 'string') return v.stringValue;
   if (v.intValue !== undefined) {
@@ -44,7 +44,7 @@ export function safeIso(ms: number): string {
 }
 
 /** Nanoseconds since the epoch (string or number) to ISO; falls back to now. */
-export function nanosToIso(v: unknown): string {
+function nanosToIso(v: unknown): string {
   const n =
     typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN;
   return n > 0 ? safeIso(Math.floor(n / 1e6)) : safeIso(Number.NaN);
@@ -61,7 +61,7 @@ const isApiRequest = (record: Obj, attrs: Record<string, Scalar>): boolean => {
 };
 
 /** The subagent behind a `query_source` such as `agent:builtin:Explore` or `agent:custom`; undefined for the main thread and everything else. */
-export function subagentOf(querySource: string): string | undefined {
+function subagentOf(querySource: string): string | undefined {
   if (!querySource.startsWith('agent:')) return undefined;
   const name = querySource.slice('agent:'.length).replace(/^builtin:/, '');
   return !name || name === 'custom' || name === 'default' ? 'Subagent' : name;

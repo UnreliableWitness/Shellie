@@ -9,6 +9,7 @@ import {
 } from '../../../../shared/secrets';
 import type { CopyEntry, CopyEntryState, Repo } from '../../../../shared/types';
 import { api, tryInvoke } from '../../../api';
+import { plural } from '../../../format';
 import {
   SettingRow,
   SettingsCategory,
@@ -30,9 +31,6 @@ const STATE: Record<CopyEntryState, { label: string; tag: string }> = {
   notIgnored: { label: 'Not ignored by git', tag: 'tag-red' },
   outside: { label: 'Outside the repository', tag: 'tag-red' },
 };
-
-const plural = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
 
 /** Repository › Secrets & env: the secrets status, the default environment and the files copied into worktrees. */
 export function SecretsEnvCategory({

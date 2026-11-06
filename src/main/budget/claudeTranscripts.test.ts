@@ -10,7 +10,6 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ClaudeTranscriptReader,
-  claudeProjectsDir,
   parseTranscriptLine,
 } from './claudeTranscripts';
 
@@ -97,17 +96,6 @@ describe('parseTranscriptLine', () => {
     for (const x of ['null', '42', '"x"'])
       expect(parseTranscriptLine(x)).toBeNull();
   });
-});
-
-describe('claudeProjectsDir', () => {
-  it('honours CLAUDE_CONFIG_DIR', () =>
-    expect(claudeProjectsDir({ CLAUDE_CONFIG_DIR: '/cfg' }, '/home/u')).toBe(
-      path.join('/cfg', 'projects'),
-    ));
-  it('defaults to ~/.claude/projects', () =>
-    expect(claudeProjectsDir({}, '/home/u')).toBe(
-      path.join('/home/u', '.claude', 'projects'),
-    ));
 });
 
 describe('ClaudeTranscriptReader', () => {

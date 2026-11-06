@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parse } from 'yaml';
+import { absPath } from './paths';
 
 /** A page under wiki/, as Shellie's checks and the index see it. */
 export type WikiPage = {
@@ -171,12 +172,9 @@ export async function readPages(brainDir: string): Promise<WikiPage[]> {
   const walk = async (rel: string): Promise<void> => {
     let entries;
     try {
-      entries = await fs.readdir(
-        path.join(root, ...rel.split('/').filter(Boolean)),
-        {
-          withFileTypes: true,
-        },
-      );
+      entries = await fs.readdir(absPath(root, rel), {
+        withFileTypes: true,
+      });
     } catch {
       return;
     }
@@ -185,10 +183,7 @@ export async function readPages(brainDir: string): Promise<WikiPage[]> {
       const next = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(next);
       else if (e.isFile() && e.name.toLowerCase().endsWith('.md')) {
-        const text = await fs.readFile(
-          path.join(root, ...next.split('/')),
-          'utf8',
-        );
+        const text = await fs.readFile(absPath(root, next), 'utf8');
         out.push(parsePage(`wiki/${next}`, text));
       }
     }

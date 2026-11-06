@@ -85,7 +85,7 @@ export function parseAddedLines(diff: string): Map<string, string> {
 }
 
 /** The lines `refs` add (one range like `base...HEAD`, or a ref against the working tree), per path. */
-export async function addedLines(
+async function addedLines(
   git: GitClient,
   worktree: string,
   refs: string[],

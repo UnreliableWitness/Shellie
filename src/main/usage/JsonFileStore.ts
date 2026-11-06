@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { z } from 'zod';
-import { renameWithRetry } from '../fsRetry';
+import { renameWithRetry, writeAtomic } from '../fsRetry';
 import { errorMessage } from '../../shared/errors';
 
 /** One JSON document on disk, zod-validated, written atomically and serially; a corrupt file is backed up. */
@@ -66,9 +66,7 @@ export class JsonFileStore<T> {
       const draft = structuredClone(this.current);
       const next = this.schema.parse(mutate(draft) ?? draft);
       await fs.mkdir(path.dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      await fs.writeFile(tmp, JSON.stringify(next, null, this.indent), 'utf8');
-      await renameWithRetry(tmp, this.file);
+      await writeAtomic(this.file, JSON.stringify(next, null, this.indent));
       this.current = next;
       return next;
     };

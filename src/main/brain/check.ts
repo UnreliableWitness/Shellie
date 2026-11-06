@@ -1,7 +1,8 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BrainFinding, BrainSourceRow } from '../../shared/brain';
+import { pathExists } from '../fsRetry';
 import { linkTargets, type WikiPage } from './pages';
+import { absPath } from './paths';
 
 /** The finding kinds Shellie computes itself; `/lint` owns the others. */
 export const SHELLIE_FINDING_KINDS: ReadonlySet<BrainFinding['kind']> = new Set(
@@ -85,10 +86,7 @@ export async function checkBrain(
   const has = (rel: string) => {
     let p = exists.get(rel);
     if (!p) {
-      p = fs.stat(path.join(brainDir, ...rel.split('/'))).then(
-        () => true,
-        () => false,
-      );
+      p = pathExists(absPath(brainDir, rel));
       exists.set(rel, p);
     }
     return p;

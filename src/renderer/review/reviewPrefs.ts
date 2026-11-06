@@ -1,3 +1,5 @@
+import { local } from '../localStorage';
+
 export type ReviewPrefs = {
   sideBySide: boolean;
   ignoreWhitespace: boolean;
@@ -14,7 +16,7 @@ const DEFAULT: ReviewPrefs = {
 };
 
 export function readReviewPrefs(
-  storage: Storage | undefined = globalThis.localStorage,
+  storage: Storage | undefined = local(),
 ): ReviewPrefs {
   try {
     const v = JSON.parse(
@@ -43,7 +45,7 @@ export function readReviewPrefs(
 
 export function writeReviewPrefs(
   p: ReviewPrefs,
-  storage: Storage | undefined = globalThis.localStorage,
+  storage: Storage | undefined = local(),
 ): void {
   try {
     storage?.setItem(KEY, JSON.stringify(p));

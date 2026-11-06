@@ -12,7 +12,7 @@ import { strippableKind, stripKeys } from '../secrets/inject';
 import { replaceFile } from '../secrets/replaceFile';
 
 /** Untracked agent config copied into new worktrees by default (`copyAgentConfig: false` turns it off). */
-export const AGENT_CONFIG_PATHS = [
+const AGENT_CONFIG_PATHS = [
   'opencode.json',
   'opencode.jsonc',
   '.opencode',

@@ -3,15 +3,14 @@ import type { BrainView } from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
-import { eur } from '../../format';
+import { dateTime, eur } from '../../format';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
 
 /** Findings listed on the card; the rest is a count (a brain with thousands of broken links must still render). */
 const MAX_SHOWN = 50;
 
-const when = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString() : 'never';
+const when = (iso: string | null) => (iso ? dateTime(iso) : 'never');
 
 /** Lint findings, what still has to be captured, the wiki mirror, and the day's spend. */
 export function BrainHealth({

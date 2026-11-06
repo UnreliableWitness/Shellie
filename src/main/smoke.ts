@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { withTimeout } from './async';
 import { pdfToMarkdown } from './brain/convert/pdf';
 import { loadCanvas } from './brain/convert/raster';
 import type { Platform } from './platform/Platform';
@@ -70,15 +71,11 @@ async function smokePty(o: {
 }): Promise<boolean> {
   const id = 'shellie-smoke';
   const { terminals, log } = o;
-  let timer: NodeJS.Timeout | undefined;
   try {
-    const exited = new Promise<number>((resolve) => {
+    const exited = new Promise<number | 'timeout'>((resolve) => {
       terminals.on('exit', (exitId, code) => {
         if (exitId === id) resolve(code);
       });
-    });
-    const timeout = new Promise<'timeout'>((resolve) => {
-      timer = setTimeout(() => resolve('timeout'), o.timeoutMs ?? 20_000);
     });
     // `echo` exists in sh, zsh and PowerShell (alias of Write-Output).
     const cmd = o.platform.runCommand(`echo ${MARKER}`);
@@ -88,7 +85,11 @@ async function smokePty(o: {
       cwd: os.homedir(),
       ...cmd,
     });
-    const result = await Promise.race([exited, timeout]);
+    const result = await withTimeout(
+      exited,
+      o.timeoutMs ?? 20_000,
+      () => 'timeout' as const,
+    );
     if (result === 'timeout') {
       log('smoke failed: the pty timed out');
       return false;
@@ -114,7 +115,6 @@ async function smokePty(o: {
     );
     return false;
   } finally {
-    clearTimeout(timer);
     await terminals.kill(id);
   }
 }

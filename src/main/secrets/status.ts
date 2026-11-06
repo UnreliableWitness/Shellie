@@ -6,7 +6,7 @@ import type {
   SecretsStatus,
 } from '../../shared/secrets';
 import type { GitClient } from '../services/GitClient';
-import { isInside } from '../paths';
+import { isInside, toRel } from '../paths';
 import { discoverSecrets } from './discover';
 import { replaceFile } from './replaceFile';
 import { type StripKind, strippableKind, stripKeys } from './inject';
@@ -58,7 +58,7 @@ async function walk(
         return;
       }
       if (!st.isFile()) return;
-      const rel = path.relative(root, target).split(path.sep).join('/');
+      const rel = toRel(root, target);
       const kind = strippableKind(rel);
       if (!kind || tracked.has(rel)) return;
       if (await visit(target, rel, kind)) hits.push(rel);
@@ -143,7 +143,7 @@ export async function cleanAll(
 }
 
 /** The open tasks whose worktree copy still holds a stored key (a worktree git cannot read is not reported). */
-export async function dirtyWorktrees(
+async function dirtyWorktrees(
   worktrees: StatusDeps['worktrees'],
   copy: string[],
   names: string[],

@@ -18,7 +18,7 @@ export function trackScreen(name: string, props?: TelemetryProps): void {
   send({ type: 'pageView', name, props });
 }
 
-export function trackError(error: unknown, props?: TelemetryProps): void {
+function trackError(error: unknown, props?: TelemetryProps): void {
   const e =
     error instanceof Error
       ? error

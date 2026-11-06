@@ -1564,7 +1564,7 @@ describe('FinishScreen with several repos', () => {
       'tasks:finish': () => {
         if (n++ < 2)
           throw new Error(
-            "Error invoking remote method 'tasks:finish': Error: Pull request not created for api: The token cannot create pull requests",
+            'Pull request not created for api: The token cannot create pull requests',
           );
         return undefined;
       },

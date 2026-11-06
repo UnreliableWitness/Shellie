@@ -1,5 +1,5 @@
-import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { readJson } from '../fsRetry';
 
 type LockEntry = {
   version?: string;
@@ -50,14 +50,6 @@ export function lockMatches(hidden: unknown, lock: unknown): boolean {
       return false;
   }
   return Object.keys(installed).every((key) => key in wanted);
-}
-
-async function readJson(file: string): Promise<unknown> {
-  try {
-    return JSON.parse(await fs.readFile(file, 'utf8'));
-  } catch {
-    return null;
-  }
 }
 
 /** Whether the `node_modules` folder is up to date for the `package-lock.json` file. False when either is missing. */

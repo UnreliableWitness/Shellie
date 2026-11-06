@@ -14,6 +14,10 @@ export type AgentsDetected = {
 
 export const AGENT_IDS: AgentId[] = ['claude', 'copilot', 'opencode'];
 
+/** Whether a terminal kind runs an agent (claude, copilot, opencode) rather than a shell or a command. */
+export const isAgentKind = (kind: string): kind is AgentId =>
+  (AGENT_IDS as string[]).includes(kind);
+
 export const AGENT_LABELS: Record<AgentId, string> = {
   claude: 'Claude Code',
   copilot: 'GitHub Copilot CLI',

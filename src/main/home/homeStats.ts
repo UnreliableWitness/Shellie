@@ -23,7 +23,7 @@ import { baselineKey } from '../time/timeHandlers';
 type UsageSource = HomeStatsInput['usage'];
 
 /** The one billable rule: a priced record in a session marked billable. */
-export function isBillableRecord(
+function isBillableRecord(
   usage: UsageSource,
   taskId: string,
   r: UsageRecord,

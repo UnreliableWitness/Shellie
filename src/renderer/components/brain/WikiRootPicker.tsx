@@ -1,8 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { AdoWiki, AdoWikiPage, BrainWiki } from '../../../shared/brain';
+import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
-
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const wikiLabel = (w: AdoWiki) =>
   `${w.name} (${w.type === 'projectWiki' ? 'project wiki' : 'code wiki'})`;
@@ -42,7 +41,7 @@ export function WikiRootPicker({
       .invoke('brain:wikis', connectionId, project)
       .then(
         (w) => live && setWikis(w),
-        (e) => live && setWikisError(message(e)),
+        (e) => live && setWikisError(errorMessage(e)),
       );
     return () => {
       live = false;
@@ -58,7 +57,7 @@ export function WikiRootPicker({
       .invoke('brain:wikiPages', connectionId, project, wikiId)
       .then(
         (p) => live && setPages(p),
-        (e) => live && setPagesError(message(e)),
+        (e) => live && setPagesError(errorMessage(e)),
       );
     return () => {
       live = false;

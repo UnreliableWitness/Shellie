@@ -20,7 +20,7 @@
  */
 
 export const UPDATE_REPO = 'UnreliableWitness/Shellie';
-export const UPDATE_SERVER = 'https://update.electronjs.org';
+const UPDATE_SERVER = 'https://update.electronjs.org';
 /** First check after start: lets the boot and the first terminals settle. */
 export const FIRST_CHECK_DELAY_MS = 30 * 1000;
 /**
@@ -36,7 +36,7 @@ export const MIN_WAKE_GAP_MS = 5 * 60 * 1000;
  */
 export const STUCK_CHECK_MS = 30 * 60 * 1000;
 /** Squirrel passes this on the launch right after install, while it still holds its update lock. */
-export const SQUIRREL_FIRSTRUN = '--squirrel-firstrun';
+const SQUIRREL_FIRSTRUN = '--squirrel-firstrun';
 
 /** The subset of Electron's autoUpdater this module uses. */
 export type UpdaterLike = {

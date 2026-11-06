@@ -13,6 +13,7 @@ import {
   type UsageTool,
 } from '../../shared/usage';
 import { buildUsageTree } from '../../shared/usageViews';
+import { monthFiles } from '../fsRetry';
 import { modelLabeler, priceEvent, round6 } from '../pricing/RateTable';
 import { JsonFileStore } from './JsonFileStore';
 
@@ -54,15 +55,7 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
     billableBackup: string | null;
   }> {
     let damaged = 0;
-    let files: string[] = [];
-    try {
-      files = (await fs.readdir(this.dir))
-        .filter((f) => /^records-\d{4}-\d{2}\.jsonl$/.test(f))
-        .sort();
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
-    }
-    for (const f of files) {
+    for (const f of await monthFiles(this.dir)) {
       const text = await fs.readFile(path.join(this.dir, f), 'utf8');
       for (const line of text.split('\n')) {
         if (!line.trim()) continue;
@@ -85,29 +78,52 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
   }
 
   add(e: UsageEvent): Promise<UsageRecord | null> {
+    return this.addMany([e]).then((recs) => recs[0] ?? null);
+  }
+
+  /**
+   * Prices and stores the events not seen before: one append per month file and one `changed` per task, so a
+   * batch from the receiver does not cost a write and a broadcast per request. Returns the records stored.
+   */
+  addMany(events: UsageEvent[]): Promise<UsageRecord[]> {
     const run = async () => {
-      if (this.byId.has(e.id)) return null;
-      const rec: UsageRecord = { ...e, ...priceEvent(this.rates(), e) };
+      const recs: UsageRecord[] = [];
+      const seen = new Set<string>();
+      const byMonth = new Map<string, string>();
+      for (const e of events) {
+        if (this.byId.has(e.id) || seen.has(e.id)) continue;
+        seen.add(e.id);
+        const rec: UsageRecord = { ...e, ...priceEvent(this.rates(), e) };
+        recs.push(rec);
+        const m = monthOf(e.at);
+        byMonth.set(m, `${byMonth.get(m) ?? ''}${JSON.stringify(rec)}\n`);
+      }
+      if (recs.length === 0) return recs;
       await fs.mkdir(this.dir, { recursive: true });
-      await fs.appendFile(
-        path.join(this.dir, `records-${monthOf(e.at)}.jsonl`),
-        `${JSON.stringify(rec)}\n`,
-        'utf8',
-      );
-      this.index(rec);
-      this.lastChange.set(e.taskId, new Date().toISOString());
-      this.emit('changed', e.taskId);
-      return rec;
+      for (const [m, text] of byMonth)
+        await fs.appendFile(
+          path.join(this.dir, `records-${m}.jsonl`),
+          text,
+          'utf8',
+        );
+      const at = new Date().toISOString();
+      const tasks = new Set<string>();
+      for (const rec of recs) {
+        this.index(rec);
+        this.lastChange.set(rec.taskId, at);
+        tasks.add(rec.taskId);
+      }
+      for (const taskId of tasks) this.emit('changed', taskId);
+      return recs;
     };
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => undefined);
     return result;
   }
 
+  /** A task's records oldest first; the store's own list, not to be changed by the caller. */
   records(taskId: string): UsageRecord[] {
-    return [...(this.byTask.get(taskId) ?? [])].sort((a, b) =>
-      a.at.localeCompare(b.at),
-    );
+    return this.byTask.get(taskId) ?? [];
   }
 
   /** Every loaded record, across tasks. */
@@ -150,8 +166,9 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
   }
 
   summarize(taskId: string, now = Date.now()): TaskUsage {
+    const records = this.records(taskId);
     const sessions = new Map<string, SessionSummary>();
-    for (const r of this.records(taskId)) {
+    for (const r of records) {
       const s = sessions.get(r.sessionId) ?? {
         sessionId: r.sessionId,
         tool: r.tool,
@@ -203,7 +220,7 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
     ) as TaskUsage['byTool'];
     const costUsd = round6(billableList.reduce((n, s) => n + s.costUsd, 0));
     const since = now - 6 * 3600_000;
-    const recent = this.records(taskId)
+    const recent = records
       .filter((r) => r.costUsd !== null && sessions.get(r.sessionId)!.billable)
       .filter((r) => {
         const t = Date.parse(r.at);
@@ -217,7 +234,7 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
       .sort((a, b) => a.at.localeCompare(b.at));
     const label = modelLabeler(this.rates());
     const models = new Map<string, ModelTotals>();
-    for (const r of this.records(taskId)) {
+    for (const r of records) {
       if (!sessions.get(r.sessionId)!.billable) continue;
       const name = label(r.model);
       const key = `${r.tool}\u0000${name}`;
@@ -253,7 +270,7 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
       usdToEur: OFFICIAL_USD_TO_EUR,
       recent,
       byModel,
-      lineage: buildUsageTree(this.records(taskId), {
+      lineage: buildUsageTree(records, {
         billable: (sessionId) => sessions.get(sessionId)!.billable,
         label,
         usdToEur: factor,
@@ -265,7 +282,14 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
     if (this.byId.has(rec.id)) return;
     this.byId.set(rec.id, rec);
     const list = this.byTask.get(rec.taskId) ?? [];
-    list.push(rec);
+    // Kept sorted by time: records arrive almost always in order, so this is an append, rarely a search.
+    const last = list[list.length - 1];
+    if (!last || rec.at >= last.at) list.push(rec);
+    else {
+      let i = list.length - 1;
+      while (i > 0 && list[i - 1].at > rec.at) i--;
+      list.splice(i, 0, rec);
+    }
     this.byTask.set(rec.taskId, list);
   }
 }

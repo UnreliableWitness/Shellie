@@ -34,8 +34,13 @@ import {
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { useBrains } from '../hooks/useBrains';
-import { useTaskUsage } from '../hooks/useTaskUsage';
-import { activeConnection, useStore, useTaskConnectionId } from '../store';
+import { useTaskCosts } from '../hooks/useTaskCosts';
+import {
+  activeConnection,
+  taskOnScreen,
+  useStore,
+  useTaskConnectionId,
+} from '../store';
 import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { AttentionDot } from './AttentionDot';
@@ -79,14 +84,15 @@ const avatarColor = (name: string) =>
   AVATAR[[...name].reduce((n, ch) => n + ch.charCodeAt(0), 0) % AVATAR.length];
 
 /** The nav highlights a task only while one of its pages is open. */
-function useIsCurrent(taskId: string) {
-  return useStore((s) =>
-    s.screen.kind === 'task'
-      ? s.selectedTaskId === taskId
-      : (s.screen.kind === 'setup' || s.screen.kind === 'finish') &&
-        s.screen.taskId === taskId,
-  );
-}
+const useIsCurrent = (taskId: string) =>
+  useStore((s) => taskOnScreen(s) === taskId);
+
+/** The terminal of the task that waits for the developer, a blocked one first. */
+const useWaiting = (task: TaskView) =>
+  useStore((s) => {
+    const entries = task.terminals.flatMap((d) => s.attention[d.id] ?? []);
+    return entries.find((e) => e.reason === 'blocked') ?? entries[0];
+  });
 
 function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
   const connectionId = useTaskConnectionId(task);
@@ -101,15 +107,11 @@ function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
   );
 }
 
-function Row({ task }: { task: TaskView }) {
+function Row({ task, cost }: { task: TaskView; cost: number }) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
-  const usage = useTaskUsage(task.id);
   const extras = activeWorkspaces(task).length - 1;
-  const waiting = useStore((s) => {
-    const entries = task.terminals.flatMap((d) => s.attention[d.id] ?? []);
-    return entries.find((e) => e.reason === 'blocked') ?? entries[0];
-  });
+  const waiting = useWaiting(task);
   const state = task.worktreeMissing
     ? { color: 'var(--red)', label: 'Worktree folder missing' }
     : NOT_READY[task.status];
@@ -137,9 +139,7 @@ function Row({ task }: { task: TaskView }) {
           style={{ background: state.color }}
         />
       )}
-      <span className="navrow-cost">
-        {usage && usage.billable.costEur > 0 ? eur(usage.billable.costEur) : ''}
-      </span>
+      <span className="navrow-cost">{cost > 0 ? eur(cost) : ''}</span>
     </button>
   );
 }
@@ -147,10 +147,7 @@ function Row({ task }: { task: TaskView }) {
 function RailRow({ task }: { task: TaskView }) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
-  const waiting = useStore((s) => {
-    const entries = task.terminals.flatMap((d) => s.attention[d.id] ?? []);
-    return entries.find((e) => e.reason === 'blocked') ?? entries[0];
-  });
+  const waiting = useWaiting(task);
   const name =
     `${task.workItem?.id ?? ''} ${task.workItem?.title ?? task.name}`.trim();
   return (
@@ -500,7 +497,7 @@ function NavResize({
 export function TaskNav() {
   const tasks = useStore((s) => s.tasks);
   const repos = useStore((s) => s.repos);
-  const screenKind = useStore((s) => s.screen.kind);
+  const screen = useStore((s) => s.screen);
   const go = useStore((s) => s.go);
   const connection = useStore(activeConnection);
   const connections = useStore((s) => s.connections);
@@ -518,11 +515,20 @@ export function TaskNav() {
     connections.map((c) => c.id),
   );
   const rail = navCollapsed;
+  // One read for every row that shows a cost; the rail shows none.
+  const costs = useTaskCosts(
+    rail
+      ? []
+      : [
+          ...open.flatMap((g) => g.tasks),
+          ...noRepo,
+          ...(showDone ? done : []),
+        ].map((t) => t.id),
+  );
   // Like tasks, only the active project's brains (#229); none without a connection.
   const brains = useBrains().filter(
     (b) => b.connectionId === connection?.id && !b.archived,
   );
-  const screen = useStore((s) => s.screen);
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }
     : connection.status === 'ok'
@@ -545,7 +551,7 @@ export function TaskNav() {
         icon={<Home20Regular aria-hidden="true" />}
         label="Home"
         rail={rail}
-        current={screenKind === 'home'}
+        current={screen.kind === 'home'}
         onClick={() => go({ kind: 'home' })}
       />
       {connection && (
@@ -553,7 +559,7 @@ export function TaskNav() {
           icon={<Grid20Regular aria-hidden="true" />}
           label="Project"
           rail={rail}
-          current={screenKind === 'project'}
+          current={screen.kind === 'project'}
           onClick={() => {
             go({ kind: 'project' });
             track('project.open', { from: 'nav' });
@@ -564,7 +570,7 @@ export function TaskNav() {
         icon={<ArrowSprint20Regular aria-hidden="true" />}
         label="Sprint"
         rail={rail}
-        current={screenKind === 'sprint'}
+        current={screen.kind === 'sprint'}
         onClick={() => go({ kind: 'sprint' })}
       />
       {brains.map((b) => (
@@ -600,7 +606,7 @@ export function TaskNav() {
                 </Fragment>
               ) : (
                 <Fragment key={t.id}>
-                  <Row task={t} />
+                  <Row task={t} cost={costs[t.id] ?? 0} />
                   <FinishAction task={t} />
                 </Fragment>
               ),
@@ -625,7 +631,10 @@ export function TaskNav() {
               )}
               Done ({done.length})
             </button>
-            {showDone && done.map((t) => <Row key={t.id} task={t} />)}
+            {showDone &&
+              done.map((t) => (
+                <Row key={t.id} task={t} cost={costs[t.id] ?? 0} />
+              ))}
           </>
         )}
       </div>
@@ -634,7 +643,7 @@ export function TaskNav() {
           icon={<Settings20Regular aria-hidden="true" />}
           label="Settings"
           rail={rail}
-          current={screenKind === 'settings'}
+          current={screen.kind === 'settings'}
           onClick={() => go({ kind: 'settings' })}
         />
         <div className="nav-status" title={footer.text}>

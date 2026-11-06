@@ -70,18 +70,17 @@ export type FileContent = {
   afterSize: number;
 };
 
-export const ReviewSideSchema = z.enum(['before', 'after']);
+const ReviewSideSchema = z.enum(['before', 'after']);
 export type ReviewSide = z.infer<typeof ReviewSideSchema>;
-export const ReviewCommentStatusSchema = z.enum([
+const ReviewCommentStatusSchema = z.enum([
   'open',
   'sent',
   'resolved',
   'outdated',
 ]);
-export type ReviewCommentStatus = z.infer<typeof ReviewCommentStatusSchema>;
 
 /** Lines are 1-based and refer to the working-tree file (after) or the base file (before). */
-export const ReviewCommentSchema = z.object({
+const ReviewCommentSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
   path: z.string().min(1),
@@ -145,7 +144,7 @@ export const viewedKey = (workspaceId: string, path: string): string =>
   `${workspaceId}:${path}`;
 
 /** Collapsed under "Generated" in every repo. */
-export const DEFAULT_COLLAPSE = [
+const DEFAULT_COLLAPSE = [
   'package-lock.json',
   'yarn.lock',
   'pnpm-lock.yaml',

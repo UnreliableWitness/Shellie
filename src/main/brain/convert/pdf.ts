@@ -1,3 +1,4 @@
+import { errorMessage } from '../../../shared/errors';
 import { encodePng, type PixelKind } from './png';
 import { canvasFactoryFor, installCanvasGlobals, loadCanvas } from './raster';
 import { ImageCollector, type ConvertOptions, type Converted } from './types';
@@ -115,7 +116,7 @@ function pageBox(box: ArrayLike<number>, ctm: Matrix): [number, number] {
  * of the page between them (a full-page background does not count), measured in page units through the
  * current transform.
  */
-export function hasDrawing(
+function hasDrawing(
   ops: OperatorList,
   codes: DrawingOps,
   pageWidth: number,
@@ -255,7 +256,7 @@ export async function pdfToMarkdown(
           } catch (e) {
             // The text and the page's own pictures still go through.
             images.warn(
-              `p.${n}: the drawing could not be rendered (${e instanceof Error ? e.message : String(e)})`,
+              `p.${n}: the drawing could not be rendered (${errorMessage(e)})`,
             );
           }
           if (png) {

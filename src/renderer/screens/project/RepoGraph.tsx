@@ -11,7 +11,7 @@ import type {
   ProjectGraph,
 } from '../../../shared/projectGraph';
 import { edgeKey } from '../../../shared/projectGraph';
-import { plural } from '../../format';
+import { clip, plural } from '../../../shared/text';
 import { layoutGraph, type Placed } from './layout';
 
 /** The width laid out until the band is measured (and in tests, where nothing has a size). */
@@ -19,9 +19,6 @@ const DEFAULT_WIDTH = 760;
 const MAX_NAME = 28;
 /** The width of an edge's invisible hit line, so a 1px line is easy to click. */
 const HIT_WIDTH = 12;
-
-const short = (s: string) =>
-  s.length > MAX_NAME ? `${s.slice(0, MAX_NAME - 1)}…` : s;
 
 function monoLine(p: Placed): string {
   const n = p.node;
@@ -197,7 +194,7 @@ export function RepoGraph({
                   />
                 )}
                 <text className="graph-node-name" x={p.x + 14} y={p.y + 20}>
-                  {short(n.name)}
+                  {clip(n.name, MAX_NAME)}
                 </text>
                 <text className="graph-node-mono" x={p.x + 14} y={p.y + 38}>
                   {monoLine(p)}

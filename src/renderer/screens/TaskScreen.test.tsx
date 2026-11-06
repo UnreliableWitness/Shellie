@@ -490,6 +490,7 @@ describe('TaskScreen', () => {
         hasUpstream: false,
         files: [],
       }),
+      'usage:costs': () => ({ a: 23 }),
       'usage:task': (id) => ({
         taskId: id,
         sessions: [],

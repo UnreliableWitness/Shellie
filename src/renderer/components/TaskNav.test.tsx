@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
-import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
+import { installFakeApi } from '../test-helpers/fakeApi';
 import { groupTasks, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
@@ -649,10 +649,7 @@ describe('TaskNav', () => {
     installFakeApi({
       'repos:list': () => repos,
       'tasks:list': () => tasks,
-      'usage:task': (id) => ({
-        ...emptyUsage(id),
-        billable: { costUsd: 1, costEur: id === 'a' ? 12.5 : 0, tokens: 1 },
-      }),
+      'usage:costs': () => ({ a: 12.5 }),
     });
     useStore.setState({ repos, tasks, selectedTaskId: 'a' });
     render(<TaskNav />);
@@ -698,7 +695,7 @@ describe('TaskNav', () => {
 
 describe('TaskNav task actions (#95)', () => {
   beforeEach(() => {
-    installFakeApi({ 'usage:task': emptyUsage });
+    installFakeApi();
     useStore.setState({ repos, tasks, connections: [], navCollapsed: false });
   });
 
@@ -796,7 +793,7 @@ describe('TaskNav task actions (#95)', () => {
 
 describe('TaskNav extra repos', () => {
   it('shows +1 repo and +2 repos on a task with extras', () => {
-    installFakeApi({ 'usage:task': emptyUsage });
+    installFakeApi();
     const w = (id: string, dropped = false) =>
       ({ id, repoId: 'r2', dropped }) as never;
     useStore.setState({
@@ -820,7 +817,7 @@ describe('TaskNav extra repos', () => {
 });
 
 describe('TaskNav width (#160)', () => {
-  beforeEach(() => installFakeApi({ 'usage:task': emptyUsage }));
+  beforeEach(() => installFakeApi());
 
   const nav = () => screen.getByRole('navigation', { name: 'Tasks' });
   const handle = () =>

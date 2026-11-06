@@ -11,14 +11,15 @@ import {
   HOME_ID,
   parseDocsTarget,
 } from '../../shared/workspaces';
-import { api, ipcErrorMessage } from '../api';
+import { api } from '../api';
+import { errorMessage } from '../../shared/errors';
 import { holdWatch } from './holdWatch';
 
 const POLL_MS = 5000;
 const SETTLE_MS = 200;
 
 /** The home repo shares the Docs tab's watcher key (the task id); other repos use `<taskId>#<workspaceId>`. */
-export const reviewTarget = (taskId: string, workspaceId: string): string =>
+const reviewTarget = (taskId: string, workspaceId: string): string =>
   workspaceId === HOME_ID ? taskId : docsTarget(taskId, workspaceId);
 
 /** The task's repos as one string: a repo joining or leaving changes it. */
@@ -123,7 +124,7 @@ export function useReview(
         api().invoke('review:state', task.id),
       ]);
     } catch (e) {
-      if (asked === latestKey.current) setError(ipcErrorMessage(e));
+      if (asked === latestKey.current) setError(errorMessage(e));
       return;
     }
     // An answer for an older task or scope is dropped (the scope change queued a fresh load).

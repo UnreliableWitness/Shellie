@@ -26,7 +26,7 @@ export function nameParts(name: string): string[] {
 }
 
 /** "3 days ago" within a week, else "12 Oct". */
-export function changedLabel(iso: string, now = Date.now()): string {
+function changedLabel(iso: string, now = Date.now()): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return '';
   const days = Math.floor((now - t) / 86_400_000);

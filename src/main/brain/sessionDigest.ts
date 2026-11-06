@@ -3,6 +3,8 @@
  * what Claude answered, tool calls and their output left out. Markdown, bounded in size.
  */
 
+import { clip } from '../../shared/text';
+
 /** The whole digest, and one turn, are cut at these many characters. */
 export const DIGEST_MAX = 60_000;
 export const TURN_MAX = 2_000;
@@ -33,9 +35,6 @@ const textOf = (content: unknown): string => {
     .map((p) => p.text)
     .join('\n');
 };
-
-const clip = (s: string, n: number) =>
-  s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 /** The developer's and Claude's turns of one transcript (the jsonl lines), in order. */
 export function sessionTurns(

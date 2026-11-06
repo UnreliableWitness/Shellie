@@ -15,7 +15,7 @@ import { acquireLock, releaseLock, writeState } from './state';
 
 const MAX_JOBS = 50;
 
-export function brainJobFlags(model: BrainModel): string[] {
+function brainJobFlags(model: BrainModel): string[] {
   return [
     '-p',
     '--output-format',

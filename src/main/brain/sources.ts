@@ -6,6 +6,8 @@ import type {
   BrainState,
   SourceType,
 } from '../../shared/brain';
+import { errorMessage } from '../../shared/errors';
+import { isFile } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import {
   ASSETS_PLACEHOLDER,
@@ -15,6 +17,7 @@ import {
   type ConvertedImage,
 } from './convert';
 import { withBrainGit } from './gitMutex';
+import { absPath } from './paths';
 import { findSecrets, secretMessage } from './secrets';
 import { readState, writeState } from './state';
 import {
@@ -90,7 +93,7 @@ export async function addSource(
       return {
         ok: false,
         reason: 'error',
-        message: e instanceof Error ? e.message : String(e),
+        message: errorMessage(e),
       };
     }
     if (converted === 'unsupported') {
@@ -276,7 +279,7 @@ async function writeSource(
     return {
       ok: false,
       reason: 'error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errorMessage(e),
     };
   }
 }
@@ -328,17 +331,11 @@ export async function removeSource(
     rel.startsWith('sources/../')
   )
     throw new Error('Only a source outside the wiki mirror can be removed');
-  const abs = path.join(brainDir, ...rel.split('/'));
-  if (
-    !(await fs.stat(abs).then(
-      (s) => s.isFile(),
-      () => false,
-    ))
-  )
+  if (!(await isFile(absPath(brainDir, rel))))
     throw new Error(`No source ${rel}`);
   const dir = path.posix.dirname(rel);
   const base = path.posix.basename(rel, '.md');
-  const names = await fs.readdir(path.join(brainDir, ...dir.split('/')));
+  const names = await fs.readdir(absPath(brainDir, dir));
   const paths = [rel];
   for (const n of names) {
     if (n === `${base}-assets`) paths.push(`${dir}/${n}`);
@@ -366,7 +363,7 @@ export async function removeSource(
       .split('\0')
       .filter(Boolean);
     for (const p of paths)
-      await fs.rm(path.join(brainDir, ...p.split('/')), {
+      await fs.rm(absPath(brainDir, p), {
         recursive: true,
         force: true,
       });

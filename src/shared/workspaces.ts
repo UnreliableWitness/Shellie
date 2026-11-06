@@ -74,14 +74,6 @@ export function isReopening(task: Task): boolean {
   );
 }
 
-/** The branches Finish pushed, for the usage comment; the home branch when none was pushed (as before #48). */
-export function pushedBranches(task: Task): string[] {
-  const pushed = activeWorkspaces(task)
-    .filter((w) => w.summary?.pushed)
-    .map((w) => w.branch);
-  return pushed.length > 0 ? pushed : [activeHome(task).branch];
-}
-
 export function workspaceById(
   task: Task,
   id: string | undefined,

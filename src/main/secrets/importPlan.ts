@@ -13,7 +13,7 @@ import {
   type ImportRow,
   type ImportSource,
 } from '../../shared/secrets';
-import { isInside } from '../paths';
+import { isInside, toRel } from '../paths';
 import type { GitClient } from '../services/GitClient';
 import { fileEnvironment, type DiscoveryHold } from './discover';
 import { DEFAULT_GIVEN_TO, strippableKind, stripKeys } from './inject';
@@ -287,7 +287,7 @@ async function stripTree(
     return changed;
   }
   if (!st.isFile()) return false;
-  const rel = path.relative(root, target).split(path.sep).join('/');
+  const rel = toRel(root, target);
   const kind = strippableKind(rel);
   if (!kind || tracked.has(rel)) return false;
   const text = await fs.readFile(target, 'utf8');

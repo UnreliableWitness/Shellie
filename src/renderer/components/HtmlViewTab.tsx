@@ -1,7 +1,8 @@
 import { ArrowClockwise16Regular, Open16Regular } from '@fluentui/react-icons';
 import { useEffect, useState } from 'react';
 import { docsTarget } from '../../shared/workspaces';
-import { api, ipcErrorMessage, tryInvoke } from '../api';
+import { api, tryInvoke } from '../api';
+import { errorMessage } from '../../shared/errors';
 import { type HtmlView, useStore } from '../store';
 
 type Loaded = { url: string; name: string } | { error: string } | null;
@@ -29,7 +30,7 @@ export function HtmlViewTab({
       .invoke('html:open', target, view.path)
       .then(
         (r) => live && setLoaded(r),
-        (e: unknown) => live && setLoaded({ error: ipcErrorMessage(e) }),
+        (e: unknown) => live && setLoaded({ error: errorMessage(e) }),
       );
     return () => {
       live = false;

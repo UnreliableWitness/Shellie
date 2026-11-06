@@ -1,12 +1,13 @@
 import path from 'node:path';
 import { app, BrowserWindow, type NativeImage } from 'electron';
 import type { ColorScheme } from '../shared/theme';
+import { sleep } from './async';
 import { splashBackground } from './windowChrome';
 
-export const SPLASH_MIN_MS = 1200;
-export const SPLASH_FADE_MS = 200;
+const SPLASH_MIN_MS = 1200;
+const SPLASH_FADE_MS = 200;
 /** Each step stays on screen at least this long: boot is faster than reading, so steps are queued and paced. */
-export const SPLASH_STEP_MS = 350;
+const SPLASH_STEP_MS = 350;
 /** Longest the handoff waits for the splash to show at all, so a splash that never paints cannot block boot. */
 export const SPLASH_CAP_MS = 8000;
 
@@ -115,7 +116,7 @@ export class SplashReporter {
   fadeOut(): Promise<void> {
     if (!this.active) return Promise.resolve();
     this.send('splash:done');
-    return new Promise((resolve) => setTimeout(resolve, this.fadeMs));
+    return sleep(this.fadeMs);
   }
 
   close(): void {
