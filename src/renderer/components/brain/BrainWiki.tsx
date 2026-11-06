@@ -3,6 +3,7 @@ import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { BrainPage } from './BrainPage';
+import { pinnedPages } from './brainTree';
 import { BrainSearch } from './BrainSearch';
 import { PageCard, PageSections } from './PageCards';
 import { isAfter, recentEntries, shortDay, type RecentEntry } from './recent';
@@ -106,15 +107,7 @@ export function BrainWiki({ brainId }: { brainId: string }) {
         for (const p of e.pages) if (p.path) out.add(p.path);
     return out;
   }, [recent, since]);
-  const pinned = useMemo(() => {
-    const account = rows.filter((r) => r.type === 'account');
-    const scope = rows.filter((r) => r.type === 'scope');
-    const digests = rows.filter((r) => r.type === 'digest');
-    const latest = digests.length
-      ? [digests.reduce((a, b) => (a.path > b.path ? a : b))]
-      : [];
-    return [...account, ...scope, ...latest];
-  }, [rows]);
+  const pinned = useMemo(() => pinnedPages(rows), [rows]);
   const open = useCallback(
     (path: string, anchor?: string) => nav.open(path, anchor),
     [nav],
