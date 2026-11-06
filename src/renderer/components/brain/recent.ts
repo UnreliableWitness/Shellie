@@ -1,9 +1,11 @@
-import type { BrainPageRow } from '../../../shared/brain';
+import type { BrainJob, BrainPageRow } from '../../../shared/brain';
 
 /** One log entry that names pages: `- <ISO> <skill> <source or ''> → pages: a, b; takeaway: …`. */
 export type RecentEntry = {
   at: string;
   skill: string;
+  /** What the entry names between the skill and `→`, trimmed; '' when nothing. */
+  source: string;
   /** The `pages:` entries, each matched to a page when one is found. */
   pages: { label: string; path: string | null }[];
 };
@@ -53,10 +55,28 @@ export function recentEntries(
         return { label, path: matchPage(key, rows) ?? matchPage(label, rows) };
       });
     if (!pages.length) continue;
-    out.push({ at: m[1], skill: m[2], pages });
+    out.push({ at: m[1], skill: m[2], source: m[3].trim(), pages });
     if (out.length >= max) break;
   }
   return out;
+}
+
+/** The pages the capture `job` wrote: those of the newest `/capture` log entry for its source file that is not after the job's end; none for any other job. */
+export function pagesChangedBy(
+  job: BrainJob,
+  logText: string,
+  rows: BrainPageRow[],
+): { label: string; path: string | null }[] {
+  if (job.kind !== 'capture' || job.status !== 'done' || !job.source) return [];
+  const file = job.source.split('/').pop();
+  if (!file) return [];
+  const entry = recentEntries(logText, rows, Infinity).find(
+    (e) =>
+      (e.skill === '/capture' || e.skill === 'capture') &&
+      e.source.endsWith(file) &&
+      !(job.endedAt && isAfter(e.at, job.endedAt)),
+  );
+  return entry ? entry.pages : [];
 }
 
 /** Whether `at` is after `since`: as instants when both parse, else as text. */
