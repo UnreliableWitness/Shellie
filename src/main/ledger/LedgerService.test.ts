@@ -350,19 +350,21 @@ describe('LedgerService', () => {
     await s.svc.pass();
     await s.svc.pass();
     expect(s.toUsage).toHaveBeenCalledTimes(1);
-    expect(s.toUsage).toHaveBeenCalledWith({
-      id: 'oc:o1',
-      taskId: 't1',
-      tool: 'opencode',
-      sessionId: 'O1',
-      model: 'claude-sonnet-5-5',
-      at: '2026-10-12T10:00:00.000Z',
-      inputTokens: 1000,
-      outputTokens: 2000,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 5,
-      fast: false,
-    });
+    expect(s.toUsage).toHaveBeenCalledWith([
+      {
+        id: 'oc:o1',
+        taskId: 't1',
+        tool: 'opencode',
+        sessionId: 'O1',
+        model: 'claude-sonnet-5-5',
+        at: '2026-10-12T10:00:00.000Z',
+        inputTokens: 1000,
+        outputTokens: 2000,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 5,
+        fast: false,
+      },
+    ]);
   });
 
   it("sends an OpenCode child session's parent and agent to the Usage tab", async () => {
@@ -377,13 +379,13 @@ describe('LedgerService', () => {
     const s = setup({ openCode: [[oc]] });
     s.state.tasks = [task1];
     await s.svc.pass();
-    expect(s.toUsage).toHaveBeenCalledWith(
+    expect(s.toUsage).toHaveBeenCalledWith([
       expect.objectContaining({
         sessionId: 'O2',
         parentSessionId: 'O1',
         agent: 'explore',
       }),
-    );
+    ]);
   });
 
   it('includes Copilot CLI and PR summary records', async () => {

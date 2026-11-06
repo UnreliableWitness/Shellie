@@ -20,6 +20,8 @@ export type CostSenderDeps = {
   ledger: {
     dirty: (limit: number) => CostRecord[];
     markSent: (recs: CostRecord[]) => Promise<void>;
+    /** Writes the sent marks the ledger kept in memory; absent, markSent is taken to have written them. */
+    flushSent?: () => Promise<void>;
     resetSent: () => Promise<void>;
     dirtyCount: () => number;
   };
@@ -240,37 +242,52 @@ export class CostSender {
     const send = this.d.send ?? sendImpl;
     const skipped = new Set<string>();
     let failure: CostServerError | null = null;
-    for (;;) {
-      // The connection changed: what this pass holds belongs to the old one, and onConnected() scheduled a new pass.
-      if (gen !== this.gen) return;
-      const batch = this.d.ledger
-        .dirty(BATCH + skipped.size)
-        .filter((r) => !skipped.has(r.id))
-        .slice(0, BATCH);
-      if (batch.length === 0) break;
-      try {
-        await send(c, batch);
+    // Listed once per pass: each listing filters and sorts the whole ledger, so one per batch made a full
+    // resend quadratic. A record that changes meanwhile stays dirty (its new hash differs) for the next pass.
+    const pending = this.d.ledger.dirty(Number.MAX_SAFE_INTEGER);
+    let at = 0;
+    try {
+      for (;;) {
+        // The connection changed: what this pass holds belongs to the old one, and onConnected() scheduled a new pass.
         if (gen !== this.gen) return;
-        await this.d.ledger.markSent(batch);
-        this.sentNow();
-      } catch (err) {
-        if (gen !== this.gen) return;
-        const e = err instanceof CostServerError ? err : null;
-        if (e?.kind === 'rejected' && batch.length > 1) {
-          failure = await this.oneByOne(c, batch, skipped, send, gen);
+        const batch = pending
+          .slice(at, at + BATCH)
+          .filter((r) => !skipped.has(r.id));
+        at += BATCH;
+        if (batch.length === 0) {
+          if (at < pending.length) continue;
+          break;
+        }
+        try {
+          await send(c, batch);
           if (gen !== this.gen) return;
-          if (failure) break;
-          continue;
+          await this.d.ledger.markSent(batch);
+          this.sentNow();
+        } catch (err) {
+          if (gen !== this.gen) return;
+          const e = err instanceof CostServerError ? err : null;
+          if (e?.kind === 'rejected' && batch.length > 1) {
+            failure = await this.oneByOne(c, batch, skipped, send, gen);
+            if (gen !== this.gen) return;
+            if (failure) break;
+            continue;
+          }
+          if (e?.kind === 'rejected') {
+            console.warn('[costServer] record rejected', batch[0]!.id);
+            skipped.add(batch[0]!.id);
+            this.fail(e, c);
+            continue;
+          }
+          failure = this.fail(err, c);
+          break;
         }
-        if (e?.kind === 'rejected') {
-          console.warn('[costServer] record rejected', batch[0]!.id);
-          skipped.add(batch[0]!.id);
-          this.fail(e, c);
-          continue;
-        }
-        failure = this.fail(err, c);
-        break;
       }
+    } finally {
+      await this.d.ledger
+        .flushSent?.()
+        .catch((err) =>
+          console.warn('[costServer] could not save sent marks', err),
+        );
     }
     if (!failure) {
       this.error = skipped.size > 0 ? this.error : null;

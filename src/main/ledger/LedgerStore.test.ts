@@ -1,7 +1,7 @@
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CostRecord } from '../../shared/ledger';
 import { LedgerStore } from './LedgerStore';
 
@@ -105,6 +105,33 @@ describe('LedgerStore', () => {
     const a = rec('cc:a');
     await s.upsert([a]);
     await s.markSent([a]);
+    // Kept in memory until flushed: a reload before that sends the record again.
+    expect(s.dirty(500)).toEqual([]);
+    const early = new LedgerStore(dir);
+    await early.load();
+    expect(early.dirty(500).map((r) => r.id)).toEqual(['cc:a']);
+    await s.flushSent();
+    const s2 = new LedgerStore(dir);
+    await s2.load();
+    expect(s2.dirty(500)).toEqual([]);
+  });
+
+  it('writes sent marks within a few seconds without a flush', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const s = new LedgerStore(dir);
+      await s.load();
+      const a = rec('cc:a');
+      await s.upsert([a]);
+      await s.markSent([a]);
+      await vi.advanceTimersByTimeAsync(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The timer started the write; it finishes on the real file system.
+    await vi.waitFor(() =>
+      expect(existsSync(path.join(dir, 'sent.json'))).toBe(true),
+    );
     const s2 = new LedgerStore(dir);
     await s2.load();
     expect(s2.dirty(500)).toEqual([]);

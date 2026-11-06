@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -70,8 +70,30 @@ export function openCodeDbPath(
   return path.join(base, 'opencode', 'opencode.db');
 }
 
+/** Size and modification time of the database and its write-ahead log; any write OpenCode makes changes one of them. */
+function fingerprint(file: string): string {
+  const part = (f: string) => {
+    try {
+      const st = statSync(f);
+      return `${st.size}:${st.mtimeMs}`;
+    } catch {
+      return '-';
+    }
+  };
+  return `${part(file)}|${part(`${file}-wal`)}`;
+}
+
 /** Reads OpenCode's SQLite database read-only; OpenCode may be writing (WAL), so a busy database waits briefly. */
 export class OpenCodeReader {
+  /**
+   * The files as they were before the last read that reached the end, and the cursor it returned. Its
+   * `message` table has no index on `time_updated`, so every query reads the whole table: a read at that
+   * cursor of unchanged files is answered without opening the database.
+   */
+  private unchanged: { fingerprint: string; cursor: number } | null = null;
+  /** A paged read in progress: the fingerprint taken at its first page and the newest cursor of its pages so far. */
+  private paging: { fingerprint: string; cursor: number } | null = null;
+
   constructor(
     private readonly file: string,
     /** First read (cursor 0) starts here, epoch ms: the same window as the transcripts. */
@@ -94,10 +116,24 @@ export class OpenCodeReader {
     last?: { t: number; id: string };
   } {
     if (!existsSync(this.file)) return { records: [], cursor, found: false };
+    const after = page?.after;
+    // Taken before the query, so a write during it shows as a change next time.
+    let fp: string;
+    if (after && this.paging) fp = this.paging.fingerprint;
+    else {
+      fp = fingerprint(this.file);
+      if (
+        this.unchanged?.fingerprint === fp &&
+        this.unchanged.cursor === cursor
+      )
+        return page
+          ? { records: [], cursor, found: true, more: false }
+          : { records: [], cursor, found: true };
+      this.paging = page ? { fingerprint: fp, cursor } : null;
+    }
     const from = cursor === 0 ? (this.opts.since ?? 0) : cursor;
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
-      const after = page?.after;
       // A subagent runs in a child session; older databases without `session.parent_id` read as flat sessions.
       const hasParent = (
         db.prepare('PRAGMA table_info(session)').all() as { name: string }[]
@@ -143,13 +179,26 @@ export class OpenCodeReader {
         );
         if (rec) records.push(rec);
       }
-      if (!page) return { records, cursor: next, found: true };
+      if (!page) {
+        this.unchanged = { fingerprint: fp, cursor: next };
+        return { records, cursor: next, found: true };
+      }
       const lastRow = rows.at(-1);
+      const more = rows.length === page.limit;
+      // A paged read's cursor is the largest of its pages (the last one can come back empty).
+      if (this.paging) this.paging.cursor = Math.max(this.paging.cursor, next);
+      if (!more) {
+        this.unchanged = {
+          fingerprint: fp,
+          cursor: this.paging?.cursor ?? next,
+        };
+        this.paging = null;
+      }
       return {
         records,
         cursor: next,
         found: true,
-        more: rows.length === page.limit,
+        more,
         last: lastRow ? { t: lastRow.time_updated, id: lastRow.id } : after,
       };
     } finally {

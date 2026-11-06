@@ -152,6 +152,48 @@ describe('OpenCodeReader', () => {
     close();
   });
 
+  it('answers a read of unchanged files without querying, and sees the next write', () => {
+    const { file, put, close } = makeDb();
+    put('m1', 100, msg());
+    put('m2', 200, msg());
+    const reader = new OpenCodeReader(file);
+    const first = reader.read(0);
+    // A query would bring m2 back (time_updated >= cursor); nothing changed, so nothing is read.
+    expect(reader.read(first.cursor).records).toEqual([]);
+    put('m3', 300, msg());
+    const next = reader.read(first.cursor);
+    expect(next.records.map((r) => r.id)).toEqual(['oc:m2', 'oc:m3']);
+    expect(next.cursor).toBe(300);
+    // Another cursor than the one the last read returned is always queried.
+    expect(reader.read(100).records.map((r) => r.id)).toEqual([
+      'oc:m1',
+      'oc:m2',
+      'oc:m3',
+    ]);
+    close();
+  });
+
+  it('skips a paged read of unchanged files at the cursor its pages ended on', () => {
+    const { file, put, close } = makeDb();
+    put('a', 100, msg());
+    put('b', 200, msg());
+    const reader = new OpenCodeReader(file);
+    const one = reader.read(0, { limit: 2 });
+    expect(one.more).toBe(true);
+    // The second page comes back empty; the cursor is still the newest of the pages.
+    const two = reader.read(0, { limit: 2, after: one.last });
+    expect(two.records).toEqual([]);
+    expect(two.more).toBe(false);
+    const again = reader.read(Math.max(one.cursor, two.cursor), { limit: 2 });
+    expect(again).toEqual({
+      records: [],
+      cursor: 200,
+      found: true,
+      more: false,
+    });
+    close();
+  });
+
   it("reads a child session's parent from the session table", () => {
     const { file, put, close, db } = makeDb();
     db.exec(

@@ -32,6 +32,7 @@ function make(
     }),
     resetSent: vi.fn(async () => sent.clear()),
     dirtyCount: vi.fn(() => records.filter((r) => !sent.has(r.id)).length),
+    flushSent: vi.fn(async () => {}),
   };
   const server = {
     get: vi.fn((): typeof conn | null => connection),
@@ -88,6 +89,18 @@ describe('CostSender', () => {
     expect(t.send.mock.calls[0]![1][0]!.id).toBe('cc:0');
     expect(t.sent.size).toBe(1200);
     expect(t.server.setBudgets).toHaveBeenCalledWith(budgets);
+    t.sender.stop();
+  });
+
+  it('lists the dirty records once per pass and saves the sent marks once at its end', async () => {
+    const t = make(Array.from({ length: 1200 }, (_, i) => `cc:${i}`));
+    t.sender.start();
+    // The first pass runs 30 s after start; the next one would be minutes later.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(t.send).toHaveBeenCalledTimes(3);
+    expect(t.ledger.dirty).toHaveBeenCalledTimes(1);
+    expect(t.ledger.markSent).toHaveBeenCalledTimes(3);
+    expect(t.ledger.flushSent).toHaveBeenCalledTimes(1);
     t.sender.stop();
   });
 

@@ -21,6 +21,9 @@ const canonical = (v: unknown): string =>
       : x,
   );
 
+/** How long sent marks may wait in memory before `sent.json` is written. */
+const SENT_WRITE_MS = 5000;
+
 const hashOf = (r: CostRecord): string =>
   createHash('sha1').update(canonical(r)).digest('hex');
 
@@ -175,28 +178,48 @@ export class LedgerStore {
     return n;
   }
 
+  /**
+   * Marks the versions the server accepted. Kept in memory at once and written within SENT_WRITE_MS, or by
+   * `flushSent`: a full resend marks hundreds of batches, and `sent.json` holds one entry per record. A crash
+   * in between only resends what the server already has.
+   */
   markSent(recs: CostRecord[]): Promise<void> {
-    return this.writeSent((s) => {
-      for (const r of recs) s[r.id] = hashOf(r);
-    });
+    for (const r of recs) this.sent[r.id] = hashOf(r);
+    this.sentDirty = true;
+    this.sentTimer ??= setTimeout(() => {
+      this.sentTimer = null;
+      this.flushSent().catch((e) =>
+        console.warn('[ledger] could not save sent.json', e),
+      );
+    }, SENT_WRITE_MS);
+    this.sentTimer.unref?.();
+    return Promise.resolve();
   }
 
-  /** New server or Disconnect: everything is dirty again. */
+  /** New server or Disconnect: everything is dirty again. Written at once. */
   resetSent(): Promise<void> {
-    return this.writeSent((s) => {
-      for (const k of Object.keys(s)) delete s[k];
+    for (const k of Object.keys(this.sent)) delete this.sent[k];
+    this.sentDirty = true;
+    return this.flushSent();
+  }
+
+  /** Writes the sent marks kept in memory; nothing when there are none. */
+  flushSent(): Promise<void> {
+    if (this.sentTimer) clearTimeout(this.sentTimer);
+    this.sentTimer = null;
+    return this.serial(async () => {
+      if (!this.sentDirty) return;
+      this.sentDirty = false;
+      try {
+        await fs.mkdir(this.dir, { recursive: true });
+        await writeAtomic(this.sentFile, JSON.stringify(this.sent));
+      } catch (e) {
+        this.sentDirty = true;
+        throw e;
+      }
     });
   }
 
-  private writeSent(
-    mutate: (s: Record<string, string>) => void,
-  ): Promise<void> {
-    return this.serial(async () => {
-      const next = { ...this.sent };
-      mutate(next);
-      await fs.mkdir(this.dir, { recursive: true });
-      await writeAtomic(this.sentFile, JSON.stringify(next));
-      this.sent = next;
-    });
-  }
+  private sentDirty = false;
+  private sentTimer: ReturnType<typeof setTimeout> | null = null;
 }
