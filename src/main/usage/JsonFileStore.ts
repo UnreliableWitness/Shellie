@@ -61,17 +61,64 @@ export class JsonFileStore<T> {
     await this.queue;
   }
 
-  update(mutate: (v: T) => T | void): Promise<T> {
+  /**
+   * Applies `mutate` to a copy and writes it. With `writeWithinMs` the change is kept in memory at once
+   * and written within that time (or by the next update or `flush`), unvalidated: for a large file that
+   * changes often and whose last few changes may be lost on a crash.
+   */
+  update(
+    mutate: (v: T) => T | void,
+    opts: { writeWithinMs?: number } = {},
+  ): Promise<T> {
     const run = async () => {
       const draft = structuredClone(this.current);
-      const next = this.schema.parse(mutate(draft) ?? draft);
-      await fs.mkdir(path.dirname(this.file), { recursive: true });
-      await writeAtomic(this.file, JSON.stringify(next, null, this.indent));
+      const out = mutate(draft) ?? draft;
+      if (opts.writeWithinMs !== undefined) {
+        this.current = out;
+        this.dirty = true;
+        this.later ??= setTimeout(() => {
+          this.later = null;
+          this.flush().catch((e) =>
+            console.warn(
+              `[store] could not write ${path.basename(this.file)}`,
+              e,
+            ),
+          );
+        }, opts.writeWithinMs);
+        this.later.unref?.();
+        return out;
+      }
+      const next = this.schema.parse(out);
+      await this.write(next);
       this.current = next;
+      this.dirty = false;
       return next;
     };
+    return this.enqueue(run);
+  }
+
+  /** Writes a change that `update` kept in memory; nothing when there is none. */
+  flush(): Promise<void> {
+    if (this.later) clearTimeout(this.later);
+    this.later = null;
+    return this.enqueue(async () => {
+      if (!this.dirty) return;
+      await this.write(this.current);
+      this.dirty = false;
+    });
+  }
+
+  private dirty = false;
+  private later: ReturnType<typeof setTimeout> | null = null;
+
+  private enqueue<R>(run: () => Promise<R>): Promise<R> {
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => undefined);
     return result;
+  }
+
+  private async write(value: T): Promise<void> {
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
+    await writeAtomic(this.file, JSON.stringify(value, null, this.indent));
   }
 }

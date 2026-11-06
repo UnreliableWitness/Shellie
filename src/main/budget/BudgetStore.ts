@@ -204,6 +204,9 @@ export function priceTokens(
   return priceRecord(rates, model, fast, t, tierInput)?.costEur ?? null;
 }
 
+/** A pass changes budget.json (megabytes) every 30 s while any agent works; it is written at most this often. */
+const WRITE_WITHIN_MS = 2 * 60_000;
+
 /** The month rollup behind the budget bands: one row per day × tool × model × provider × vendor × in Shellie × fast. Every request is kept; rows with a vendor count against that budget. */
 export class BudgetStore {
   private readonly store: JsonFileStore<BudgetFile>;
@@ -218,6 +221,10 @@ export class BudgetStore {
   }
   get value(): BudgetFile {
     return this.store.value;
+  }
+  /** Writes what passes kept in memory. Losing them is safe: the cursors are saved with the rows, so the next launch reads those requests again. */
+  flush(): Promise<void> {
+    return this.store.flush();
   }
 
   async apply(input: {
@@ -263,136 +270,139 @@ export class BudgetStore {
     )
       return false;
     let changed = false;
-    await this.store.update((f) => {
-      if (!f.scanned) {
-        f.scanned = true;
-        changed = true;
-      }
-      const rowFor = (
-        day: string,
-        proto: Omit<
-          BudgetRow,
-          'requests' | 'costEur' | (typeof TOKEN_KEYS)[number]
-        >,
-      ) => {
-        const list = (f.days[day] ??= []);
-        const k = rowKey(proto);
-        let row = list.find((r) => rowKey(r) === k);
-        if (!row) {
-          row = {
-            ...proto,
-            requests: 0,
-            costEur: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            cacheWrite5mTokens: 0,
-            cacheWrite1hTokens: 0,
-          };
-          list.push(row);
+    await this.store.update(
+      (f) => {
+        if (!f.scanned) {
+          f.scanned = true;
+          changed = true;
         }
-        return row;
-      };
-      const add = (
-        row: BudgetRow,
-        t: BudgetTokens,
-        requests: number,
-        cost: number | null,
-        sign: 1 | -1,
-      ) => {
-        for (const key of TOKEN_KEYS) row[key] += sign * t[key];
-        row.requests += sign * requests;
-        row.costEur =
-          cost === null || row.costEur === null
-            ? null
-            : round6(row.costEur + sign * cost);
-      };
-      for (const rec of fresh) {
-        const prev = f.seen[rec.id];
-        if (typeof prev === 'string') continue;
-        const day = dayKey(new Date(rec.at));
-        // Older history is frozen: a resumed session copying it must not re-add it once its ids were pruned.
-        if (!prev && day < keepFrom) continue;
-        // A repeat only wins when it is larger; Claude Code and OpenCode both re-write messages with more tokens.
-        if (prev && tokensOf(rec) <= tokensOf(prev)) continue;
-        const proto = {
-          tool: rec.tool,
-          model: rec.model,
-          provider: rec.provider,
-          vendor: vendorOf(rec),
-          inShellie: input.inShellie(rec),
-          fast: rec.fast,
+        const rowFor = (
+          day: string,
+          proto: Omit<
+            BudgetRow,
+            'requests' | 'costEur' | (typeof TOKEN_KEYS)[number]
+          >,
+        ) => {
+          const list = (f.days[day] ??= []);
+          const k = rowKey(proto);
+          let row = list.find((r) => rowKey(r) === k);
+          if (!row) {
+            row = {
+              ...proto,
+              requests: 0,
+              costEur: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWrite5mTokens: 0,
+              cacheWrite1hTokens: 0,
+            };
+            list.push(row);
+          }
+          return row;
         };
-        const cost = priceTokens(rates, rec.model, rec.fast, rec);
-        if (prev) {
-          const old = f.days[prev.day]?.find((r) => rowKey(r) === prev.key);
-          if (old) {
-            const oldCost =
-              prev.costEur === null && old.costEur !== null
-                ? priceTokens(rates, old.model, old.fast, prev)
-                : prev.costEur;
-            add(old, prev, 1, oldCost, -1);
-            if (old.requests <= 0) {
-              const list = f.days[prev.day]!;
-              list.splice(list.indexOf(old), 1);
-              if (list.length === 0) delete f.days[prev.day];
+        const add = (
+          row: BudgetRow,
+          t: BudgetTokens,
+          requests: number,
+          cost: number | null,
+          sign: 1 | -1,
+        ) => {
+          for (const key of TOKEN_KEYS) row[key] += sign * t[key];
+          row.requests += sign * requests;
+          row.costEur =
+            cost === null || row.costEur === null
+              ? null
+              : round6(row.costEur + sign * cost);
+        };
+        for (const rec of fresh) {
+          const prev = f.seen[rec.id];
+          if (typeof prev === 'string') continue;
+          const day = dayKey(new Date(rec.at));
+          // Older history is frozen: a resumed session copying it must not re-add it once its ids were pruned.
+          if (!prev && day < keepFrom) continue;
+          // A repeat only wins when it is larger; Claude Code and OpenCode both re-write messages with more tokens.
+          if (prev && tokensOf(rec) <= tokensOf(prev)) continue;
+          const proto = {
+            tool: rec.tool,
+            model: rec.model,
+            provider: rec.provider,
+            vendor: vendorOf(rec),
+            inShellie: input.inShellie(rec),
+            fast: rec.fast,
+          };
+          const cost = priceTokens(rates, rec.model, rec.fast, rec);
+          if (prev) {
+            const old = f.days[prev.day]?.find((r) => rowKey(r) === prev.key);
+            if (old) {
+              const oldCost =
+                prev.costEur === null && old.costEur !== null
+                  ? priceTokens(rates, old.model, old.fast, prev)
+                  : prev.costEur;
+              add(old, prev, 1, oldCost, -1);
+              if (old.requests <= 0) {
+                const list = f.days[prev.day]!;
+                list.splice(list.indexOf(old), 1);
+                if (list.length === 0) delete f.days[prev.day];
+              }
+            }
+          }
+          add(rowFor(day, proto), rec, 1, cost, 1);
+          const t = Object.fromEntries(
+            TOKEN_KEYS.map((key) => [key, rec[key]]),
+          ) as BudgetTokens;
+          f.seen[rec.id] = {
+            ...t,
+            day,
+            key: rowKey(proto),
+            requests: 1,
+            costEur: cost,
+          };
+          changed = true;
+        }
+        // Maintenance runs at most once per local day, or when records arrived.
+        const maintain = fresh.length > 0 || f.maintainedOn !== today;
+        if (maintain) f.maintainedOn = today;
+        // Rows that were unpriced: price them from their tokens once a rate exists.
+        for (const [day, list] of maintain ? Object.entries(f.days) : []) {
+          if (day < keepFrom) continue;
+          for (const row of list) {
+            if (row.costEur !== null) continue;
+            const avgInput =
+              (row.inputTokens +
+                row.cacheReadTokens +
+                row.cacheWrite5mTokens +
+                row.cacheWrite1hTokens) /
+              Math.max(1, row.requests);
+            const cost = priceTokens(rates, row.model, row.fast, row, avgInput);
+            if (cost !== null) {
+              row.costEur = cost;
+              changed = true;
             }
           }
         }
-        add(rowFor(day, proto), rec, 1, cost, 1);
-        const t = Object.fromEntries(
-          TOKEN_KEYS.map((key) => [key, rec[key]]),
-        ) as BudgetTokens;
-        f.seen[rec.id] = {
-          ...t,
-          day,
-          key: rowKey(proto),
-          requests: 1,
-          costEur: cost,
-        };
-        changed = true;
-      }
-      // Maintenance runs at most once per local day, or when records arrived.
-      const maintain = fresh.length > 0 || f.maintainedOn !== today;
-      if (maintain) f.maintainedOn = today;
-      // Rows that were unpriced: price them from their tokens once a rate exists.
-      for (const [day, list] of maintain ? Object.entries(f.days) : []) {
-        if (day < keepFrom) continue;
-        for (const row of list) {
-          if (row.costEur !== null) continue;
-          const avgInput =
-            (row.inputTokens +
-              row.cacheReadTokens +
-              row.cacheWrite5mTokens +
-              row.cacheWrite1hTokens) /
-            Math.max(1, row.requests);
-          const cost = priceTokens(rates, row.model, row.fast, row, avgInput);
-          if (cost !== null) {
-            row.costEur = cost;
+        for (const [id, s] of maintain ? Object.entries(f.seen) : []) {
+          const d = typeof s === 'string' ? s : s.day;
+          if (d < keepFrom) {
+            delete f.seen[id];
+            changed = true;
+          } else if (typeof s !== 'string' && d < compactBefore) {
+            f.seen[id] = d;
             changed = true;
           }
         }
-      }
-      for (const [id, s] of maintain ? Object.entries(f.seen) : []) {
-        const d = typeof s === 'string' ? s : s.day;
-        if (d < keepFrom) {
-          delete f.seen[id];
+        if (input.claudeCursors) f.claudeCursors = input.claudeCursors;
+        if (input.openCodeCursor !== undefined)
+          f.openCodeCursor = input.openCodeCursor;
+        if (
+          f.sources.claudeCode !== input.sources.claudeCode ||
+          f.sources.openCode !== input.sources.openCode
+        )
           changed = true;
-        } else if (typeof s !== 'string' && d < compactBefore) {
-          f.seen[id] = d;
-          changed = true;
-        }
-      }
-      if (input.claudeCursors) f.claudeCursors = input.claudeCursors;
-      if (input.openCodeCursor !== undefined)
-        f.openCodeCursor = input.openCodeCursor;
-      if (
-        f.sources.claudeCode !== input.sources.claudeCode ||
-        f.sources.openCode !== input.sources.openCode
-      )
-        changed = true;
-      f.sources = input.sources;
-    });
+        f.sources = input.sources;
+      },
+      { writeWithinMs: WRITE_WITHIN_MS },
+    );
     return changed;
   }
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ENVIRONMENT_LABEL, isGuarded } from '../../../shared/secrets';
 import type { TaskView } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
+import { onTerminalEvent } from '../../terminalEvents';
 import { useStore } from '../../store';
 import type { EnvironmentInfo } from '../../../shared/secrets';
 import { joinAnd, tabNames } from './environment';
@@ -40,18 +41,17 @@ export function EnvironmentBand({
         // The band still says the environment; only the tab names are missing.
         .catch(() => undefined);
     load();
-    const ids = new Set(terminalIds.split(' '));
-    const offExit = api().on('terminal:exit', (e) => {
-      if (ids.has(e.id)) load();
-    });
-    const offReset = api().on('terminal:reset', (e) => {
-      if (ids.has(e.id)) load();
-    });
+    const offTerminals = terminalIds
+      .split(' ')
+      .filter(Boolean)
+      .flatMap((id) => [
+        onTerminalEvent('terminal:exit', id, load),
+        onTerminalEvent('terminal:reset', id, load),
+      ]);
     const offSecrets = api().on('secrets:changed', load);
     return () => {
       live = false;
-      offExit();
-      offReset();
+      for (const off of offTerminals) off();
       offSecrets();
     };
   }, [guarded, task.id, task.environment, terminalIds]);

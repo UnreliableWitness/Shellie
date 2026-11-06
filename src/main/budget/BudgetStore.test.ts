@@ -412,6 +412,7 @@ describe('BudgetStore.apply', () => {
       claudeCursors: { '/f': { offset: 1, size: 1, mtimeMs: 1, ino: 1 } },
       openCodeCursor: 9,
     });
+    await s.flush();
     const again = new BudgetStore(
       (s as unknown as { file: string }).file,
       () => [opus],
@@ -519,6 +520,7 @@ describe('BudgetStore.apply', () => {
       claudeCursors: cursors,
       openCodeCursor: 9,
     });
+    await s.flush();
     const file = (s as unknown as { file: string }).file;
     const before = statSync(file).mtimeMs;
     await new Promise((r) => setTimeout(r, 20));
@@ -530,6 +532,7 @@ describe('BudgetStore.apply', () => {
         openCodeCursor: 9,
       }),
     ).toBe(false);
+    await s.flush();
     expect(statSync(file).mtimeMs).toBe(before);
     // A moved cursor is written, without counting as a change.
     expect(
@@ -540,6 +543,8 @@ describe('BudgetStore.apply', () => {
         openCodeCursor: 10,
       }),
     ).toBe(false);
+    expect(statSync(file).mtimeMs).toBe(before);
+    await s.flush();
     expect(statSync(file).mtimeMs).not.toBe(before);
     expect(s.value.openCodeCursor).toBe(10);
   });
@@ -547,6 +552,7 @@ describe('BudgetStore.apply', () => {
   it('does not write for repeats that change nothing', async () => {
     const s = await store();
     await s.apply({ ...base, records: [rec({ at: recent })] });
+    await s.flush();
     const file = (s as unknown as { file: string }).file;
     const before = statSync(file).mtimeMs;
     await new Promise((r) => setTimeout(r, 20));
@@ -560,6 +566,7 @@ describe('BudgetStore.apply', () => {
         ],
       }),
     ).toBe(false);
+    await s.flush();
     expect(statSync(file).mtimeMs).toBe(before);
   });
 

@@ -155,9 +155,9 @@ export function useChangeCount(
   const refresh = useSerialRefresh(async () => {
     const n = ++seq.current;
     try {
-      const f = await api().invoke('review:files', task.id, { kind: 'all' });
-      if (n === seq.current)
-        setCount(f.repos.reduce((x, r) => x + r.files.length, 0));
+      // A count only: the full listing hashes and reads every changed file, on every worktree event.
+      const c = await api().invoke('review:count', task.id);
+      if (n === seq.current) setCount(c);
     } catch {
       if (n === seq.current) setCount(null);
     }
