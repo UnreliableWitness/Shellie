@@ -70,6 +70,7 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
       }
     }
     const billable = await this.billable.load();
+    this.billableChanges++;
     this.notBillable = new Map(
       Object.entries(this.billable.value).map(([t, ids]) => [t, new Set(ids)]),
     );
@@ -131,6 +132,12 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
     return [...this.byId.values()];
   }
 
+  /** Bumped whenever a billable flag changes, so a reader can tell its last look is still current. */
+  billableVersion(): number {
+    return this.billableChanges;
+  }
+  private billableChanges = 0;
+
   isBillable(taskId: string, sessionId: string): boolean {
     return !this.notBillable.get(taskId)?.has(sessionId);
   }
@@ -153,6 +160,7 @@ export class UsageStore extends EventEmitter<{ changed: [taskId: string] }> {
         ),
       );
       this.notBillable = next;
+      this.billableChanges++;
       this.lastChange.set(taskId, new Date().toISOString());
       this.emit('changed', taskId);
     };

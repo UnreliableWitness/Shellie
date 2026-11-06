@@ -1564,3 +1564,30 @@ describe('TaskScreen workspaces', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('running tasks', () => {
+  it('mounts a task terminals the first time it is shown, then keeps them', async () => {
+    setup();
+    const other: TaskView = {
+      ...task,
+      id: 'b',
+      terminals: [{ id: 'b1', kind: 'shell', label: 'zsh' }],
+    };
+    useStore.setState({
+      tasks: [{ ...task }, other],
+      selectedTaskId: 'a',
+      screen: { kind: 'task' },
+    } as never);
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    expect(screen.queryByTestId('term-b1')).toBeNull();
+    act(() => useStore.setState({ selectedTaskId: 'b' }));
+    await screen.findByTestId('term-b1');
+    const before = mounts.count;
+    act(() => useStore.setState({ selectedTaskId: 'a' }));
+    act(() => useStore.setState({ selectedTaskId: 'b' }));
+    // Both stayed mounted: switching back mounts no terminal again.
+    expect(screen.getByTestId('term-c1')).toBeInTheDocument();
+    expect(mounts.count).toBe(before);
+  });
+});

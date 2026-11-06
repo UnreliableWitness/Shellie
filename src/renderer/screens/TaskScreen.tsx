@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { TaskTypeIcon } from '../components/TaskTypeIcon';
 import { PageHeader } from '../components/ui';
 import { TerminalTabs } from '../components/TerminalTabs';
@@ -57,21 +58,31 @@ const hasTerminals = (t: TaskView) =>
   t.status === 'ready' || t.status === 'finishing';
 
 /**
- * The terminals of every running task, mounted for as long as the task runs and hidden while another page
- * or task is shown. Remounting would replay main's buffer into a fresh xterm, which garbles full-screen TUIs.
+ * The terminals of every running task, mounted the first time the task is shown and kept for as long as it
+ * runs, hidden while another page or task is shown. Remounting would replay main's buffer into a fresh xterm,
+ * which garbles full-screen TUIs. Mounting on first view spares the launch an xterm and a buffer replay for
+ * every running task, most of which the user may not open in this session.
  */
 export function TaskTerminals() {
   const tasks = useStore((s) => s.tasks);
   const shown = useStore((s) =>
     s.screen.kind === 'task' ? s.selectedTaskId : null,
   );
+  const seen = useRef(new Set<string>());
+  if (shown) seen.current.add(shown);
+  const running = tasks.filter(hasTerminals);
+  // A task that stopped running drops out, so it mounts afresh if it runs again.
+  for (const id of seen.current)
+    if (!running.some((t) => t.id === id)) seen.current.delete(id);
   return (
     <>
-      {tasks.filter(hasTerminals).map((t) => (
-        <div key={t.id} className="task-layer" hidden={t.id !== shown}>
-          <TerminalTabs task={t} visible={t.id === shown} />
-        </div>
-      ))}
+      {running
+        .filter((t) => seen.current.has(t.id))
+        .map((t) => (
+          <div key={t.id} className="task-layer" hidden={t.id !== shown}>
+            <TerminalTabs task={t} visible={t.id === shown} />
+          </div>
+        ))}
     </>
   );
 }

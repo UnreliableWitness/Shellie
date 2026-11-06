@@ -145,7 +145,10 @@ describe('UsageStore', () => {
     );
     expect(u.usdToEur).toBe(0.92);
     expect('markupPct' in u).toBe(false);
+    const version = s.billableVersion();
     await s.setBillable('t1', 's1', false);
+    // The ledger skips its sweep while this stays the same.
+    expect(s.billableVersion()).toBe(version + 1);
     u = s.summarize('t1');
     expect(u.sessions.find((x) => x.sessionId === 's1')?.billable).toBe(false);
     expect(u.billable.costUsd).toBe(0);

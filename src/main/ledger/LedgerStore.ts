@@ -79,7 +79,12 @@ export class LedgerStore {
         await this.serial(() => this.rewrite(month, [...live.values()]));
       }
     }
-    for (const r of this.byId.values()) this.hashes.set(r.id, hashOf(r));
+    // Hashing is the slow part of a load (tens of thousands of records): yield between batches too.
+    let n = 0;
+    for (const r of this.byId.values()) {
+      if (++n % 2000 === 0) await tick();
+      this.hashes.set(r.id, hashOf(r));
+    }
     try {
       const raw = JSON.parse(
         await fs.readFile(this.sentFile, 'utf8'),
