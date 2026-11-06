@@ -3,9 +3,9 @@ import type { TerminalDef } from '../../shared/types';
 import { brainTaskId } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
+import { BrainAdd } from '../components/brain/BrainAdd';
 import { BrainFiles } from '../components/brain/BrainFiles';
 import { BrainHealth } from '../components/brain/BrainHealth';
-import { BrainInbox } from '../components/brain/BrainInbox';
 import { BrainLog } from '../components/brain/BrainLog';
 import { BrainRead } from '../components/brain/BrainRead';
 import {
@@ -141,9 +141,10 @@ export function BrainScreen({
       />
       <div className="page-body brain-body">
         <div className="brain-columns">
-          <BrainInbox
+          <BrainAdd
             brain={brain}
             onTerminal={setTerminal}
+            onOpenPage={() => undefined}
             focusChoose={focus === 'drop'}
           />
           <BrainHealth brain={brain} onTerminal={setTerminal} />

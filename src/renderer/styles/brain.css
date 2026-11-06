@@ -31,6 +31,39 @@
 .brain-card h3 {
   font-size: 14px;
 }
+.brain-add {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.brain-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brain-card-action {
+  margin-left: auto;
+}
+.brain-howto-show {
+  align-self: flex-start;
+}
+.brain-howto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-howto li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
 .brain-drop {
   display: flex;
   align-items: center;

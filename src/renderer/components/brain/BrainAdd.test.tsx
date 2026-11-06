@@ -1,25 +1,58 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { AddSourceResult } from '../../../shared/brain';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  AddSourceResult,
+  BrainPageRow,
+  BrainSourceRow,
+} from '../../../shared/brain';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { brainJob, brainView } from '../../test-helpers/brainFixture';
-import { BrainInbox } from './BrainInbox';
+import { BrainAdd } from './BrainAdd';
 
 const file = (name: string, path = `/dl/${name}`) =>
   Object.assign(new File(['x'], name), { path });
 const def = { id: 'bt1', kind: 'claude' as const, label: 'Brain' };
 
-beforeEach(() =>
+const source = (path: string): BrainSourceRow => ({
+  path,
+  type: 'doc',
+  ingestedAt: '2026-11-02T10:00:00.000Z',
+  captured: false,
+  original: null,
+  contents: null,
+  note: null,
+});
+const page = (path: string, title: string): BrainPageRow => ({
+  path,
+  title,
+  summary: '',
+  type: 'other',
+  lastUpdated: null,
+  confidence: null,
+  verified: null,
+  changedSinceVerified: false,
+  sources: [],
+  linkedFrom: [],
+});
+
+beforeEach(() => {
+  localStorage.clear();
   useStore.setState({
     notices: [],
     screen: { kind: 'brain', brainId: 'b1' },
     brainPending: {},
-  }),
-);
+  });
+});
 
-describe('BrainInbox', () => {
+describe('BrainAdd', () => {
   it('dropped files wait with guessed types until Add sends them', async () => {
     const a = installFakeApi({
       'brain:addFiles': () => [
@@ -28,7 +61,7 @@ describe('BrainInbox', () => {
         { ok: true, path: 'sources/z', images: 0, warnings: [], contents: '' },
       ],
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: {
         files: [file('kickoff.vtt'), file('plan.pptx'), file('sow.docx')],
@@ -66,7 +99,7 @@ describe('BrainInbox', () => {
         { ok: true, path: 'sources/x', images: 0, warnings: [], contents: '' },
       ],
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: { files: [file('sow.docx'), file('old.docx')] },
     });
@@ -109,7 +142,9 @@ describe('BrainInbox', () => {
     const a = installFakeApi({
       'brain:addFiles': () => new Promise((res) => (answer = res)),
     });
-    const { unmount } = render(<BrainInbox brain={brainView()} />);
+    const { unmount } = render(
+      <BrainAdd brain={brainView()} onOpenPage={() => undefined} />,
+    );
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: { files: [file('a.docx')] },
     });
@@ -118,7 +153,7 @@ describe('BrainInbox', () => {
       'first',
     );
     unmount();
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     expect(screen.getByLabelText('Note for a.docx')).toHaveValue('first');
     await userEvent.click(screen.getByRole('button', { name: 'Add 1 file' }));
     expect(screen.getByLabelText('Note for a.docx')).toBeDisabled();
@@ -159,7 +194,7 @@ describe('BrainInbox', () => {
         },
       ],
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: { files: [file('plan.pptx'), file('sow.docx')] },
     });
@@ -187,7 +222,7 @@ describe('BrainInbox', () => {
         },
       ],
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     fireEvent.drop(screen.getByText(/Drop files here/), {
       dataTransfer: { files: [file('kickoff.vtt')] },
     });
@@ -207,7 +242,7 @@ describe('BrainInbox', () => {
         contents: '',
       }),
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     await userEvent.type(screen.getByLabelText('Title'), 'Call notes');
     await userEvent.type(screen.getByLabelText('Text'), 'we agreed on X');
     await userEvent.selectOptions(screen.getByLabelText('Type'), 'note');
@@ -231,7 +266,7 @@ describe('BrainInbox', () => {
         contents: '',
       }),
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     await userEvent.type(screen.getByLabelText('Text'), 'we agreed on X');
     await userEvent.type(screen.getByLabelText('Note'), ' From memory, check ');
     await userEvent.click(screen.getByRole('button', { name: 'Add' }));
@@ -263,8 +298,10 @@ describe('BrainInbox', () => {
         }),
       ],
     });
-    render(<BrainInbox brain={brain} />);
-    const rows = screen.getAllByRole('listitem');
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    const rows = within(
+      screen.getByRole('list', { name: 'Recent work' }),
+    ).getAllByRole('listitem');
     expect(rows[0]).toHaveTextContent('new.vtt');
     expect(rows[1]).toHaveTextContent('old.vtt');
     expect(rows[0]).toHaveTextContent('claude exited 1');
@@ -317,11 +354,12 @@ describe('BrainInbox', () => {
       ],
       'brain:run': () => brainJob({ status: 'queued' }),
     });
-    render(<BrainInbox brain={brainView()} />);
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
     const list = await screen.findByRole('list', {
-      name: 'Sources to capture',
+      name: 'Waiting to capture',
     });
-    expect(list).toHaveTextContent('sources/2026-11-02-sow.md');
+    expect(list).toHaveTextContent('2026-11-02-sow.md');
+    expect(list).toHaveTextContent('not captured yet');
     expect(list).not.toHaveTextContent('kickoff');
     expect(list).not.toHaveTextContent('Home.md');
     await userEvent.click(
@@ -346,11 +384,152 @@ describe('BrainInbox', () => {
         }),
       ],
     });
-    render(<BrainInbox brain={brain} />);
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     expect(screen.getByText('Takeaways')).toBeInTheDocument();
     expect(
       screen.getByText('- The SOW fixes the delivery date'),
     ).toBeInTheDocument();
+  });
+
+  it('explains the four steps, and Hide is remembered across a remount', async () => {
+    installFakeApi({});
+    const { unmount } = render(
+      <BrainAdd brain={brainView()} onOpenPage={() => undefined} />,
+    );
+    const how = screen.getByRole('region', { name: 'How it works' });
+    expect(how).toHaveTextContent('1 · You add');
+    expect(how).toHaveTextContent(
+      'Drop a file or paste text. It is stored untouched under sources/.',
+    );
+    expect(how).toHaveTextContent('2 · Capture (auto)');
+    expect(how).toHaveTextContent(
+      'The agent reads the source and writes or updates wiki pages.',
+    );
+    expect(how).toHaveTextContent('3 · Lint (auto)');
+    expect(how).toHaveTextContent(
+      'After each successful capture: checks for broken links, contradictions and gaps.',
+    );
+    expect(how).toHaveTextContent('4 · Read');
+    expect(how).toHaveTextContent(
+      'New and changed pages get a blue dot in Read.',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    expect(screen.queryByText('1 · You add')).toBeNull();
+    unmount();
+    render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
+    expect(screen.queryByText('1 · You add')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'How it works' }));
+    expect(screen.getByText('1 · You add')).toBeInTheDocument();
+  });
+
+  it('says a waiting source failed, with its error, and offers Capture', async () => {
+    installFakeApi({
+      'brain:sources': () => [source('sources/2026-11-02-sow.md')],
+    });
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          source: 'sources/2026-11-02-sow.md',
+          error: 'daily token cap reached',
+        }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    const list = await screen.findByRole('list', {
+      name: 'Waiting to capture',
+    });
+    expect(list).toHaveTextContent('daily token cap reached');
+    expect(
+      screen.getByRole('heading', { name: /Waiting to capture · 1/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Capture sources/2026-11-02-sow.md' }),
+    ).toBeEnabled();
+  });
+
+  it('Capture all queues one capture per waiting source not queued or running', async () => {
+    const a = installFakeApi({
+      'brain:sources': () => [
+        source('sources/a.md'),
+        source('sources/b.md'),
+        source('sources/c.md'),
+      ],
+      'brain:run': () => brainJob({ status: 'queued' }),
+    });
+    const brain = brainView({
+      jobs: [
+        brainJob({ id: 'q', source: 'sources/b.md', status: 'queued' }),
+        brainJob({ id: 'f', source: 'sources/c.md', status: 'failed' }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    expect(
+      await screen.findByRole('button', { name: 'Capture sources/b.md' }),
+    ).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Capture all' }));
+    const runs = a.calls.filter((c) => c.channel === 'brain:run');
+    expect(runs).toEqual([
+      { channel: 'brain:run', args: ['b1', 'capture', 'sources/a.md'] },
+      { channel: 'brain:run', args: ['b1', 'capture', 'sources/c.md'] },
+    ]);
+  });
+
+  it('links a done capture to the pages it changed', async () => {
+    installFakeApi({
+      'brain:pages': () => [page('wiki/a.md', 'A'), page('wiki/b.md', 'B')],
+      'brain:read': () => ({
+        text: '- 2026-11-02T10:00:30.000Z /capture sources/2026-11-02-sow.md → pages: a, b; takeaway: x\n',
+      }),
+    });
+    const onOpenPage = vi.fn();
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          status: 'done',
+          error: null,
+          source: 'sources/2026-11-02-sow.md',
+        }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={onOpenPage} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: '2 pages changed' }),
+    );
+    expect(onOpenPage).toHaveBeenCalledWith('wiki/a.md');
+  });
+
+  it('names no agent', async () => {
+    installFakeApi({
+      'brain:sources': () => [source('sources/a.md')],
+    });
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          id: 'r',
+          source: 'sources/x.md',
+          status: 'running',
+          error: null,
+        }),
+        brainJob({
+          id: 'd',
+          source: 'sources/y.md',
+          status: 'done',
+          error: null,
+        }),
+      ],
+    });
+    const { container } = render(
+      <BrainAdd brain={brain} onOpenPage={() => undefined} />,
+    );
+    await screen.findByRole('list', { name: 'Waiting to capture' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Help: Waiting to capture' }),
+    );
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Dropped and pasted sources are captured automatically.',
+    );
+    expect(document.body.textContent).not.toMatch(/claude|opencode/i);
+    expect(container.innerHTML).not.toMatch(/claude|opencode/i);
   });
 });

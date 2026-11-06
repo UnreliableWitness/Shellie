@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   BrainJob,
+  BrainPageRow,
   BrainSourceRow,
   BrainView,
   SourceType,
 } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
-import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
+import { HelpTip } from '../ui';
 import { openBrainTerminal, trackBrain } from './brainActions';
 import { NOTE_HINT, PendingFiles } from './PendingFiles';
-import { SOURCE_TYPES, useBrainDrop } from './useBrainDrop';
+import { pagesChangedBy } from './recent';
+import { SOURCE_TYPES, type BrainDrop } from './useBrainDrop';
+import { waitingSources, waitReason } from './waiting';
 
 export { guessType } from './useBrainDrop';
 
@@ -23,12 +26,18 @@ const newestFirst = (jobs: BrainJob[]) =>
 function JobRow({
   brain,
   job,
+  changed,
   onTerminal,
+  onOpenPage,
 }: {
   brain: BrainView;
   job: BrainJob;
+  /** The pages a done capture changed, from log.md; empty for any other job. */
+  changed: { label: string; path: string | null }[];
   onTerminal?: (def: TerminalDef) => void;
+  onOpenPage: (path: string) => void;
 }) {
+  const first = changed.find((p) => p.path)?.path;
   const notify = useStore((s) => s.notify);
   const retry = () => {
     trackBrain('retry');
@@ -60,6 +69,17 @@ function JobRow({
           </details>
         )}
       </div>
+      {first && (
+        <button
+          type="button"
+          className="link small"
+          onClick={() => onOpenPage(first)}
+        >
+          {changed.length === 1
+            ? '1 page changed'
+            : `${changed.length} pages changed`}
+        </button>
+      )}
       <span className={`brain-status brain-status-${job.status} small`}>
         {job.status}
       </span>
@@ -82,70 +102,14 @@ function JobRow({
   );
 }
 
-/** Sources not captured yet (the wiki mirror's pages are synced, not captured), each with a Capture button. */
-function SourcesToCapture({ brain }: { brain: BrainView }) {
-  const notify = useStore((s) => s.notify);
-  const [rows, setRows] = useState<BrainSourceRow[]>([]);
-  const load = useCallback(() => {
-    api()
-      .invoke('brain:sources', brain.id)
-      .then(setRows, () => undefined);
-  }, [brain.id]);
-  useEffect(load, [load]);
-  useBrainChanged(brain.id, load);
-  const pending = rows.filter(
-    (r) => !r.captured && !r.path.startsWith('sources/wiki/'),
-  );
-  if (pending.length === 0) return null;
-  // A capture already queued or running for the source is not offered again.
-  const queued = new Set(
-    brain.jobs
-      .filter((j) => j.status === 'queued' || j.status === 'running')
-      .map((j) => j.source),
-  );
-  const capture = (path: string) => {
-    trackBrain('capture');
-    void tryInvoke(
-      () => api().invoke('brain:run', brain.id, 'capture', path),
-      notify,
-    );
-  };
-  return (
-    <>
-      <h3>Sources to capture</h3>
-      <ul className="list brain-uncaptured" aria-label="Sources to capture">
-        {pending.map((r) => (
-          <li key={r.path} className="list-row">
-            <span className="grow">
-              {r.path} <span className="muted small">{r.type}</span>
-              {r.contents && (
-                <span className="muted small brain-contents">{r.contents}</span>
-              )}
-            </span>
-            <button
-              type="button"
-              className="btn btn-sm"
-              aria-label={`Capture ${r.path}`}
-              disabled={queued.has(r.path)}
-              onClick={() => capture(r.path)}
-            >
-              Capture
-            </button>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-/** What goes into the brain: dropped files, pasted text, and the capture jobs they queue. */
-export function BrainInbox({
+/** The drop zone and the paste form; `drop` comes from the view, whose root is the drop target. */
+export function AddToBrain({
   brain,
-  onTerminal,
+  drop,
   focusChoose = false,
 }: {
   brain: BrainView;
-  onTerminal?: (def: TerminalDef) => void;
+  drop: BrainDrop;
   /** Put the cursor on Choose files once mounted (a deep link to the drop zone). */
   focusChoose?: boolean;
 }) {
@@ -154,8 +118,7 @@ export function BrainInbox({
     if (focusChoose) chooseRef.current?.focus();
   }, [focusChoose]);
   const notify = useStore((s) => s.notify);
-  const drop = useBrainDrop(brain.id);
-  const { over, problems, setProblems, notes, addFiles, dropProps } = drop;
+  const { over, problems, setProblems, notes, addFiles } = drop;
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [type, setType] = useState<SourceType>('note');
@@ -181,9 +144,9 @@ export function BrainInbox({
   };
 
   return (
-    <section className="brain-card" aria-labelledby="brain-inbox-h">
-      <h2 id="brain-inbox-h">Inbox</h2>
-      <div className="brain-dropzone" {...dropProps}>
+    <section className="brain-card" aria-labelledby="brain-add-h">
+      <h2 id="brain-add-h">Add to the brain</h2>
+      <div className="brain-dropzone">
         <div
           data-dropzone
           className={over ? 'brain-drop is-over' : 'brain-drop'}
@@ -257,6 +220,7 @@ export function BrainInbox({
           Add
         </button>
       </form>
+      <p className="muted small">Captured automatically after you add it.</p>
       {problems.length > 0 && (
         <ul className="brain-problems small" role="alert">
           {problems.map((p, i) => (
@@ -271,13 +235,124 @@ export function BrainInbox({
           ))}
         </ul>
       )}
-      <SourcesToCapture brain={brain} />
+    </section>
+  );
+}
+
+/** Sources not captured yet (the wiki mirror's pages are synced, not captured), each with why it waits and Capture. */
+export function WaitingToCapture({
+  brain,
+  sources,
+}: {
+  brain: BrainView;
+  sources: BrainSourceRow[];
+}) {
+  const notify = useStore((s) => s.notify);
+  const waiting = waitingSources(sources);
+  if (waiting.length === 0) return null;
+  const paused = brain.health?.queuePaused ?? null;
+  const rows = waiting.map((r) => ({
+    ...r,
+    reason: waitReason(r.path, brain.jobs, paused),
+  }));
+  // A capture already queued or running for the source is not offered again.
+  const busy = (kind: string) => kind === 'queued' || kind === 'running';
+  const run = (path: string) =>
+    tryInvoke(
+      () => api().invoke('brain:run', brain.id, 'capture', path),
+      notify,
+    );
+  const capture = (path: string) => {
+    trackBrain('capture');
+    void run(path);
+  };
+  const captureAll = () => {
+    trackBrain('capture');
+    for (const r of rows) if (!busy(r.reason.kind)) void run(r.path);
+  };
+  return (
+    <section className="brain-card" aria-labelledby="brain-waiting-h">
+      <div className="brain-card-head">
+        <h2 id="brain-waiting-h">Waiting to capture · {rows.length}</h2>
+        <HelpTip label="Waiting to capture">
+          Dropped and pasted sources are captured automatically. This list holds
+          the ones that were not: a capture that failed, the queue paused by the
+          token cap, or a file put in the folder by hand.
+        </HelpTip>
+        <button
+          type="button"
+          className="btn btn-sm brain-card-action"
+          disabled={rows.every((r) => busy(r.reason.kind))}
+          onClick={captureAll}
+        >
+          Capture all
+        </button>
+      </div>
+      <ul className="list brain-uncaptured" aria-label="Waiting to capture">
+        {rows.map((r) => (
+          <li key={r.path} className="list-row">
+            <span className="grow">
+              {r.path.split('/').pop()}{' '}
+              <span className="muted small">{r.type}</span>{' '}
+              <span
+                className={
+                  r.reason.kind === 'failed'
+                    ? 'brain-error small'
+                    : 'muted small'
+                }
+              >
+                {r.reason.text}
+              </span>
+              {r.contents && (
+                <span className="muted small brain-contents">{r.contents}</span>
+              )}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-label={`Capture ${r.path}`}
+              disabled={busy(r.reason.kind)}
+              onClick={() => capture(r.path)}
+            >
+              Capture
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The brain's jobs this session, newest first; a done capture links to the pages it changed. */
+export function RecentWork({
+  brain,
+  rows,
+  log,
+  onTerminal,
+  onOpenPage,
+}: {
+  brain: BrainView;
+  rows: BrainPageRow[];
+  log: string;
+  onTerminal?: (def: TerminalDef) => void;
+  onOpenPage: (path: string) => void;
+}) {
+  return (
+    <section className="brain-card" aria-labelledby="brain-recent-h">
+      <h2 id="brain-recent-h">Recent work</h2>
       {brain.jobs.length === 0 ? (
         <p className="muted small">No jobs yet.</p>
       ) : (
-        <ul className="list brain-jobs">
+        <ul className="list brain-jobs" aria-label="Recent work">
           {newestFirst(brain.jobs).map((j) => (
-            <JobRow key={j.id} brain={brain} job={j} onTerminal={onTerminal} />
+            <JobRow
+              key={j.id}
+              brain={brain}
+              job={j}
+              changed={pagesChangedBy(j, log, rows)}
+              onTerminal={onTerminal}
+              onOpenPage={onOpenPage}
+            />
           ))}
         </ul>
       )}
