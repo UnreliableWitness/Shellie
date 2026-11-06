@@ -371,6 +371,8 @@ export type FinishOptions = {
   prSummaries?: Record<string, string>;
   /** Single repo: push even when the branch holds a stored secret's value, or could not be checked (confirmed). */
   confirmLeak?: boolean;
+  /** Remove folders and delete branches even when that loses uncommitted files or commits no remote has (#244). */
+  confirmDiscardUnsaved?: boolean;
   /** Copy the task's .shellie/task.md into its project's brain as a source and capture it. */
   captureTaskMd?: boolean;
   /** Save a digest of the task's Claude sessions into its project's brain and run /lessons on it. */

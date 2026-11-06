@@ -37,6 +37,8 @@ describe('handlers: finish with a pull request', () => {
     removeWorktree: true,
     deleteBranch: true,
     createPullRequest: true,
+    // The copied .env is untracked: confirmed, as Finish's danger button does (#244).
+    confirmDiscardUnsaved: true,
   };
 
   async function prHarness(
@@ -631,6 +633,8 @@ describe('handlers: finish with a brain', () => {
     closeTerminals: true,
     removeWorktree: true,
     deleteBranch: true,
+    // The copied .env is untracked: confirmed, as Finish's danger button does (#244).
+    confirmDiscardUnsaved: true,
   };
 
   async function brainTask() {

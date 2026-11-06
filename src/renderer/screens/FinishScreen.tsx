@@ -12,6 +12,7 @@ import {
   dropsAtFinish,
   hasNoRepo,
   HOME_ID,
+  UNSAVED_WORK,
 } from '../../shared/workspaces';
 import { gitAuthHintFromText, remoteHost } from '../../shared/gitAuth';
 import { LEAK_IN_BRANCH, LEAK_UNCHECKED } from '../../shared/secrets';
@@ -360,6 +361,8 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     readPrChoice(task?.repoId ?? ''),
   );
   const [finishError, setFinishError] = useState<string | null>(null);
+  /** Main refused to delete work the checks did not show (done since the page loaded, #244). */
+  const [unsavedError, setUnsavedError] = useState<string | null>(null);
   // Finish waits for the PR availability, else a stored yes would be sent as no.
   const [prLoaded, setPrLoaded] = useState(false);
   // With several repos: each row's checkbox once the user touched it.
@@ -571,11 +574,14 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
    */
   const runFinish = async (
     options: Pick<FinishOptions, 'createPullRequest' | 'workspaces'>,
+    /** The page warned of the loss (or main refused it) and the danger button was clicked. */
+    discards: boolean,
     withoutTime: boolean,
     shown: (e: unknown) => boolean | Promise<boolean>,
   ) => {
     setBusy(true);
     setFinishError(null);
+    setUnsavedError(null);
     let failed = false;
     // Only while the refusal is on the page: a confirm never carries over to a Finish that has not been refused.
     const confirmed = singleLeak !== null && confirmLeak;
@@ -586,6 +592,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
           closeTerminals: closeTerminals && nTerm > 0,
           removeWorktree,
           deleteBranch,
+          ...(discards || unsavedError ? { confirmDiscardUnsaved: true } : {}),
           ...options,
           ...(brain && captureTaskMd ? { captureTaskMd: true } : {}),
           ...(brain && captureLessons ? { captureLessons: true } : {}),
@@ -595,7 +602,10 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
             : {}),
         });
       } catch (e) {
-        if (!(await shown(e))) throw e;
+        const m = e instanceof Error ? e.message : '';
+        if (m.includes(UNSAVED_WORK))
+          setUnsavedError(m.slice(m.indexOf(UNSAVED_WORK)));
+        else if (!(await shown(e))) throw e;
         failed = true;
         return false;
       }
@@ -614,6 +624,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
       writePrChoice(task.repoId, prChoice);
     await runFinish(
       { createPullRequest: createPr && !withoutPr },
+      dirtyWith(checks, Boolean(checksFailed), createPr && !withoutPr),
       withoutTime,
       (e) => {
         const m = e instanceof Error ? e.message : '';
@@ -700,7 +711,8 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
             workspaceId: w.id,
             action: 'keep' as const,
           }));
-    await runFinish({ workspaces }, withoutTime, async () => {
+    const discards = dirtyRows(rows, Boolean(checksFailed), choices);
+    await runFinish({ workspaces }, discards, withoutTime, async () => {
       // Main keeps each row's outcome; without a failed row this is another error, shown as a notice.
       const outcome = await api()
         .invoke('tasks:finishResults', taskId)
@@ -763,9 +775,11 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     if (removed) await reloadRows();
   };
 
-  const dirty = multi
-    ? dirtyRows(rows, Boolean(checksFailed), rowChoice)
-    : dirtyWith(checks, Boolean(checksFailed), createPr);
+  const dirty =
+    unsavedError !== null ||
+    (multi
+      ? dirtyRows(rows, Boolean(checksFailed), rowChoice)
+      : dirtyWith(checks, Boolean(checksFailed), createPr));
   const nTerm = task.terminals.length;
 
   return (
@@ -1116,6 +1130,14 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
             }
           >
             {finishError}
+          </Check>
+        )}
+        {unsavedError && (
+          <Check tone="warn" glyph={G.WARN} role="alert">
+            <div className="title">{unsavedError}</div>
+            <div className="small">
+              Commit and push it first, or discard it with the button below.
+            </div>
           </Check>
         )}
         {singleLeak && (

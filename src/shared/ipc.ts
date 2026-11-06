@@ -447,8 +447,12 @@ export type Channels = {
   /**
    * Throws a ready task away (#124): closes its terminals, removes its worktrees and branches (a held folder is
    * retried in the background) and removes the task. Nothing is pushed, booked or written to the work item.
+   * Refused when that loses uncommitted files or commits no remote has, unless `confirmDiscardUnsaved` (#244).
    */
-  'tasks:discard': { args: [taskId: string]; result: void };
+  'tasks:discard': {
+    args: [taskId: string, confirmDiscardUnsaved?: boolean];
+    result: void;
+  };
   'tasks:openInEditor': {
     args: [taskId: string, workspaceId?: string];
     result: void;

@@ -42,6 +42,8 @@ describe('handlers: time booking and write-back', () => {
     closeTerminals: true,
     removeWorktree: true,
     deleteBranch: true,
+    // The copied .env is untracked: confirmed, as Finish's danger button does (#244).
+    confirmDiscardUnsaved: true,
     bookedSeconds,
   });
 

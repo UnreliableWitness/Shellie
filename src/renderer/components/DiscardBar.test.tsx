@@ -93,6 +93,55 @@ describe('DiscardBar (#124)', () => {
     expect(bar).toHaveTextContent(/1 uncommitted file/);
   });
 
+  it('Discard anyway confirms the loss; a blank task confirms nothing (#244)', async () => {
+    const api = installFakeApi({
+      'tasks:discardChecks': () =>
+        checks({ workspaces: [ws({ uncommitted: 1 })], uncommitted: 1 }),
+      'tasks:discard': () => undefined,
+    });
+    render(<DiscardBar task={task} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Discard anyway' }),
+    );
+    expect(api.calls.find((c) => c.channel === 'tasks:discard')?.args).toEqual([
+      't1',
+      true,
+    ]);
+  });
+
+  it('a refusal for work done since the bar opened shows that work, and Discard anyway follows (#244)', async () => {
+    let found = false;
+    const api = installFakeApi({
+      'tasks:discardChecks': () =>
+        found
+          ? checks({
+              workspaces: [ws({ commits: 1, unpushed: 1 })],
+              commitsLost: 1,
+              blank: false,
+            })
+          : checks(),
+      'tasks:discard': (_id, confirmed) => {
+        if (confirmed) return;
+        found = true;
+        throw new Error('Nothing was removed, since that would lose work');
+      },
+    });
+    render(<DiscardBar task={task} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Discard task' }),
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Discard anyway' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      /1 commit on no remote/,
+    );
+    expect(api.calls.find((c) => c.channel === 'tasks:discard')?.args).toEqual([
+      't1',
+      false,
+    ]);
+  });
+
   it('lists every repo of a multi-repo task and says which one stays', async () => {
     installFakeApi({
       'tasks:discardChecks': () =>

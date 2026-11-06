@@ -104,7 +104,9 @@ import {
   workspaceById,
   type WorkspaceView,
   parseDocsTarget,
+  UNSAVED_WORK,
 } from '../../shared/workspaces';
+import { plural } from '../../shared/text';
 import { UPDATE_REPO } from '../autoUpdate';
 import { pathExists } from '../fsRetry';
 import { toRel, worktreeRoot } from '../paths';
@@ -2551,6 +2553,34 @@ export function createHandlers(s: Services): Handlers {
     };
   };
 
+  /**
+   * Why a cleanup must not run without the developer's confirm (#244), null when it loses nothing: the uncommitted
+   * files of a folder it removes, the commits no remote has on a branch it deletes. Without a remote that is every
+   * commit since the base. A workspace on another branch is never cleaned up, so it counts nothing.
+   */
+  const lostWork = (
+    removals: {
+      check: DiscardWorkspaceCheck;
+      folder: boolean;
+      branch: boolean;
+    }[],
+    named: boolean,
+  ): string | null => {
+    const lost = removals.flatMap(({ check: c, folder, branch }) => {
+      const what = [
+        folder &&
+          c.uncommitted > 0 &&
+          plural(c.uncommitted, 'uncommitted file'),
+        branch &&
+          c.unpushed > 0 &&
+          `${plural(c.unpushed, 'commit')} on no remote`,
+      ].filter((x): x is string => Boolean(x));
+      if (c.kept || what.length === 0) return [];
+      return [`${named ? `${c.repoName}: ` : ''}${what.join(' and ')}`];
+    });
+    return lost.length > 0 ? `${UNSAVED_WORK} ${lost.join('; ')}.` : null;
+  };
+
   /** Each row's outcome of the last Finish with workspaces, so the page can show them after a failure. */
   const finishResults = new Map<string, FinishRowResult[]>();
 
@@ -2803,6 +2833,27 @@ export function createHandlers(s: Services): Handlers {
           throw new Error(
             `${s.repos.repoName(w.repoId)} is not on this task's branch (${w.branch}): it is kept as is`,
           );
+      }
+      // Before any push, so a refusal leaves everything as it was (#244). A pushed branch keeps its commits on
+      // the remote; a dropped workspace is checked for changes of its own below.
+      if (
+        !options.confirmDiscardUnsaved &&
+        (options.removeWorktree || options.deleteBranch)
+      ) {
+        const actionOf = new Map(wanted.map((r) => [r.workspaceId, r.action]));
+        const removals = [];
+        for (const w of activeWorkspaces(task)) {
+          const action = actionOf.get(w.id);
+          if (!action || action === 'drop' || !ownBranch(task, w)) continue;
+          if (!(await pathExists(w.worktreePath))) continue;
+          removals.push({
+            check: await discardCheck(task, w),
+            folder: options.removeWorktree,
+            branch: options.deleteBranch && action === 'keep',
+          });
+        }
+        const lost = lostWork(removals, true);
+        if (lost) throw new Error(lost);
       }
       await patchTask(taskId, { status: 'finishing' });
       type Row = {
@@ -3487,6 +3538,23 @@ export function createHandlers(s: Services): Handlers {
         const task = taskById(taskId);
         if (task.repoId === null) return await finishWithoutRepo(task, options);
         const repo = s.repos.get(task.repoId);
+        // Before anything happens, so a refusal leaves the task as it was (#244). The PR pushes the branch.
+        if (
+          !options.confirmDiscardUnsaved &&
+          (options.removeWorktree || options.deleteBranch)
+        ) {
+          const lost = lostWork(
+            [
+              {
+                check: await discardCheck(task, taskWorkspaces(task)[0]),
+                folder: options.removeWorktree,
+                branch: options.deleteBranch && !options.createPullRequest,
+              },
+            ],
+            false,
+          );
+          if (lost) throw new Error(lost);
+        }
         await patchTask(taskId, { status: 'finishing' });
         // Record what the branch did while the worktree still exists; a summary must never block Finish.
         let summary: TaskSummary | null = null;
@@ -3592,11 +3660,22 @@ export function createHandlers(s: Services): Handlers {
       );
     },
     'tasks:discardChecks': async (taskId) => discardChecks(taskById(taskId)),
-    'tasks:discard': (taskId) =>
+    'tasks:discard': (taskId, confirmDiscardUnsaved) =>
       withClaim(taskId, ['ready'], 'discard', async () => {
         const task = taskById(taskId);
-        // For telemetry only: what was lost must never keep the task from going.
+        // Checks that cannot run never keep the task from going; work they find does, unless confirmed (#244).
         const checks = await discardChecks(task).catch(() => null);
+        if (checks && !confirmDiscardUnsaved) {
+          const lost = lostWork(
+            checks.workspaces.map((check) => ({
+              check,
+              folder: true,
+              branch: true,
+            })),
+            checks.workspaces.length > 1,
+          );
+          if (lost) throw new Error(lost);
+        }
         await stopTaskProcesses(taskId);
         // Secrets: `shellie run` processes end, and nothing about the task's tabs (or its plaintext matcher) is kept.
         s.stopRuns?.(taskId, 'The task was discarded');

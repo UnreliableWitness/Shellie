@@ -2,6 +2,9 @@ import type { Repo, Task, Workspace } from './types';
 
 export const HOME_ID = 'home';
 
+/** How Finish and Discard start their refusal to delete uncommitted files or commits no remote has (#244). */
+export const UNSAVED_WORK = 'Nothing was removed, since that would lose';
+
 export type WorkspaceView = Omit<Workspace, 'source'> & {
   source: 'home' | 'detected' | 'manual';
 };
