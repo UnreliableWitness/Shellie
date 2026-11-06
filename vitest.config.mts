@@ -17,8 +17,10 @@ export default defineConfig({
             'tools/release/*.test.ts',
             'tools/agents/*.test.ts',
           ],
-          // tests that run real git are slow on the Windows CI runner (the suite takes ~15 min there, ~4 on macOS)
+          // tests that run real git are slow on the Windows CI runner (the suite takes ~15 min there, ~4 on macOS);
+          // so are the hooks that build their repos (a scaffold is five git calls), which kept vitest's 10 s default
           testTimeout: process.platform === 'win32' ? 60000 : 20000,
+          hookTimeout: process.platform === 'win32' ? 60000 : 20000,
         },
       },
       {
