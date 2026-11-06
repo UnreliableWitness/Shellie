@@ -323,6 +323,27 @@ describe('BrainRead', () => {
     expect(screen.getByLabelText('Search the brain')).toHaveFocus();
   });
 
+  it('says nothing about an empty brain before the pages have answered', async () => {
+    let answer: (rows: BrainPageRow[]) => void = () => undefined;
+    setup({
+      'brain:pages': () =>
+        new Promise<BrainPageRow[]>((resolve) => {
+          answer = resolve;
+        }),
+      'brain:sources': () => [],
+      'brain:read': () => ({ text: '' }),
+    });
+    render(<BrainRead brainId="b1" since={null} />);
+    await screen.findByLabelText('Search the brain');
+    expect(
+      screen.queryByText('No pages yet. Add a source in Add.'),
+    ).not.toBeInTheDocument();
+    answer([]);
+    expect(
+      await screen.findByText('No pages yet. Add a source in Add.'),
+    ).toBeInTheDocument();
+  });
+
   it('an empty brain says how to add something', async () => {
     setup({
       'brain:pages': () => [],

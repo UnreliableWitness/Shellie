@@ -9,10 +9,13 @@ export function useBrainPages(brainId: string) {
   const [rows, setRows] = useState<BrainPageRow[]>([]);
   const [sources, setSources] = useState<BrainSourceRow[]>([]);
   const [log, setLog] = useState('');
+  /** Whether `brain:pages` has answered once, so an empty list means an empty brain. */
+  const [loaded, setLoaded] = useState(false);
   const load = useCallback(() => {
     api()
       .invoke('brain:pages', brainId)
-      .then(setRows, () => undefined);
+      .then(setRows, () => undefined)
+      .finally(() => setLoaded(true));
     api()
       .invoke('brain:sources', brainId)
       .then(setSources, () => undefined);
@@ -25,7 +28,7 @@ export function useBrainPages(brainId: string) {
   }, [brainId]);
   useEffect(load, [load]);
   useBrainChanged(brainId, load);
-  return { rows, sources, log };
+  return { rows, sources, log, loaded };
 }
 
 /** The last log entries that name pages, each page a link; entries since `since` are tagged new. */

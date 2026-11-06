@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrainLog } from './BrainLog';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
@@ -12,15 +12,18 @@ import { useBrainNav } from './useBrainNav';
 /**
  * The brain's Read view: a tree on the left (search on top), the open page in the middle with its rail, or Recent
  * changes, the log, or a landing of the pinned pages and what changed. Pages touched in the log after `since` get a dot.
+ * A new `openRequest` (another `n`) opens its page, as a link from the Add view does.
  */
 export function BrainRead({
   brainId,
   since,
+  openRequest,
 }: {
   brainId: string;
   since: string | null;
+  openRequest?: { path: string; n: number } | null;
 }) {
-  const { rows, sources, log } = useBrainPages(brainId);
+  const { rows, sources, log, loaded } = useBrainPages(brainId);
   const nav = useBrainNav();
   const [special, setSpecial] = useState<TreeSpecial | null>(null);
   const [searching, setSearching] = useState(false);
@@ -59,6 +62,12 @@ export function BrainRead({
     [nav],
   );
   const current = nav.current?.path ?? special;
+
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (openRequest) openRef.current(openRequest.path);
+  }, [openRequest]);
 
   return (
     <div
@@ -125,7 +134,7 @@ export function BrainRead({
                 Forward ›
               </button>
             )}
-            {rows.length === 0 && (
+            {loaded && rows.length === 0 && (
               <p className="muted">No pages yet. Add a source in Add.</p>
             )}
             {pinned.length > 0 && (

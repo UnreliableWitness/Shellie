@@ -1,6 +1,13 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BrainSourceRow } from '../../shared/brain';
 import { useStore } from '../store';
 import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
 import { brainJob, brainView } from '../test-helpers/brainFixture';
@@ -23,15 +30,37 @@ const setup = (brain = brainView(), over: FakeHandlers = {}) =>
   });
 const names = (a: { calls: { channel: string }[] }) =>
   a.calls.map((c) => c.channel);
-/** The page header's commands; the Add view's Run now has buttons of the same names. */
-const header = async () => {
-  await screen.findByText('Acme');
-  return within(screen.getByRole('banner'));
+/** Switches to the Add view (Run now, Health, the inbox) and returns its Run now card. */
+const openAdd = async () => {
+  await userEvent.click(await screen.findByRole('tab', { name: /^Add/ }));
+  return within(screen.getByRole('region', { name: 'Run now' }));
 };
+const page = (path: string, title: string) => ({
+  path,
+  title,
+  summary: '',
+  type: 'other' as const,
+  lastUpdated: null,
+  confidence: null,
+  verified: null,
+  changedSinceVerified: false,
+  sources: [],
+  linkedFrom: [],
+});
+const source = (path: string): BrainSourceRow => ({
+  path,
+  type: 'doc',
+  ingestedAt: '2026-11-04T09:00:00.000Z',
+  captured: false,
+  original: null,
+  contents: null,
+  note: null,
+});
 
-beforeEach(() =>
-  useStore.setState({ notices: [], screen: { kind: 'brain', brainId: 'b1' } }),
-);
+beforeEach(() => {
+  localStorage.clear();
+  useStore.setState({ notices: [], screen: { kind: 'brain', brainId: 'b1' } });
+});
 
 describe('BrainScreen', () => {
   it('shows the brain name, health and the inbox', async () => {
@@ -48,7 +77,7 @@ describe('BrainScreen', () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);
     await userEvent.click(
-      (await header()).getByRole('button', { name: 'Lint' }),
+      (await openAdd()).getByRole('button', { name: 'Lint' }),
     );
     expect(a.calls).toContainEqual({
       channel: 'brain:run',
@@ -63,7 +92,17 @@ describe('BrainScreen', () => {
   });
 
   it('Digest and Refresh wiki call their channels', async () => {
-    const a = setup(brainView(), {
+    const wiki = {
+      wikiId: 'w1',
+      wikiName: 'Shellie.wiki',
+      type: 'projectWiki' as const,
+      repositoryId: 'r1',
+      gitUrl: 'https://dev.azure.com/x/_git/w',
+      version: 'wikiMaster',
+      mappedPath: '/',
+      rootPath: '/',
+    };
+    const a = setup(brainView({ wiki }), {
       'brain:refresh': () => ({
         ok: true,
         added: 1,
@@ -73,9 +112,9 @@ describe('BrainScreen', () => {
       }),
     });
     render(<BrainScreen brainId="b1" />);
-    const head = await header();
-    await userEvent.click(head.getByRole('button', { name: 'Digest' }));
-    await userEvent.click(head.getByRole('button', { name: 'Refresh wiki' }));
+    const run = await openAdd();
+    await userEvent.click(run.getByRole('button', { name: 'Digest' }));
+    await userEvent.click(run.getByRole('button', { name: 'Refresh wiki' }));
     expect(a.calls).toContainEqual({
       channel: 'brain:run',
       args: ['b1', 'digest'],
@@ -111,7 +150,7 @@ describe('BrainScreen', () => {
     const a = setup(brainView(), { 'terminals:kill': () => undefined });
     render(<BrainScreen brainId="b1" />);
     await userEvent.click(
-      (await header()).getByRole('button', { name: 'Open terminal' }),
+      (await openAdd()).getByRole('button', { name: 'Open terminal' }),
     );
     expect(await screen.findByTestId('terminal')).toHaveTextContent(
       'brain:b1/bt1',
@@ -137,6 +176,7 @@ describe('BrainScreen', () => {
     ];
     const a = setup(view);
     render(<BrainScreen brainId="b1" />);
+    await openAdd();
     await userEvent.click(
       await screen.findByRole('button', {
         name: 'Capture sources/2026-11-04-deck.md',
@@ -154,6 +194,7 @@ describe('BrainScreen', () => {
   it('Resolve in terminal sends a resolve prompt', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);
+    await openAdd();
     const [first] = await screen.findAllByRole('button', {
       name: /Resolve in terminal/,
     });
@@ -177,6 +218,7 @@ describe('BrainScreen', () => {
     paused.health!.queuePaused = 'cap';
     const a = setup(paused);
     render(<BrainScreen brainId="b1" />);
+    await openAdd();
     const auto = await screen.findByRole('region', {
       name: 'What runs by itself',
     });
@@ -200,22 +242,9 @@ describe('BrainScreen', () => {
     expect(names(a).filter((c) => c === 'brain:get')).toHaveLength(2);
   });
 
-  it('shows the wiki in the Read view, opens a page, and renders the log', async () => {
+  it('opens on Read, opens a page from the tree, and renders the log', async () => {
     const a = setup(brainView(), {
-      'brain:pages': () => [
-        {
-          path: 'wiki/a.md',
-          title: 'Page A',
-          summary: 'About A.',
-          type: 'other',
-          lastUpdated: '2026-11-03',
-          confidence: 'high',
-          verified: null,
-          changedSinceVerified: false,
-          sources: [],
-          linkedFrom: [],
-        },
-      ],
+      'brain:pages': () => [page('wiki/a.md', 'Page A')],
       'brain:read': (_id, rel) => ({
         text:
           rel === 'log.md'
@@ -224,18 +253,148 @@ describe('BrainScreen', () => {
       }),
     });
     render(<BrainScreen brainId="b1" />);
-    await userEvent.click(await screen.findByRole('tab', { name: 'Wiki' }));
+    expect(await screen.findByRole('tab', { name: 'Read' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     await userEvent.click(
       await screen.findByRole('button', { name: /Page A/ }),
     );
     expect(await screen.findByText('Body of A.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('tab', { name: 'Log' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Log' }));
     expect(await screen.findByText('did a thing')).toBeInTheDocument();
     expect(a.calls).toContainEqual({
       channel: 'brain:read',
       args: ['b1', 'log.md'],
     });
+  });
+
+  it('focus drop opens on Add; the chosen view is remembered across remounts', async () => {
+    setup();
+    const first = render(<BrainScreen brainId="b1" focus="drop" />);
+    expect(await screen.findByRole('tab', { name: /^Add/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    first.unmount();
+    render(<BrainScreen brainId="b1" />);
+    expect(await screen.findByRole('tab', { name: 'Read' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await openAdd();
+    cleanup();
+    render(<BrainScreen brainId="b1" />);
+    expect(await screen.findByRole('tab', { name: /^Add/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('switching tracks the view', async () => {
+    const a = setup();
+    render(<BrainScreen brainId="b1" />);
+    await openAdd();
+    expect(a.tracked).toContainEqual(
+      expect.objectContaining({
+        name: 'brain.screen.action',
+        props: { action: 'view-add' },
+      }),
+    );
+  });
+
+  it('the Add tab counts the sources waiting to capture, and shows nothing at zero', async () => {
+    let sources = [source('sources/a.md'), source('sources/b.md')];
+    const a = setup(brainView(), { 'brain:sources': () => sources });
+    render(<BrainScreen brainId="b1" />);
+    expect(
+      await screen.findByRole('tab', { name: 'Add, 2 waiting' }),
+    ).toBeInTheDocument();
+    sources = [];
+    a.emit('brain:changed', { brainId: 'b1' });
+    expect(await screen.findByRole('tab', { name: 'Add' })).toBeInTheDocument();
+  });
+
+  it('keeps the open page when switching to Add and back', async () => {
+    setup(brainView(), {
+      'brain:pages': () => [page('wiki/a.md', 'Page A')],
+      'brain:read': () => ({
+        text: '---\ntitle: Page A\n---\n\n# Page A\n\nBody of A.',
+      }),
+    });
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Page A/ }),
+    );
+    expect(await screen.findByText('Body of A.')).toBeVisible();
+    await openAdd();
+    expect(screen.getByText('Body of A.')).not.toBeVisible();
+    await userEvent.click(screen.getByRole('tab', { name: 'Read' }));
+    expect(screen.getByText('Body of A.')).toBeVisible();
+  });
+
+  it("a done capture's pages-changed link switches to Read with the page open", async () => {
+    setup(
+      brainView({
+        jobs: [
+          brainJob({
+            status: 'done',
+            error: null,
+            source: 'sources/2026-11-02-sow.md',
+          }),
+        ],
+      }),
+      {
+        'brain:pages': () => [page('wiki/a.md', 'A')],
+        'brain:read': (_id, rel) => ({
+          text:
+            rel === 'log.md'
+              ? '- 2026-11-02T10:00:30.000Z /capture sources/2026-11-02-sow.md → pages: a; takeaway: x\n'
+              : '---\ntitle: A\n---\n\n# A\n\nBody of A.',
+        }),
+      },
+    );
+    render(<BrainScreen brainId="b1" focus="drop" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: '1 page changed' }),
+    );
+    expect(screen.getByRole('tab', { name: 'Read' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await screen.findByText('Body of A.')).toBeVisible();
+  });
+
+  it('More holds Open folder and Brain settings', async () => {
+    const a = setup();
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'More' }));
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Open folder' }),
+    );
+    expect(a.calls).toContainEqual({
+      channel: 'brain:openFolder',
+      args: ['b1'],
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'More' }));
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Brain settings' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      scope: 'project',
+      connectionId: 'c1',
+      section: 'project-brains',
+    });
+  });
+
+  it('the header has no maintenance buttons', async () => {
+    setup();
+    render(<BrainScreen brainId="b1" />);
+    const head = within(await screen.findByRole('banner'));
+    for (const name of ['Lint', 'Digest', 'Refresh wiki', 'Open terminal'])
+      expect(head.queryByRole('button', { name })).not.toBeInTheDocument();
   });
 });
 
@@ -245,6 +404,7 @@ describe('BrainScreen scrub', () => {
       'brain:scrub': () => ({ files: 3, skipped: 0 }),
     });
     render(<BrainScreen brainId="b1" />);
+    await openAdd();
     await userEvent.click(
       await screen.findByRole('button', { name: 'Scrub a value…' }),
     );

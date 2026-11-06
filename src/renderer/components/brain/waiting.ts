@@ -48,14 +48,11 @@ export function waitReason(
   }
 }
 
-/** The Add tab's badge: waiting sources whose newest capture job is not queued or running (also while the cap holds the queue). */
+/** The Add tab's badge: waiting sources with no capture in flight (queued, running, or paused by the cap). */
 export function badgeCount(
   sources: BrainSourceRow[],
   jobs: BrainJob[],
-  _queuePaused: 'cap' | null,
 ): number {
-  return waitingSources(sources).filter((s) => {
-    const status = newestCapture(s.path, jobs)?.status;
-    return status !== 'queued' && status !== 'running';
-  }).length;
+  return waitingSources(sources).filter((s) => !captureInFlight(s.path, jobs))
+    .length;
 }

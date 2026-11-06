@@ -92,7 +92,7 @@ describe('badgeCount', () => {
   it('counts waiting sources with no queued or running job', () => {
     const sources = [src('sources/a.md'), src('sources/b.md')];
     const jobs = [job({ status: 'running' })];
-    expect(badgeCount(sources, jobs, null)).toBe(1);
+    expect(badgeCount(sources, jobs)).toBe(1);
   });
 
   it('does not count a retried source whose newest job is queued', () => {
@@ -100,7 +100,7 @@ describe('badgeCount', () => {
       job({ id: '2', status: 'queued' }),
       job({ id: '1', status: 'failed' }),
     ];
-    expect(badgeCount([src('sources/a.md')], jobs, null)).toBe(0);
+    expect(badgeCount([src('sources/a.md')], jobs)).toBe(0);
   });
 
   it('does not count a queued job while the cap holds the queue', () => {
@@ -108,15 +108,21 @@ describe('badgeCount', () => {
     expect(waitReason('sources/a.md', jobs, 'cap').text).toBe(
       'paused: daily token cap',
     );
-    expect(badgeCount([src('sources/a.md')], jobs, 'cap')).toBe(0);
+    expect(badgeCount([src('sources/a.md')], jobs)).toBe(0);
+  });
+
+  it('does not count a source whose capture the cap paused', () => {
+    expect(badgeCount([src('sources/a.md')], [job({ status: 'paused' })])).toBe(
+      0,
+    );
   });
 
   it('ignores a failed lint job', () => {
     const jobs = [job({ status: 'failed', kind: 'lint', source: null })];
-    expect(badgeCount([src('sources/a.md')], jobs, null)).toBe(1);
+    expect(badgeCount([src('sources/a.md')], jobs)).toBe(1);
   });
 
   it('is 0 when nothing waits', () => {
-    expect(badgeCount([src('sources/a.md', true)], [], null)).toBe(0);
+    expect(badgeCount([src('sources/a.md', true)], [])).toBe(0);
   });
 });
