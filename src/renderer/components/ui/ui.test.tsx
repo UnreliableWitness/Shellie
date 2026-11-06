@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  HelpTip,
   IconButton,
   MindMark,
   PageHeader,
@@ -234,5 +235,52 @@ describe('MindMark', () => {
       'aria-hidden',
       'true',
     );
+  });
+});
+
+describe('HelpTip', () => {
+  const tip = (onOpen?: () => void) =>
+    render(
+      <HelpTip label="Sync" onOpen={onOpen}>
+        Pulls changes
+      </HelpTip>,
+    );
+  it('shows the text on hover and describes the button with it', async () => {
+    tip();
+    const btn = screen.getByRole('button', { name: 'Help: Sync' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    await userEvent.hover(btn);
+    const pop = screen.getByRole('tooltip');
+    expect(pop).toHaveTextContent('Pulls changes');
+    expect(btn).toHaveAttribute('aria-expanded', 'true');
+    expect(btn).toHaveAttribute('aria-describedby', pop.id);
+  });
+  it('hides on Escape and returns focus to the button', async () => {
+    tip();
+    const btn = screen.getByRole('button', { name: 'Help: Sync' });
+    await userEvent.hover(btn);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(btn).toHaveFocus();
+  });
+  it('opens on click and calls onOpen once per opening', async () => {
+    const onOpen = vi.fn();
+    tip(onOpen);
+    const btn = screen.getByRole('button', { name: 'Help: Sync' });
+    await userEvent.click(btn);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+  it('opens when tabbed to and closes when focus leaves', async () => {
+    render(
+      <>
+        <HelpTip label="Sync">Pulls changes</HelpTip>
+        <button type="button">Next</button>
+      </>,
+    );
+    await userEvent.tab();
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    await userEvent.tab();
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });

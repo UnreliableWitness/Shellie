@@ -1,4 +1,5 @@
 export { ConfirmBar } from './ConfirmBar';
+export { HelpTip } from './HelpTip';
 export { IconButton, modKey } from './IconButton';
 export { MindMark } from './MindMark';
 export { PageHeader, Pivots } from './PageHeader';
