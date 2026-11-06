@@ -45,6 +45,18 @@ const when = (iso: string) =>
   });
 
 const DASH = String.fromCharCode(0x2013);
+// otlp.ts records this when Claude Code sends no session.id: nothing to resume.
+const UNKNOWN_SESSION = 'unknown-session';
+const RESUME: Record<UsageTool, ((id: string) => string) | null> = {
+  'claude-code': (id) => `claude --resume ${id}`,
+  'copilot-cli': null,
+  opencode: (id) => `opencode --session ${id}`,
+};
+
+function copyTitle(tool: UsageTool, id: string): string {
+  const resume = RESUME[tool];
+  return resume ? `Copy ${id} (resume with ${resume(id)})` : `Copy ${id}`;
+}
 
 function binTitle(b: Bin): string {
   const range = `${clock(b.start)}${DASH}${clock(b.end)}`;
@@ -186,6 +198,10 @@ export function UsagePanel({
       () => api().invoke('usage:setBillable', taskId, sessionId, billable),
       notify,
     );
+  const copy = (text: string) =>
+    void navigator.clipboard
+      .writeText(text)
+      .catch(() => notify('error', 'Could not copy to the clipboard.'));
 
   const t = now();
   const total = usage?.billable.costEur ?? 0;
@@ -298,6 +314,7 @@ export function UsagePanel({
                   <tr>
                     <th>Started</th>
                     <th>Tool</th>
+                    <th>Session</th>
                     <th>Model</th>
                     <th>Tokens</th>
                     <th>EUR</th>
@@ -317,6 +334,26 @@ export function UsagePanel({
                         )}
                       </td>
                       <td>{USAGE_TOOL_LABEL[s.tool]}</td>
+                      <td>
+                        {s.sessionId === UNKNOWN_SESSION ? (
+                          DASH
+                        ) : (
+                          <>
+                            <span className="mono" title={s.sessionId}>
+                              {s.sessionId.slice(0, 8)}
+                            </span>{' '}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              aria-label="Copy session id"
+                              title={copyTitle(s.tool, s.sessionId)}
+                              onClick={() => copy(s.sessionId)}
+                            >
+                              Copy
+                            </button>
+                          </>
+                        )}
+                      </td>
                       <td className="mono">{s.models.join(', ')}</td>
                       <td className="mono">
                         {compact(

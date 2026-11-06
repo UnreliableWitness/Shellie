@@ -8,6 +8,7 @@ import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { UsagePanel } from './UsagePanel';
 
 const EURO = String.fromCharCode(0x20ac);
+const DASH = String.fromCharCode(0x2013);
 const task: TaskView = {
   id: 't1',
   repoId: 'r1',
@@ -533,6 +534,54 @@ describe('UsagePanel', () => {
     render(<UsagePanel taskId="t1" />);
     const row = (await screen.findAllByRole('row'))[1];
     expect(row).toHaveClass('is-excluded');
+  });
+  it('shows each session id shortened, with a copy button and the resume command', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, { clipboard: { writeText } });
+    installFakeApi({
+      'usage:task': () => ({
+        ...usage,
+        sessions: [
+          {
+            ...usage.sessions[0],
+            sessionId: 'ses_abc123def456',
+            tool: 'opencode',
+          },
+          {
+            ...usage.sessions[0],
+            sessionId: '0f8e2c1a-7b3d-4e5f-9a6b-1c2d3e4f5a6b',
+          },
+          { ...usage.sessions[1], sessionId: 'cop-1' },
+          { ...usage.sessions[0], sessionId: 'unknown-session' },
+        ],
+      }),
+    });
+    render(<UsagePanel taskId="t1" />);
+    const rows = await screen.findAllByRole('row');
+    expect(rows[0]).toHaveTextContent('Session');
+    const open = within(rows[1]).getByText('ses_abc1');
+    expect(open).toHaveAttribute('title', 'ses_abc123def456');
+    const copyOpen = within(rows[1]).getByRole('button', {
+      name: 'Copy session id',
+    });
+    expect(copyOpen).toHaveAttribute(
+      'title',
+      'Copy ses_abc123def456 (resume with opencode --session ses_abc123def456)',
+    );
+    await userEvent.click(copyOpen);
+    expect(writeText).toHaveBeenCalledWith('ses_abc123def456');
+    expect(within(rows[2]).getByText('0f8e2c1a')).toBeTruthy();
+    expect(
+      within(rows[2]).getByRole('button', { name: 'Copy session id' }),
+    ).toHaveAttribute(
+      'title',
+      'Copy 0f8e2c1a-7b3d-4e5f-9a6b-1c2d3e4f5a6b (resume with claude --resume 0f8e2c1a-7b3d-4e5f-9a6b-1c2d3e4f5a6b)',
+    );
+    expect(
+      within(rows[3]).getByRole('button', { name: 'Copy session id' }),
+    ).toHaveAttribute('title', 'Copy cop-1');
+    expect(within(rows[4]).getByText(DASH)).toBeTruthy();
+    expect(within(rows[4]).queryByRole('button')).toBeNull();
   });
   it('draws 24 timeline bins', async () => {
     installFakeApi({ 'usage:task': () => usage });
