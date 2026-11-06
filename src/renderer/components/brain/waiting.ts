@@ -14,13 +14,18 @@ export function waitingSources(sources: BrainSourceRow[]): BrainSourceRow[] {
   );
 }
 
+/** The newest capture job for a path; `jobs` is newest first. */
+function newestCapture(path: string, jobs: BrainJob[]): BrainJob | undefined {
+  return jobs.find((j) => j.kind === 'capture' && j.source === path);
+}
+
 /** Why a source waits, from the newest capture job for its path. */
 export function waitReason(
   path: string,
   jobs: BrainJob[],
   queuePaused: 'cap' | null,
 ): WaitReason {
-  const job = jobs.findLast((j) => j.kind === 'capture' && j.source === path);
+  const job = newestCapture(path, jobs);
   switch (job?.status) {
     case 'queued':
       return queuePaused === 'cap'
@@ -37,14 +42,14 @@ export function waitReason(
   }
 }
 
-/** The Add tab's badge: waiting sources with no queued or running capture. */
+/** The Add tab's badge: waiting sources whose newest capture job is not queued or running (also while the cap holds the queue). */
 export function badgeCount(
   sources: BrainSourceRow[],
   jobs: BrainJob[],
-  queuePaused: 'cap' | null,
+  _queuePaused: 'cap' | null,
 ): number {
   return waitingSources(sources).filter((s) => {
-    const kind = waitReason(s.path, jobs, queuePaused).kind;
-    return kind !== 'queued' && kind !== 'running';
+    const status = newestCapture(s.path, jobs)?.status;
+    return status !== 'queued' && status !== 'running';
   }).length;
 }

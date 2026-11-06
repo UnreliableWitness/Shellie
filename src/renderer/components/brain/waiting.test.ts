@@ -71,12 +71,20 @@ describe('waitReason', () => {
 
   it('lets the newest capture job for the path decide, ignoring other jobs', () => {
     const jobs = [
-      job({ id: '1', status: 'failed' }),
-      job({ id: '2', status: 'running' }),
-      job({ id: '3', status: 'failed', kind: 'lint' }),
       job({ id: '4', status: 'failed', source: 'sources/other.md' }),
+      job({ id: '3', status: 'failed', kind: 'lint' }),
+      job({ id: '2', status: 'running' }),
+      job({ id: '1', status: 'failed' }),
     ];
     expect(waitReason('sources/a.md', jobs, null).kind).toBe('running');
+  });
+
+  it('follows a retry: an older failed job does not outrank a newer queued one', () => {
+    const jobs = [
+      job({ id: '2', status: 'queued' }),
+      job({ id: '1', status: 'failed' }),
+    ];
+    expect(waitReason('sources/a.md', jobs, null).kind).toBe('queued');
   });
 });
 
@@ -85,6 +93,22 @@ describe('badgeCount', () => {
     const sources = [src('sources/a.md'), src('sources/b.md')];
     const jobs = [job({ status: 'running' })];
     expect(badgeCount(sources, jobs, null)).toBe(1);
+  });
+
+  it('does not count a retried source whose newest job is queued', () => {
+    const jobs = [
+      job({ id: '2', status: 'queued' }),
+      job({ id: '1', status: 'failed' }),
+    ];
+    expect(badgeCount([src('sources/a.md')], jobs, null)).toBe(0);
+  });
+
+  it('does not count a queued job while the cap holds the queue', () => {
+    const jobs = [job({ status: 'queued' })];
+    expect(waitReason('sources/a.md', jobs, 'cap').text).toBe(
+      'paused: daily token cap',
+    );
+    expect(badgeCount([src('sources/a.md')], jobs, 'cap')).toBe(0);
   });
 
   it('ignores a failed lint job', () => {
