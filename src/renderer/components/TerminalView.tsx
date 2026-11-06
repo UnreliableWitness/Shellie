@@ -8,6 +8,7 @@ import type { LeakState } from '../../shared/secrets';
 import type { TerminalFailure } from '../../shared/terminalFailure';
 import type { ColorScheme } from '../../shared/theme';
 import { api, tryInvoke } from '../api';
+import { onTerminalEvent } from '../terminalEvents';
 import { currentColorScheme } from '../colorScheme';
 import { useStore } from '../store';
 import { attachClipboardKeys, isMac } from '../terminalClipboard';
@@ -63,9 +64,11 @@ export function TerminalView({
 
   useEffect(() => {
     let live = true;
-    const off = api().on('terminal:leak', ({ id, ...state }) => {
-      if (id === terminalId) setLeak(state);
-    });
+    const off = onTerminalEvent(
+      'terminal:leak',
+      terminalId,
+      ({ id: _id, ...state }) => setLeak(state),
+    );
     // Mounted after the leak (another page, a relaunch of the view): main keeps the tab's state.
     void api()
       .invoke('terminals:leak', terminalId)
@@ -145,8 +148,7 @@ export function TerminalView({
     // the buffer ends with.
     let replayed = false;
     const queued: string[] = [];
-    const offData = api().on('terminal:data', (e) => {
-      if (e.id !== terminalId) return;
+    const offData = onTerminalEvent('terminal:data', terminalId, (e) => {
       if (!replayed) queued.push(e.data);
       else if (shown) t.write(e.data);
       else {
@@ -154,13 +156,11 @@ export function TerminalView({
         pendingTimer ??= setTimeout(writePending, HIDDEN_WRITE_MS);
       }
     });
-    const offExit = api().on('terminal:exit', (e) => {
-      if (e.id !== terminalId) return;
+    const offExit = onTerminalEvent('terminal:exit', terminalId, (e) => {
       setExitCode(e.exitCode);
       setFailure(e.failure ?? null);
     });
-    const offReset = api().on('terminal:reset', (e) => {
-      if (e.id !== terminalId) return;
+    const offReset = onTerminalEvent('terminal:reset', terminalId, () => {
       // Output gathered while hidden belongs to the old process.
       pending.length = 0;
       t.reset();

@@ -23,20 +23,27 @@ const settle = () =>
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-const hooks: [string, (t?: TaskView) => unknown][] = [
-  ['useReview', (t = task) => useReview(t, { kind: 'all' }, true)],
-  ['useChangeCount', (t = task) => useChangeCount(t, true)],
+const hooks: [
+  string,
+  'review:files' | 'review:count',
+  (t?: TaskView) => unknown,
+][] = [
+  [
+    'useReview',
+    'review:files',
+    (t = task) => useReview(t, { kind: 'all' }, true),
+  ],
+  ['useChangeCount', 'review:count', (t = task) => useChangeCount(t, true)],
 ];
 
-describe.each(hooks)('%s', (_name, hook) => {
+describe.each(hooks)('%s', (_name, channel, hook) => {
   it('loads again when a repo joins the task (#84)', async () => {
     const api = installFakeApi();
     const { rerender } = renderHook((t: TaskView) => hook(t), {
       initialProps: task,
     });
     await settle();
-    const files = () =>
-      api.calls.filter((c) => c.channel === 'review:files').length;
+    const files = () => api.calls.filter((c) => c.channel === channel).length;
     const before = files();
     rerender({ ...task, terminals: [] } as TaskView);
     await settle();
@@ -49,12 +56,11 @@ describe.each(hooks)('%s', (_name, hook) => {
     expect(files()).toBe(before + 1);
   });
 
-  it('makes one review:files call for a burst of events', async () => {
+  it('makes one call for a burst of events', async () => {
     const api = installFakeApi();
     renderHook(hook);
     await settle();
-    const files = () =>
-      api.calls.filter((c) => c.channel === 'review:files').length;
+    const files = () => api.calls.filter((c) => c.channel === channel).length;
     const before = files();
     for (let i = 0; i < 5; i++) {
       act(() => api.emit('review:changed', { taskId: 't1' }));
@@ -67,20 +73,21 @@ describe.each(hooks)('%s', (_name, hook) => {
   });
 
   it('runs exactly one follow-up for events during a call', async () => {
-    let answer: (f: ReviewFiles) => void = () => {};
+    let answer: (f: never) => void = () => {};
     let pending = false;
     const api = installFakeApi({
-      'review:files': () =>
+      [channel]: () =>
         pending
-          ? new Promise<ReviewFiles>((r) => {
+          ? new Promise<never>((r) => {
               answer = r;
             })
-          : { repos: [] },
+          : channel === 'review:count'
+            ? 0
+            : { repos: [] },
     });
     renderHook(hook);
     await settle();
-    const files = () =>
-      api.calls.filter((c) => c.channel === 'review:files').length;
+    const files = () => api.calls.filter((c) => c.channel === channel).length;
     const before = files();
     pending = true;
     act(() => api.emit('review:changed', { taskId: 't1' }));
@@ -93,7 +100,7 @@ describe.each(hooks)('%s', (_name, hook) => {
     await settle();
     expect(files()).toBe(before + 1);
     await act(async () => {
-      answer({ repos: [] });
+      answer((channel === 'review:count' ? 0 : { repos: [] }) as never);
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(files()).toBe(before + 2);

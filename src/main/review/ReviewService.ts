@@ -23,6 +23,7 @@ import { requireWorktree } from '../workspaces/existing';
 import type { ReviewStore } from './ReviewStore';
 import {
   assertRelPath,
+  countFiles,
   countUncommitted,
   listCommits,
   listFiles,
@@ -120,6 +121,28 @@ export class ReviewService {
       }),
     );
     return { repos };
+  }
+
+  /** The number of files in All changes across the task's repos; a repo that fails counts none. */
+  async count(task: Task): Promise<number> {
+    const counts = await Promise.all(
+      this.workspaces(task).map(async (ws) => {
+        if (!existsSync(ws.worktreePath)) return 0;
+        try {
+          const wt = ws.worktreePath;
+          const range = await rangeFor(
+            this.d.git,
+            wt,
+            { kind: 'all' },
+            await this.base(ws),
+          );
+          return await countFiles(this.d.git, wt, range);
+        } catch {
+          return 0;
+        }
+      }),
+    );
+    return counts.reduce((a, b) => a + b, 0);
   }
 
   /** Marks the files whose added lines hold a stored value. A failed look flags nothing, as before leak watch. */

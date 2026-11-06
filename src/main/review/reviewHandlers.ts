@@ -15,6 +15,7 @@ import type { ReviewService } from './ReviewService';
 
 type ReviewChannels =
   | 'review:files'
+  | 'review:count'
   | 'review:file'
   | 'review:state'
   | 'review:setViewed'
@@ -46,6 +47,7 @@ export function createReviewHandlers(
   return {
     'review:files': async (taskId, scope) =>
       d.review.files(task(taskId), ReviewScopeSchema.parse(scope)),
+    'review:count': async (taskId) => d.review.count(task(taskId)),
     'review:file': async (taskId, workspaceId, file, scope) =>
       d.review.file(
         task(taskId),

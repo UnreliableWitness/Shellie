@@ -77,6 +77,16 @@ describe('ReviewService', () => {
     expect(one.repos[0].uncommitted).toBe(3);
   });
 
+  it('counts the files All changes lists, untracked ones included, without listing them', async () => {
+    const { task, service, repo } = setup();
+    writeFileSync(path.join(repo, 'staged.ts'), 's\n');
+    git(repo, 'add', 'staged.ts');
+    writeFileSync(path.join(repo, 'new.ts'), 'n\n');
+    const all = await service.files(task, { kind: 'all' });
+    expect(await service.count(task)).toBe(all.repos[0].files.length);
+    expect(await service.count(task)).toBe(4);
+  });
+
   it('reports a missing worktree and no base per repo instead of failing', async () => {
     const { task, service, repo } = setup();
     const noBase = testTask({

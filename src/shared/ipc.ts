@@ -348,6 +348,8 @@ export type Channels = {
     args: [taskId: string, scope: ReviewScope];
     result: ReviewFiles;
   };
+  /** How many files All changes lists across the task's repos, for the Changes badge; a failing repo counts none. */
+  'review:count': { args: [taskId: string]; result: number };
   'review:file': {
     args: [
       taskId: string,

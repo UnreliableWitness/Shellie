@@ -765,7 +765,15 @@ async function boot(): Promise<void> {
       telemetry: (vendor, kind) =>
         telemetry.event('budget.alert', { vendor, kind }),
     });
-    stopBudget = () => budget.stop();
+    stopBudget = () => {
+      budget.stop();
+      // will-quit holds the quit for this write.
+      const p = budgetStore.flush().catch((err) => {
+        console.warn('[budget] could not save on quit', err);
+      });
+      timeWrites.add(p);
+      void p.finally(() => timeWrites.delete(p));
+    };
     // The cost ledger: every AI request priced and attributed to a task, a repo or nothing. Its readers
     // have no `since`, so the first run backfills all the transcripts and OpenCode still have.
     const ledgerStore = new LedgerStore(path.join(usageDir, 'ledger'));

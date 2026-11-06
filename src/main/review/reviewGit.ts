@@ -293,6 +293,36 @@ export async function listFiles(
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+/**
+ * How many files `listFiles` lists for the range, without its stats, hashes or file reads:
+ * the Changes badge only shows the number, and it refreshes on every worktree event.
+ */
+export async function countFiles(
+  git: GitClient,
+  worktree: string,
+  range: DiffRange,
+): Promise<number> {
+  const refs = range.to === null ? [range.from] : [range.from, range.to];
+  const [ns, others] = await Promise.all([
+    git.run(worktree, [...DIFF, '--name-status', ...refs, '--']),
+    range.to === null
+      ? git.run(worktree, [
+          '--no-optional-locks',
+          '-c',
+          'core.quotepath=off',
+          'ls-files',
+          '-z',
+          '--others',
+          '--exclude-standard',
+        ])
+      : Promise.resolve(''),
+  ]);
+  const untracked = others
+    .split('\0')
+    .filter((p) => p && !p.endsWith('/')).length;
+  return parseNameStatus(ns).length + untracked;
+}
+
 export async function listCommits(
   git: GitClient,
   worktree: string,
