@@ -14,7 +14,7 @@ import { openBrainTerminal, trackBrain } from './brainActions';
 import { NOTE_HINT, PendingFiles } from './PendingFiles';
 import { pagesChangedBy } from './recent';
 import { SOURCE_TYPES, type BrainDrop } from './useBrainDrop';
-import { waitingSources, waitReason } from './waiting';
+import { captureInFlight, waitingSources, waitReason } from './waiting';
 
 export { guessType } from './useBrainDrop';
 
@@ -254,9 +254,9 @@ export function WaitingToCapture({
   const rows = waiting.map((r) => ({
     ...r,
     reason: waitReason(r.path, brain.jobs, paused),
+    busy: captureInFlight(r.path, brain.jobs),
   }));
-  // A capture already queued or running for the source is not offered again.
-  const busy = (kind: string) => kind === 'queued' || kind === 'running';
+  // A capture already in flight for the source is not offered again.
   const run = (path: string) =>
     tryInvoke(
       () => api().invoke('brain:run', brain.id, 'capture', path),
@@ -268,7 +268,7 @@ export function WaitingToCapture({
   };
   const captureAll = () => {
     trackBrain('capture');
-    for (const r of rows) if (!busy(r.reason.kind)) void run(r.path);
+    for (const r of rows) if (!r.busy) void run(r.path);
   };
   return (
     <section className="brain-card" aria-labelledby="brain-waiting-h">
@@ -282,7 +282,7 @@ export function WaitingToCapture({
         <button
           type="button"
           className="btn btn-sm brain-card-action"
-          disabled={rows.every((r) => busy(r.reason.kind))}
+          disabled={rows.every((r) => r.busy)}
           onClick={captureAll}
         >
           Capture all
@@ -311,7 +311,7 @@ export function WaitingToCapture({
               type="button"
               className="btn btn-sm"
               aria-label={`Capture ${r.path}`}
-              disabled={busy(r.reason.kind)}
+              disabled={r.busy}
               onClick={() => capture(r.path)}
             >
               Capture

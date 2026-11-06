@@ -294,6 +294,7 @@ describe('BrainAdd', () => {
         brainJob({
           id: 'j2',
           source: 'sources/new.vtt',
+          error: 'agent exited 1',
           startedAt: '2026-11-02T10:00:00.000Z',
         }),
       ],
@@ -304,7 +305,7 @@ describe('BrainAdd', () => {
     ).getAllByRole('listitem');
     expect(rows[0]).toHaveTextContent('new.vtt');
     expect(rows[1]).toHaveTextContent('old.vtt');
-    expect(rows[0]).toHaveTextContent('claude exited 1');
+    expect(rows[0]).toHaveTextContent('agent exited 1');
     await userEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
     expect(a.calls).toContainEqual({
       channel: 'brain:run',
@@ -471,6 +472,51 @@ describe('BrainAdd', () => {
     const runs = a.calls.filter((c) => c.channel === 'brain:run');
     expect(runs).toEqual([
       { channel: 'brain:run', args: ['b1', 'capture', 'sources/a.md'] },
+      { channel: 'brain:run', args: ['b1', 'capture', 'sources/c.md'] },
+    ]);
+  });
+
+  it('keeps a capture held by the token cap from being queued again', async () => {
+    const a = installFakeApi({
+      'brain:sources': () => [
+        source('sources/a.md'),
+        source('sources/b.md'),
+        source('sources/c.md'),
+      ],
+      'brain:run': () => brainJob({ status: 'queued' }),
+    });
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          id: 'q',
+          source: 'sources/a.md',
+          status: 'queued',
+          error: null,
+        }),
+        brainJob({
+          id: 'p',
+          source: 'sources/b.md',
+          status: 'paused',
+          error: null,
+        }),
+      ],
+    });
+    brain.health = { ...brain.health!, queuePaused: 'cap' };
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    const list = await screen.findByRole('list', {
+      name: 'Waiting to capture',
+    });
+    expect(within(list).getAllByText('paused: daily token cap')).toHaveLength(
+      2,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Capture sources/a.md' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Capture sources/b.md' }),
+    ).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Capture all' }));
+    expect(a.calls.filter((c) => c.channel === 'brain:run')).toEqual([
       { channel: 'brain:run', args: ['b1', 'capture', 'sources/c.md'] },
     ]);
   });

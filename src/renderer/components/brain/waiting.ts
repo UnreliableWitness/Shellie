@@ -19,6 +19,12 @@ function newestCapture(path: string, jobs: BrainJob[]): BrainJob | undefined {
   return jobs.find((j) => j.kind === 'capture' && j.source === path);
 }
 
+/** Whether a capture for the path is in flight (queued, running, or paused by the cap): main counts all three, so it is not queued again. */
+export function captureInFlight(path: string, jobs: BrainJob[]): boolean {
+  const status = newestCapture(path, jobs)?.status;
+  return status === 'queued' || status === 'running' || status === 'paused';
+}
+
 /** Why a source waits, from the newest capture job for its path. */
 export function waitReason(
   path: string,
