@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
@@ -222,6 +222,26 @@ describe('BrainRead', () => {
     expect(
       JSON.parse(localStorage.getItem('shellie.brain.tree.b1') ?? '[]'),
     ).toContain('decision');
+  });
+
+  it('a group collapsed while its page is open stays collapsed when the brain changes', async () => {
+    const a = setup();
+    render(<BrainRead brainId="b1" since={null} />);
+    await userEvent.click(
+      await within(tree()).findByRole('button', { name: 'Hosting' }),
+    );
+    const toggle = within(tree()).getByRole('button', { name: 'Decisions 2' });
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    act(() => a.emit('brain:changed', { brainId: 'b1' } as never));
+    await waitFor(() =>
+      expect(a.calls.filter((c) => c.channel === 'brain:pages')).toHaveLength(
+        2,
+      ),
+    );
+    expect(
+      within(tree()).getByRole('button', { name: 'Decisions 2' }),
+    ).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('Recent changes and Log open in the reading column', async () => {

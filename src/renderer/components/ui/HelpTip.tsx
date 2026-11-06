@@ -103,6 +103,12 @@ export function HelpTip({
             id={id}
             role="tooltip"
             className="helptip-pop"
+            // Focusable, so a click on the text moves focus here instead of closing the tip on the button's blur.
+            tabIndex={-1}
+            onBlur={(e) => {
+              const to = e.relatedTarget as Node | null;
+              if (!pop.current?.contains(to) && to !== btn.current) close();
+            }}
             style={{
               left: Math.max(
                 4,

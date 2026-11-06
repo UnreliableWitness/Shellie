@@ -459,6 +459,45 @@ describe('BrainAdd', () => {
     ).toBeEnabled();
   });
 
+  it('the heading counts only what waits for you; a source being captured is listed but not counted', async () => {
+    installFakeApi({
+      'brain:sources': () => [source('sources/a.md'), source('sources/b.md')],
+    });
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          source: 'sources/b.md',
+          status: 'running',
+          endedAt: null,
+          error: null,
+        }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    const list = await screen.findByRole('list', {
+      name: 'Waiting to capture',
+    });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(
+      screen.getByRole('heading', { name: 'Waiting to capture · 1' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 capturing')).toBeInTheDocument();
+  });
+
+  it('with everything being captured the heading has no count', async () => {
+    installFakeApi({ 'brain:sources': () => [source('sources/b.md')] });
+    const brain = brainView({
+      jobs: [
+        brainJob({ source: 'sources/b.md', status: 'queued', error: null }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    expect(
+      await screen.findByRole('heading', { name: 'Waiting to capture' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 capturing')).toBeInTheDocument();
+  });
+
   it('Capture all queues one capture per waiting source not queued or running', async () => {
     const a = installFakeApi({
       'brain:sources': () => [
@@ -583,7 +622,7 @@ describe('BrainAdd', () => {
       screen.getByRole('button', { name: 'Help: Waiting to capture' }),
     );
     expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Dropped and pasted sources are captured automatically; while that runs they show here as queued or capturing. The rest wait for you: a capture that failed, the queue paused by the token cap, or a file put in the folder by hand. The Add badge counts only those.',
+      'Dropped and pasted sources are captured automatically; while that runs, or while the daily token cap holds the queue, they are listed here as queued or capturing. The number counts the rest, the ones that wait for you: a capture that failed, or a file put in the folder by hand. The Add badge shows the same number.',
     );
     expect(document.body.textContent).not.toMatch(/claude|opencode/i);
     expect(container.innerHTML).not.toMatch(/claude|opencode/i);

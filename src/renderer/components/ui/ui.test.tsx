@@ -271,6 +271,12 @@ describe('HelpTip', () => {
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
+  it('stays open when its own text is clicked', async () => {
+    tip();
+    await userEvent.click(screen.getByRole('button', { name: 'Help: Sync' }));
+    await userEvent.click(screen.getByText('Pulls changes'));
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+  });
   it('opens when tabbed to and closes when focus leaves', async () => {
     render(
       <>

@@ -270,15 +270,24 @@ export function WaitingToCapture({
     trackBrain('capture');
     for (const r of rows) if (!r.busy) void run(r.path);
   };
+  // The heading counts what waits for you, the same number as the Add badge; captures in flight are only listed.
+  const inFlight = rows.filter((r) => r.busy).length;
+  const forYou = rows.length - inFlight;
   return (
     <section className="brain-card" aria-labelledby="brain-waiting-h">
       <div className="brain-card-head">
-        <h2 id="brain-waiting-h">Waiting to capture · {rows.length}</h2>
+        <h2 id="brain-waiting-h">
+          Waiting to capture{forYou > 0 && ` · ${forYou}`}
+        </h2>
+        {inFlight > 0 && (
+          <span className="muted small">{inFlight} capturing</span>
+        )}
         <HelpTip label="Waiting to capture">
-          Dropped and pasted sources are captured automatically; while that runs
-          they show here as queued or capturing. The rest wait for you: a
-          capture that failed, the queue paused by the token cap, or a file put
-          in the folder by hand. The Add badge counts only those.
+          Dropped and pasted sources are captured automatically; while that
+          runs, or while the daily token cap holds the queue, they are listed
+          here as queued or capturing. The number counts the rest, the ones that
+          wait for you: a capture that failed, or a file put in the folder by
+          hand. The Add badge shows the same number.
         </HelpTip>
         <button
           type="button"
