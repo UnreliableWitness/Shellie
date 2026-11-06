@@ -135,6 +135,14 @@
   align-items: center;
   gap: 4px;
 }
+/* Health's facts as label and value columns: the side column is too narrow for the page header's wrapping row. */
+.brain-card .facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 6px 16px;
+  padding: 4px 0 12px;
+}
 .brain-card-head {
   display: flex;
   align-items: center;
@@ -672,8 +680,9 @@
   border-left-color: var(--accent);
 }
 .brain-tree-caret {
-  width: 10px;
-  font-size: 10px;
+  display: inline-flex;
+  flex: none;
+  width: 16px;
   color: var(--muted);
 }
 .brain-tree-count {

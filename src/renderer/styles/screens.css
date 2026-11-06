@@ -60,6 +60,9 @@
   margin-left: auto;
 }
 .list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   background: var(--bg-card);
   border-radius: var(--radius-card);
   overflow: hidden;

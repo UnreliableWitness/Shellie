@@ -1,4 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import {
+  ChevronDown16Regular,
+  ChevronRight16Regular,
+} from '@fluentui/react-icons';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { local } from '../../localStorage';
 import type { TreeGroup, TreeItem } from './brainTree';
 
@@ -113,20 +117,22 @@ export function BrainTree({
     update(next);
   };
 
-  // The group holding the open page opens (and stays open).
+  // The group holding a newly opened page opens, once: a group the reader collapses afterwards stays collapsed
+  // when the brain changes (new `groups`).
+  const expandedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!current) return;
+    if (!current || expandedFor.current === current) return;
     const holding = start.some((i) => i.path === current)
       ? [START]
       : keysHolding(groups, current);
-    setCollapsed((prev) => {
-      if (!holding.some((k) => prev.has(k))) return prev;
-      const next = new Set(prev);
-      for (const k of holding) next.delete(k);
-      writeCollapsed(collapsedKey, next);
-      return next;
-    });
-  }, [current, groups, start, collapsedKey]);
+    // Not in the tree yet (pages still loading): try again when they arrive.
+    if (!holding.length) return;
+    expandedFor.current = current;
+    if (!holding.some((k) => collapsed.has(k))) return;
+    const next = new Set(collapsed);
+    for (const k of holding) next.delete(k);
+    update(next);
+  });
 
   const item = (i: TreeItem) => (
     <Item
@@ -154,7 +160,7 @@ export function BrainTree({
           onClick={() => toggle(key)}
         >
           <span className="brain-tree-caret" aria-hidden="true">
-            {open ? '▾' : '▸'}
+            {open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
           </span>
           {label}
           {count !== null && (
