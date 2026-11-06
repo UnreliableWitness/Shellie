@@ -5,6 +5,7 @@ import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
 import { setupTabsFrom } from '../../shared/terminals';
 import type {
   CopyEntry,
+  CreateTaskInput,
   ShellieConfig,
   WorkItemRef,
   WorkItemType,
@@ -281,24 +282,11 @@ export function NewTaskScreen({
     ...(openShell ? ['your shell'] : []),
   ];
 
-  const createWithoutRepo = async () => {
+  /** Creates the task and opens its Setup page. */
+  const submit = async (input: CreateTaskInput) => {
     setBusy(true);
     const task = await tryInvoke(
-      () =>
-        api().invoke('tasks:create', {
-          repoId: null,
-          connectionId: active?.id ?? null,
-          baseRef: '',
-          name,
-          workItem: null,
-          branch: '',
-          copy: false,
-          commands: [],
-          startClaude,
-          openShell,
-          openCopilot,
-          openOpencode,
-        }),
+      () => api().invoke('tasks:create', input),
       notify,
     );
     setBusy(false);
@@ -310,7 +298,21 @@ export function NewTaskScreen({
 
   const create = async (confirmed = false) => {
     if (busy) return;
-    if (noRepo) return createWithoutRepo();
+    if (noRepo)
+      return submit({
+        repoId: null,
+        connectionId: active?.id ?? null,
+        baseRef: '',
+        name,
+        workItem: null,
+        branch: '',
+        copy: false,
+        commands: [],
+        startClaude,
+        openShell,
+        openCopilot,
+        openOpencode,
+      });
     if (!repo) return notify('error', 'Add a repository in Settings first');
     if (isGuarded(environment) && !confirmed) {
       setAsking(true);
@@ -340,32 +342,22 @@ export function NewTaskScreen({
       return;
     }
     setAsking(false);
-    setBusy(true);
-    const task = await tryInvoke(
-      () =>
-        api().invoke('tasks:create', {
-          repoId: repo.id,
-          baseRef,
-          name: mode === 'blank' ? name : '',
-          workItem:
-            mode === 'blank' ? null : workItem && workItem.id ? workItem : null,
-          branch,
-          copy,
-          commands: chosenCommands,
-          startClaude,
-          openShell,
-          openCopilot,
-          openOpencode,
-          environment,
-          ...(confirmed ? { environmentConfirmed: true } : {}),
-        }),
-      notify,
-    );
-    setBusy(false);
-    if (task) {
-      select(task.id);
-      go({ kind: 'setup', taskId: task.id });
-    }
+    return submit({
+      repoId: repo.id,
+      baseRef,
+      name: mode === 'blank' ? name : '',
+      workItem:
+        mode === 'blank' ? null : workItem && workItem.id ? workItem : null,
+      branch,
+      copy,
+      commands: chosenCommands,
+      startClaude,
+      openShell,
+      openCopilot,
+      openOpencode,
+      environment,
+      ...(confirmed ? { environmentConfirmed: true } : {}),
+    });
   };
 
   const pivots: { key: Mode; label: string }[] = [

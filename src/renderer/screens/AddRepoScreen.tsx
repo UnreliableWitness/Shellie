@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { parse as parseYaml } from 'yaml';
 import type { RepoInspection } from '../../shared/repoInspection';
 import { ShellieYmlSchema } from '../../shared/shellieYml';
-import { api, ipcErrorMessage, tryInvoke } from '../api';
+import { api, tryInvoke } from '../api';
+import { errorMessage } from '../../shared/errors';
 import { PageHeader, StepStrip } from '../components/ui';
 import { nextStep, stepsFrom } from '../onboardingState';
 import { useStore } from '../store';
@@ -17,7 +18,7 @@ function yamlProblem(text: string): string | null {
     const where = issue?.path.join('.');
     return `${where ? `${where}: ` : ''}${issue?.message ?? 'Not a valid .shellie.yml'}`;
   } catch (e) {
-    return ipcErrorMessage(e);
+    return errorMessage(e);
   }
 }
 
@@ -127,7 +128,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
       setFound(result);
       setText(result.proposal ?? '');
     } catch (e) {
-      if (id === latest.current) setError(ipcErrorMessage(e));
+      if (id === latest.current) setError(errorMessage(e));
     }
   };
 

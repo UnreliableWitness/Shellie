@@ -1,8 +1,5 @@
+export { eur, plural } from '../shared/text';
 export { formatDuration } from '../shared/time';
-
-/** An amount in euros with two decimals, such as "€1.50". */
-export const eur = (n: number): string =>
-  `${String.fromCharCode(0x20ac)}${(Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2)}`;
 
 /** A euro amount short enough for a chart label: cents under €1,000, whole euros up to €100k, then "€123k". */
 export const shortEur = (n: number): string => {
@@ -43,6 +40,14 @@ export const dateTime = (iso: string): string => {
       });
 };
 
+/** A local time of day such as "14:05"; the input as-is when it is not a date. */
+export const clock = (isoOrMs: string | number): string => {
+  const d = new Date(isoOrMs);
+  return Number.isNaN(d.getTime())
+    ? String(isoOrMs)
+    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
 /** A sprint's dates such as "15 Oct – 28 Oct". ADO stores them as UTC midnights, so they are read in UTC. Null when either is unset. */
 export const sprintDates = (
   start: string | null,
@@ -76,10 +81,6 @@ export const duration = (fromIso: string, toIso: string): string | null => {
   const d = Math.floor(h / 24);
   return h % 24 ? `${d} d ${h % 24} h` : `${d} d`;
 };
-
-/** "1 file", "2 files"; pass `many` for an irregular plural. */
-export const plural = (n: number, one: string, many = `${one}s`): string =>
-  `${n} ${n === 1 ? one : many}`;
 
 /** A task in a list: "#4312 Checkout address form", or the name of a task without a work item. */
 export const taskLabel = (t: {

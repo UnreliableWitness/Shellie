@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { writeAtomic } from '../fsRetry';
 import { BrainStateSchema, type BrainState } from '../../shared/brain';
 
 const LOCK_STALE_MS = 3600 * 1000;
@@ -47,9 +48,11 @@ export async function writeState(
   const next = BrainStateSchema.parse(mutate(BrainStateSchema.parse(raw)));
   const file = stateFile(brainDir);
   await mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, `${JSON.stringify({ ...raw, ...next }, null, 2)}\n`);
-  await rename(tmp, file);
+  await writeAtomic(
+    file,
+    `${JSON.stringify({ ...raw, ...next }, null, 2)}\n`,
+    `.${process.pid}.tmp`,
+  );
   return next;
 }
 

@@ -37,6 +37,12 @@ describe('claudeSessionExists', () => {
       path.join('/cfg', 'projects'),
     );
   });
+
+  it('defaults to ~/.claude/projects', () => {
+    expect(claudeProjectsDir({}, '/home/u')).toBe(
+      path.join('/home/u', '.claude', 'projects'),
+    );
+  });
 });
 
 describe('claudeHasSessionsIn', () => {

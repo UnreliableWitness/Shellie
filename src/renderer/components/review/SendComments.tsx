@@ -1,5 +1,6 @@
 import { ChevronDown16Regular, Send16Regular } from '@fluentui/react-icons';
 import { useCallback, useRef, useState } from 'react';
+import { isAgentKind } from '../../../shared/agents';
 import type { ReviewComment, ReviewState } from '../../../shared/review';
 import type { TaskView } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
@@ -14,9 +15,6 @@ import { useStore } from '../../store';
 import { track } from '../../telemetry';
 import { PopupMenu } from '../ui';
 import { plural } from '../../format';
-
-/** Agent tabs only: a shell would run each line of the paste. */
-const AGENTS = new Set(['claude', 'copilot', 'opencode']);
 
 export function SendComments({
   task,
@@ -40,7 +38,8 @@ export function SendComments({
   const [sending, setSending] = useState(false);
   const busy = useRef(false);
   const close = useCallback(() => setMenu(false), []);
-  const targets = task.terminals.filter((t) => AGENTS.has(t.kind));
+  // Agent tabs only: a shell would run each line of the paste.
+  const targets = task.terminals.filter((t) => isAgentKind(t.kind));
   const open = comments.filter((c) => c.status === 'open');
   const target = pickSendTarget(targets, chosen, (t) => t.kind === 'claude');
 

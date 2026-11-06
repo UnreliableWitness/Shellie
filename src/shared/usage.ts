@@ -43,7 +43,7 @@ export type UsageRecord = UsageEvent & {
   rate: RateSnapshot | null;
 };
 
-export const RateSchema = z.object({
+const RateSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   match: z.array(z.string().min(1)).min(1),

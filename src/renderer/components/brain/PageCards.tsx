@@ -2,7 +2,7 @@ import type { BrainPageRow, BrainPageType } from '../../../shared/brain';
 import { shortDay } from './recent';
 
 /** The section heading per type, in the front page's order. */
-export const TYPE_LABELS: Record<BrainPageType, string> = {
+const TYPE_LABELS: Record<BrainPageType, string> = {
   account: 'Account',
   scope: 'Scope',
   component: 'Components',

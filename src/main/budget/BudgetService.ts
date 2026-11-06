@@ -7,6 +7,7 @@ import type {
 import { budgetMonth, dayKey, VENDORS } from '../../shared/budget';
 import { type BudgetView, budgetView } from '../../shared/budgetView';
 import type { Task } from '../../shared/types';
+import { eur } from '../../shared/text';
 import { taskWorkspaces } from '../../shared/workspaces';
 import { isInside } from '../paths';
 import { OFFICIAL_RATES } from '../pricing/officialRates';
@@ -40,7 +41,6 @@ export type BudgetServiceDeps = {
   telemetry?: (vendor: Vendor, kind: AlertKind) => void;
 };
 
-const eur = (n: number) => `€${n.toFixed(2)}`;
 const label = modelLabeler(OFFICIAL_RATES);
 
 /** Reads Claude Code, OpenCode and Shellie's own usage into the budget rollup, on a timer and on demand, and raises each budget's alerts. */

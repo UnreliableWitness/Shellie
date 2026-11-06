@@ -85,7 +85,7 @@ const isNoise = (name: string) =>
   name.startsWith('WEF_');
 
 /** The work item part of task.md is cut to about this many characters, dropping the oldest comments first. */
-export const WORK_ITEM_MAX_CHARS = 200_000;
+const WORK_ITEM_MAX_CHARS = 200_000;
 
 const ENTITIES: Record<string, string> = {
   amp: '&',
@@ -97,7 +97,7 @@ const ENTITIES: Record<string, string> = {
 };
 
 /** Azure DevOps HTML (descriptions, HTML comments) as plain text: line breaks and list items kept, other tags dropped. */
-export function htmlToText(html: string): string {
+function htmlToText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<li[^>]*>/gi, '\n- ')
@@ -243,9 +243,7 @@ const noRepoLines = (task: Task): string[] => [
 ];
 
 /** How Claude joins another repo to the task: a worktree on the task's branch, which Shellie detects. */
-export function otherReposInstruction(
-  task: Pick<Task, 'branch' | 'slug'>,
-): string {
+function otherReposInstruction(task: Pick<Task, 'branch' | 'slug'>): string {
   return `If this task needs changes in another repository, do not edit that repository's main checkout. Create a worktree there on this task's branch: git -C <repo> worktree add <repo>.worktrees/${task.slug} -b ${task.branch} <base> (use the repo's default branch as base, from origin when it exists). Shellie picks it up automatically.`;
 }
 

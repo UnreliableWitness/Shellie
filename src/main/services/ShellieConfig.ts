@@ -36,7 +36,7 @@ type BaseGit = Pick<GitClient, 'defaultBaseRef' | 'currentBranch'>;
 let defaultGit: GitClient | undefined;
 
 /** The repo's own default branch (origin/HEAD, main, master, ...), for a config that sets no `base`. */
-export async function defaultBaseBranch(
+async function defaultBaseBranch(
   repoPath: string,
   git: BaseGit = (defaultGit ??= new GitClient()),
 ): Promise<string> {

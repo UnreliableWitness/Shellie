@@ -48,7 +48,7 @@ export const MARKER = 'migrated-from-miac.json';
 /** Present while a copy runs, holding `{ "attempts": N }`; if it is still there at the next start the copy failed and runs again. */
 export const SENTINEL = 'migrating-from-miac';
 /** After this many failed runs the copy gives up: a marker with `failed: true` stops further runs. */
-export const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 3;
 const DATA = ['state.json', 'connections.json'];
 /** Chromium's localStorage; copied best effort, since a running MIAC holds its files locked. */
 const LOCAL_STORAGE = 'Local Storage';

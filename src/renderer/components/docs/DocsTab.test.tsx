@@ -271,7 +271,7 @@ describe('DocsTab', () => {
       );
       expect(
         api.calls.filter((c) => c.channel === 'docs:openInEditor').at(-1)?.args,
-      ).toEqual(['t1', 'README.md']);
+      ).toEqual(['t1', 'README.md', undefined]);
     } finally {
       vi.useRealTimers();
     }

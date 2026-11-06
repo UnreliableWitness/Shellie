@@ -119,7 +119,7 @@ export function bitmapSize(
 }
 
 /** Whether a BMP or ICO claims more pixels than the decoder may allocate. */
-export function claimsTooManyPixels(data: Buffer, ext: string): boolean {
+function claimsTooManyPixels(data: Buffer, ext: string): boolean {
   const claimed = bitmapSize(data, ext);
   return claimed !== null && claimed.width * claimed.height > MAX_BITMAP_PIXELS;
 }

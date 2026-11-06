@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { BudgetRecord } from '../../shared/budget';
+import { tick } from '../async';
 
 type Usage = {
   input_tokens?: number;
@@ -64,15 +64,6 @@ export function parseTranscriptLine(line: string): BudgetRecord | null {
   };
 }
 
-export function claudeProjectsDir(
-  env: NodeJS.ProcessEnv = process.env,
-  home = os.homedir(),
-): string {
-  return env.CLAUDE_CONFIG_DIR
-    ? path.join(env.CLAUDE_CONFIG_DIR, 'projects')
-    : path.join(home, '.claude', 'projects');
-}
-
 export type FileCursor = {
   offset: number;
   size: number;
@@ -93,8 +84,6 @@ async function* jsonlFiles(dir: string): AsyncGenerator<string> {
     else if (e.isFile() && e.name.endsWith('.jsonl')) yield p;
   }
 }
-
-const tick = () => new Promise<void>((r) => setImmediate(r));
 
 /** Follows every Claude Code transcript under `root`, reading only bytes appended since the last pass. */
 export class ClaudeTranscriptReader {

@@ -18,10 +18,6 @@ export function joinAnd(names: string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
-/** The time Production ends, as the clock shows it ("10:47"). */
-export const untilTime = (iso: string): string =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
 /** "51077" for a work item, else the task name. */
 export const taskShortName = (t: {
   workItem: { id: string } | null;

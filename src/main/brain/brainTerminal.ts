@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { brainTaskId, type Brain } from '../../shared/brain';
 import type { TerminalDef } from '../../shared/types';
+import { sleep } from '../async';
+import type { Wait } from '../fsRetry';
 import type { Platform } from '../platform/Platform';
 import type { TerminalManager } from '../services/TerminalManager';
 import type { BrainStore } from './BrainStore';
 
 /** The brain's one Claude terminal: the stored one, or the definition a first open will store. */
-export function brainTerminalDef(brain: Brain): TerminalDef {
+function brainTerminalDef(brain: Brain): TerminalDef {
   return (
     brain.terminal ?? {
       id: `brain-${brain.id}`,
@@ -49,8 +51,7 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
   const ownerOf = (terminalId: string): Brain | undefined =>
     d.brains.list().find((b) => b.terminal?.id === terminalId);
 
-  const wait =
-    d.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const wait: Wait = d.wait ?? sleep;
 
   /** `prompt` is Claude's first message, as its positional argument. */
   const spawn = async (

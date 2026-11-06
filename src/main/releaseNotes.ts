@@ -11,8 +11,8 @@ import type { ReleaseNote, WhatsNew } from '../shared/ipc';
 import type { AppSettings } from '../shared/usage';
 import { UPDATE_REPO } from './autoUpdate';
 
-export const RELEASES_API = `https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=30`;
-export const RELEASES_PAGE = `https://github.com/${UPDATE_REPO}/releases`;
+const RELEASES_API = `https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=30`;
+const RELEASES_PAGE = `https://github.com/${UPDATE_REPO}/releases`;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /** The fields of a GitHub Releases API entry this module reads. */

@@ -107,7 +107,7 @@ import {
 } from '../../shared/workspaces';
 import { UPDATE_REPO } from '../autoUpdate';
 import { pathExists } from '../fsRetry';
-import { worktreeRoot } from '../paths';
+import { toRel, worktreeRoot } from '../paths';
 import type { BudgetService } from '../budget/BudgetService';
 import {
   CostServerError,
@@ -219,8 +219,9 @@ import {
 } from '../brain/context';
 import { sessionDigest } from '../brain/sessionDigest';
 import { addSource } from '../brain/sources';
-import type { Brain } from '../../shared/brain';
+import type { Brain, BrainJobKind, RefreshResult } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
+import { withTimeout } from '../async';
 
 export type Services = {
   /** The brain's own Claude terminal (main); absent in most tests. */
@@ -356,13 +357,13 @@ export type Services = {
   claudeHasSessionsIn?: (cwd: string) => boolean;
   /** Finds and joins other repos' worktrees of a task; handlers build one from these services when absent (tests). */
   workspaces?: WorkspaceDetector;
-  /** Windows auto-update: the downloaded update and how to apply it. Absent in dev, on macOS and in tests. */
   /** The clock for Production bounds (default Date.now). */
   now?: () => number;
   /** Checks Production bounds every 30 s and on resume (main: setInterval, powerMonitor); absent: no expiry. */
   expiryTimers?: ExpiryTimers;
   /** Stops the task's `shellie run` processes (RunHub.stopForTask) when Production ends or at Finish; `reason` is what the agent reads. */
   stopRuns?: (taskId: string, reason?: string) => void;
+  /** Windows auto-update: the downloaded update and how to apply it. Absent in dev, on macOS and in tests. */
   update?: {
     pending(): PendingUpdate | null;
     /** Quits and starts the update; false when none is downloaded. */
@@ -453,6 +454,23 @@ export function createHandlers(s: Services): Handlers {
   let agentsCache: AgentsDetected | null = null;
   const sessionExists = s.claudeSessionExists ?? claudeSessionExists;
   const hasSessionsIn = s.claudeHasSessionsIn ?? claudeHasSessionsIn;
+  // Looked up on each call, not once: tests swap these services after the handlers are made.
+  const sessionFile = (id: string) =>
+    (s.claudeSessionFile ?? claudeSessionFile)(id);
+  const runAgent: NonNullable<Services['runAgent']> = (cmd, o) =>
+    (s.runAgent ?? runWithInput)(cmd, o);
+  const openPath = (absPath: string) =>
+    s.openPath?.(absPath) ?? Promise.resolve('');
+  const revealFile = (absPath: string) => s.revealFile?.(absPath);
+  const grantView = (realFile: string) => {
+    if (!s.grantView) throw new Error('HTML files cannot be shown here');
+    return s.grantView(realFile);
+  };
+  /** Opens a folder in Explorer or Finder; what shell.openPath reports is thrown. */
+  const openFolder = async (absPath: string) => {
+    const error = await openPath(absPath);
+    if (error) throw new Error(error);
+  };
   const connectionsChanged = () =>
     s.broadcast('connections:changed', s.connections.list());
   const discovery = new DiscoveryHold();
@@ -484,12 +502,28 @@ export function createHandlers(s: Services): Handlers {
     ).toISOString();
   const reposChanged = () => s.broadcast('repos:changed', s.repos.list());
 
+  const discoverDeps = {
+    git: s.git,
+    userSecretsDir: (id: string) => s.platform.userSecretsDir(id),
+  };
+  /** The secret files and values in a folder (a repo's main checkout or a worktree). */
+  const discover = (folder: string) => discoverSecrets(folder, discoverDeps);
+  /** Discovers a repo's secrets and holds them (names and values stay in main) for the import step. */
+  const discoverAndHold = async (repoId: string) => {
+    const r = await discover(s.repos.get(repoId).path);
+    tel.event(
+      'secrets.discovered',
+      undefined,
+      discoveredMeasurements(r.found, r.skipped),
+    );
+    return {
+      held: discovery.hold(repoId, r.found, r.skipped),
+      skipped: r.skipped,
+    };
+  };
   /** The values found in files git tracks in the repo's main checkout (leak watch does not alert on them). */
   const trackedValues = async (repoId: string) => {
-    const r = await discoverSecrets(s.repos.get(repoId).path, {
-      git: s.git,
-      userSecretsDir: (id) => s.platform.userSecretsDir(id),
-    });
+    const r = await discover(s.repos.get(repoId).path);
     return new Set(r.found.filter((f) => f.tracked).map((f) => f.value));
   };
   const leakWatch = new LeakWatch({
@@ -598,16 +632,15 @@ export function createHandlers(s: Services): Handlers {
       }
       throw e;
     }
-    // A working call proves the token is fine again; heal a stale red status.
-    try {
-      const current = s.connections.get(connectionId);
-      if (current.status !== 'ok') {
+    // A working call proves the token is fine again; heal a stale red status (of a connection still there).
+    const current = s.connections.find(connectionId);
+    if (current && current.status !== 'ok')
+      try {
         await s.connections.setStatus(connectionId, 'ok');
         connectionsChanged();
+      } catch {
+        // Status bookkeeping must never fail a successful call.
       }
-    } catch {
-      // Status bookkeeping must never fail a successful call.
-    }
     return result;
   };
 
@@ -715,6 +748,20 @@ export function createHandlers(s: Services): Handlers {
   const release = (taskId: string) => {
     inFlight.delete(taskId);
   };
+  /** Runs `fn` holding the task's claim, released when it ends however it ends. */
+  const withClaim = async <T>(
+    taskId: string,
+    allowed: TaskStatus[],
+    action: string,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    claim(taskId, allowed, action);
+    try {
+      return await fn();
+    } finally {
+      release(taskId);
+    }
+  };
 
   const taskById = (id: string): Task => {
     const t = s.store.state.tasks.find((x) => x.id === id);
@@ -777,7 +824,7 @@ export function createHandlers(s: Services): Handlers {
     ledgerToday: brain.ledgerToday,
     broadcast: s.broadcast,
     pickFolder: s.pickFolder,
-    openPath: s.openPath ?? (async () => ''),
+    openPath,
     userData: brain.userData,
     remember: (values) => s.rememberSensitive?.(values),
     event: (n, p) => tel.event(n, p),
@@ -803,13 +850,9 @@ export function createHandlers(s: Services): Handlers {
     if (!task.workItem && !hasNoRepo(task)) return null;
     const connectionId = taskConnectionId(task, s.repos.list());
     if (!connectionId) return null;
-    let project = task.workItem?.project ?? null;
-    if (!project)
-      try {
-        project = s.connections.get(connectionId).project;
-      } catch {
-        return null;
-      }
+    const project =
+      task.workItem?.project || s.connections.find(connectionId)?.project;
+    if (project === undefined) return null;
     return brainForTask(brain.store, connectionId, project);
   };
 
@@ -887,15 +930,8 @@ export function createHandlers(s: Services): Handlers {
         availability.target.project,
         availability.target.repo,
       ]);
-    const taskConnId = taskConnectionId(task, s.repos.list());
-    let taskOrg: string | null = null;
-    try {
-      taskOrg = taskConnId
-        ? organizationOf(s.connections.get(taskConnId).organizationUrl)
-        : null;
-    } catch {
-      taskOrg = null;
-    }
+    const taskConn = s.connections.find(taskConnectionId(task, s.repos.list()));
+    const taskOrg = taskConn ? organizationOf(taskConn.organizationUrl) : null;
     return {
       connection,
       availability,
@@ -913,15 +949,10 @@ export function createHandlers(s: Services): Handlers {
     task: Task,
   ): { connectionId: string; project: string } | null => {
     const connectionId = taskConnectionId(task, s.repos.list());
-    if (!connectionId) return null;
-    try {
-      return {
-        connectionId,
-        project: s.connections.get(connectionId).project,
-      };
-    } catch {
-      return null;
-    }
+    const project = s.connections.find(connectionId)?.project;
+    return connectionId && project !== undefined
+      ? { connectionId, project }
+      : null;
   };
 
   /** The fields of each work item type per connection, loaded on first use (reloaded with `refresh`). Call inside `withConnection`. */
@@ -949,12 +980,12 @@ export function createHandlers(s: Services): Handlers {
       target !== null && s.connections.get(target.connectionId).writeTimeToAdo
     );
   };
-  /** A connection by id, null when none or gone (a repo's project may have been removed). */
-  const projectOf = (id: string | null): Connection | null =>
-    id ? (s.connections.list().find((c) => c.id === id) ?? null) : null;
   /** The start settings for a task's work item: its repo's own, else those of the project the work item is in. */
   const startSettingsFor = (task: Task, repo: Repo) =>
-    effectiveStartSettings(repo, projectOf(taskConnectionId(task, [repo])));
+    effectiveStartSettings(
+      repo,
+      s.connections.find(taskConnectionId(task, [repo])),
+    );
   const timeWrites = new Map<string, Promise<unknown>>();
   /**
    * Writes the difference between the task's booked hours and what was written before to its work item, one write
@@ -1119,9 +1150,9 @@ export function createHandlers(s: Services): Handlers {
     denyPaths: string[] = [],
   ): Command => {
     // The repo's own start command (#191); a repo removed since falls back to the default.
-    const own = s.repos
-      .list()
-      .find((r) => r.id === terminalWorkspace(task, def).repoId)?.agentCommands;
+    const own = s.repos.find(
+      terminalWorkspace(task, def).repoId,
+    )?.agentCommands;
     if (def.kind === 'claude') {
       const cwd = terminalWorkspace(task, def).worktreePath;
       const dirs = activeWorkspaces(task)
@@ -1182,8 +1213,7 @@ export function createHandlers(s: Services): Handlers {
       return { env: {}, def };
     const command =
       def.kind === 'run' && !def.setupCommands ? def.command : undefined;
-    const repoPath =
-      s.repos.list().find((r) => r.id === ws.repoId)?.path ?? ws.worktreePath;
+    const repoPath = s.repos.find(ws.repoId)?.path ?? ws.worktreePath;
     // An unreadable .shellie.yml only means the tab is not known as the tests tab.
     const testCommand = command
       ? await s
@@ -1227,10 +1257,7 @@ export function createHandlers(s: Services): Handlers {
   const worktreeDenyTargets = (worktreePath: string): Promise<string[]> => {
     const hit = denyCache.get(worktreePath);
     if (hit && now() - hit.at < DENY_CACHE_MS) return hit.targets;
-    const targets = discoverSecrets(worktreePath, {
-      git: s.git,
-      userSecretsDir: (id) => s.platform.userSecretsDir(id),
-    })
+    const targets = discover(worktreePath)
       .then((r) =>
         denyTargets(r).filter(
           // A file that is gone needs no rule; a user-secrets path is absolute already.
@@ -1319,9 +1346,12 @@ export function createHandlers(s: Services): Handlers {
    * tracked (expiry, switch, Finish, Restart) even after the secret is deleted or no longer given to it.
    */
   const spawnedWithSecrets = new Set<string>();
-  const forgetSpawn = (id: string) => {
+  /** A tab's process is gone for good (killed, closed, its task discarded): nothing about its spawn is kept. */
+  const forgetTab = (id: string) => {
     spawnedEnv.delete(id);
     spawnedWithSecrets.delete(id);
+    runArgs.delete(id);
+    leakWatch.forget(id);
   };
 
   /** Spawns at once (no await), so a caller holding a task claim keeps it only for the spawn itself. */
@@ -1375,7 +1405,6 @@ export function createHandlers(s: Services): Handlers {
     if (def.kind === 'claude') s.claudeSpawned?.(def.id);
   };
 
-  /** Every tab but an agent's can hold secrets. */
   /** The shared rule (inject.ts): a stored secret of the tab's repo is given to it. */
   const holdsSecrets = (task: Task, def: TerminalDef) =>
     holdsSecretsFor(def, tabRepoSecrets(task, def)) ||
@@ -1384,8 +1413,7 @@ export function createHandlers(s: Services): Handlers {
   /** Stops a tab and tells its view it ended (a kill alone sends no exit). */
   const stopTab = async (id: string) => {
     await s.terminals.kill(id);
-    forgetSpawn(id);
-    leakWatch.forget(id);
+    forgetTab(id);
     s.broadcast('terminal:exit', { id, exitCode: -1 });
   };
 
@@ -1419,10 +1447,10 @@ export function createHandlers(s: Services): Handlers {
     };
     if (old) {
       await s.terminals.kill(old.id);
-      forgetSpawn(old.id);
-      leakWatch.forget(old.id);
+      forgetTab(old.id);
     }
     const prepared = await prepareTab(taskById(taskId), def);
+    // Not withClaim: the spawn is synchronous, so the claim is held for no tick at all (two opens at once both go through).
     claim(taskId, ['ready'], 'run a command in');
     try {
       if (taskById(taskId).environment !== spec.environment)
@@ -1458,9 +1486,7 @@ export function createHandlers(s: Services): Handlers {
           ].map((w) => ({
             id: w.id,
             worktreePath: w.worktreePath,
-            repoPath:
-              s.repos.list().find((r) => r.id === w.repoId)?.path ??
-              w.worktreePath,
+            repoPath: s.repos.find(w.repoId)?.path ?? w.worktreePath,
           })),
           agentTabs: t.terminals
             .filter((d) => isAgentKind(d.kind))
@@ -1608,13 +1634,7 @@ export function createHandlers(s: Services): Handlers {
 
   /** apm targets: the harness of each tab, in order, once. */
   const apmTargetsFor = (defs: TerminalDef[]): string[] => [
-    ...new Set(
-      defs.flatMap((d) =>
-        d.kind === 'claude' || d.kind === 'copilot' || d.kind === 'opencode'
-          ? [d.kind]
-          : [],
-      ),
-    ),
+    ...new Set(defs.flatMap((d) => (isAgentKind(d.kind) ? [d.kind] : []))),
   ];
 
   /**
@@ -1744,7 +1764,7 @@ export function createHandlers(s: Services): Handlers {
     const what =
       ws.id === HOME_ID
         ? `Branch ${ws.branch}`
-        : `${s.repos.list().find((r) => r.id === ws.repoId)?.name ?? path.basename(repoPath)}: branch ${ws.branch}`;
+        : `${s.repos.find(ws.repoId)?.name ?? path.basename(repoPath)}: branch ${ws.branch}`;
     throw new Error(
       `${what} cannot be restored: it was deleted, is not on origin, and its base is gone too`,
     );
@@ -1758,24 +1778,17 @@ export function createHandlers(s: Services): Handlers {
   ): Promise<WorkItemDetails | undefined> => {
     const connectionId = taskConnectionId(task, [repo]);
     if (!task.workItem || !connectionId) return undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([
+      return await withTimeout(
         s.trackers
           .tracker(s.connections.get(connectionId).id)
           .itemDetails(Number(task.workItem.id))
           .then((d) => (Object.keys(d.fields).length > 0 ? d : undefined)),
-        new Promise<undefined>((resolve) => {
-          timer = setTimeout(
-            () => resolve(undefined),
-            WORK_ITEM_DETAILS_TIMEOUT_MS,
-          );
-        }),
-      ]);
+        WORK_ITEM_DETAILS_TIMEOUT_MS,
+        () => undefined,
+      );
     } catch {
       return undefined;
-    } finally {
-      clearTimeout(timer);
     }
   };
 
@@ -1801,18 +1814,52 @@ export function createHandlers(s: Services): Handlers {
       await mutateTask(task.id, (t) => {
         if (t.workItem) t.workItem.project = learned;
       });
-    let project =
-      (typeof learned === 'string' && learned) || task.workItem.project || null;
-    if (!project)
-      try {
-        project = s.connections.get(connectionId).project;
-      } catch {
-        return undefined;
-      }
+    const project =
+      (typeof learned === 'string' && learned) ||
+      task.workItem.project ||
+      s.connections.find(connectionId)?.project;
+    if (project === undefined) return undefined;
     const b = brainForTask(brain.store, connectionId, project);
     return b?.options.contextInTaskMd
       ? { id: b.id, name: b.name, path: b.path }
       : undefined;
+  };
+
+  /** The transcripts of the task's Claude Code sessions (open and closed tabs), each as its lines; unsaved ones are skipped. */
+  const claudeSessionLines = async (task: Task): Promise<string[][]> => {
+    const ids = [...task.closedTerminals, ...task.terminals]
+      .filter((t) => t.kind === 'claude' && t.sessionId)
+      .map((t) => t.sessionId!);
+    const out: string[][] = [];
+    for (const id of new Set(ids)) {
+      const file = sessionFile(id);
+      if (!file) continue;
+      const text = await fs.readFile(file, 'utf8').catch(() => '');
+      if (text) out.push(text.split('\n'));
+    }
+    return out;
+  };
+
+  /**
+   * Adds `text` to the brain as a source called `name` (written to a temp file first: the source takes the file's
+   * name) and queues `job` on it. A refused source is logged; an I/O failure throws.
+   */
+  const addTempSource = async (
+    b: Brain,
+    name: string,
+    text: string,
+    job: BrainJobKind,
+  ) => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-brain-'));
+    try {
+      const file = path.join(tmp, name);
+      await fs.writeFile(file, text);
+      const r = await addSource(s.git, b.path, { file }, 'task');
+      if (r.ok) brain.runner.enqueue(b.id, job, r.path);
+      else console.error(`[brain] ${name} not added at finish:`, r.message);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+    }
   };
 
   /**
@@ -1830,57 +1877,27 @@ export function createHandlers(s: Services): Handlers {
     if (options.captureLessons) {
       // What the developer and Claude said in the task's sessions, as a source the /lessons skill reads.
       try {
-        const ids = [...task.closedTerminals, ...task.terminals]
-          .filter((t) => t.kind === 'claude' && t.sessionId)
-          .map((t) => t.sessionId!);
-        const sessions: string[][] = [];
-        for (const id of new Set(ids)) {
-          const file = (s.claudeSessionFile ?? ((x) => claudeSessionFile(x)))(
-            id,
-          );
-          if (!file) continue;
-          const text = await fs.readFile(file, 'utf8').catch(() => '');
-          if (text) sessions.push(text.split('\n'));
-        }
         const digest = sessionDigest(
           task.workItem?.title ?? task.name,
-          sessions,
+          await claudeSessionLines(task),
         );
-        if (digest) {
-          const tmp = await fs.mkdtemp(
-            path.join(os.tmpdir(), 'shellie-lessons-'),
-          );
-          try {
-            const file = path.join(tmp, `${task.slug}-session.md`);
-            await fs.writeFile(file, digest);
-            const r = await addSource(s.git, b.path, { file }, 'task');
-            if (r.ok) brain.runner.enqueue(b.id, 'lessons', r.path);
-            else
-              console.error('[brain] session not added at finish:', r.message);
-          } finally {
-            await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
-          }
-        }
+        if (digest)
+          await addTempSource(b, `${task.slug}-session.md`, digest, 'lessons');
       } catch (e) {
         console.error('[brain] lessons not captured at finish', e);
       }
     }
     if (options.captureTaskMd && (await pathExists(taskMd))) {
       // A copy named after the task, so the source's name says which task it was.
-      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-task-'));
       try {
-        const file = path.join(tmp, `${task.slug}-task.md`);
-        await fs.writeFile(
-          file,
+        await addTempSource(
+          b,
+          `${task.slug}-task.md`,
           withoutContext(await fs.readFile(taskMd, 'utf8')),
+          'capture',
         );
-        const r = await addSource(s.git, b.path, { file }, 'task');
-        if (r.ok) brain.runner.enqueue(b.id, 'capture', r.path);
-        else console.error('[brain] task.md not added at finish:', r.message);
       } catch (e) {
         console.error('[brain] task.md not captured at finish', e);
-      } finally {
-        await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
       }
     }
     try {
@@ -1908,19 +1925,14 @@ export function createHandlers(s: Services): Handlers {
     let detail = `context from ${b.name}`;
     let warn = false;
     if (brain.store.get(b.id)?.wiki) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const r = await Promise.race([
+      const r = await withTimeout<RefreshResult>(
         brainHandlers['brain:refresh'](b.id).catch((e: unknown) => ({
-          ok: false as const,
+          ok: false,
           message: errorMessage(e),
         })),
-        new Promise<{ ok: false; message: string }>((resolve) => {
-          timer = setTimeout(
-            () => resolve({ ok: false, message: 'timed out' }),
-            BRAIN_REFRESH_TIMEOUT_MS,
-          );
-        }),
-      ]).finally(() => clearTimeout(timer));
+        BRAIN_REFRESH_TIMEOUT_MS,
+        () => ({ ok: false, message: 'timed out' }),
+      );
       if (!r.ok) {
         detail = `brain not refreshed: ${r.message}`;
         warn = true;
@@ -2190,15 +2202,9 @@ export function createHandlers(s: Services): Handlers {
    * the tabs. No branch, worktree, .shellie.yml, copies, setup commands or secrets; always on Development.
    */
   const createWithoutRepo = async (input: CreateTaskInput): Promise<Task> => {
-    if (!input.workItem && input.name.trim().length === 0)
-      throw new Error('Give the task a name or a work item');
-    if (input.workItem && input.workItem.title.trim().length === 0)
-      throw new Error('Give the work item a title');
+    assertTaskNamed(input);
     const connectionId = input.connectionId ?? null;
-    if (
-      connectionId &&
-      !s.connections.list().some((c) => c.id === connectionId)
-    )
+    if (connectionId && !s.connections.find(connectionId))
       throw new Error(`Unknown connection ${connectionId}`);
     // A kept folder of an earlier task with the same name gets a short suffix instead of blocking the new one.
     const baseSlug = taskSlug(input.workItem, input.name);
@@ -2215,26 +2221,67 @@ export function createHandlers(s: Services): Handlers {
     if (creating.has(key))
       throw new Error(`Task ${slug} is already being created`);
     creating.add(key);
+    return registerTask(
+      newTask(input, {
+        repoId: null,
+        slug,
+        branch: '',
+        worktreePath,
+        baseRef: '',
+        copy: false,
+        commands: [],
+        summary: null,
+        connectionId,
+        environment: 'development',
+        environmentUntil: null,
+      }),
+      [key],
+    );
+  };
+
+  const assertTaskNamed = (input: CreateTaskInput) => {
+    if (!input.workItem && input.name.trim().length === 0)
+      throw new Error('Give the task a name or a work item');
+    if (input.workItem && input.workItem.title.trim().length === 0)
+      throw new Error('Give the work item a title');
+  };
+
+  /** A task as it starts, from what every new task shares and `own`: its repo, branch, folder, setup and environment. */
+  const newTask = (
+    input: CreateTaskInput,
+    {
+      copy,
+      commands,
+      summary,
+      ...own
+    }: Pick<
+      Task,
+      | 'repoId'
+      | 'slug'
+      | 'branch'
+      | 'worktreePath'
+      | 'baseRef'
+      | 'connectionId'
+      | 'environment'
+      | 'environmentUntil'
+    > &
+      Pick<Task['setup'], 'copy' | 'commands' | 'summary'>,
+  ): Task => {
     const createdAt = new Date().toISOString();
-    const task: Task = {
+    return {
       id: randomUUID(),
-      repoId: null,
       name: input.name.trim(),
       workItem: input.workItem,
-      slug,
-      branch: '',
-      worktreePath,
-      baseRef: '',
       baseSha: null,
       status: 'setting-up',
       setup: {
-        copy: false,
-        commands: [],
+        copy,
+        commands,
         startClaude: input.startClaude,
         openShell: input.openShell,
         openCopilot: input.openCopilot ?? false,
         openOpencode: input.openOpencode ?? false,
-        summary: null,
+        summary,
       },
       terminals: [],
       createdAt,
@@ -2249,14 +2296,19 @@ export function createHandlers(s: Services): Handlers {
       extraWorkspaces: [],
       detachedPaths: [],
       homeDropped: false,
-      connectionId,
       mainCheckoutEdits: [],
-      environment: 'development',
-      environmentUntil: null,
       pendingCleanup: [],
       openPeriods: [{ start: createdAt, end: null }],
       time: null,
+      ...own,
     };
+  };
+
+  /**
+   * Stores a new task and starts its setup in the background, which holds the task's claim until it ends. `keys`:
+   * the task's marks in `creating`, dropped once the store has (or refused) it.
+   */
+  const registerTask = async (task: Task, keys: string[]): Promise<Task> => {
     inFlight.add(task.id);
     try {
       await s.store.update((st) => {
@@ -2266,18 +2318,18 @@ export function createHandlers(s: Services): Handlers {
       release(task.id);
       throw e;
     } finally {
-      creating.delete(key);
+      for (const k of keys) creating.delete(k);
     }
     startSetupInBackground(task.id);
     void recordBaseline(task);
     tel.event('task.created', {
-      workItem: input.workItem !== null && input.workItem !== undefined,
-      copy: false,
-      startClaude: input.startClaude,
-      openShell: input.openShell,
-      openCopilot: input.openCopilot ?? false,
-      openOpencode: input.openOpencode ?? false,
-      commands: 0,
+      workItem: task.workItem !== null && task.workItem !== undefined,
+      copy: task.setup.copy,
+      startClaude: task.setup.startClaude,
+      openShell: task.setup.openShell,
+      openCopilot: task.setup.openCopilot ?? false,
+      openOpencode: task.setup.openOpencode ?? false,
+      commands: task.setup.commands.length,
     });
     await tasksChanged();
     return task;
@@ -2332,7 +2384,7 @@ export function createHandlers(s: Services): Handlers {
   const review = new ReviewService({
     git: s.git,
     store: reviewStore,
-    repoName: (id) => s.repos.list().find((r) => r.id === id)?.name ?? id,
+    repoName: (id) => s.repos.repoName(id),
     collapseOf: async (wt) => (await s.loadConfig(wt)).reviewCollapse ?? [],
     leakMatcher: diffMatcher,
     onLeak: (task, environment) => {
@@ -2357,23 +2409,15 @@ export function createHandlers(s: Services): Handlers {
       event: (n, p) => tel.event(n, p),
     });
 
-  /** What a workspace's branch did since its base; a summary must never block Finish, so a failure is null. */
   /** What the developer typed in the task's Claude Code sessions, oldest session first (#111). */
   const taskRequests = async (task: Task): Promise<string[]> => {
-    const ids = [...task.closedTerminals, ...task.terminals]
-      .filter((t) => t.kind === 'claude' && t.sessionId)
-      .map((t) => t.sessionId!);
     const out: string[] = [];
-    for (const id of new Set(ids)) {
-      const file = (s.claudeSessionFile ?? ((x) => claudeSessionFile(x)))(id);
-      if (!file) continue;
-      const text = await fs.readFile(file, 'utf8').catch(() => '');
-      for (const r of userRequests(text.split('\n')))
-        if (!out.includes(r)) out.push(r);
-    }
+    for (const lines of await claudeSessionLines(task))
+      for (const r of userRequests(lines)) if (!out.includes(r)) out.push(r);
     return out;
   };
 
+  /** What a workspace's branch did since its base; a summary must never block Finish, so a failure is null. */
   const summaryOf = (
     w: Pick<WorkspaceView, 'worktreePath' | 'baseRef' | 'baseSha' | 'branch'>,
   ) =>
@@ -2390,8 +2434,7 @@ export function createHandlers(s: Services): Handlers {
     task: Task,
     w: WorkspaceView,
   ): Promise<WorkspaceCheck> => {
-    const repoName =
-      s.repos.list().find((r) => r.id === w.repoId)?.name ?? w.repoId;
+    const repoName = s.repos.repoName(w.repoId);
     const [pr, exists] = await Promise.all([
       prContext(task, w).catch((e: unknown) => ({
         connection: null,
@@ -2453,7 +2496,7 @@ export function createHandlers(s: Services): Handlers {
     task: Task,
     w: WorkspaceView,
   ): Promise<DiscardWorkspaceCheck> => {
-    const repo = s.repos.list().find((r) => r.id === w.repoId);
+    const repo = s.repos.find(w.repoId);
     const kept = !ownBranch(task, w);
     const missing = !(await pathExists(path.join(w.worktreePath, '.git')));
     const base: DiscardWorkspaceCheck = {
@@ -2623,15 +2666,20 @@ export function createHandlers(s: Services): Handlers {
     patch: Parameters<typeof setWorkspace>[2],
   ) => mutateTask(taskId, (t) => setWorkspace(t, id, patch));
 
-  /** Closes the task's terminals (and its Docs watcher), keeping the tabs so Reopen can bring them back. */
-  const closeTaskTerminals = async (taskId: string) => {
+  /**
+   * Stops what runs in the task's folders: its Docs and git watchers and every terminal. Before a folder goes:
+   * Windows will not remove a folder that a running process has as its cwd.
+   */
+  const stopTaskProcesses = async (taskId: string) => {
     docsWatcher.stopTask(taskId);
     gitDirWatcher.stopTask(taskId);
     await s.terminals.killAllForTask(taskId);
-    for (const d of taskById(taskId).terminals) {
-      forgetSpawn(d.id);
-      leakWatch.forget(d.id);
-    }
+  };
+
+  /** Closes the task's terminals (and its Docs watcher), keeping the tabs so Reopen can bring them back. */
+  const closeTaskTerminals = async (taskId: string) => {
+    await stopTaskProcesses(taskId);
+    for (const d of taskById(taskId).terminals) forgetTab(d.id);
     await patchTask(taskId, {
       closedTerminals: taskById(taskId).terminals,
       terminals: [],
@@ -2663,17 +2711,7 @@ export function createHandlers(s: Services): Handlers {
       await patchTask(taskId, { status: 'ready' });
       throw e;
     }
-    const finishedAt = new Date().toISOString();
-    await patchTask(taskId, {
-      status: 'done',
-      finishedAt,
-      openPeriods: withPeriodClosed(taskById(taskId), finishedAt),
-      ...endEnvironment(task),
-    });
-    s.stopRuns?.(taskId, 'The task was finished in Shellie');
-    leakWatch.dropTask(taskId);
-    reportFinished(task, options, { workspaces: 0, prs: 0, dropped: 0 });
-    await afterFinish(taskId, options);
+    await markDone(task, options, { workspaces: 0, prs: 0, dropped: 0 });
   };
 
   /** The `task.finished` event of a Finish, single repo or per workspace. */
@@ -2707,6 +2745,30 @@ export function createHandlers(s: Services): Handlers {
   };
 
   /**
+   * The end of a successful Finish: the task is done (its open period closed, back on Development) with `extra`
+   * stored along, its `shellie run` processes stop, leak watch forgets it, and what follows a Finish runs.
+   */
+  const markDone = async (
+    task: Task,
+    options: FinishOptions,
+    counts: Parameters<typeof reportFinished>[2],
+    extra: Partial<Task> = {},
+  ) => {
+    const finishedAt = new Date().toISOString();
+    await patchTask(task.id, {
+      status: 'done',
+      finishedAt,
+      openPeriods: withPeriodClosed(taskById(task.id), finishedAt),
+      ...endEnvironment(task),
+      ...extra,
+    });
+    s.stopRuns?.(task.id, 'The task was finished in Shellie');
+    leakWatch.dropTask(task.id);
+    reportFinished(task, options, counts);
+    await afterFinish(task.id, options);
+  };
+
+  /**
    * Finish for a task with several repos: per workspace (home first) the summary, then its push or PR. Any
    * failure leaves the task ready with every worktree in place, and a retry skips what already succeeded
    * (pushed branches are not pushed again, an existing PR is linked). Then cleanup per workspace, with
@@ -2717,16 +2779,15 @@ export function createHandlers(s: Services): Handlers {
     taskId: string,
     options: FinishOptions,
     wanted: NonNullable<FinishOptions['workspaces']>,
-  ) => {
-    claim(taskId, ['ready'], 'finish');
-    // PRs the previous attempt of this Finish made or linked; a retry keeps those instead of looking again.
-    const madeBefore = new Map(
-      (finishResults.get(taskId) ?? [])
-        .filter((r) => r.ok && r.pullRequest)
-        .map((r) => [r.workspaceId, r.pullRequest!.id]),
-    );
-    finishResults.delete(taskId);
-    try {
+  ) =>
+    withClaim(taskId, ['ready'], 'finish', async () => {
+      // PRs the previous attempt of this Finish made or linked; a retry keeps those instead of looking again.
+      const madeBefore = new Map(
+        (finishResults.get(taskId) ?? [])
+          .filter((r) => r.ok && r.pullRequest)
+          .map((r) => [r.workspaceId, r.pullRequest!.id]),
+      );
+      finishResults.delete(taskId);
       const task = taskById(taskId);
       // A worktree on another branch (a long-lived `dev` joined by hand) is not the task's to remove.
       for (const r of wanted) {
@@ -2734,7 +2795,7 @@ export function createHandlers(s: Services): Handlers {
         const w = taskWorkspaces(task).find((x) => x.id === r.workspaceId);
         if (w && !ownBranch(task, w))
           throw new Error(
-            `${s.repos.list().find((x) => x.id === w.repoId)?.name ?? w.repoId} is not on this task's branch (${w.branch}): it is kept as is`,
+            `${s.repos.repoName(w.repoId)} is not on this task's branch (${w.branch}): it is kept as is`,
           );
       }
       await patchTask(taskId, { status: 'finishing' });
@@ -2908,33 +2969,24 @@ export function createHandlers(s: Services): Handlers {
           }
           if (drop) await patchWorkspace(taskId, r.w.id, { dropped: true });
         }
-        const finishedAt = new Date().toISOString();
-        await patchTask(taskId, {
-          status: 'done',
-          finishedAt,
-          openPeriods: withPeriodClosed(taskById(taskId), finishedAt),
-          ...endEnvironment(task),
-          pendingCleanup,
-        });
-        s.stopRuns?.(taskId, 'The task was finished in Shellie');
-        leakWatch.dropTask(taskId);
-        reportFinished(task, options, {
-          workspaces: rows.length,
-          prs: rows.filter((r) => r.action === 'pr').length,
-          dropped: rows.filter((r) => r.action === 'drop').length,
-        });
+        await markDone(
+          task,
+          options,
+          {
+            workspaces: rows.length,
+            prs: rows.filter((r) => r.action === 'pr').length,
+            dropped: rows.filter((r) => r.action === 'drop').length,
+          },
+          { pendingCleanup },
+        );
         // A later Finish (after Reopen) is a new one, not a retry of this.
         finishResults.delete(taskId);
-        await afterFinish(taskId, options);
       } catch (e) {
         if (taskById(taskId).status === 'finishing')
           await patchTask(taskId, { status: 'ready' });
         throw e;
       }
-    } finally {
-      release(taskId);
-    }
-  };
+    });
 
   if (s.expiryTimers)
     scheduleExpiry(
@@ -2952,13 +3004,9 @@ export function createHandlers(s: Services): Handlers {
       openFile: (ws, abs, line, col) =>
         editors.openFile(ws.repoId, ws.worktreePath, abs, line, col),
       openExternal: s.openExternal,
-      openPath: s.openPath ?? (async () => ''),
-      grantView:
-        s.grantView ??
-        (() => {
-          throw new Error('HTML files cannot be shown here');
-        }),
-      revealFile: s.revealFile ?? (() => undefined),
+      openPath,
+      grantView,
+      revealFile,
       watcher: docsWatcher,
       session: sessionDocs,
       event: (n, p) => tel.event(n, p),
@@ -2967,7 +3015,7 @@ export function createHandlers(s: Services): Handlers {
       taskById,
       editors,
       showFolder: async (p) => {
-        const error = await (s.openPath ?? (async () => ''))(p);
+        const error = await openPath(p);
         if (error) throw new Error(`Could not open the folder: ${error}`);
       },
     }),
@@ -2989,10 +3037,7 @@ export function createHandlers(s: Services): Handlers {
         connections: s.connections.list(),
       });
       // One discovery: the count only (names and values stay here); a failure just shows nothing.
-      const secretsFound = await discoverSecrets(folder, {
-        git: s.git,
-        userSecretsDir: (id) => s.platform.userSecretsDir(id),
-      })
+      const secretsFound = await discover(folder)
         .then(
           (d) =>
             new Set(d.found.filter((f) => f.secretLike).map((f) => f.name))
@@ -3085,10 +3130,7 @@ export function createHandlers(s: Services): Handlers {
         throw new Error(`"${branch}" is not a valid branch name`);
       if (await s.git.branchExists(repo.path, branch))
         throw new Error(`Branch ${branch} already exists in ${repo.name}`);
-      if (!input.workItem && input.name.trim().length === 0)
-        throw new Error('Give the task a name or a work item');
-      if (input.workItem && input.workItem.title.trim().length === 0)
-        throw new Error('Give the work item a title');
+      assertTaskNamed(input);
       const slug = taskSlug(input.workItem, input.name);
       const worktreePath = path.join(worktreeRoot(repo.path), slug);
       if (await pathExists(worktreePath))
@@ -3117,7 +3159,7 @@ export function createHandlers(s: Services): Handlers {
           commands: input.commands,
           tabs: setupTabLabels(input, s.platform.shellLabel),
           workItem: input.workItem,
-          ...startOf(repo, projectOf(repo.connectionId)),
+          ...startOf(repo, s.connections.find(repo.connectionId)),
           types: repo.connectionId
             ? (typesKnown.get(repo.connectionId) ?? null)
             : null,
@@ -3127,73 +3169,23 @@ export function createHandlers(s: Services): Handlers {
       } catch {
         // The summary is for display; a config that cannot be read now shows up in setup itself.
       }
-      const createdAt = new Date().toISOString();
-      const task: Task = {
-        id: randomUUID(),
-        repoId: repo.id,
-        name: input.name.trim(),
-        workItem: input.workItem,
-        slug,
-        branch,
-        worktreePath,
-        baseRef: input.baseRef,
-        baseSha: null,
-        status: 'setting-up',
-        setup: {
+      return registerTask(
+        newTask(input, {
+          repoId: repo.id,
+          slug,
+          branch,
+          worktreePath,
+          baseRef: input.baseRef,
           copy: input.copy,
           commands: input.commands,
-          startClaude: input.startClaude,
-          openShell: input.openShell,
-          openCopilot: input.openCopilot ?? false,
-          openOpencode: input.openOpencode ?? false,
           summary,
-        },
-        terminals: [],
-        createdAt,
-        finishedAt: null,
-        usageSyncedAt: null,
-        usageSyncError: null,
-        usageCommentId: null,
-        summary: null,
-        pullRequest: null,
-        closedTerminals: [],
-        reopen: null,
-        extraWorkspaces: [],
-        detachedPaths: [],
-        homeDropped: false,
-        connectionId: repo.connectionId,
-        mainCheckoutEdits: [],
-        environment,
-        environmentUntil:
-          environment === 'production' ? productionUntil() : null,
-        pendingCleanup: [],
-        openPeriods: [{ start: createdAt, end: null }],
-        time: null,
-      };
-      inFlight.add(task.id);
-      try {
-        await s.store.update((st) => {
-          st.tasks.push(task);
-        });
-      } catch (e) {
-        release(task.id);
-        throw e;
-      } finally {
-        for (const k of keys) creating.delete(k);
-      }
-      startSetupInBackground(task.id);
-      void recordBaseline(task);
-      tel.event('task.created', {
-        workItem: input.workItem !== null && input.workItem !== undefined,
-        copy: input.copy,
-        startClaude: input.startClaude,
-        openShell: input.openShell,
-        openCopilot: input.openCopilot ?? false,
-        openOpencode: input.openOpencode ?? false,
-        commands: input.commands.length,
-      });
-      await tasksChanged();
-      return task;
+          connectionId: repo.connectionId,
+          environment,
+          environmentUntil:
+            environment === 'production' ? productionUntil() : null,
+        }),
+        keys,
+      );
     },
     'tasks:setupState': async (taskId) => setupStates.get(taskId) ?? null,
     'tasks:retrySetup': async (taskId) => {
@@ -3208,14 +3200,10 @@ export function createHandlers(s: Services): Handlers {
       startSetupInBackground(taskId, from);
       tel.event('setup.retried');
     },
-    'tasks:cancelSetup': async (taskId) => {
-      claim(taskId, ['setup-failed'], 'cancel the setup of');
-      try {
+    'tasks:cancelSetup': (taskId) =>
+      withClaim(taskId, ['setup-failed'], 'cancel the setup of', async () => {
         const task = taskById(taskId);
-        // Windows will not remove a folder that a running process has as its cwd.
-        docsWatcher.stopTask(taskId);
-        gitDirWatcher.stopTask(taskId);
-        await s.terminals.killAllForTask(taskId);
+        await stopTaskProcesses(taskId);
         if (task.repoId === null) {
           // A task without a repo has only its scratch folder to remove.
           await fs.rm(task.worktreePath, { recursive: true, force: true });
@@ -3267,10 +3255,7 @@ export function createHandlers(s: Services): Handlers {
         });
         await tasksChanged();
         tel.event('setup.cancelled');
-      } finally {
-        release(taskId);
-      }
-    },
+      }),
     'tasks:gitSummary': async (taskId, workspaceId) => {
       const w = workspaceById(taskById(taskId), workspaceId);
       return s.git
@@ -3364,7 +3349,7 @@ export function createHandlers(s: Services): Handlers {
           deny.length > 0
             ? (s.claudeThemeSettings?.(denyRulesFor(deny)) ?? null)
             : null;
-        const out = await (s.runAgent ?? runWithInput)(
+        const out = await runAgent(
           s.platform.claudeCommand(null, [
             ...prSummaryFlags(),
             ...(settings ? ['--settings', settings] : []),
@@ -3492,8 +3477,7 @@ export function createHandlers(s: Services): Handlers {
     'tasks:finish': async (taskId, options) => {
       if (options.workspaces)
         return finishWorkspaces(taskId, options, options.workspaces);
-      claim(taskId, ['ready'], 'finish');
-      try {
+      return withClaim(taskId, ['ready'], 'finish', async () => {
         const task = taskById(taskId);
         if (task.repoId === null) return await finishWithoutRepo(task, options);
         const repo = s.repos.get(task.repoId);
@@ -3504,78 +3488,26 @@ export function createHandlers(s: Services): Handlers {
           summary = await summaryOf(task);
         // Push and open the PR before any cleanup: a failure leaves the task ready with its worktree.
         if (options.createPullRequest) {
-          let pullRequest: PullRequestRef;
+          let pr: Awaited<ReturnType<typeof openPullRequest>>;
           try {
-            const c = await prContext(task);
-            if (
-              !c.availability.available ||
-              !c.availability.target ||
-              !c.connection
-            )
-              throw new Error(
-                c.availability.reason ?? 'pull requests are not available',
-              );
-            const connection = c.connection;
-            const { project, repo: repoName } = c.availability.target;
-            await assertNoLeak(task, task, options.confirmLeak);
-            await s.git.push(task.worktreePath, 'origin', task.branch);
-            // The summary was taken before this push; the Done page would otherwise say "local only".
-            if (summary)
-              summary = {
-                ...summary,
-                pushed: true,
-                upstream: `origin/${task.branch}`,
-              };
-            const client = s.trackers.tracker(connection.id);
-            const repositoryId = await client.repositoryId(project, repoName);
-            const existing = await client.findActivePullRequest(
-              project,
-              repositoryId,
-              task.branch,
+            pr = await openPullRequest(
+              task,
+              taskWorkspaces(task)[0],
+              summary,
+              options.prSummaries?.[HOME_ID],
+              options.confirmLeak,
             );
-            const raw =
-              existing ??
-              (await client.createPullRequest(project, repositoryId, {
-                source: task.branch,
-                target: c.target,
-                title: prTitle(task),
-                description: prDescription({
-                  heading: task.workItem
-                    ? `${task.workItem.type} ${task.workItem.id}: ${task.workItem.title}`
-                    : task.name,
-                  commits: summary?.commits ?? [],
-                  commitCount: summary?.commitCount ?? 0,
-                  summary: options.prSummaries?.[HOME_ID],
-                  environment: task.environment,
-                }),
-                workItemId: task.workItem ? Number(task.workItem.id) : null,
-              }));
-            pullRequest = {
-              id: raw.pullRequestId,
-              url: prWebUrl(
-                connection.organizationUrl,
-                project,
-                repoName,
-                raw.pullRequestId,
-              ),
-              repositoryId,
-              project,
-              repo: repoName,
-              status: raw.status,
-              isDraft: raw.isDraft,
-            };
-            await patchTask(taskId, { pullRequest });
-            tel.event(existing ? 'pr.linked' : 'pr.created');
           } catch (e) {
             await patchTask(taskId, { status: 'ready' });
-            const message = errorMessage(e);
             if (!(e instanceof LeakError))
               tel.event('pr.failed', {
                 kind: e instanceof AdoError ? e.kind : 'git',
               });
-            throw new Error(`Pull request not created: ${message}`);
+            throw new Error(`Pull request not created: ${errorMessage(e)}`);
           }
-          void s.openExternal(pullRequest.url).catch(() => undefined);
+          summary = pr.summary;
+          await patchTask(taskId, { pullRequest: pr.ref });
+          void s.openExternal(pr.ref.url).catch(() => undefined);
         }
         await brainAtFinish(
           task,
@@ -3613,26 +3545,13 @@ export function createHandlers(s: Services): Handlers {
           await patchTask(taskId, { status: 'ready' });
           throw e;
         }
-        const finishedAt = new Date().toISOString();
-        await patchTask(taskId, {
-          status: 'done',
-          finishedAt,
-          summary,
-          openPeriods: withPeriodClosed(taskById(taskId), finishedAt),
-          ...endEnvironment(task),
-          pendingCleanup,
-        });
-        s.stopRuns?.(taskId, 'The task was finished in Shellie');
-        leakWatch.dropTask(taskId);
-        reportFinished(task, options, {
-          workspaces: 1,
-          prs: options.createPullRequest ? 1 : 0,
-          dropped: 0,
-        });
-        await afterFinish(taskId, options);
-      } finally {
-        release(taskId);
-      }
+        await markDone(
+          task,
+          options,
+          { workspaces: 1, prs: options.createPullRequest ? 1 : 0, dropped: 0 },
+          { summary, pendingCleanup },
+        );
+      });
     },
     'tasks:setEnvironment': async (taskId, env, confirmed) => {
       if (!EnvironmentSchema.safeParse(env).success)
@@ -3641,47 +3560,41 @@ export function createHandlers(s: Services): Handlers {
         throw new Error(
           `Switching to ${ENVIRONMENT_LABEL[env]} needs your confirm`,
         );
-      claim(taskId, ['ready'], 'switch the environment of');
-      try {
-        const left = taskById(taskId).environment;
-        await patchTask(taskId, {
-          environment: env,
-          environmentUntil: env === 'production' ? productionUntil() : null,
-        });
-        if (left !== env) {
-          tel.event('secrets.environmentSwitched', {
-            from: left,
-            to: env,
-            confirmed: confirmed === true,
+      return withClaim(
+        taskId,
+        ['ready'],
+        'switch the environment of',
+        async () => {
+          const left = taskById(taskId).environment;
+          await patchTask(taskId, {
+            environment: env,
+            environmentUntil: env === 'production' ? productionUntil() : null,
           });
-          await respawnSecretTabs(taskById(taskId), left);
-          // `shellie run` processes hold the values they started with.
-          if (isGuarded(left))
-            s.stopRuns?.(taskId, `${ENVIRONMENT_LABEL[left]} ended`);
-        }
-        return taskById(taskId);
-      } finally {
-        release(taskId);
-      }
+          if (left !== env) {
+            tel.event('secrets.environmentSwitched', {
+              from: left,
+              to: env,
+              confirmed: confirmed === true,
+            });
+            await respawnSecretTabs(taskById(taskId), left);
+            // `shellie run` processes hold the values they started with.
+            if (isGuarded(left))
+              s.stopRuns?.(taskId, `${ENVIRONMENT_LABEL[left]} ended`);
+          }
+          return taskById(taskId);
+        },
+      );
     },
     'tasks:discardChecks': async (taskId) => discardChecks(taskById(taskId)),
-    'tasks:discard': async (taskId) => {
-      claim(taskId, ['ready'], 'discard');
-      try {
+    'tasks:discard': (taskId) =>
+      withClaim(taskId, ['ready'], 'discard', async () => {
         const task = taskById(taskId);
         // For telemetry only: what was lost must never keep the task from going.
         const checks = await discardChecks(task).catch(() => null);
-        // Windows will not remove a folder that a running process has as its cwd.
-        docsWatcher.stopTask(taskId);
-        gitDirWatcher.stopTask(taskId);
-        await s.terminals.killAllForTask(taskId);
+        await stopTaskProcesses(taskId);
         // Secrets: `shellie run` processes end, and nothing about the task's tabs (or its plaintext matcher) is kept.
         s.stopRuns?.(taskId, 'The task was discarded');
-        for (const d of task.terminals) {
-          forgetSpawn(d.id);
-          runArgs.delete(d.id);
-          leakWatch.forget(d.id);
-        }
+        for (const d of task.terminals) forgetTab(d.id);
         leakWatch.dropTask(taskId);
         // Every workspace on the task's branch goes, folder and branch, as at Finish; a held folder is
         // retried in the background (#115). One on another branch was joined by hand and stays.
@@ -3717,10 +3630,7 @@ export function createHandlers(s: Services): Handlers {
             ageHours: (Date.now() - Date.parse(task.createdAt)) / 3_600_000,
           },
         );
-      } finally {
-        release(taskId);
-      }
-    },
+      }),
     'tasks:environmentInfo': async (taskId) => {
       const task = taskById(taskId);
       const repoIds = [...new Set(activeWorkspaces(task).map((w) => w.repoId))];
@@ -3804,6 +3714,7 @@ export function createHandlers(s: Services): Handlers {
       for (let attempt = 0; ; attempt++) {
         const env = taskById(taskId).environment;
         const secrets = await prepareTab(taskById(taskId), full);
+        // Not withClaim: a synchronous spawn holds the claim for no tick, so the other open's claim never sees it.
         claim(taskId, ['ready'], 'open a terminal in');
         try {
           if (taskById(taskId).environment === env) {
@@ -3856,9 +3767,7 @@ export function createHandlers(s: Services): Handlers {
       }
       s.terminals.kill(id);
       s.runs?.tabGone(id);
-      runArgs.delete(id);
-      forgetSpawn(id);
-      leakWatch.forget(id);
+      forgetTab(id);
       const owner = s.store.state.tasks.find((t) =>
         t.terminals.some((x) => x.id === id),
       );
@@ -3948,34 +3857,14 @@ export function createHandlers(s: Services): Handlers {
       secretsChanged();
     },
     'secrets:reveal': async (id, env) => s.secrets.reveal(id, env),
-    'secrets:discover': async (repoId) => {
-      const r = await discoverSecrets(s.repos.get(repoId).path, {
-        git: s.git,
-        userSecretsDir: (id) => s.platform.userSecretsDir(id),
-      });
-      tel.event(
-        'secrets.discovered',
-        undefined,
-        discoveredMeasurements(r.found, r.skipped),
-      );
-      return discovery.hold(repoId, r.found, r.skipped);
-    },
+    'secrets:discover': async (repoId) => (await discoverAndHold(repoId)).held,
     'secrets:importPlan': async (repoId) => {
-      const r = await discoverSecrets(s.repos.get(repoId).path, {
-        git: s.git,
-        userSecretsDir: (id) => s.platform.userSecretsDir(id),
-      });
-      tel.event(
-        'secrets.discovered',
-        undefined,
-        discoveredMeasurements(r.found, r.skipped),
-      );
-      discovery.hold(repoId, r.found, r.skipped);
+      const { skipped } = await discoverAndHold(repoId);
       const held = discovery.entries(repoId);
       return {
         rows: buildImportPlan(held, s.secrets.plainValues(repoId)),
         sources: importSources(held),
-        skipped: r.skipped,
+        skipped,
       };
     },
     'secrets:forget': async (repoId) => discovery.drop(repoId),
@@ -4031,7 +3920,7 @@ export function createHandlers(s: Services): Handlers {
           copy: await copyOf(repo.path),
           store: s.secrets,
           git: s.git,
-          userSecretsDir: (id) => s.platform.userSecretsDir(id),
+          userSecretsDir: discoverDeps.userSecretsDir,
           worktrees: openWorktrees(repoId),
         });
       })().finally(() => {
@@ -4232,11 +4121,10 @@ export function createHandlers(s: Services): Handlers {
       const target = rel === null ? repo.path : insideDir(repo.path, rel);
       if (target === null) throw new Error('That path is outside the repo');
       if (rel === null && s.openPath) {
-        const error = await s.openPath(target);
-        if (error) throw new Error(error);
+        await openFolder(target);
         return;
       }
-      (s.revealFile ?? (() => undefined))(target);
+      revealFile(target);
     },
     'repos:pickFile': async (repoId) => {
       const repo = s.repos.get(repoId);
@@ -4245,10 +4133,10 @@ export function createHandlers(s: Services): Handlers {
       // Both resolved, so a repo reached through a symlink still matches what the dialog returns.
       const real = (p: string) => fs.realpath(p).catch(() => p);
       const root = await real(repo.path);
-      const rel = path.relative(root, await real(picked));
+      const rel = toRel(root, await real(picked));
       if (!rel || insideDir(root, rel) === null)
         throw new Error('Pick a file inside the repo');
-      return rel.split(path.sep).join('/');
+      return rel;
     },
     'repos:openConfigFile': async (repoId) => {
       const repo = s.repos.get(repoId);
@@ -4257,8 +4145,7 @@ export function createHandlers(s: Services): Handlers {
       try {
         await editors.openFile(repo.id, repo.path, file);
       } catch {
-        const error = await (s.openPath ?? (async () => ''))(file);
-        if (error) throw new Error(error);
+        await openFolder(file);
       }
     },
     'repos:createConfigFile': async (repoId) => {
@@ -4332,7 +4219,7 @@ export function createHandlers(s: Services): Handlers {
       if (!pr) return null;
       // The PR was created through the workspace's own repo connection (maybe another org than the task's).
       const connectionId =
-        s.repos.list().find((r) => r.id === w.repoId)?.connectionId ??
+        s.repos.find(w.repoId)?.connectionId ??
         taskConnectionId(task, s.repos.list());
       if (!connectionId) return pr;
       try {
@@ -4480,7 +4367,7 @@ export function createHandlers(s: Services): Handlers {
       try {
         await cs.store.set(conn);
       } catch (err) {
-        return failed(err instanceof Error ? err.message : String(err));
+        return failed(errorMessage(err));
       }
       await cs.store.setBudgets(answer.budgets);
       await cs.ledgerPass?.();

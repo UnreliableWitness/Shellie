@@ -9,7 +9,7 @@ import type { TerminalDef } from '../../shared/types';
 import { AttentionTracker } from './AttentionTracker';
 import { OscScanner, PROBE_REPLY, programStatusSignal } from './OscScanner';
 
-export const BELL_GAP_MS = 10_000;
+const BELL_GAP_MS = 10_000;
 
 export type HubTerminal = {
   taskId: string;

@@ -3,15 +3,11 @@
  * then the first titles. Shown beside the source in the Brain screen and in the drop notes.
  */
 
+import { clip, plural } from '../../../shared/text';
+
 const MAX_LENGTH = 180;
 const MAX_TITLES = 4;
 const TITLE_LENGTH = 48;
-
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${n} ${n === 1 ? one : many}`;
-
-const clip = (s: string, n: number) =>
-  s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 /** A line of body text with markdown dressing removed (underscores inside words stay: `Q1_Budget`). */
 const plain = (line: string) =>

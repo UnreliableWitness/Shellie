@@ -85,7 +85,7 @@ const isLocalAbsolute = (p: string) =>
   /^[A-Za-z]:[\\/]/.test(p) || (p.startsWith('/') && !p.startsWith('//'));
 
 /** The real path of an existing `.html`/`.htm` regular file at an absolute local path, or null. */
-export async function outsideHtml(p: string): Promise<string | null> {
+async function outsideHtml(p: string): Promise<string | null> {
   if (!HTML.test(p) || p.includes('\0') || !isLocalAbsolute(p)) return null;
   try {
     const real = await fs.realpath(p);

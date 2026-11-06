@@ -50,7 +50,7 @@ export const TerminalDefSchema = z.object({
 export type TerminalDef = z.infer<typeof TerminalDefSchema>;
 export type NewTerminal = Omit<TerminalDef, 'id'>;
 
-export const TaskStatusSchema = z.enum([
+const TaskStatusSchema = z.enum([
   'setting-up',
   'ready',
   'setup-failed',
@@ -88,7 +88,7 @@ export const SetupSummarySchema = z.object({
 });
 export type SetupSummary = z.infer<typeof SetupSummarySchema>;
 
-export const TaskSetupSchema = z.object({
+const TaskSetupSchema = z.object({
   copy: z.boolean(),
   commands: z.array(z.string()),
   startClaude: z.boolean(),
@@ -122,7 +122,7 @@ export const StartSettingsSchema = z.object({
 });
 export type StartSettings = z.infer<typeof StartSettingsSchema>;
 
-export const PullRequestRefSchema = z.object({
+const PullRequestRefSchema = z.object({
   id: z.number().int(),
   url: z.string(),
   repositoryId: z.string(),
@@ -134,7 +134,7 @@ export const PullRequestRefSchema = z.object({
 export type PullRequestRef = z.infer<typeof PullRequestRefSchema>;
 
 /** One more repo's worktree and branch that belongs to a task, besides its home repo. */
-export const WorkspaceSchema = z.object({
+const WorkspaceSchema = z.object({
   id: z.string().min(1),
   repoId: z.string().min(1),
   branch: z.string().min(1),
@@ -153,7 +153,7 @@ export type Workspace = z.infer<typeof WorkspaceSchema>;
  * A worktree folder (and maybe its branch) Finish could not remove yet, usually because a process still holds
  * a file in it (#115). The task is done; Shellie retries in the background until it is gone.
  */
-export const PendingCleanupSchema = z.object({
+const PendingCleanupSchema = z.object({
   workspaceId: z.string().min(1),
   repoPath: z.string().min(1),
   worktreePath: z.string().min(1),
@@ -279,7 +279,7 @@ export const RepoSchema = z.preprocess(
 export type Repo = z.infer<typeof RepoObjectSchema>;
 
 /** What a discarded task left: the task is gone from the store, so its leftovers wait here (#124). */
-export const DiscardedCleanupSchema = PendingCleanupSchema.extend({
+const DiscardedCleanupSchema = PendingCleanupSchema.extend({
   taskId: z.string().min(1),
 });
 export type DiscardedCleanup = z.infer<typeof DiscardedCleanupSchema>;
@@ -516,7 +516,7 @@ export type Notice = {
   message: string;
 };
 
-export const ConnectionStatusSchema = z.enum([
+const ConnectionStatusSchema = z.enum([
   'unknown',
   'ok',
   'unauthorized',

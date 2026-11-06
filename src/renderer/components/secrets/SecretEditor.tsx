@@ -8,7 +8,8 @@ import {
   type SecretScope,
   type SecretView,
 } from '../../../shared/secrets';
-import { api, ipcErrorMessage } from '../../api';
+import { api } from '../../api';
+import { errorMessage } from '../../../shared/errors';
 import type { Repo } from '../../../shared/types';
 import { GIVEN_LABEL, GIVEN_ORDER } from './SecretRow';
 
@@ -66,7 +67,7 @@ export function SecretEditor({
       await api().invoke('secrets:save', input);
       onDone();
     } catch (e) {
-      setError(ipcErrorMessage(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

@@ -21,30 +21,34 @@ import { useStore, useTaskConnectionId } from '../store';
 
 const MINUS = String.fromCharCode(0x2212);
 
+const prKey = (taskId: string, workspaceId: string) =>
+  `${taskId}/${workspaceId}`;
+
 /** The pull request as Azure DevOps has it now; starts from the stored one and refreshes once. */
 function useLivePullRequest(
   taskId: string,
   workspaceId: string,
   stored: PullRequestRef | null,
 ): PullRequestRef | null {
-  const [pr, setPr] = useState<PullRequestRef | null>(stored);
+  // Keyed on the workspace, so another workspace's fetch never shows here.
+  const [live, setLive] = useState<{ key: string; pr: PullRequestRef } | null>(
+    null,
+  );
   const has = stored !== null;
   useEffect(() => {
-    setPr(stored);
     if (!has) return;
-    let live = true;
+    let on = true;
     api()
       .invoke('tasks:prStatus', taskId, workspaceId)
       .then((p) => {
-        if (live && p) setPr(p);
+        if (on && p) setLive({ key: prKey(taskId, workspaceId), pr: p });
       })
       .catch(() => undefined);
     return () => {
-      live = false;
+      on = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, workspaceId, has]);
-  return pr;
+  return has && live?.key === prKey(taskId, workspaceId) ? live.pr : stored;
 }
 
 function prLabel(pr: PullRequestRef): string {

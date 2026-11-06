@@ -10,6 +10,7 @@ import {
   type ImportRow,
 } from '../../shared/secrets';
 import { api, tryInvoke } from '../api';
+import { plural } from '../format';
 import { PageHeader } from '../components/ui';
 import { useStore } from '../store';
 
@@ -17,8 +18,6 @@ type Pick = ImportRequest['picks'][number];
 const cellKey = (name: string, env: Environment) => `${name}\0${env}`;
 const pickable = (row: ImportRow, env: Environment) =>
   row.cells[env].state === 'new' || row.cells[env].state === 'changed';
-const plural = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
 
 function Source({ c }: { c: ImportCandidate }) {
   return (

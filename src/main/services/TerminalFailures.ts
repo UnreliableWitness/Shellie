@@ -5,10 +5,8 @@ import {
   type TerminalFailure,
   type TerminalKind,
 } from '../../shared/terminalFailure';
+import { errorMessage } from '../../shared/errors';
 import type { Telemetry } from '../telemetry/AppInsightsClient';
-
-const errorMessage = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 /**
  * Explains why an agent tab stopped (#109) and logs it. The diagnosis is kept per terminal so a view that mounts

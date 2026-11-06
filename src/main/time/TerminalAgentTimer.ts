@@ -12,7 +12,8 @@ type State = { taskId: string; armed: boolean; open: Interval | null };
 
 /** Estimates agent time for terminals without telemetry: output after Enter counts, a gap of more than `gapMs` ends it and needs a new Enter. */
 export class TerminalAgentTimer {
-  private readonly states = new Map<string, State>();
+  /** Null for a terminal `watch` did not claim, so it is not asked again for every chunk of output. */
+  private readonly states = new Map<string, State | null>();
   private readonly gapMs: number;
 
   constructor(private readonly d: Deps) {
@@ -38,7 +39,7 @@ export class TerminalAgentTimer {
   tick(): void {
     const now = this.d.now();
     for (const st of this.states.values())
-      if (st.open && now - st.open[1] > this.gapMs) this.end(st);
+      if (st?.open && now - st.open[1] > this.gapMs) this.end(st);
   }
 
   close(terminalId: string): void {
@@ -57,10 +58,11 @@ export class TerminalAgentTimer {
 
   private state(terminalId: string): State | null {
     const known = this.states.get(terminalId);
-    if (known) return known;
+    if (known !== undefined) return known;
     const w = this.d.watch(terminalId);
-    if (!w) return null;
-    const st: State = { taskId: w.taskId, armed: false, open: null };
+    const st: State | null = w
+      ? { taskId: w.taskId, armed: false, open: null }
+      : null;
     this.states.set(terminalId, st);
     return st;
   }

@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useLiveQuery } from './useLiveQuery';
+
+const NONE: Record<string, number> = {};
 
 /**
  * Billable EUR per task id for a list of tasks (a missing id means 0), refetched when main reports usage
@@ -7,30 +9,24 @@ import { api } from '../api';
  * does not refetch.
  */
 export function useTaskCosts(taskIds: string[]): Record<string, number> {
+  return useTaskCostsOrNull(taskIds) ?? NONE;
+}
+
+/** One task's billable EUR; null until the first reading arrives, so a control can show "unknown" rather than €0.00. */
+export function useTaskCost(taskId: string): number | null {
+  const costs = useTaskCostsOrNull([taskId]);
+  return costs ? (costs[taskId] ?? 0) : null;
+}
+
+function useTaskCostsOrNull(taskIds: string[]): Record<string, number> | null {
   const key = taskIds.join(',');
-  const [costs, setCosts] = useState<Record<string, number>>({});
-  useEffect(() => {
-    const ids = key ? key.split(',') : [];
-    if (ids.length === 0) {
-      setCosts({});
-      return;
-    }
-    let live = true;
-    const load = () =>
-      api()
-        .invoke('usage:costs', ids)
-        .then((c) => {
-          if (live) setCosts(c);
-        })
-        .catch(() => undefined);
-    void load();
-    const off = api().on('usage:changed', (p) => {
-      if (p.taskId === '*' || ids.includes(p.taskId)) void load();
-    });
-    return () => {
-      live = false;
-      off();
-    };
-  }, [key]);
-  return costs;
+  const ids = key ? key.split(',') : [];
+  return useLiveQuery(
+    ids.length > 0 ? () => api().invoke('usage:costs', ids) : null,
+    (refetch) =>
+      api().on('usage:changed', (p) => {
+        if (p.taskId === '*' || ids.includes(p.taskId)) refetch();
+      }),
+    [key],
+  ).value;
 }

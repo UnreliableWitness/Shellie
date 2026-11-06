@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isFile } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
+import { absPath } from './paths';
 import {
   managedTemplateFiles,
   TEMPLATES_VERSION,
@@ -10,15 +12,13 @@ import {
 
 const SKILLS = ['capture', 'sync', 'lint', 'digest'];
 
-const abs = (dir: string, rel: string) => path.join(dir, ...rel.split('/'));
-
 async function writeAll(
   dir: string,
   files: { path: string; content: string }[],
 ) {
   for (const f of files) {
-    await fs.mkdir(path.dirname(abs(dir, f.path)), { recursive: true });
-    await fs.writeFile(abs(dir, f.path), f.content);
+    await fs.mkdir(path.dirname(absPath(dir, f.path)), { recursive: true });
+    await fs.writeFile(absPath(dir, f.path), f.content);
   }
 }
 
@@ -43,19 +43,13 @@ export async function scaffoldBrain(
   });
 }
 
-const exists = (p: string) =>
-  fs.stat(p).then(
-    (s) => s.isFile(),
-    () => false,
-  );
-
 /** True when SCHEMA.md and the four skills are there. */
 export async function isBrainFolder(dir: string): Promise<boolean> {
   const needed = [
     'SCHEMA.md',
     ...SKILLS.map((s) => `.claude/skills/${s}/SKILL.md`),
   ];
-  return (await Promise.all(needed.map((p) => exists(abs(dir, p))))).every(
+  return (await Promise.all(needed.map((p) => isFile(absPath(dir, p))))).every(
     Boolean,
   );
 }
@@ -67,7 +61,7 @@ export async function templateDiff(
   return Promise.all(
     managedTemplateFiles(name).map(async (f) => {
       try {
-        const current = await fs.readFile(abs(dir, f.path), 'utf8');
+        const current = await fs.readFile(absPath(dir, f.path), 'utf8');
         return {
           path: f.path,
           status:

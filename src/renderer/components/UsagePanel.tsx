@@ -10,7 +10,7 @@ import {
   type Bin,
 } from '../../shared/usageViews';
 import { api, tryInvoke } from '../api';
-import { compact, eur, shortEur } from '../format';
+import { clock, compact, eur, shortEur } from '../format';
 import { useClock } from '../hooks/useClock';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { usageModelColor } from '../modelColor';
@@ -44,11 +44,6 @@ const when = (iso: string) =>
     minute: '2-digit',
   });
 
-const clock = (ms: number) =>
-  new Date(ms).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 const DASH = String.fromCharCode(0x2013);
 
 function binTitle(b: Bin): string {

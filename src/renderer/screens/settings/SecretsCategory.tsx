@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SecretsReason, SecretsStatus } from '../../../shared/secrets';
 import { api } from '../../api';
+import { plural } from '../../format';
 import {
   SettingRow,
   SettingsCategory,
@@ -17,9 +18,6 @@ export const SECRETS_KEYWORDS = [
   'token',
 ];
 
-const plural = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
-
 const STATE: Record<SecretsStatus['state'], { label: string; tag: string }> = {
   protected: { label: 'Protected', tag: 'tag-green' },
   attention: { label: 'Needs attention', tag: 'tag-warn' },
@@ -27,7 +25,7 @@ const STATE: Record<SecretsStatus['state'], { label: string; tag: string }> = {
 };
 
 /** A status reason in one line, without the repo's name (the row has it). */
-export function reasonLine(r: SecretsReason): string {
+function reasonLine(r: SecretsReason): string {
   switch (r.kind) {
     case 'copy':
       return `Copies ${r.files.join(', ')} into every worktree`;

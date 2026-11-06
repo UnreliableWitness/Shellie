@@ -59,3 +59,20 @@ export function sprintTime(
   }
   return cells;
 }
+
+/**
+ * How far an item or a sprint is through its estimate: `pct` spent of the estimate (null without a positive
+ * estimate or a spent figure), `over` when the spent time passed it.
+ */
+export function progress(
+  spentSeconds: number | null,
+  estimateHours: number | null,
+): { pct: number | null; over: boolean } {
+  if (spentSeconds === null || estimateHours === null || estimateHours <= 0)
+    return { pct: null, over: false };
+  const estimateSeconds = estimateHours * 3600;
+  return {
+    pct: Math.round((spentSeconds / estimateSeconds) * 100),
+    over: spentSeconds > estimateSeconds,
+  };
+}

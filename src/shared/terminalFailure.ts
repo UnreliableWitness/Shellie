@@ -1,4 +1,6 @@
 import type { TerminalDef } from './types';
+import { isAgentKind } from './agents';
+import { clip } from './text';
 
 export type TerminalKind = TerminalDef['kind'];
 
@@ -50,11 +52,9 @@ const AGENTS: Partial<Record<TerminalKind, Agent>> = {
   },
 };
 
-export const isAgentKind = (kind: TerminalKind): boolean =>
-  AGENTS[kind] !== undefined;
+export { isAgentKind };
 
-export const agentName = (kind: TerminalKind): string =>
-  AGENTS[kind]?.name ?? kind;
+const agentName = (kind: TerminalKind): string => AGENTS[kind]?.name ?? kind;
 
 // eslint-disable-next-line no-control-regex -- terminal escape sequences are the point
 const ANSI =
@@ -67,9 +67,6 @@ const plainLines = (output: string): string[] =>
     .replace(ANSI, '')
     .split(/\r\n|\r|\n/)
     .map((l) => l.trim());
-
-const clip = (s: string, n = 300): string =>
-  s.length > n ? `${s.slice(0, n - 1)}…` : s;
 
 /** zsh/bash's "command not found", PowerShell 5.1's and 7's "is not recognized as the/a name of a cmdlet", cmd.exe's. */
 const notFound = (text: string, command: string): boolean =>
@@ -105,7 +102,7 @@ export function diagnoseExit(o: {
       return {
         reason: 'invalid-config',
         title: 'OpenCode could not read its configuration',
-        ...(why ? { detail: clip(why) } : {}),
+        ...(why ? { detail: clip(why, 300) } : {}),
         file,
         hint: `Fix or remove ${name} (an agent file written for Claude Code lists its tools as text; OpenCode wants a map such as \`tools: { read: true }\`), then Restart. Or start OpenCode without the project's configuration.`,
         canSkipProjectConfig: true,
@@ -125,7 +122,7 @@ export function diagnoseExit(o: {
   return {
     reason: 'crashed',
     title: `${agent.name} stopped right after it started (exit code ${o.exitCode})`,
-    ...(last ? { detail: clip(last) } : {}),
+    ...(last ? { detail: clip(last, 300) } : {}),
     hint: 'The output above says why. Fix the cause, then Restart.',
   };
 }
@@ -139,7 +136,7 @@ export function spawnFailure(
   return {
     reason: 'spawn-failed',
     title: `${agentName(kind)} could not be started`,
-    detail: clip(message),
+    detail: clip(message, 300),
     hint: agent
       ? `${agent.install}, then Restart.`
       : 'Check that the program exists, then Restart.',

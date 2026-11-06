@@ -4,7 +4,7 @@ import type { TaskView } from '../../../shared/types';
 import { taskConnectionId } from '../../../shared/workspaces';
 import { eur, formatDuration } from '../../format';
 import { useTaskTime } from '../../hooks/useTaskTime';
-import { useTaskUsage } from '../../hooks/useTaskUsage';
+import { useTaskCosts } from '../../hooks/useTaskCosts';
 import { upNext } from '../../homeView';
 import { reposForConnection, startTaskFor } from '../../startTask';
 import { useStore } from '../../store';
@@ -20,7 +20,7 @@ function TaskCard({ task }: { task: TaskView }) {
   const openTask = useStore((s) => s.openTask);
   const repos = useStore((s) => s.repos);
   const connections = useStore((s) => s.connections);
-  const usage = useTaskUsage(task.id);
+  const cost = useTaskCosts([task.id])[task.id] ?? 0;
   const { time } = useTaskTime(task.id);
   const attention = task.status === 'setup-failed' || task.worktreeMissing;
   const status = taskStatusOf(task);
@@ -34,7 +34,7 @@ function TaskCard({ task }: { task: TaskView }) {
     <button
       type="button"
       className={attention ? 'home-card is-attention' : 'home-card'}
-      aria-label={`${label}, ${attention ? 'needs attention' : status.label}${connection ? `, ${connection.name}/${connection.project}` : ''}${usage && usage.billable.costEur > 0 ? `, ${eur(usage.billable.costEur)}` : ''}${time && time.activeSeconds > 0 ? `, ${formatDuration(time.activeSeconds)}` : ''}`}
+      aria-label={`${label}, ${attention ? 'needs attention' : status.label}${connection ? `, ${connection.name}/${connection.project}` : ''}${cost > 0 ? `, ${eur(cost)}` : ''}${time && time.activeSeconds > 0 ? `, ${formatDuration(time.activeSeconds)}` : ''}`}
       onClick={() => {
         track('home.clicked', { band: 'task' });
         openTask(task.id);
@@ -53,9 +53,7 @@ function TaskCard({ task }: { task: TaskView }) {
         <span className="dot" style={{ background: status.color }} />{' '}
         {status.label}
         {connection && ` · ${connection.name}/${connection.project}`}
-        {usage &&
-          usage.billable.costEur > 0 &&
-          ` · ${eur(usage.billable.costEur)}`}
+        {cost > 0 && ` · ${eur(cost)}`}
         {time &&
           time.activeSeconds > 0 &&
           ` · ${formatDuration(time.activeSeconds)}`}

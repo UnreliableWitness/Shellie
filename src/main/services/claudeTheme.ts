@@ -11,6 +11,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import type { ColorScheme } from '../../shared/theme';
+import { claudeConfigDir } from './claudeSessions';
 
 /**
  * Claude Code draws with its own theme (Settings `theme`: dark, light, their -daltonized and -ansi variants, custom
@@ -55,7 +56,7 @@ const readTheme = (file: string): unknown => {
 
 /** The theme the user picked in Claude Code: its settings.json, else the older global config. Never throws. */
 export function readClaudeTheme(env: NodeJS.ProcessEnv = process.env): unknown {
-  const dir = env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  const dir = claudeConfigDir(env);
   return (
     readTheme(path.join(dir, 'settings.json')) ??
     readTheme(

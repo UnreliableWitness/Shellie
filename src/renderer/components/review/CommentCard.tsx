@@ -4,6 +4,7 @@ import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ReviewComment } from '../../../shared/review';
 import { openWeb, webLink } from '../../docs/linkify';
+import { clock } from '../../format';
 
 /**
  * Links in a comment never navigate the app window: web links open in the browser, anything
@@ -28,8 +29,6 @@ const components: Components = {
   },
 };
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const lines = (c: Pick<ReviewComment, 'startLine' | 'endLine'>) =>
   c.startLine === c.endLine
     ? `Line ${c.startLine}`
@@ -134,7 +133,7 @@ export function CommentCard({
     );
   const status =
     c.status === 'sent'
-      ? `Sent ${c.sentAt ? time(c.sentAt) : ''}`.trim()
+      ? `Sent ${c.sentAt ? clock(c.sentAt) : ''}`.trim()
       : c.status === 'outdated'
         ? c.sentAt
           ? 'Code changed, probably addressed'

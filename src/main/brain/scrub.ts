@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathExists } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
+import { absPath } from './paths';
 
 /** Shorter than this would redact half the brain by accident. */
-export const SCRUB_MIN_LENGTH = 6;
+const SCRUB_MIN_LENGTH = 6;
 /**
  * One token for text and for names, so a renamed file still matches the links and state keys that name it. No
  * brackets: git reads `[…]` in a pathspec as a glob.
@@ -37,14 +39,6 @@ export function scrubVariants(value: string): string[] {
   return out;
 }
 
-const abs = (brainDir: string, rel: string) =>
-  path.join(brainDir, ...rel.split('/'));
-const exists = (p: string) =>
-  fs.stat(p).then(
-    () => true,
-    () => false,
-  );
-
 /** Every file and folder under sources/ and wiki/ (dot entries left out), repo-relative, with whether it is a folder. */
 async function entries(
   brainDir: string,
@@ -53,7 +47,7 @@ async function entries(
   const walk = async (rel: string) => {
     let list;
     try {
-      list = await fs.readdir(abs(brainDir, rel), { withFileTypes: true });
+      list = await fs.readdir(absPath(brainDir, rel), { withFileTypes: true });
     } catch {
       return;
     }
@@ -73,12 +67,12 @@ async function entries(
 
 /** A free name for the target: `-2`, `-3`… before the extension when it is taken. */
 async function freeName(brainDir: string, rel: string): Promise<string> {
-  if (!(await exists(abs(brainDir, rel)))) return rel;
+  if (!(await pathExists(absPath(brainDir, rel)))) return rel;
   const ext = path.posix.extname(rel);
   const stem = rel.slice(0, rel.length - ext.length);
   for (let n = 2; ; n++) {
     const candidate = `${stem}-${n}${ext}`;
-    if (!(await exists(abs(brainDir, candidate)))) return candidate;
+    if (!(await pathExists(absPath(brainDir, candidate)))) return candidate;
   }
 }
 
@@ -102,7 +96,7 @@ async function renameAll(
     const base = path.posix.basename(from).split(value).join(REDACTED);
     if (base === path.posix.basename(from)) continue;
     const to = await freeName(brainDir, `${dir}/${base}`);
-    await fs.rename(abs(brainDir, from), abs(brainDir, to));
+    await fs.rename(absPath(brainDir, from), absPath(brainDir, to));
     out.push({ from, to });
   }
   return out;
@@ -113,7 +107,7 @@ async function textFiles(brainDir: string): Promise<string[]> {
     .filter((e) => !e.dir && TEXT.has(path.extname(e.rel).toLowerCase()))
     .map((e) => e.rel);
   for (const f of ['index.md', 'log.md', 'brain/state.json'])
-    if (await exists(abs(brainDir, f))) out.push(f);
+    if (await pathExists(absPath(brainDir, f))) out.push(f);
   return out;
 }
 
@@ -187,7 +181,7 @@ export async function scrubBrain(
     const planned: { rel: string; next: string }[] = [];
     let skipped = 0;
     for (const rel of await textFiles(brainDir)) {
-      const file = abs(brainDir, rel);
+      const file = absPath(brainDir, rel);
       if ((await fs.stat(file)).size > MAX_FILE) {
         skipped++;
         continue;
@@ -239,7 +233,7 @@ export async function scrubBrain(
       ]);
     }
     for (const p of planned)
-      await fs.writeFile(abs(brainDir, p.rel), p.next, 'utf8');
+      await fs.writeFile(absPath(brainDir, p.rel), p.next, 'utf8');
     // A file both renamed and rewritten counts once, under its old name.
     const original = (rel: string) =>
       renames.find((r) => r.to === rel)?.from ?? rel;

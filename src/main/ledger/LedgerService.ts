@@ -8,7 +8,8 @@ import type { FileCursor } from '../budget/claudeTranscripts';
 import type { ClaudeTranscriptReader } from '../budget/claudeTranscripts';
 import type { OpenCodeReader } from '../budget/openCode';
 import { budgetRecordsFromUsage } from '../budget/usageRecords';
-import { renameWithRetry } from '../fsRetry';
+import { tick } from '../async';
+import { writeAtomic } from '../fsRetry';
 import { OFFICIAL_RATES } from '../pricing/officialRates';
 import { modelLabeler } from '../pricing/RateTable';
 import {
@@ -59,7 +60,6 @@ const label = modelLabeler(OFFICIAL_RATES);
 const OPENCODE_CHUNK = 1000;
 const WORK_CHUNK = 500;
 const UPSERT_CHUNK = 2000;
-const tick = () => new Promise<void>((r) => setImmediate(r));
 
 const asBudget = (r: CostRecord, i: Input): BudgetRecord => ({
   id: r.id,
@@ -77,12 +77,6 @@ const asBudget = (r: CostRecord, i: Input): BudgetRecord => ({
   cacheWrite5mTokens: r.cacheWrite5mTokens,
   cacheWrite1hTokens: r.cacheWrite1hTokens,
 });
-
-async function writeAtomic(file: string, text: string) {
-  const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, text, 'utf8');
-  await renameWithRetry(tmp, file);
-}
 
 /**
  * Fills the cost ledger: every request the transcripts, OpenCode and the usage store have, priced and

@@ -37,9 +37,19 @@ export class RepoRegistry {
   }
 
   get(id: string): Repo {
-    const repo = this.store.state.repos.find((r) => r.id === id);
+    const repo = this.find(id);
     if (!repo) throw new Error(`Unknown repo ${id}`);
     return repo;
+  }
+
+  /** A repo by id; undefined when it was removed (tasks and workspaces keep the ids of removed repos). */
+  find(id: string): Repo | undefined {
+    return this.store.state.repos.find((r) => r.id === id);
+  }
+
+  /** A repo's name for messages and views; the id when the repo was removed. */
+  repoName(id: string): string {
+    return this.find(id)?.name ?? id;
   }
 
   async add(folder: string, options: AddRepoOptions = {}): Promise<Repo> {

@@ -1,17 +1,11 @@
 import type { ShellieApi } from '../shared/ipc';
 import type { AppSettings } from '../shared/usage';
+import { errorMessage } from '../shared/errors';
 
 export function api(): ShellieApi {
   if (!window.shellie)
     throw new Error('window.shellie is not available: preload did not run');
   return window.shellie;
-}
-
-/** An IPC rejection's message without Electron's "Error invoking remote method" prefix. */
-export function ipcErrorMessage(e: unknown): string {
-  return e instanceof Error
-    ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-    : String(e);
 }
 
 let settingsSaved: ((settings: AppSettings) => void) | null = null;
@@ -44,7 +38,7 @@ export async function tryInvoke<T>(
   try {
     return await run();
   } catch (e) {
-    notify('error', ipcErrorMessage(e));
+    notify('error', errorMessage(e));
     return undefined;
   }
 }

@@ -18,6 +18,7 @@ import type { TelemetryProps } from '../../shared/telemetry';
 import type { Connection, Repo, Task } from '../../shared/types';
 import { taskConnectionId } from '../../shared/workspaces';
 import { listDocs, readAsset, readDoc } from '../docs/worktreeFiles';
+import { pathExists } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
@@ -30,6 +31,7 @@ import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { rebuildIndex } from './indexPage';
 import { readPages } from './pages';
+import { absPath } from './paths';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
   applyTemplates,
@@ -148,10 +150,7 @@ async function stageable(git: GitClient, brainDir: string): Promise<string[]> {
     .filter(Boolean);
   const out: string[] = [];
   for (const p of JOB_OUTPUT) {
-    const onDisk = await fs.stat(path.join(brainDir, ...p.split('/'))).then(
-      () => true,
-      () => false,
-    );
+    const onDisk = await pathExists(absPath(brainDir, p));
     if (onDisk || tracked.some((t) => t === p || t.startsWith(`${p}/`)))
       out.push(p);
   }
@@ -226,7 +225,7 @@ export async function verifyPage(
   const rel = path.posix.normalize(page.replace(/\\/g, '/'));
   if (!/^wiki\/.+\.md$/.test(rel) || rel.startsWith('wiki/../'))
     throw new Error('Only a page under wiki/ can be verified');
-  const file = path.join(brainDir, ...rel.split('/'));
+  const file = absPath(brainDir, rel);
   const day = localDate(now);
   return withBrainGit(brainDir, async () => {
     const text = await fs.readFile(file, 'utf8');
@@ -669,7 +668,7 @@ export function createBrainHandlers(
       // Documents and pictures only: shell.openPath would run a script or a program.
       if (!OPENABLE.has(path.posix.extname(p).toLowerCase()))
         throw new Error('Only a document or a picture can be opened');
-      const error = await d.openPath(path.join(b.path, ...p.split('/')));
+      const error = await d.openPath(absPath(b.path, p));
       if (error) throw new Error(`Could not open the file: ${error}`);
     },
   };

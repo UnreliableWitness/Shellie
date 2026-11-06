@@ -4,6 +4,7 @@ import type {
   HomeSnapshot,
   HomeSprint,
 } from '../../../shared/home';
+import { progress } from '../../../shared/sprintTime';
 import { formatDuration, type LocalItemTime } from '../../../shared/time';
 import { api } from '../../api';
 import { connectionNote, sprintTotals } from '../../homeView';
@@ -44,13 +45,7 @@ function SprintCard({
       ? stateMeta(types.types.get(type.toLowerCase()), state)?.category
       : undefined,
   );
-  const over =
-    t.estimateHours !== null &&
-    t.estimateHours > 0 &&
-    t.spentSeconds > t.estimateHours * 3600;
-  const pct = t.estimateHours
-    ? Math.round((t.spentSeconds / (t.estimateHours * 3600)) * 100)
-    : null;
+  const { pct, over } = progress(t.spentSeconds, t.estimateHours);
   const left = daysLeft(sprint.finishDate);
   return (
     <button

@@ -938,9 +938,7 @@ describe('ChangesTab more', () => {
   it('shows why the changes could not be loaded instead of loading forever', async () => {
     mount({
       'review:files': () => {
-        throw new Error(
-          "Error invoking remote method 'review:files': Error: The task is not ready (finishing)",
-        );
+        throw new Error('The task is not ready (finishing)');
       },
     });
     expect(

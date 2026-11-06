@@ -1,3 +1,4 @@
+import { AGENT_IDS } from '../../../../shared/agents';
 import { ListEditor } from '../../../components/settings/ListEditor';
 import {
   SettingRow,
@@ -6,7 +7,6 @@ import {
 import { Loading } from './GeneralCategory';
 import { type RepoSettings, yamlRow } from './useRepoSettings';
 
-const APM_TARGETS = ['claude', 'copilot', 'opencode'] as const;
 type ApmMode = 'auto' | 'off' | 'choose';
 
 export function SetupCategory({
@@ -24,10 +24,10 @@ export function SetupCategory({
   const setMode = (next: ApmMode) => {
     if (next === 'auto') void settings.set('apm', 'auto');
     else if (next === 'off') void settings.set('apm', false);
-    else void settings.set('apm', [...APM_TARGETS]);
+    else void settings.set('apm', [...AGENT_IDS]);
   };
   const toggle = (target: string, on: boolean) => {
-    const next = APM_TARGETS.filter((t) =>
+    const next = AGENT_IDS.filter((t) =>
       t === target ? on : chosen.includes(t),
     );
     // No harness ticked is Off, not an empty list.
@@ -81,7 +81,7 @@ export function SetupCategory({
             </select>
             {mode === 'choose' && (
               <div>
-                {APM_TARGETS.map((t) => (
+                {AGENT_IDS.map((t) => (
                   <label
                     key={t}
                     className="checkbox"

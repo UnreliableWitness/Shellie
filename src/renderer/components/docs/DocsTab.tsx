@@ -17,7 +17,8 @@ import {
   activeWorkspaces,
   docsTarget,
 } from '../../../shared/workspaces';
-import { api, ipcErrorMessage, tryInvoke } from '../../api';
+import { api, tryInvoke } from '../../api';
+import { errorMessage } from '../../../shared/errors';
 import {
   readDocsMode,
   readDocState,
@@ -44,7 +45,7 @@ import { DocsBody, type Doc } from './DocsBody';
 type From = 'list' | 'link' | 'terminal';
 
 /** A change that can alter the file list: a Markdown file, or a path without an extension (a folder). */
-export const affectsList = (paths: string[]): boolean =>
+const affectsList = (paths: string[]): boolean =>
   paths.some((p) => {
     const name = p.split('/').pop() ?? '';
     return /\.(md|markdown)$/i.test(name) || !name.includes('.');
@@ -55,7 +56,7 @@ const handledTargets = new Map<string, number>();
 export const resetDocTargetsForTests = () => handledTargets.clear();
 
 /** How often the session list is asked for while shown (transcripts are read incrementally in main). */
-export const SESSION_POLL_MS = 3000;
+const SESSION_POLL_MS = 3000;
 
 const firstFile = (
   nodes: TreeNode[],
@@ -150,7 +151,7 @@ function DocsPane({
         try {
           setFiles((await api().invoke('docs:list', tid)).files);
         } catch (e) {
-          notify('error', ipcErrorMessage(e));
+          notify('error', errorMessage(e));
           setFiles((f) => f ?? []);
         }
       } while (l.again);
@@ -183,7 +184,7 @@ function DocsPane({
           if (open && was && now && was.mtimeMs !== now.mtimeMs)
             void readRef.current(open, false);
         } catch (e) {
-          notify('error', ipcErrorMessage(e));
+          notify('error', errorMessage(e));
           setSession((f) => f ?? []);
         }
       } while (l.again);
@@ -223,7 +224,7 @@ function DocsPane({
         setDoc({ path, text: r.text, error: null, deleted: false });
       } catch (e) {
         if (mine !== token.current || path !== currentRef.current) return;
-        const msg = ipcErrorMessage(e);
+        const msg = errorMessage(e);
         setDoc((d) => {
           if (
             msg === 'Not found' &&
@@ -439,13 +440,7 @@ function DocsPane({
   };
 
   const openInEditor = (path: string, line?: number) =>
-    tryInvoke(
-      () =>
-        line
-          ? api().invoke('docs:openInEditor', tid, path, line)
-          : api().invoke('docs:openInEditor', tid, path),
-      notify,
-    );
+    tryInvoke(() => api().invoke('docs:openInEditor', tid, path, line), notify);
 
   const collapse = (v: boolean) => {
     setListCollapsed(v);

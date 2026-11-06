@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { TerminalDefSchema } from './types';
 
 /** Usage and terminals for a brain are attributed to this pseudo task id. */
-export const BRAIN_TASK_PREFIX = 'brain:';
+const BRAIN_TASK_PREFIX = 'brain:';
 export const brainTaskId = (brainId: string) =>
   `${BRAIN_TASK_PREFIX}${brainId}`;
 export const brainIdOf = (taskId: string | undefined): string | null =>
@@ -10,7 +10,7 @@ export const brainIdOf = (taskId: string | undefined): string | null =>
     ? taskId.slice(BRAIN_TASK_PREFIX.length)
     : null;
 
-export const BrainModelSchema = z.enum(['haiku', 'sonnet', 'opus']);
+const BrainModelSchema = z.enum(['haiku', 'sonnet', 'opus']);
 export type BrainModel = z.infer<typeof BrainModelSchema>;
 
 export const BrainOptionsSchema = z.object({
@@ -75,7 +75,7 @@ export type SourceType = z.infer<typeof SourceTypeSchema>;
  * A finding on a page: Shellie finds `broken-link`, `stale`, `uncaptured` and `frontmatter` itself on every Health
  * read; `/lint` writes `contradiction` and `scope-change` into state. `orphan` is a kind older lints wrote.
  */
-export const BrainFindingSchema = z.object({
+const BrainFindingSchema = z.object({
   kind: z.enum([
     'contradiction',
     'orphan',

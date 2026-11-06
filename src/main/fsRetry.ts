@@ -1,11 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { sleep } from './async';
 
 const RETRYABLE = new Set(['EPERM', 'EBUSY', 'EACCES']);
 const WAITS = [50, 100, 200, 400, 800];
 
 export type Wait = (ms: number) => Promise<void>;
-export const realWait: Wait = (ms) => new Promise((r) => setTimeout(r, ms));
+export const realWait: Wait = sleep;
 
 /** Runs `fn`, retrying with a backoff (default 50/100/200/400/800 ms) while `retryable(error)` holds. */
 export async function withRetry<T>(
@@ -31,6 +32,34 @@ export const pathExists = (p: string): Promise<boolean> =>
     () => false,
   );
 
+/** True when `p` is a regular file (a missing path or a folder is false, never an error). */
+export const isFile = (p: string): Promise<boolean> =>
+  fs.stat(p).then(
+    (st) => st.isFile(),
+    () => false,
+  );
+
+/** Reads a JSON file; null when it is missing or not JSON. */
+export async function readJson<T = unknown>(file: string): Promise<T | null> {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** The `records-YYYY-MM.jsonl` files of a store folder, oldest month first; none when the folder does not exist yet. */
+export async function monthFiles(dir: string): Promise<string[]> {
+  try {
+    return (await fs.readdir(dir))
+      .filter((f) => /^records-\d{4}-\d{2}\.jsonl$/.test(f))
+      .sort();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    return [];
+  }
+}
+
 /** fs.rename that rides out short locks held by antivirus or indexers (common on Windows). */
 export async function renameWithRetry(
   from: string,
@@ -43,6 +72,20 @@ export async function renameWithRetry(
     (e) => RETRYABLE.has((e as NodeJS.ErrnoException).code ?? ''),
     wait,
   );
+}
+
+/**
+ * Writes `text` to a sibling temp file and renames it over `file`, so a reader never sees a half-written
+ * file. `tmpSuffix` names the temp file (default `.tmp`); pass a unique one when several writers may race.
+ */
+export async function writeAtomic(
+  file: string,
+  text: string,
+  tmpSuffix = '.tmp',
+): Promise<void> {
+  const tmp = `${file}${tmpSuffix}`;
+  await fs.writeFile(tmp, text, 'utf8');
+  await renameWithRetry(tmp, file);
 }
 
 /**

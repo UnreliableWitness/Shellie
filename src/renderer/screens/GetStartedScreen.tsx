@@ -28,7 +28,7 @@ const list = (items: string[]) =>
     : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
 /** Card 1's line: what was found and which tabs a new task opens. */
-export function agentsLine(
+function agentsLine(
   detected: AgentsDetected | null,
   tabs: DefaultTerminals | undefined,
 ): string {

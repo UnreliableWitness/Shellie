@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sprintTime } from './sprintTime';
+import { progress, sprintTime } from './sprintTime';
 import type { LocalItemTime } from './time';
 import type { SprintItem, SprintRow } from './types';
 
@@ -134,5 +134,19 @@ describe('sprintTime', () => {
     const m = sprintTime(rows, {});
     expect(m.get('g')?.spentSeconds).toBe(3600);
     expect(m.get('p')?.spentSeconds).toBe(3600);
+  });
+});
+
+describe('progress', () => {
+  it('is the spent share of the estimate, over once past it', () => {
+    expect(progress(1800, 1)).toEqual({ pct: 50, over: false });
+    expect(progress(3600, 1)).toEqual({ pct: 100, over: false });
+    expect(progress(5400, 1)).toEqual({ pct: 150, over: true });
+  });
+
+  it('has no share without a spent figure or a positive estimate', () => {
+    expect(progress(null, 1)).toEqual({ pct: null, over: false });
+    expect(progress(1800, null)).toEqual({ pct: null, over: false });
+    expect(progress(1800, 0)).toEqual({ pct: null, over: false });
   });
 });

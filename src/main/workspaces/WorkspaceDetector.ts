@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Connection, Task, Workspace } from '../../shared/types';
 import { hasNoRepo, HOME_ID } from '../../shared/workspaces';
+import { isFile } from '../fsRetry';
 import { isInside, samePath } from '../paths';
 import { matchConnection } from '../services/azureRepos';
 import type { GitClient } from '../services/GitClient';
@@ -262,13 +263,6 @@ async function sessionFiles(
   sessionId: string,
 ): Promise<string[]> {
   const files = folders.map((f) => path.join(f, `${sessionId}.jsonl`));
-  const isFile = await Promise.all(
-    files.map((file) =>
-      fs.stat(file).then(
-        (st) => st.isFile(),
-        () => false, // not in this folder
-      ),
-    ),
-  );
-  return files.filter((_, i) => isFile[i]);
+  const present = await Promise.all(files.map(isFile));
+  return files.filter((_, i) => present[i]);
 }

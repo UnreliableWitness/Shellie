@@ -15,7 +15,7 @@ const SINGLE_QUOTES = new RegExp(
   `['${[0x2018, 0x2019, 0x201a, 0x201b].map((c) => String.fromCharCode(c)).join('')}]`,
   'g',
 );
-export const psQuote = (s: string): string =>
+const psQuote = (s: string): string =>
   `'${s.replace(SINGLE_QUOTES, (q) => q + q)}'`;
 
 /**
@@ -26,7 +26,7 @@ export const psQuote = (s: string): string =>
  * = 'Stop', which would make them terminating). `$?` is not used: it stays true after `& { ... }` even
  * when an error was written inside. The command sits on its own lines so a trailing # comment is harmless.
  */
-export const psSetupWrapper = (cmd: string): string =>
+const psSetupWrapper = (cmd: string): string =>
   [
     '$shellieFailed = $false',
     '& {',
@@ -48,7 +48,7 @@ export const psSetupWrapper = (cmd: string): string =>
  * PowerShell 5.1 does not wrap native stderr in error records, so the setup wrapper is not needed here.
  * A `throw` still exits 1 under -Command. The command sits on its own lines (trailing # comments).
  */
-export const psRunWrapper = (cmd: string): string =>
+const psRunWrapper = (cmd: string): string =>
   ['& {', cmd, '}', 'if ($LASTEXITCODE) { exit $LASTEXITCODE }'].join('\n');
 
 /** The start of every PowerShell command line Shellie builds. */

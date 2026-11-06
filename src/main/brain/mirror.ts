@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BrainWiki, RefreshResult } from '../../shared/brain';
 import { errorMessage } from '../../shared/errors';
+import { isFile } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
 import { VIEWABLE, imageExt } from './convert/types';
@@ -21,7 +22,7 @@ const LF = ['-c', 'core.autocrlf=false'];
 /** Sources are our files: LF everywhere, so a page hashes the same on every platform. */
 export const toLf = (text: string) => text.replace(/\r\n/g, '\n');
 
-export function mirrorDir(brainDir: string): string {
+function mirrorDir(brainDir: string): string {
   return path.join(brainDir, '.mirror');
 }
 
@@ -64,12 +65,6 @@ function safeSegment(name: string): string {
     .replace(/[. ]+$/, '');
   return s === '' || s === '.' || s === '..' ? '_' : s;
 }
-
-const isFile = (p: string) =>
-  fs.stat(p).then(
-    (s) => s.isFile(),
-    () => false,
-  );
 
 /** Posix paths, relative to `dir`, of every .md file below it (not in .attachments or .git). */
 async function walk(dir: string, rel = ''): Promise<string[]> {

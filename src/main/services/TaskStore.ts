@@ -3,7 +3,7 @@ import { JsonFileStore } from '../usage/JsonFileStore';
 
 export type LoadResult = { recovered: boolean; backup?: string };
 
-export const emptyState = (): State => ({
+const emptyState = (): State => ({
   version: 1,
   repos: [],
   tasks: [],

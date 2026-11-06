@@ -16,8 +16,9 @@ import {
 } from '../../../shared/secrets';
 import type { TaskView } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
+import { clock } from '../../format';
 import { useStore } from '../../store';
-import { joinAnd, tabNames, taskShortName, untilTime } from './environment';
+import { joinAnd, tabNames, taskShortName } from './environment';
 
 type Guarded = 'uat' | 'production';
 
@@ -268,7 +269,7 @@ export function EnvironmentChip({ task }: { task: TaskView }) {
               e === 'production' &&
               env === 'production' &&
               task.environmentUntil
-                ? untilTime(task.environmentUntil)
+                ? clock(task.environmentUntil)
                 : null;
             return (
               <button

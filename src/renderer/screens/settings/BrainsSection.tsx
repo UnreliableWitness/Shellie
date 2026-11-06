@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { BrainOptions, BrainView, BrainWiki } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
+import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
 import { useBrains } from '../../hooks/useBrains';
@@ -16,8 +17,6 @@ type Action =
   | 'archive'
   | 'restore';
 const trackBrain = (action: Action) => track('settings.brain', { action });
-
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const TOGGLES: {
   key: Exclude<keyof BrainOptions, 'dailyTokenCap' | 'model'>;
@@ -79,7 +78,7 @@ function CreateBrainForm({
       const picked = await api().invoke('brain:pickFolder');
       if (picked) setPath(picked);
     } catch (e) {
-      setError(message(e));
+      setError(errorMessage(e));
     }
   };
   const submit = async () => {
@@ -98,7 +97,7 @@ function CreateBrainForm({
       setPath(null);
       setWiki(null);
     } catch (e) {
-      setError(message(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -197,7 +196,7 @@ function BrainCard({ brain }: { brain: BrainView }) {
       await fn();
       if (action) trackBrain(action);
     } catch (e) {
-      setError(message(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

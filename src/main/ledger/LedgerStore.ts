@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { CostRecord } from '../../shared/ledger';
-import { renameWithRetry } from '../fsRetry';
+import { tick } from '../async';
+import { monthFiles, writeAtomic } from '../fsRetry';
 
 /** `YYYY-MM` (UTC) of an ISO timestamp, or of now when it has no usable month. */
 const monthOf = (iso: string): string => {
@@ -54,22 +55,13 @@ export class LedgerStore {
   async load(): Promise<void> {
     this.byId.clear();
     this.hashes.clear();
-    let files: string[] = [];
-    try {
-      files = (await fs.readdir(this.dir))
-        .filter((f) => /^records-\d{4}-\d{2}\.jsonl$/.test(f))
-        .sort();
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
-    }
-    for (const f of files) {
+    for (const f of await monthFiles(this.dir)) {
       const text = await fs.readFile(path.join(this.dir, f), 'utf8');
       const lines = text.split('\n').filter((l) => l.trim());
       const live = new Map<string, CostRecord>();
       for (const [i, line] of lines.entries()) {
         // A month file can hold tens of thousands of lines: let the event loop run between batches.
-        if (i > 0 && i % 2000 === 0)
-          await new Promise<void>((r) => setImmediate(r));
+        if (i > 0 && i % 2000 === 0) await tick();
         try {
           const rec = JSON.parse(line) as CostRecord;
           if (typeof rec.id !== 'string' || typeof rec.at !== 'string')
@@ -102,14 +94,10 @@ export class LedgerStore {
   }
 
   private async rewrite(month: string, recs: CostRecord[]): Promise<void> {
-    const file = this.file(month);
-    const tmp = `${file}.tmp`;
-    await fs.writeFile(
-      tmp,
+    await writeAtomic(
+      this.file(month),
       recs.map((r) => `${JSON.stringify(r)}\n`).join(''),
-      'utf8',
     );
-    await renameWithRetry(tmp, file);
   }
 
   get(id: string): CostRecord | undefined {
@@ -124,10 +112,12 @@ export class LedgerStore {
   upsert(recs: CostRecord[]): Promise<string[]> {
     return this.serial(async () => {
       const changed = new Map<string, CostRecord>();
+      const hashes = new Map<string, string>();
       for (const r of recs) {
-        const cur = changed.get(r.id) ?? this.byId.get(r.id);
-        if (cur && canonical(cur) === canonical(r)) continue;
+        const hash = hashOf(r);
+        if ((hashes.get(r.id) ?? this.hashes.get(r.id)) === hash) continue;
         changed.set(r.id, r);
+        hashes.set(r.id, hash);
       }
       if (changed.size === 0) return [];
       const byMonth = new Map<string, string>();
@@ -140,7 +130,7 @@ export class LedgerStore {
         await fs.appendFile(this.file(m), text, 'utf8');
       for (const r of changed.values()) {
         this.byId.set(r.id, r);
-        this.hashes.set(r.id, hashOf(r));
+        this.hashes.set(r.id, hashes.get(r.id)!);
       }
       return [...changed.keys()];
     });
@@ -200,9 +190,7 @@ export class LedgerStore {
       const next = { ...this.sent };
       mutate(next);
       await fs.mkdir(this.dir, { recursive: true });
-      const tmp = `${this.sentFile}.tmp`;
-      await fs.writeFile(tmp, JSON.stringify(next), 'utf8');
-      await renameWithRetry(tmp, this.sentFile);
+      await writeAtomic(this.sentFile, JSON.stringify(next));
       this.sent = next;
     });
   }

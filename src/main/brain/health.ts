@@ -68,7 +68,7 @@ async function outsideEdits(brainDir: string, git: GitClient) {
 }
 
 /** The lint's findings worth showing: the kinds Shellie does not compute itself (its live result replaces those). */
-export const lintFindings = (findings: BrainFinding[]): BrainFinding[] =>
+const lintFindings = (findings: BrainFinding[]): BrainFinding[] =>
   findings.filter(
     (f) => !SHELLIE_FINDING_KINDS.has(f.kind) && f.kind !== 'orphan',
   );

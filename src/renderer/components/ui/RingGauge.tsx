@@ -5,7 +5,7 @@ const R = 24;
 const STROKE = 7;
 const C = 2 * Math.PI * R;
 /** Radius of the hole inside the ring, in viewBox units. */
-export const RING_INNER_R = R - STROKE / 2;
+const RING_INNER_R = R - STROKE / 2;
 /** A monospace glyph is at most this wide per font size unit (Cascadia, Consolas, SF Mono, Menlo). */
 const GLYPH = 0.62;
 /** Widest the value line and the caption may be, chosen so both stay inside the hole at their heights. */
@@ -18,7 +18,7 @@ const clamp = (n: number) =>
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
 /** The largest font size (viewBox units, up to `max`) at which `text` is at most `width` wide. */
-export const fitFontSize = (text: string, width: number, max: number) =>
+const fitFontSize = (text: string, width: number, max: number) =>
   Math.min(max, width / (Math.max(1, text.length) * GLYPH));
 
 /** A centred line of SVG text that shrinks itself when the real font renders it wider than `width`. */

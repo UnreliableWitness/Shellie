@@ -25,10 +25,15 @@ export function useGitSummary(
           if (live) setGit(null);
         });
     void refresh();
-    const timer = setInterval(refresh, POLL_MS);
+    // Like the other polls, only while the window has focus; a return to it refreshes at once.
+    const timer = setInterval(() => {
+      if (document.hasFocus()) void refresh();
+    }, POLL_MS);
+    window.addEventListener('focus', refresh);
     return () => {
       live = false;
       clearInterval(timer);
+      window.removeEventListener('focus', refresh);
     };
   }, [taskId, worktreeMissing, enabled, workspaceId]);
 

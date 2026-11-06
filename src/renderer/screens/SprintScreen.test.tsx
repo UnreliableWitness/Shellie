@@ -620,7 +620,7 @@ describe('Sprint page', () => {
     ).toBeInTheDocument();
     expect(
       calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
-    ).toEqual(['c1', 'it-2']);
+    ).toEqual(['c1', 'it-2', undefined]);
     // Refresh stays on the chosen sprint.
     await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     await waitFor(() =>
@@ -630,7 +630,7 @@ describe('Sprint page', () => {
     );
     expect(
       calls.filter((c) => c.channel === 'workItems:sprint').at(-1)?.args,
-    ).toEqual(['c1', 'it-2']);
+    ).toEqual(['c1', 'it-2', undefined]);
   });
 
   it("groups the sprints of my teams and loads a sprint from its team's scope", async () => {
@@ -731,7 +731,10 @@ describe('Sprint page', () => {
     await grid();
     expect(
       calls.filter((c) => c.channel === 'workItems:sprint').map((c) => c.args),
-    ).toEqual([['c1', 'it-gone'], ['c1']]);
+    ).toEqual([
+      ['c1', 'it-gone', undefined],
+      ['c1', undefined, undefined],
+    ]);
     expect(localStorage.getItem('shellie.ui.sprint.c1')).toBeNull();
   });
 

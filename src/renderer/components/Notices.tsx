@@ -141,9 +141,9 @@ function MoveNotice() {
   );
 }
 
-export const NOTICE_MS = { info: 6000, warn: 10000, error: 12000 } as const;
+const NOTICE_MS = { info: 6000, warn: 10000, error: 12000 } as const;
 /** Messages longer than this get a 4-line clamp and a Show all toggle. */
-export const LONG_NOTICE = 200;
+const LONG_NOTICE = 200;
 
 function NoticeItem({ notice }: { notice: Notice }) {
   const dismiss = useStore((s) => s.dismiss);

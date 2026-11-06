@@ -1,7 +1,7 @@
 import type { Environment } from '../../shared/secrets';
 
 /** Shorter values are not matched: they turn up in ordinary output by chance. */
-export const MIN_LEAK_LENGTH = 8;
+const MIN_LEAK_LENGTH = 8;
 
 /** `quiet`: the value is in a file git tracks, so it is masked but raises nothing. */
 export type LeakHit = { name: string; env: Environment; quiet?: boolean };
