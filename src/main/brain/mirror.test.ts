@@ -189,13 +189,20 @@ describe('wiki mirror', () => {
     await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
     await fs.writeFile(path.join(wikiRepo, '.attachments/flow.emf'), 'emf');
     await fs.writeFile(path.join(wikiRepo, '.attachments/old.tiff'), 'tif');
+    await fs.writeFile(path.join(wikiRepo, '.attachments/spec.pdf'), 'pdf');
     sh(wikiRepo, 'add', '-A');
     sh(wikiRepo, 'commit', '-q', '-m', 'attachments');
     await put(
       KICK,
-      '![f](/.attachments/flow.emf) ![o](/.attachments/old.tiff)\n',
+      '![f](/.attachments/flow.emf) ![o](/.attachments/old.tiff) [s](/.attachments/spec.pdf)\n',
     );
-    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    const first = await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    // The PDF is no picture: only a warning, no drop.
+    expect(first).toMatchObject({
+      warnings: [
+        'Attachments in formats Claude cannot view are left as links (emf, pdf, tiff)',
+      ],
+    });
     const drop = (where: string, ext: string, accepted: string | null) => ({
       where,
       reason: `${ext} attachments cannot be viewed`,
@@ -207,6 +214,10 @@ describe('wiki mirror', () => {
       tiny: 0,
     });
     expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+    // The same refresh again: no commit.
+    const before = await count();
+    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect(await count()).toBe(before);
 
     await writeDropped(dir, (f) => ({
       ...f,

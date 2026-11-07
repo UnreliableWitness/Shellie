@@ -5,7 +5,7 @@ import { errorMessage } from '../../shared/errors';
 import { isFile } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
-import { VIEWABLE, imageExt } from './convert/types';
+import { PICTURE_FORMATS, VIEWABLE, imageExt } from './convert/types';
 import {
   DROPPED_FILE,
   MIRROR_SOURCE,
@@ -131,7 +131,7 @@ function attachmentsOf(text: string): { names: string[]; other: string[] } {
 const formatOf = (name: string) => imageExt(name) || 'unknown';
 
 /**
- * Writes the unviewable attachments as the mirror's drops in brain/pictures-dropped.json, keeping the acceptance of
+ * Writes the unviewable picture attachments (not a PDF or other document) as the mirror's drops in brain/pictures-dropped.json, keeping the acceptance of
  * those still linked (by file name) and dropping the key when there are none. Returns whether the file changed.
  */
 async function recordDrops(
@@ -142,7 +142,8 @@ async function recordDrops(
   const accepted = new Map(
     (before?.dropped ?? []).map((d) => [d.where, d.accepted]),
   );
-  const dropped: PictureDrop[] = [...other].sort().map((name) => ({
+  const pictures = other.filter((n) => PICTURE_FORMATS.has(imageExt(n)));
+  const dropped: PictureDrop[] = pictures.sort().map((name) => ({
     where: name,
     reason: `${formatOf(name).toUpperCase()} attachments cannot be viewed`,
     fix: 'Attach the picture to the wiki page as PNG',
@@ -472,6 +473,14 @@ export async function refreshMirror(
       if (added + changed + removed + attachments === 0 && !drops) return;
       const paths = drops ? [WIKI_DIR, DROPPED_FILE] : [WIKI_DIR];
       await git.run(brainDir, ['add', '-A', '--', ...paths]);
+      const staged = await git.run(brainDir, [
+        'diff',
+        '--cached',
+        '--name-only',
+        '--',
+        ...paths,
+      ]);
+      if (!staged.trim()) return;
       await git.run(brainDir, [
         'commit',
         '-q',

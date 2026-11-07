@@ -24,6 +24,18 @@ export const ASSETS_PLACEHOLDER = '{{assets}}';
 
 /** Formats Claude Code's Read tool shows as a picture. */
 export const VIEWABLE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+/** Picture formats Claude cannot view as they are (a file in one of these is a picture that did not reach Claude). */
+export const PICTURE_FORMATS = new Set([
+  'svg',
+  'emf',
+  'wmf',
+  'tif',
+  'tiff',
+  'bmp',
+  'ico',
+  'heic',
+  'heif',
+]);
 
 /** Most images one source may bring along. */
 export const MAX_IMAGES = 60;
