@@ -94,6 +94,9 @@ export const OPENCODE_TEMPLATES = 7;
 export const opencodeReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= OPENCODE_TEMPLATES;
 
+/** OpenCode session titles of the brain's headless jobs start with this, so the terminal never takes one for its own. */
+export const BRAIN_JOB_TITLE = 'Shellie brain job';
+
 /** A question for the brain's read-only ask skill: the `/ask` command on Claude Code, plain text on OpenCode (a `/` message is not reliably run there). */
 export const askPrompt = (agent: BrainAgent, q: string): string =>
   agent === 'opencode'

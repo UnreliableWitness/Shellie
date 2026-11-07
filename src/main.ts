@@ -24,7 +24,10 @@ import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
-import { createBrainTerminals } from './main/brain/brainTerminal';
+import {
+  brainFolderPaths,
+  createBrainTerminals,
+} from './main/brain/brainTerminal';
 import { capturedSessionIds } from './main/brain/state';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
@@ -944,8 +947,8 @@ async function boot(): Promise<void> {
       sessionExists: claudeSessionExists,
       // Never a job's session: the runner's jobs and the captured sources' sessions are left out.
       opencodeSession: (brain, since) =>
-        brainSessions.latestSession(
-          brain.path,
+        brainSessions.terminalSession(
+          brainFolderPaths(brain.path),
           since,
           new Set([
             ...brainRunner

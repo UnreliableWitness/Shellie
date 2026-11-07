@@ -589,13 +589,15 @@ const oc = (text: string, id = 'ses_1') =>
 const RULES = JSON.stringify({ permission: brainOpencodePermission() });
 
 describe('opencodeJobArgs and opencodeJobEnv', () => {
-  it('runs the command headless with json events, and the model only when one is set', () => {
+  it('runs the command headless with json events, a job title, and the model only when one is set', () => {
     expect(opencodeJobArgs('capture', 'opencode/big-pickle')).toEqual([
       'run',
       '--command',
       'capture',
       '--format',
       'json',
+      '--title',
+      'Shellie brain job: capture',
       '-m',
       'opencode/big-pickle',
     ]);
@@ -605,6 +607,8 @@ describe('opencodeJobArgs and opencodeJobEnv', () => {
       'lint',
       '--format',
       'json',
+      '--title',
+      'Shellie brain job: lint',
     ]);
   });
 

@@ -231,7 +231,7 @@ describe('OpenCodeReader', () => {
     }));
 });
 
-describe('OpenCodeReader.latestSession', () => {
+describe('OpenCodeReader.terminalSession', () => {
   const makeDb = (withParent = true) => {
     const file = path.join(
       mkdtempSync(path.join(os.tmpdir(), 'oc-ses-')),
@@ -245,44 +245,74 @@ describe('OpenCodeReader.latestSession', () => {
       id: string,
       directory: string,
       created: number,
-      parent: string | null = null,
-    ) =>
-      withParent
-        ? db
-            .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(id, 'p', parent, id, directory, 't', '1', created, created)
-        : db
-            .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(id, 'p', id, directory, 't', '1', created, created);
+      o: { parent?: string; title?: string } = {},
+    ) => {
+      const title = o.title ?? 'New session';
+      if (withParent)
+        db.prepare(
+          'INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).run(
+          id,
+          'p',
+          o.parent ?? null,
+          id,
+          directory,
+          title,
+          '1',
+          created,
+          created,
+        );
+      else
+        db.prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+          id,
+          'p',
+          id,
+          directory,
+          title,
+          '1',
+          created,
+          created,
+        );
+    };
     return { file, put, close: () => db.close() };
   };
 
-  it('finds the newest top-level session in the folder since a time, skipping excluded ids', () => {
+  it('finds the earliest top-level session in the folder since a time, never a job', () => {
     const { file, put, close } = makeDb();
     put('ses_old', '/b', 50);
+    put('ses_job', '/b', 110, { title: 'Shellie brain job: capture' });
+    put('ses_excluded', '/b', 115);
+    put('ses_child', '/b', 118, { parent: 'ses_term' });
     put('ses_term', '/b', 120);
-    put('ses_job', '/b', 150);
-    put('ses_child', '/b', 160, 'ses_term');
-    put('ses_other', '/elsewhere', 170);
+    put('ses_later', '/b', 150);
+    put('ses_other', '/elsewhere', 105);
     const reader = new OpenCodeReader(file);
-    expect(reader.latestSession('/b', 100, new Set(['ses_job']))).toBe(
+    expect(reader.terminalSession(['/b'], 100, new Set(['ses_excluded']))).toBe(
       'ses_term',
     );
-    expect(reader.latestSession('/b', 100, new Set())).toBe('ses_job');
-    expect(reader.latestSession('/b', 200, new Set())).toBeNull();
-    expect(reader.latestSession('/c', 0, new Set())).toBeNull();
+    expect(reader.terminalSession(['/b'], 130, new Set())).toBe('ses_later');
+    expect(reader.terminalSession(['/b'], 200, new Set())).toBeNull();
+    expect(reader.terminalSession(['/c'], 0, new Set())).toBeNull();
+    // OpenCode stores the real path: either spelling of the folder matches.
+    expect(
+      reader.terminalSession(['/tmp/x', '/elsewhere'], 100, new Set()),
+    ).toBe('ses_other');
     close();
   });
 
   it('reads a database without parent_id, and none at all', () => {
     const { file, put, close } = makeDb(false);
     put('ses_a', '/b', 10);
-    expect(new OpenCodeReader(file).latestSession('/b', 0, new Set())).toBe(
+    expect(new OpenCodeReader(file).terminalSession(['/b'], 0, new Set())).toBe(
       'ses_a',
     );
     close();
     expect(
-      new OpenCodeReader('/nope/opencode.db').latestSession('/b', 0, new Set()),
+      new OpenCodeReader('/nope/opencode.db').terminalSession(
+        ['/b'],
+        0,
+        new Set(),
+      ),
     ).toBeNull();
   });
 });

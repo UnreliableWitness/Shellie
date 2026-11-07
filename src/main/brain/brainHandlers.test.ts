@@ -50,6 +50,7 @@ describe('brain handlers', () => {
   let killed: string[];
   let opened: string[];
   let openArgs: [string | null | undefined, string | undefined][];
+  let openAgents: (string | undefined)[];
   let pages: AdoWikiPage[];
   let tasks: Task[];
   let h: ReturnType<typeof createBrainHandlers>;
@@ -84,6 +85,7 @@ describe('brain handlers', () => {
     killed = [];
     opened = [];
     openArgs = [];
+    openAgents = [];
     pages = [];
     tasks = [];
     const deps: BrainHandlerDeps = {
@@ -104,9 +106,10 @@ describe('brain handlers', () => {
         },
       },
       terminals: {
-        open: async (id, resume, prompt) => {
+        open: async (id, resume, prompt, agent) => {
           opened.push(id);
           openArgs.push([resume, prompt]);
+          openAgents.push(agent);
           return { id: 't', kind: 'claude' as const, label: 'x' };
         },
         kill: async (id) => {
@@ -397,6 +400,8 @@ describe('brain handlers', () => {
     expect(opened).toEqual([v.id]);
     await h['brain:terminal'](v.id, 'sess', 'What is in scope?');
     expect(openArgs.at(-1)).toEqual(['sess', 'What is in scope?']);
+    await h['brain:terminal'](v.id, 'ses_1', undefined, 'opencode');
+    expect(openAgents).toEqual([undefined, undefined, 'opencode']);
     await expect(h['brain:run']('nope', 'lint')).rejects.toThrow(
       'Unknown brain',
     );

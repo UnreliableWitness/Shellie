@@ -2,6 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { BRAIN_JOB_TITLE } from '../../shared/brain';
 import type { BudgetRecord } from '../../shared/budget';
 
 const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
@@ -206,13 +207,16 @@ export class OpenCodeReader {
     }
   }
 
-  /** The newest top-level session OpenCode made in `dir` at or after `since` (epoch ms) whose id is not in `exclude`; null when none. */
-  latestSession(
-    dir: string,
+  /**
+   * The brain terminal's session: the earliest top-level session OpenCode made in one of `dirs` (a folder and its real
+   * path) at or after `since` (epoch ms), not a brain job's (by title) and not in `exclude`; null when none.
+   */
+  terminalSession(
+    dirs: readonly string[],
     since: number,
     exclude: ReadonlySet<string>,
   ): string | null {
-    if (!existsSync(this.file)) return null;
+    if (!existsSync(this.file) || dirs.length === 0) return null;
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
       const hasParent = (
@@ -220,9 +224,9 @@ export class OpenCodeReader {
       ).some((c) => c.name === 'parent_id');
       const rows = db
         .prepare(
-          `SELECT id FROM session WHERE directory = ? AND time_created >= ?${hasParent ? ' AND parent_id IS NULL' : ''} ORDER BY time_created DESC, id DESC`,
+          `SELECT id FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ?${hasParent ? ' AND parent_id IS NULL' : ''} ORDER BY time_created, id`,
         )
-        .all(dir, since) as { id: string }[];
+        .all(...dirs, since, `${BRAIN_JOB_TITLE}%`) as { id: string }[];
       return rows.find((r) => !exclude.has(r.id))?.id ?? null;
     } finally {
       db.close();

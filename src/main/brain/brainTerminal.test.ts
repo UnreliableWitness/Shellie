@@ -9,6 +9,7 @@ import { testPlatform } from '../test-helpers/shell';
 import { BrainStore } from './BrainStore';
 import {
   brainClaudeArgs,
+  brainFolderPaths,
   brainOpencodeArgs,
   createBrainTerminals,
 } from './brainTerminal';
@@ -262,7 +263,8 @@ describe('createBrainTerminals on OpenCode', () => {
     });
     expect(line(spawned[0])).not.toContain('--continue');
     expect(line(spawned[0])).not.toContain('--session');
-    expect(lookups).toEqual([0]);
+    // Never spawned before: nothing to look for, a new session.
+    expect(lookups).toEqual([]);
     expect(store.get('b1')?.terminal).toMatchObject({
       kind: 'opencode',
       spawnedAt: 1000,
@@ -277,7 +279,7 @@ describe('createBrainTerminals on OpenCode', () => {
     exited.add('brain-b1');
     found = 'ses_term';
     const def = await bt.open('b1');
-    expect(lookups).toEqual([0, 1000]);
+    expect(lookups).toEqual([1000]);
     expect(def.sessionId).toBe('ses_term');
     expect(store.get('b1')?.terminal?.sessionId).toBe('ses_term');
     expect(line(spawned[1])).toMatch(/'?--session'? '?ses_term'?/);
@@ -301,6 +303,8 @@ describe('createBrainTerminals on OpenCode', () => {
     const def = await bt.open('b1', 'ses_job', undefined, 'opencode');
     expect(killed).toEqual(['brain-b1']);
     expect(def).toMatchObject({ kind: 'opencode', sessionId: 'ses_job' });
+    // Continue names its session: no lookup.
+    expect(lookups).toEqual([]);
     expect(line(spawned[1])).toMatch(/'?--session'? '?ses_job'?/);
     expect(store.get('b1')?.terminal?.kind).toBe('opencode');
   });
@@ -313,6 +317,18 @@ describe('createBrainTerminals on OpenCode', () => {
     expect(killed).toEqual(['brain-b1']);
     expect(def.kind).toBe('opencode');
     expect(def.sessionId).toBeUndefined();
+    expect(lookups).toEqual([]);
+    expect(store.get('b1')?.terminal?.spawnedAt).toBe(1000);
+  });
+
+  it('Continue on a running OpenCode terminal without a session does not look one up', async () => {
+    await onOpencode();
+    const bt = make();
+    await bt.open('b1');
+    found = 'ses_term';
+    const def = await bt.open('b1', 'ses_job');
+    expect(lookups).toEqual([]);
+    expect(def.sessionId).toBe('ses_job');
   });
 
   it('restart resumes the stored OpenCode session', async () => {
@@ -321,5 +337,16 @@ describe('createBrainTerminals on OpenCode', () => {
     await bt.open('b1', 'ses_1');
     expect(await bt.restart('brain-b1')).toBe(true);
     expect(line(spawned[1])).toMatch(/'?--session'? '?ses_1'?/);
+  });
+});
+
+describe('brainFolderPaths', () => {
+  it('gives the folder and its real path, or the folder alone', async () => {
+    const real = await fs.realpath(dir);
+    expect(brainFolderPaths(real)).toEqual([real]);
+    const link = path.join(dir, 'link');
+    await fs.symlink(real, link);
+    expect(brainFolderPaths(link)).toEqual([link, real]);
+    expect(brainFolderPaths('/nope/brain')).toEqual(['/nope/brain']);
   });
 });

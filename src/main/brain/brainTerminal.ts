@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { brainTaskId, type Brain, type BrainAgent } from '../../shared/brain';
 import type { TerminalDef } from '../../shared/types';
 import { sleep } from '../async';
@@ -43,6 +44,16 @@ export function brainOpencodeArgs(
   ];
 }
 
+/** The brain folder as given and as its real path (OpenCode stores the real one, e.g. /private/tmp on macOS). */
+export function brainFolderPaths(folder: string): string[] {
+  try {
+    const real = realpathSync(folder);
+    return real === folder ? [folder] : [folder, real];
+  } catch {
+    return [folder];
+  }
+}
+
 export type BrainTerminalDeps = {
   brains: BrainStore;
   terminals: TerminalManager;
@@ -70,16 +81,17 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
 
   /**
    * An OpenCode terminal without a session id gets the one its last spawn made, stored; OpenCode makes the id
-   * itself. A database that cannot be read finds nothing.
+   * itself. Never spawned (no `spawnedAt`): nothing to find. A database that cannot be read finds nothing.
    */
   const withOpencodeSession = async (
     brain: Brain,
     def: TerminalDef,
   ): Promise<TerminalDef> => {
-    if (def.kind !== 'opencode' || def.sessionId) return def;
+    if (def.kind !== 'opencode' || def.sessionId || def.spawnedAt === undefined)
+      return def;
     let sessionId: string | null = null;
     try {
-      sessionId = d.opencodeSession(brain, def.spawnedAt ?? 0);
+      sessionId = d.opencodeSession(brain, def.spawnedAt);
     } catch (e) {
       console.error('[brain] could not read OpenCode sessions', e);
     }
@@ -134,10 +146,11 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
   ): Promise<TerminalDef> => {
     const brain = d.brains.get(brainId);
     if (!brain) throw new Error(`Unknown brain ${brainId}`);
-    const stored = await withOpencodeSession(
-      brain,
-      brainTerminalDef(brain, agent),
-    );
+    // Continue names its session: nothing to look up.
+    const wanted = brainTerminalDef(brain, agent);
+    const stored = resumeSession
+      ? wanted
+      : await withOpencodeSession(brain, wanted);
     const otherSession = Boolean(
       resumeSession && resumeSession !== stored.sessionId,
     );

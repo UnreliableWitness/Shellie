@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BRAIN_JOB_TITLE,
   brainTaskId,
   SOURCE_JOB_KINDS,
   type BrainAgent,
@@ -55,6 +56,8 @@ export function opencodeJobArgs(
     kind,
     '--format',
     'json',
+    '--title',
+    `${BRAIN_JOB_TITLE}: ${kind}`,
     ...(model ? ['-m', model] : []),
   ];
 }
