@@ -653,6 +653,21 @@ describe('brain handlers', () => {
     );
   });
 
+  it('commits the pictures a job marked as nothing to record', async () => {
+    const v = await h['brain:create'](NEW);
+    const skipped = 'brain/pictures-skipped.json';
+    await fs.writeFile(
+      path.join(v.path, skipped),
+      '{"sources/a-assets/p-1.png":{"reason":"logo","at":"2026-11-07T10:00:00Z"}}\n',
+    );
+    await commitJobOutput(git, v.path, 'Brain: pictures sources/a.md');
+    expect(
+      (
+        await git.run(v.path, ['show', '--name-only', '--format=', 'HEAD'])
+      ).trim(),
+    ).toBe(skipped);
+  });
+
   it('job output commits leave other files alone', async () => {
     const v = await h['brain:create'](NEW);
     await fs.writeFile(path.join(v.path, 'notes.txt'), 'mine\n');

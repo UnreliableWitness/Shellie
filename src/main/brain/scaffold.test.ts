@@ -16,7 +16,6 @@ describe('templates v4', () => {
   const content = (p: string) => files.find((f) => f.path === p)?.content ?? '';
 
   it('add a read-only ask skill, retract and lessons, confidence and verified', () => {
-    expect(TEMPLATES_VERSION).toBe(5);
     const ask = content('.claude/skills/ask/SKILL.md');
     expect(ask).toContain('allowed-tools: Read, Glob, Grep');
     expect(ask).toContain('never write');
@@ -72,6 +71,50 @@ describe('templates v4', () => {
   });
 });
 
+describe('templates v6', () => {
+  const files = templateFiles('Acme');
+  const content = (p: string) => files.find((f) => f.path === p)?.content ?? '';
+  const pictures = '.claude/skills/pictures/SKILL.md';
+
+  it('make capture and sync cite each picture file or mark it nothing to record', () => {
+    expect(TEMPLATES_VERSION).toBe(6);
+    for (const skill of ['capture', 'sync']) {
+      const text = content(`.claude/skills/${skill}/SKILL.md`);
+      expect(text).toContain('brain/pictures-skipped.json');
+      expect(text).toContain('never skipped');
+    }
+    const schema = content('SCHEMA.md');
+    expect(schema).toContain(
+      '[Deck slide 4 diagram](../sources/2026-11-04-deck-assets/slide-4-1.png)',
+    );
+    expect(schema).toContain('brain/pictures-skipped.json');
+    expect(schema).toContain('brain/pictures-dropped.json');
+    expect(schema).toContain('"reason"');
+  });
+
+  it('add a managed /pictures skill that takes the source and a JSON list of pictures', () => {
+    const file = files.find((f) => f.path === pictures);
+    expect(file?.managed).toBe(true);
+    const text = file!.content;
+    expect(text).toContain('JSON array');
+    expect(text).toContain('brain/pictures-skipped.json');
+    expect(text).toContain('Do not touch `brain/state.json`');
+    expect(text).toContain('Do not edit anything in `sources/`');
+    expect(text).toContain('`sources/wiki`');
+    expect(text).toContain('not a step for you');
+  });
+
+  it("deny every edit of Shellie's dropped-pictures record", () => {
+    const settings = JSON.parse(content('.claude/settings.json')) as {
+      permissions: { deny: string[] };
+    };
+    for (const tool of ['Edit', 'Write', 'MultiEdit'])
+      expect(settings.permissions.deny).toContain(
+        `${tool}(brain/pictures-dropped.json)`,
+      );
+  });
+});
+
 describe('brain scaffold', () => {
   let root: string;
   let dir: string;
@@ -114,7 +157,7 @@ describe('brain scaffold', () => {
   it('keeps each skill short, describes when to use it and ignores lock and mirror', () => {
     const files = templateFiles('Acme');
     const skills = files.filter((f) => f.path.endsWith('SKILL.md'));
-    expect(skills).toHaveLength(7);
+    expect(skills).toHaveLength(8);
     for (const s of skills) {
       expect(s.content.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
       expect(s.content).toMatch(

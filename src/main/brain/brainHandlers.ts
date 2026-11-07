@@ -149,7 +149,13 @@ const ARCHIVED =
   'This brain is archived; restore it in Settings › Project › Brains first';
 
 /** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
-const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];
+const JOB_OUTPUT = [
+  'wiki',
+  'index.md',
+  'log.md',
+  'brain/state.json',
+  'brain/pictures-skipped.json',
+];
 
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
 export const OUTSIDE_EDIT_MESSAGE = 'Edited outside a capture';
