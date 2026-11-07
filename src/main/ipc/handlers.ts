@@ -219,7 +219,7 @@ import {
   closeLine,
   contextSection,
 } from '../brain/context';
-import { sessionDigestFromTurns, sessionTurns } from '../brain/sessionDigest';
+import { sessionDigest, sessionTurns, type Turn } from '../brain/sessionDigest';
 import { addSource } from '../brain/sources';
 import type { Brain, BrainJobKind, RefreshResult } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
@@ -353,10 +353,7 @@ export type Services = {
   /** Whether Claude Code saved a session with this id (default: looks in ~/.claude/projects). */
   claudeSessionExists?: (sessionId: string) => boolean;
   /** What was said in the top-level OpenCode sessions in `dirs` since `since` (epoch ms), oldest first (main); none when absent. */
-  opencodeSessionTexts?: (
-    dirs: readonly string[],
-    since: number,
-  ) => { who: 'Developer' | 'Agent'; text: string }[][];
+  opencodeSessionTexts?: (dirs: readonly string[], since: number) => Turn[][];
   /** Where Claude Code saved a session id's transcript (default: looks in ~/.claude/projects). */
   claudeSessionFile?: (sessionId: string) => string | null;
   /** Runs a command with stdin and a time limit (default: runWithInput); tests stub Claude Code's print mode. */
@@ -1934,13 +1931,10 @@ export function createHandlers(s: Services): Handlers {
     if (options.captureLessons) {
       // What the developer and the agents said in the task's sessions (Claude's first), as a source the /lessons skill reads.
       try {
-        const digest = sessionDigestFromTurns(
-          task.workItem?.title ?? task.name,
-          [
-            ...(await claudeSessionLines(task)).map(sessionTurns),
-            ...opencodeSessionTurns(task),
-          ],
-        );
+        const digest = sessionDigest(task.workItem?.title ?? task.name, [
+          ...(await claudeSessionLines(task)).map(sessionTurns),
+          ...opencodeSessionTurns(task),
+        ]);
         if (digest)
           await addTempSource(b, `${task.slug}-session.md`, digest, 'lessons');
       } catch (e) {

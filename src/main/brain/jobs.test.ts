@@ -610,6 +610,10 @@ describe('opencodeJobArgs and opencodeJobEnv', () => {
       '--title',
       'Shellie brain job: lint',
     ]);
+    // A typed model that is not a plain provider/model never reaches the command line.
+    expect(opencodeJobArgs('lint', 'a/b" & calc')).toEqual(
+      opencodeJobArgs('lint', null),
+    );
   });
 
   it("sets the brain's rules as the inline config, replacing an inherited one", () => {
@@ -729,6 +733,34 @@ describe('jobs on the brain agent', () => {
     r.release('b1');
     await new Promise((res) => setTimeout(res, 20));
     expect(calls).toHaveLength(3);
+  });
+
+  it('stops holding once dropQueued removes every held job, and when the brain becomes ready', async () => {
+    let ready = false;
+    const changes: boolean[] = [];
+    const r = runner({
+      agent: () => 'opencode',
+      ready: () => ready,
+      onChange: (id) => changes.push(r.held(id)),
+    });
+    r.enqueue('b1', 'capture', 'sources/x.md');
+    r.enqueue('b1', 'capture', 'sources/y.md');
+    expect(r.held('b1')).toBe(true);
+    r.dropQueued('b1', 'sources/x.md');
+    // One held job is left: still held.
+    expect(r.held('b1')).toBe(true);
+    r.dropQueued('b1', 'sources/y.md');
+    expect(r.held('b1')).toBe(false);
+    // The change sent with the drop already says not held.
+    expect(changes.at(-1)).toBe(false);
+    // Held again, then ready on the next pump (an enqueue), without a release.
+    r.enqueue('b1', 'sync');
+    expect(r.held('b1')).toBe(true);
+    ready = true;
+    r.enqueue('b1', 'lint');
+    expect(r.held('b1')).toBe(false);
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(2);
   });
 
   it('a held job runs on the agent the brain has when it starts', async () => {

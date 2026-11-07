@@ -20,22 +20,31 @@ Spec: `docs/superpowers/specs/2026-11-07-onboarding-brain-opencode-design.md`; p
   - `opencodeResultWithSession` (`opencodeResult.ts`) reads the JSON events. The result is the text of the last step, or of the newest step with text. The session is the first `sessionID`. An `error` event becomes "OpenCode stopped (…)".
   - Lock, queue, timeout, cap and commits are shared with Claude jobs.
   - `job.agent` records the agent the job ran on. It is set again when the job starts, so a job queued before the brain switched agents runs on the new one.
-  - Jobs of an OpenCode brain whose skills are older than v7 are held: no run and no timer. Health says "Update skills to run on OpenCode", and Update skills or an agent change releases them.
+  - Jobs of an OpenCode brain whose skills are older than v7 are held: no run and no timer. Health says "Update skills to run on OpenCode", and Update skills or an agent change releases them. The hold also ends when `dropQueued` leaves no queued job, or when the next pump finds the brain ready.
 - **The brain terminal, Ask, Resolve and Continue** (`brainTerminal.ts`).
   - The terminal runs the brain's agent. On OpenCode it opens with `--session <id>`, or as a new session with `-m` and `--prompt`. It never uses `--continue`, because the jobs run in the same folder.
+  - The first message (Ask, Resolve, Continue) goes through `Platform.opencodeCommand(base, args, prompt)`, never in `args`. macOS appends a quoted `--prompt <text>`. Windows passes it like Claude's first message: an argument to `opencode.exe`, or `'--prompt' $env:SHELLIE_CLAUDE_FIRST_MESSAGE` (with `shimSafePrompt`) through an npm `.cmd` shim, so `"`, `&`, `|` or `%` cannot reach cmd.exe.
+  - The model goes in as `-m` only when it matches `^[\w.-]+/[\w.:-]+$` (`opencodeModelArg` in `src/shared/brain.ts`), for the terminal and for jobs. Settings does not save a typed model that does not match and says "Use provider/model, without spaces or quotes".
+  - The terminal gets the jobs' shielding: `OPENCODE_CONFIG_CONTENT` is the brain's own permission block (`opencodeJobEnv`), so a developer's inline config cannot loosen the `sources/**` deny. The same inline config loads Shellie's attention plugin, and the terminal gets `SHELLIE_ATTENTION_URL` and `SHELLIE_ATTENTION_TOKEN`, so it reports waiting and done like a task tab (`AttentionHub` already knew brain terminals).
+  - A stored session that OpenCode's database no longer has (`OpenCodeReader.sessionExists` is false) is not resumed: the terminal starts a new session and records the spawn time, on open and on restart. Without a database the answer is unknown and the stored session is resumed, as before.
   - OpenCode makes its own session id. Shellie records when it spawned the terminal and later looks up the earliest top-level session in the brain folder (as given and real path) created after that spawn. The lookup leaves out job sessions (by the title marker, the jobs' ids and the captured sessions).
   - Ask on OpenCode sends plain text ("Load the ask skill …"), because a `/` message is not reliably run as a command.
   - Continue on a job that ran on the other agent opens that agent's terminal.
 - **Task tabs.**
   - An OpenCode tab of a task with a brain gets, through `OPENCODE_CONFIG_CONTENT`, `external_directory: {"<brain>/**": "allow"}` and an `edit` deny for the brain. This is the counterpart of Claude's `--add-dir`.
   - The deny names the brain **relative to the tab's folder** (as given and real), for example `../../brain/**`. OpenCode matches `edit` patterns against the path from the project's worktree, so the absolute `<brain>/**` deny the spec named never matched (live check below). The spec's fallback, dropping the edit rule, was not needed.
+  - The absolute `<brain>/**` deny is kept after the relative ones. It costs nothing and covers a brain on another drive and a later OpenCode that matches absolute patterns.
+  - Every brain glob uses forward slashes (`C:/b/acme/**`), also on Windows: a backslash is an escape to OpenCode. A Windows path is read with win32 rules whatever the platform.
+  - A brain inside the worktree is denied as `brain/**`. A worktree inside the brain gets no brain edit deny at all, because any brain glob would cover the worktree's own files.
+  - When a developer's `OPENCODE_CONFIG_CONTENT` is not JSON, the warning names what the tab lost (`lostConfig`): secret file denies, the brain folder's access and deny, or only the attention plugin. It no longer reads "(0 secret files not denied)".
   - The option is labelled "Give the task's agent read access to the brain folder". Its stored name is still `addDirForClaude`.
   - Lessons at Finish also read the task's OpenCode sessions from OpenCode's database (Developer and Agent turns, brain jobs left out). If that read fails, the error is logged and the Claude lessons still go in.
 - **Settings › Project › Brains** (`BrainsSection.tsx`).
   - Create picks the agent `agents:detect` found: Claude Code first, then OpenCode. If neither is found, a note says so.
   - The card has an Agent select and the agent's Model control. For OpenCode, the model list comes from `agents:opencodeModels` (`opencode models`, no LLM call). A successful list is cached for the app session, and parallel callers share one run. A failed run is tried again on the next call. If the list cannot be read, the card shows a text field instead.
   - The card says "Update skills first" when the skills are too old for OpenCode.
-- **Copy.** "never reached Claude" is now "never reached the agent", and "formats Claude cannot view" is now "formats the agent cannot view". Health's Open source button keys on a finding code, not on those words.
+- **Copy.** "never reached Claude" is now "never reached the agent", and "formats Claude cannot view" is now "formats the agent cannot view", in the code comments too. Health's Open source button keys on a finding code, not on those words.
+- **One session turn type.** `Turn` in `sessionDigest.ts` is the only turn shape; `OpenCodeReader.sessionTexts` and `Services.opencodeSessionTexts` use it. `sessionDigest(title, turns)` is the one digest function (it was `sessionDigestFromTurns`; the old line-based `sessionDigest` was only used by tests).
 - **Cost.** OpenCode usage in a brain folder is attributed to the brain by cwd and is never billable (pinned by a test in `attribute.test.ts`). It counts toward the brain's daily cap.
 
 ### Get started
@@ -53,9 +62,10 @@ Spec: `docs/superpowers/specs/2026-11-07-onboarding-brain-opencode-design.md`; p
 
 ## Verified
 
-- `npm test`: 331 files passed (1 skipped), 4022 tests passed, 31 skipped.
+- `npm test`: 331 files passed (1 skipped), 4038 tests passed, 31 skipped (after the final review fixes). One earlier full run had two `ENOTEMPTY` temp-folder cleanups fail under load in `sources.test.ts`; that file passes alone and the next full run passed.
 - `npm run typecheck`: clean.
 - `npm run lint`: 0 errors and 13 warnings, all already on `main` or in code this change did not write. Formatting is clean.
+- The final review fixes have unit tests: a Windows `.cmd` shim with a prompt holding `"`, `&`, `|`, `%` and `<>` (`windows.test.ts`, and through the brain terminal), the quoted `--prompt` on macOS, a rejected model at use and in Settings, the terminal's shielding and attention env (a Claude terminal's env unchanged), a gone and an unknown OpenCode session on open and restart, `OpenCodeReader.sessionExists`, the Windows, brain-in-worktree and worktree-in-brain globs, the warning text, and the hold ending after `dropQueued`. None of them was run live.
 - Unit tests cover:
   - the parser, the job args and env, the runner choosing the agent and holding;
   - templates v7: permission order, command files, skill names;
@@ -86,8 +96,12 @@ The live check ran GUI-free in temporary vitest files (deleted, never committed)
 - Brain jobs on OpenCode still load the user's global OpenCode config, MCP servers and plugins. Only the inline config is replaced. This was accepted in the spec.
 - The daily cap reads the ledger, which reads OpenCode's database every 30 s, so a job may finish before its tokens count. This is the same lag as Claude transcripts.
 - Windows is untested except in CI.
-  - The relative edit deny is written with forward slashes. A brain on another drive gets an absolute pattern, which may not match.
+  - The relative edit deny is written with forward slashes. A brain on another drive gets only the absolute pattern, which OpenCode 1.19.3 does not match.
   - A missing `opencode` may read "OpenCode stopped (…)" rather than "not found".
+  - Through an npm shim, the first message loses `"` (made `'`) and `& | < > ^ %`, as Claude's does.
+- A worktree inside the brain folder gets no brain edit deny (its own files must stay editable); only `external_directory` is set.
+- The model check accepts one slash only, so a nested id such as `openrouter/<vendor>/<model>` from the model list is saved but not passed as `-m` (OpenCode's default model runs).
+- The OpenCode brain terminal, like the jobs, now drops a developer's own `OPENCODE_CONFIG_CONTENT` (plugins and settings in it included); the global config still loads. Its attention notifications are tested but not run live.
 - The task tab's relative deny assumes OpenCode's worktree is the tab's folder, which holds for Shellie's tabs. It is computed when the tab is spawned, so a brain moved while the tab runs keeps the old path until the tab restarts.
 - Not run live: the OpenCode brain terminal (TUI), its session lookup, Ask, Resolve, Continue, and lessons at Finish from a real OpenCode session. These are covered by unit tests only.
 - The onboarding screens were checked by tests, not in the running app.
@@ -95,10 +109,9 @@ The live check ran GUI-free in temporary vitest files (deleted, never committed)
   - a Claude session can be lost after a Continue round trip through an OpenCode job;
   - a session the person starts by hand in the brain folder, after the terminal spawned and before its first message, could be picked as the terminal's;
   - untitled job sessions from before this change are excluded only by id;
-  - the held flag can stay set after `dropQueued` (a cosmetic Health line);
   - `opencodeFailure` keys on the "OpenCode stopped" prefix;
   - the create form has no model control (set it on the card afterwards), and the select flickers briefly while loading;
   - one brain in any project counts the brain step as done;
   - there is no test for `useActiveBrains` dropping archived brains, for an onboarding object without `brain`, or for Skipped without a connection;
-  - the warning for a non-JSON developer `OPENCODE_CONFIG_CONTENT` in `main.ts`, which now also fires when only the brain's access is lost, has no unit test;
+  - the warning for a non-JSON developer `OPENCODE_CONFIG_CONTENT`: its text (`lostConfig`) is tested, the call in `main.ts` is not;
   - the Claude-tab `brainDir` assertion may pass vacuously.

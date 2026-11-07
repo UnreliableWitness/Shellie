@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { AgentsDetected } from '../../../shared/agents';
 import {
   BRAIN_AGENT_LABELS,
+  isOpencodeModel,
   opencodeReady,
   type Brain,
   type BrainAgent,
@@ -260,21 +261,33 @@ function OpenCodeModelControl({
     };
   }, []);
   if (models === null) {
+    // It reaches OpenCode's command line as `-m`: anything but a plain provider/model stays unsaved.
+    const invalid =
+      (typed ?? '').trim() !== '' && !isOpencodeModel(typed!.trim());
     const commit = () => {
       const next = (typed ?? value ?? '').trim() || null;
+      if (next !== null && !isOpencodeModel(next)) return;
       setTyped(null);
       if (next !== value) onChange(next);
     };
     return (
-      <input
-        id={id}
-        className="field"
-        placeholder="provider/model"
-        value={typed ?? value ?? ''}
-        disabled={disabled}
-        onChange={(e) => setTyped(e.target.value)}
-        onBlur={commit}
-      />
+      <>
+        <input
+          id={id}
+          className="field"
+          placeholder="provider/model"
+          value={typed ?? value ?? ''}
+          disabled={disabled}
+          aria-invalid={invalid || undefined}
+          onChange={(e) => setTyped(e.target.value)}
+          onBlur={commit}
+        />
+        {invalid ? (
+          <span className="small muted">
+            Use provider/model, without spaces or quotes
+          </span>
+        ) : null}
+      </>
     );
   }
   const listed = models ?? [];

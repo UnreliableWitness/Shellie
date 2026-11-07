@@ -51,6 +51,7 @@ import {
 } from './main/ipc/handlers';
 import { AttentionHub } from './main/attention/AttentionHub';
 import {
+  lostConfig,
   OPENCODE_PLUGIN_SOURCE,
   opencodeConfigContent,
 } from './main/attention/opencodePlugin';
@@ -936,6 +937,11 @@ async function boot(): Promise<void> {
     };
     // OpenCode's sessions: the brain terminal's, and a task's for its lessons at Finish.
     const openCodeSessions = new OpenCodeReader(openCodeDbPath());
+    /** The attention route for agent tabs and the brain terminal; the port is read at each spawn. */
+    const attentionEnv = (): Record<string, string> => ({
+      SHELLIE_ATTENTION_URL: `http://127.0.0.1:${settings.get().receiverPort}/v1/attention`,
+      SHELLIE_ATTENTION_TOKEN: attentionToken,
+    });
     brainTerminals = createBrainTerminals({
       brains,
       terminals,
@@ -955,6 +961,11 @@ async function boot(): Promise<void> {
             ...capturedSessionIds(brain.path),
           ]),
         ),
+      opencodeSessionExists: (id) => openCodeSessions.sessionExists(id),
+      opencodeAttention: () => ({
+        env: attentionEnv(),
+        plugin: opencodePluginReady ? opencodePlugin : null,
+      }),
     });
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
     // Agent tabs that stop right after starting (a missing CLI, an invalid OpenCode config) say why (#109).
@@ -1128,8 +1139,7 @@ async function boot(): Promise<void> {
       terminalEnv: (def, ctx) => {
         const port = settings.get().receiverPort;
         const env: Record<string, string> = {
-          SHELLIE_ATTENTION_URL: `http://127.0.0.1:${port}/v1/attention`,
-          SHELLIE_ATTENTION_TOKEN: attentionToken,
+          ...attentionEnv(),
           // Agent tabs only: their task's `shellie run` link and the shim on PATH.
           ...(shimsReady
             ? agentRunEnv(def.kind, {
@@ -1158,7 +1168,7 @@ async function boot(): Promise<void> {
             (ctx.denyPaths?.length || ctx.brainDir || opencodePluginReady)
           )
             console.warn(
-              `[terminals] OPENCODE_CONFIG_CONTENT is not a JSON object; OpenCode starts without Shellie's config (${ctx.denyPaths?.length ?? 0} secret files not denied)`,
+              `[terminals] OPENCODE_CONFIG_CONTENT is not a JSON object; OpenCode starts without Shellie's config (${lostConfig(ctx.denyPaths?.length ?? 0, Boolean(ctx.brainDir))})`,
             );
         }
         return env;

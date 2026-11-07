@@ -95,7 +95,7 @@ export type BrainRunner = Pick<
 
 export type BrainHandlerDeps = {
   brains: BrainStore;
-  /** Converts pictures in formats Claude cannot view (createRasterizer); absent in tests. */
+  /** Converts pictures in formats the agent cannot view (createRasterizer); absent in tests. */
   rasterize?: Rasterize;
   git: GitClient;
   runner: BrainRunner;

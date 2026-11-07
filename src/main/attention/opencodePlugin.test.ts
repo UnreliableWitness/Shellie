@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   OPENCODE_PLUGIN_SOURCE,
+  lostConfig,
   opencodeConfigContent,
 } from './opencodePlugin';
 
@@ -275,10 +276,56 @@ describe('opencodeConfigContent brain', () => {
       ])!,
     );
     expect(c.permission.external_directory).toEqual({ '/b/acme/**': 'allow' });
+    // The absolute deny stays too: it costs nothing and covers a later OpenCode that matches absolute patterns.
     expect(Object.entries(c.permission.edit)).toEqual([
       ['../../b/acme/**', 'deny'],
       ['../../../b/acme/**', 'deny'],
+      ['/b/acme/**', 'deny'],
     ]);
+  });
+
+  it('writes a Windows brain folder with forward slashes, from the tab and absolute, also on another drive', () => {
+    const c = JSON.parse(
+      opencodeConfigContent(undefined, null, undefined, [], 'C:\\b\\acme', [
+        'C:\\w\\t1',
+        'D:\\w\\t2',
+      ])!,
+    );
+    expect(c.permission.external_directory).toEqual({
+      'C:/b/acme/**': 'allow',
+    });
+    expect(Object.entries(c.permission.edit)).toEqual([
+      ['../../b/acme/**', 'deny'],
+      ['C:/b/acme/**', 'deny'],
+    ]);
+    expect(JSON.stringify(c.permission)).not.toContain('\\\\');
+  });
+
+  it('denies a brain inside the worktree by its folder in it', () => {
+    const c = JSON.parse(
+      opencodeConfigContent(undefined, null, undefined, [], '/w/t1/brain', [
+        '/w/t1',
+      ])!,
+    );
+    expect(Object.entries(c.permission.edit)).toEqual([
+      ['brain/**', 'deny'],
+      ['/w/t1/brain/**', 'deny'],
+    ]);
+  });
+
+  it("never denies a worktree's own files when the worktree is inside the brain", () => {
+    for (const [brain, worktree] of [
+      ['/b', '/b/wt'],
+      ['/b', '/b'],
+      ['C:\\b', 'C:\\b\\wt'],
+    ]) {
+      const c = JSON.parse(
+        opencodeConfigContent(undefined, null, undefined, [], brain, [
+          worktree,
+        ])!,
+      );
+      expect(c.permission.edit ?? {}).toEqual({});
+    }
   });
 
   it('keeps a plain edit action as the catch-all before the deny', () => {
@@ -295,5 +342,18 @@ describe('opencodeConfigContent brain', () => {
       ['*', 'ask'],
       ['/b/**', 'deny'],
     ]);
+  });
+});
+
+describe('lostConfig', () => {
+  it('names what a tab loses, never "0 secret files"', () => {
+    expect(lostConfig(2, false)).toBe('not applied: 2 secret file denies');
+    expect(lostConfig(1, true)).toBe(
+      "not applied: 1 secret file deny, the brain folder's read access and edit deny",
+    );
+    expect(lostConfig(0, true)).toBe(
+      "not applied: the brain folder's read access and edit deny",
+    );
+    expect(lostConfig(0, false)).toBe('not applied: the attention plugin');
   });
 });

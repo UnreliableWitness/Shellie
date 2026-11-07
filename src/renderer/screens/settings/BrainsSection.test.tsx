@@ -484,6 +484,27 @@ describe('archiving', () => {
     );
   });
 
+  it('does not save a typed OpenCode model that is not a plain provider/model', async () => {
+    const { calls } = installFakeApi({
+      'brain:list': () => [onOpenCode()],
+      'brain:update': () => brain,
+      'agents:opencodeModels': () => null,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model').tagName).toBe('INPUT'),
+    );
+    const model = screen.getByLabelText('Model');
+    await user.type(model, 'a/b" & calc');
+    await user.tab();
+    expect(
+      await screen.findByText('Use provider/model, without spaces or quotes'),
+    ).toBeInTheDocument();
+    expect(calls.filter((c) => c.channel === 'brain:update')).toEqual([]);
+    expect(model).toHaveValue('a/b" & calc');
+  });
+
   it('keeps the Claude model select and no picture note for Claude Code', async () => {
     installFakeApi({ 'brain:list': () => [brain] });
     render(<BrainsForConnection connection={conn} />);

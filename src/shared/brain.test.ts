@@ -7,6 +7,8 @@ import {
   askPrompt,
   brainIdOf,
   brainTaskId,
+  isOpencodeModel,
+  opencodeModelArg,
   opencodeReady,
 } from './brain';
 
@@ -45,6 +47,28 @@ describe('brain shared types', () => {
     const o = BrainOptionsSchema.parse({});
     expect(o.agent).toBe('claude');
     expect(o.opencodeModel).toBeNull();
+  });
+  it('accepts only a plain provider/model as an OpenCode model', () => {
+    for (const m of [
+      'opencode/big-pickle',
+      'anthropic/claude-sonnet-4.5',
+      'ollama/llama3:8b',
+    ])
+      expect(isOpencodeModel(m)).toBe(true);
+    for (const m of [
+      'big-pickle',
+      'a/b c',
+      'a/b" & calc',
+      'a/b|x',
+      'a/b%PATH%',
+      '/b',
+      'a/',
+      '-m/x y',
+    ])
+      expect(isOpencodeModel(m)).toBe(false);
+    expect(opencodeModelArg('opencode/big-pickle')).toBe('opencode/big-pickle');
+    expect(opencodeModelArg('a/b" & calc')).toBeNull();
+    expect(opencodeModelArg(null)).toBeNull();
   });
   it('opencodeReady needs skills version 7', () => {
     expect(opencodeReady({ templatesVersion: 6 })).toBe(false);

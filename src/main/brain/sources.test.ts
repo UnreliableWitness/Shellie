@@ -18,7 +18,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 const REL =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
-/** One slide with a title, a picture and a picture in a format Claude cannot view. */
+/** One slide with a title, a picture and a picture in a format the agent cannot view. */
 async function deckWithPicture(): Promise<Buffer> {
   const zip = new JSZip();
   zip.file(

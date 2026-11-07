@@ -3,10 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BrainSchema } from '../../shared/brain';
+import type { Platform } from '../platform/Platform';
+import { windowsPlatform } from '../platform/windows';
 import type { TerminalManager } from '../services/TerminalManager';
 import type { SpawnOptions } from '../services/TerminalManager';
 import { testPlatform } from '../test-helpers/shell';
 import { BrainStore } from './BrainStore';
+import { brainOpencodePermission } from './templates';
 import {
   brainClaudeArgs,
   brainOpencodeArgs,
@@ -22,6 +25,9 @@ let killed: string[];
 let written: [string, string][];
 let found: string | null;
 let lookups: number[];
+/** What OpenCode's database says about a stored session: null is no database (unknown). */
+let ocExists: boolean | null;
+let ocAsked: string[];
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'brain-terminal-'));
@@ -44,12 +50,17 @@ beforeEach(async () => {
   exited = new Set();
   found = null;
   lookups = [];
+  ocExists = null;
+  ocAsked = [];
 });
 afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-const make = (exists = true) => {
+const make = (
+  exists = true,
+  over: { platform?: Platform; env?: Record<string, string> } = {},
+) => {
   const terminals = {
     spawn: (o: SpawnOptions) => {
       if (running.has(o.id) || exited.has(o.id))
@@ -69,14 +80,25 @@ const make = (exists = true) => {
   return createBrainTerminals({
     brains: store,
     terminals,
-    platform: testPlatform(),
-    env: (id) => ({ SHELLIE_TEST: id }),
+    platform: over.platform ?? testPlatform(),
+    env: (id) => ({ SHELLIE_TEST: id, ...over.env }),
     themeFile: () => null,
     sessionExists: () => exists,
     opencodeSession: (_b, since) => {
       lookups.push(since);
       return found;
     },
+    opencodeSessionExists: (id) => {
+      ocAsked.push(id);
+      return ocExists;
+    },
+    opencodeAttention: () => ({
+      env: {
+        SHELLIE_ATTENTION_URL: 'http://a',
+        SHELLIE_ATTENTION_TOKEN: 'tok',
+      },
+      plugin: '/u/opencode/shellie-attention.js',
+    }),
     now: () => 1000,
     wait: async () => undefined,
   });
@@ -226,12 +248,18 @@ const onOpencode = (opencodeModel: string | null = null) =>
   });
 
 describe('brainOpencodeArgs', () => {
-  it('resumes a stored session, with the model and a first message', () => {
+  it('resumes a stored session, with the model', () => {
     const def = { id: 't', kind: 'opencode' as const, label: 'l' };
     expect(brainOpencodeArgs(def, null)).toEqual([]);
     expect(
-      brainOpencodeArgs({ ...def, sessionId: 'ses_1' }, 'opencode/big', 'hi'),
-    ).toEqual(['--session', 'ses_1', '-m', 'opencode/big', '--prompt', 'hi']);
+      brainOpencodeArgs({ ...def, sessionId: 'ses_1' }, 'opencode/big'),
+    ).toEqual(['--session', 'ses_1', '-m', 'opencode/big']);
+  });
+
+  it('leaves out a typed model that is not a plain provider/model', () => {
+    const def = { id: 't', kind: 'opencode' as const, label: 'l' };
+    expect(brainOpencodeArgs(def, 'a/b" & calc')).toEqual([]);
+    expect(brainOpencodeArgs(def, 'a/b c')).toEqual([]);
   });
 });
 
@@ -251,7 +279,8 @@ describe('createBrainTerminals on OpenCode', () => {
     expect(def.sessionId).toBeUndefined();
     const command = testPlatform().opencodeCommand(
       undefined,
-      brainOpencodeArgs(def, 'opencode/big', 'Load the ask skill: q'),
+      brainOpencodeArgs(def, 'opencode/big'),
+      'Load the ask skill: q',
     );
     expect(spawned[0]).toMatchObject({
       id: 'brain-b1',
@@ -336,5 +365,80 @@ describe('createBrainTerminals on OpenCode', () => {
     await bt.open('b1', 'ses_1');
     expect(await bt.restart('brain-b1')).toBe(true);
     expect(line(spawned[1])).toMatch(/'?--session'? '?ses_1'?/);
+  });
+
+  it("never puts the prompt in a Windows shim's command line", async () => {
+    await onOpencode('a/b" & calc');
+    const platform = windowsPlatform(
+      {},
+      { which: (n) => (n === 'opencode' ? 'C:\\npm\\opencode.cmd' : null) },
+    );
+    const bt = make(true, { platform });
+    await bt.open('b1', null, 'Fix "x" & del C:\\ | y');
+    const command = spawned[0].args.at(-1) ?? '';
+    expect(command).toBe(
+      "& opencode '--prompt' $env:SHELLIE_CLAUDE_FIRST_MESSAGE",
+    );
+    expect(spawned[0].env?.SHELLIE_CLAUDE_FIRST_MESSAGE).toBe(
+      "Fix 'x' del C:\\ y",
+    );
+  });
+
+  it("shields the brain's rules from the developer's own inline config and loads the attention plugin", async () => {
+    await onOpencode();
+    const bt = make(true, {
+      env: {
+        OPENCODE_CONFIG_CONTENT:
+          '{"permission":{"edit":{"sources/**":"allow"},"bash":"allow"}}',
+      },
+    });
+    await bt.open('b1');
+    const env = spawned[0].env ?? {};
+    expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT)).toEqual({
+      permission: brainOpencodePermission(),
+      plugin: ['/u/opencode/shellie-attention.js'],
+    });
+    expect(env).toMatchObject({
+      SHELLIE_TEST: 'b1',
+      SHELLIE_ATTENTION_URL: 'http://a',
+      SHELLIE_ATTENTION_TOKEN: 'tok',
+    });
+  });
+
+  it("leaves a Claude brain terminal's env as it was", async () => {
+    const bt = make(true, { env: { OPENCODE_CONFIG_CONTENT: '{}' } });
+    await bt.open('b1');
+    expect(spawned[0].env).toEqual({
+      SHELLIE_TEST: 'b1',
+      OPENCODE_CONFIG_CONTENT: '{}',
+    });
+  });
+
+  it('starts a new session when the stored one is gone from OpenCode, and resumes it when unknown', async () => {
+    await onOpencode();
+    const bt = make();
+    await bt.open('b1', 'ses_gone');
+    // No database: unknown, resumed as before.
+    expect(line(spawned[0])).toMatch(/'?--session'? '?ses_gone'?/);
+    running.delete('brain-b1');
+    exited.add('brain-b1');
+    ocExists = false;
+    const def = await bt.open('b1');
+    expect(ocAsked).toContain('ses_gone');
+    expect(line(spawned[1])).not.toContain('--session');
+    expect(def.sessionId).toBeUndefined();
+    expect(def.spawnedAt).toBe(1000);
+    expect(store.get('b1')?.terminal?.sessionId).toBeUndefined();
+  });
+
+  it('restart starts a new session when the stored one is gone', async () => {
+    await onOpencode();
+    const bt = make();
+    await bt.open('b1', 'ses_1');
+    ocExists = false;
+    expect(await bt.restart('brain-b1')).toBe(true);
+    expect(line(spawned[1])).not.toContain('--session');
+    expect(store.get('b1')?.terminal).toMatchObject({ spawnedAt: 1000 });
+    expect(store.get('b1')?.terminal?.sessionId).toBeUndefined();
   });
 });

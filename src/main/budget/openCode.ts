@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { BRAIN_JOB_TITLE } from '../../shared/brain';
 import type { BudgetRecord } from '../../shared/budget';
+import type { Turn } from '../brain/sessionDigest';
 
 const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
 
@@ -89,9 +90,6 @@ const hasParentId = (db: DatabaseSync) =>
   (db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).some(
     (c) => c.name === 'parent_id',
   );
-
-/** One turn of an OpenCode session: what the developer typed or the agent said. */
-export type OpenCodeTurn = { who: 'Developer' | 'Agent'; text: string };
 
 const json = (raw: string): Record<string, unknown> => {
   try {
@@ -242,12 +240,25 @@ export class OpenCodeReader {
     }
   }
 
+  /** Whether OpenCode has a session with this id; null (unknown) when there is no database. */
+  sessionExists(id: string): boolean | null {
+    if (!existsSync(this.file)) return null;
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      return (
+        db.prepare('SELECT 1 FROM session WHERE id = ?').get(id) !== undefined
+      );
+    } finally {
+      db.close();
+    }
+  }
+
   /**
    * What was said in each top-level session OpenCode made in one of `dirs` (a folder and its real path) at or after
    * `since` (epoch ms), oldest first, brain jobs left out: text parts by the message's role, not the ones OpenCode
    * injected (`synthetic`), the agent's consecutive texts as one turn.
    */
-  sessionTexts(dirs: readonly string[], since = 0): OpenCodeTurn[][] {
+  sessionTexts(dirs: readonly string[], since = 0): Turn[][] {
     if (!existsSync(this.file) || dirs.length === 0) return [];
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
@@ -263,9 +274,7 @@ export class OpenCodeReader {
         data: string;
         message: string;
       }[];
-      const bySession = new Map<string, OpenCodeTurn[]>(
-        ids.map((id) => [id, []]),
-      );
+      const bySession = new Map<string, Turn[]>(ids.map((id) => [id, []]));
       let lastMessage = '';
       for (const r of rows) {
         const part = json(r.data);

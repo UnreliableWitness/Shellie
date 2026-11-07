@@ -39,10 +39,8 @@ const textOf = (content: unknown): string => {
 };
 
 /** The developer's and Claude's turns of one transcript (the jsonl lines), in order. */
-export function sessionTurns(
-  lines: string[],
-): { who: 'Developer' | 'Claude'; text: string }[] {
-  const out: { who: 'Developer' | 'Claude'; text: string }[] = [];
+export function sessionTurns(lines: string[]): Turn[] {
+  const out: Turn[] = [];
   for (const raw of lines) {
     let l: Line;
     try {
@@ -65,18 +63,10 @@ export function sessionTurns(
 }
 
 /**
- * The markdown digest of a task's Claude Code transcripts (each as its jsonl lines), oldest session first. `null`
- * when there is nothing a person typed (a task whose Claude was never used).
+ * The markdown digest of a task's sessions, already read as turns (Claude Code's with `sessionTurns`, OpenCode's from
+ * its database), in the order given; `null` when nobody typed anything (a task whose agent was never used).
  */
 export function sessionDigest(
-  title: string,
-  sessions: string[][],
-): string | null {
-  return sessionDigestFromTurns(title, sessions.map(sessionTurns));
-}
-
-/** The markdown digest of sessions already read as turns, in the order given; `null` when nobody typed anything. */
-export function sessionDigestFromTurns(
   title: string,
   sessions: readonly (readonly Turn[])[],
 ): string | null {

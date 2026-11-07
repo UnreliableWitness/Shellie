@@ -315,6 +315,18 @@ describe('OpenCodeReader.terminalSession', () => {
       ),
     ).toBeNull();
   });
+
+  it('says whether a session exists; unknown (null) without a database', () => {
+    const { file, put, close } = makeDb();
+    put('ses_a', '/b', 10);
+    const reader = new OpenCodeReader(file);
+    expect(reader.sessionExists('ses_a')).toBe(true);
+    expect(reader.sessionExists('ses_gone')).toBe(false);
+    close();
+    expect(new OpenCodeReader('/nope/opencode.db').sessionExists('ses_a')).toBe(
+      null,
+    );
+  });
 });
 
 describe('OpenCodeReader.sessionTexts', () => {

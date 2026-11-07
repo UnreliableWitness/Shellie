@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { brainTaskId, type Brain, type BrainAgent } from '../../shared/brain';
+import {
+  brainTaskId,
+  opencodeModelArg,
+  type Brain,
+  type BrainAgent,
+} from '../../shared/brain';
 import type { TerminalDef } from '../../shared/types';
 import { sleep } from '../async';
 import type { Wait } from '../fsRetry';
 import type { Platform } from '../platform/Platform';
 import type { TerminalManager } from '../services/TerminalManager';
 import type { BrainStore } from './BrainStore';
+import { opencodeJobEnv } from './jobs';
 
 /** The brain's one terminal on `agent` (default the brain's): the stored one when it runs that agent, else the definition an open will store. */
 function brainTerminalDef(
@@ -30,16 +36,18 @@ export function brainClaudeArgs(
   return ['--session-id', def.sessionId ?? randomUUID(), ...theme];
 }
 
-/** OpenCode resumes the stored session, else starts a new one (never `--continue`: jobs run in the same folder). */
+/**
+ * OpenCode resumes the stored session, else starts a new one (never `--continue`: jobs run in the same folder). The
+ * model only when it is a plain `provider/model`; the first message goes through `opencodeCommand`'s own prompt.
+ */
 export function brainOpencodeArgs(
   def: TerminalDef,
   model: string | null,
-  prompt?: string,
 ): string[] {
+  const m = opencodeModelArg(model);
   return [
     ...(def.sessionId ? ['--session', def.sessionId] : []),
-    ...(model ? ['-m', model] : []),
-    ...(prompt ? ['--prompt', prompt] : []),
+    ...(m ? ['-m', m] : []),
   ];
 }
 
@@ -53,6 +61,13 @@ export type BrainTerminalDeps = {
   sessionExists: (id: string) => boolean;
   /** The newest OpenCode session in the brain folder since `since` that is not a job's (main). */
   opencodeSession: (brain: Brain, since: number) => string | null;
+  /** Whether OpenCode still has a session; null when that cannot be told (no database), which resumes it as before. */
+  opencodeSessionExists: (id: string) => boolean | null;
+  /** The attention route's env and the plugin that reports to it (null while it is not written), for OpenCode (main). */
+  opencodeAttention: () => {
+    env: Record<string, string>;
+    plugin: string | null;
+  };
   now?: () => number;
   /** Between a message typed into a running terminal and its Enter (default 50 ms). */
   wait?: (ms: number) => Promise<void>;
@@ -90,32 +105,60 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
     return found;
   };
 
-  /** `prompt` is the agent's first message: Claude's positional argument, OpenCode's `--prompt`. */
+  /** An OpenCode session OpenCode no longer has is not resumed: a new session, looked up after this spawn time. */
+  const unlessGone = (def: TerminalDef): TerminalDef => {
+    if (def.kind !== 'opencode' || !def.sessionId) return def;
+    let exists: boolean | null = null;
+    try {
+      exists = d.opencodeSessionExists(def.sessionId);
+    } catch (e) {
+      console.error('[brain] could not read OpenCode sessions', e);
+    }
+    if (exists !== false) return def;
+    const { sessionId: _, ...rest } = def;
+    return { ...rest, spawnedAt: now() };
+  };
+
+  /**
+   * `prompt` is the agent's first message: Claude's positional argument, OpenCode's `--prompt`. OpenCode gets the
+   * brain's own rules as its inline config, as a job does (a developer's own cannot loosen them), with the attention
+   * plugin, so the brain terminal says when it waits or is done like a task tab.
+   */
   const spawn = async (
     brain: Brain,
     def: TerminalDef,
     resume: boolean,
     prompt?: string,
   ) => {
-    const command =
-      def.kind === 'opencode'
-        ? d.platform.opencodeCommand(
-            undefined,
-            brainOpencodeArgs(def, brain.options.opencodeModel, prompt),
-          )
-        : d.platform.claudeCommand(
-            null,
-            brainClaudeArgs(def, resume, d.sessionExists, d.themeFile()),
-            undefined,
-            prompt,
-          );
+    let command;
+    let env: Record<string, string>;
+    if (def.kind === 'opencode') {
+      command = d.platform.opencodeCommand(
+        undefined,
+        brainOpencodeArgs(def, brain.options.opencodeModel),
+        prompt,
+      );
+      const attention = d.opencodeAttention();
+      env = opencodeJobEnv(
+        { ...d.env(brain.id), ...attention.env },
+        attention.plugin,
+      );
+    } else {
+      command = d.platform.claudeCommand(
+        null,
+        brainClaudeArgs(def, resume, d.sessionExists, d.themeFile()),
+        undefined,
+        prompt,
+      );
+      env = d.env(brain.id);
+    }
     await d.terminals.spawn({
       id: def.id,
       taskId: brainTaskId(brain.id),
       cwd: brain.path,
       command: command.command,
       args: command.args,
-      env: { ...d.env(brain.id), ...command.env },
+      env: { ...env, ...command.env },
     });
   };
 
@@ -162,7 +205,7 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
       const sessionId = resumeSession || stored.sessionId;
       // A new session: its id is looked up after this spawn time on a later open.
       def = sessionId
-        ? { ...stored, sessionId }
+        ? unlessGone({ ...stored, sessionId })
         : { ...stored, spawnedAt: now() };
     } else {
       const sessionId = resumeSession || stored.sessionId || randomUUID();
@@ -194,7 +237,9 @@ export function createBrainTerminals(d: BrainTerminalDeps) {
     async restart(terminalId: string): Promise<boolean> {
       const brain = ownerOf(terminalId);
       if (!brain?.terminal) return false;
-      const def = await withOpencodeSession(brain, brain.terminal);
+      const found = await withOpencodeSession(brain, brain.terminal);
+      const def = unlessGone(found);
+      if (def !== found) await d.brains.patch(brain.id, { terminal: def });
       if (d.terminals.has(terminalId)) await d.terminals.kill(terminalId);
       await spawn(brain, def, true);
       return true;

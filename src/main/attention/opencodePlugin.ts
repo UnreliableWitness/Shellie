@@ -1,4 +1,4 @@
-import { toRel } from '../paths';
+import path from 'node:path';
 import { opencodePermission } from '../secrets/deny';
 
 /**
@@ -84,27 +84,50 @@ const last = (rules: unknown, pattern: string, action: string) => {
   return { ...rest, [pattern]: action };
 };
 
+/** A Windows absolute path (`C:\…`, `\\server\…`) is read with win32 rules on any platform, so tests can use one. */
+const pathFor = (p: string) =>
+  /^([A-Za-z]:[\\/]|\\\\)/.test(p) ? path.win32 : path.posix;
+
+/** OpenCode globs take forward slashes: a backslash is an escape to it, not a separator. */
+const slashes = (p: string) => p.replace(/\\/g, '/');
+
 /**
  * `permission` with the brain folder readable from outside the project and not editable, after the developer's own
  * rules. OpenCode matches `edit` rules against the path from the tab's folder (an absolute pattern never matched,
- * checked live with 1.19.3), so the deny names the brain from each of `worktrees`; without them, the absolute path.
+ * checked live with 1.19.3), so the deny names the brain from each of `worktrees`, and by its absolute path as well
+ * (a brain on another drive, a later OpenCode). Every glob uses forward slashes. A worktree inside the brain gets no
+ * edit deny at all: any glob for the brain would cover the worktree's own files.
  */
 function withBrain(
   permission: Record<string, unknown>,
   brainDir: string,
   worktrees: readonly string[],
 ) {
-  const glob = `${brainDir}/**`;
-  const editGlobs = worktrees.length
-    ? [...new Set(worktrees.map((w) => `${toRel(w, brainDir)}/**`))]
-    : [glob];
+  const p = pathFor(brainDir);
+  const glob = `${slashes(brainDir).replace(/\/+$/, '')}/**`;
+  const inBrain = worktrees.some((w) => {
+    const r = p.relative(brainDir, w);
+    return r === '' || (!r.startsWith('..') && !p.isAbsolute(r));
+  });
+  const editGlobs = inBrain
+    ? []
+    : [
+        ...new Set([
+          ...worktrees.map((w) => `${slashes(p.relative(w, brainDir))}/**`),
+          glob,
+        ]),
+      ];
   return {
     ...permission,
     external_directory: last(permission.external_directory, glob, 'allow'),
-    edit: editGlobs.reduce<unknown>(
-      (rules, g) => last(rules, g, 'deny'),
-      permission.edit,
-    ),
+    ...(editGlobs.length
+      ? {
+          edit: editGlobs.reduce<unknown>(
+            (rules, g) => last(rules, g, 'deny'),
+            permission.edit,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -171,4 +194,15 @@ export function opencodeConfigContent(
     ...plugin(plugins),
     ...extra(config),
   });
+}
+
+/** What a tab loses when the developer's OPENCODE_CONFIG_CONTENT is not a JSON object, for the warning. */
+export function lostConfig(denied: number, brain: boolean): string {
+  const lost = [
+    ...(denied > 0
+      ? [`${denied} secret file ${denied === 1 ? 'deny' : 'denies'}`]
+      : []),
+    ...(brain ? ["the brain folder's read access and edit deny"] : []),
+  ];
+  return `not applied: ${lost.length ? lost.join(', ') : 'the attention plugin'}`;
 }

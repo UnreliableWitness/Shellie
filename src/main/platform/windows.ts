@@ -101,7 +101,7 @@ export function windowsPlatform(
     flags: string[],
     promptEnv: string | null = null,
     base?: string,
-    /** A positional argument after everything else (Claude's first message), passed like `promptEnv`. */
+    /** A positional argument after everything else (Claude's first message, OpenCode's --prompt value), passed like `promptEnv`. */
     positional: string | null = null,
   ): Command => {
     const own = base?.trim();
@@ -169,7 +169,15 @@ export function windowsPlatform(
     probeCommand: (name) =>
       ps(`(Get-Command ${name} -ErrorAction Stop).Source; & ${name} --version`),
     copilotCommand: () => tool('copilot', []),
-    opencodeCommand: (base, args) => tool('opencode', args ?? [], null, base),
+    // The prompt is the value of the last flag, passed like Claude's first message (an env var through a shim).
+    opencodeCommand: (base, args = [], prompt) =>
+      tool(
+        'opencode',
+        prompt ? [...args, '--prompt'] : args,
+        null,
+        base,
+        prompt || null,
+      ),
     userSecretsDir: (id) => {
       const appData =
         env.APPDATA ??

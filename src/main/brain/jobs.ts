@@ -7,6 +7,7 @@ import {
   type BrainJob,
   type BrainJobKind,
   type BrainModel,
+  opencodeModelArg,
 } from '../../shared/brain';
 import type { Platform } from '../platform/Platform';
 import {
@@ -45,11 +46,12 @@ export function brainJobEnv(
   };
 }
 
-/** `opencode run` for a job: the brain's command of that kind, json events, and the model only when one is set. */
+/** `opencode run` for a job: the brain's command of that kind, json events, and the model only when a valid one is set. */
 export function opencodeJobArgs(
   kind: BrainJobKind,
   model: string | null,
 ): string[] {
+  const m = opencodeModelArg(model);
   return [
     'run',
     '--command',
@@ -58,18 +60,23 @@ export function opencodeJobArgs(
     'json',
     '--title',
     `${BRAIN_JOB_TITLE}: ${kind}`,
-    ...(model ? ['-m', model] : []),
+    ...(m ? ['-m', m] : []),
   ];
 }
 
-/** An OpenCode job's env: the brain's own permission rules as the inline config, so an inherited one cannot loosen them. */
+/**
+ * An OpenCode job's env, and the brain terminal's: the brain's own permission rules as the inline config, so an
+ * inherited one cannot loosen them; `plugin` (the terminal's attention plugin) is loaded through it too.
+ */
 export function opencodeJobEnv(
   base: Record<string, string>,
+  plugin: string | null = null,
 ): Record<string, string> {
   return {
     ...base,
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
       permission: brainOpencodePermission(),
+      ...(plugin ? { plugin: [plugin] } : {}),
     }),
   };
 }
@@ -302,6 +309,8 @@ export class BrainJobRunner {
     if (!gone.length) return 0;
     l.queue = l.queue.filter((j) => !gone.includes(j));
     l.list = l.list.filter((j) => !gone.includes(j));
+    // Nothing left to wait for Update skills.
+    if (!l.queue.some((j) => j.status === 'queued')) l.held = false;
     this.changed(brainId);
     return gone.length;
   }
@@ -356,6 +365,10 @@ export class BrainJobRunner {
         this.changed(brainId);
       }
       return;
+    }
+    if (l.held) {
+      l.held = false;
+      this.changed(brainId);
     }
     // The job runs on the agent the brain has now (it may have switched while the job waited).
     job.agent = this.agentOf(brainId);
