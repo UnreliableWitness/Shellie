@@ -62,8 +62,13 @@ export function darwinPlatform(env: NodeJS.ProcessEnv): Platform {
     probeCommand: (name) =>
       login(['-c', `command -v ${name} && ${name} --version`]),
     copilotCommand: () => login(['-c', 'exec copilot']),
-    opencodeCommand: (base) =>
-      login(['-c', `exec ${base?.trim() || 'opencode'}`]),
+    opencodeCommand: (base, args = []) =>
+      login([
+        '-c',
+        [`exec ${base?.trim() || 'opencode'}`, ...args.map(shellQuote)].join(
+          ' ',
+        ),
+      ]),
     userSecretsDir: (id) =>
       env.HOME
         ? path.posix.join(env.HOME, '.microsoft', 'usersecrets', id)

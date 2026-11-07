@@ -49,8 +49,8 @@ export interface Platform {
   probeCommand(name: string): Command;
   /** Start GitHub Copilot CLI. */
   copilotCommand(): Command;
-  /** Start OpenCode (no AI cost tracking); `base` is the repo's own command line, like for Claude. */
-  opencodeCommand(base?: string): Command;
+  /** Start OpenCode (no AI cost tracking); `base` is the repo's own command line, like for Claude; `args` are Shellie's own, quoted. */
+  opencodeCommand(base?: string, args?: string[]): Command;
   /** Where .NET stores a project's user secrets (`secrets.json` inside); the folder may not exist; null when the home folder is unknown. */
   userSecretsDir(id: string): string | null;
   /**

@@ -169,7 +169,7 @@ export function windowsPlatform(
     probeCommand: (name) =>
       ps(`(Get-Command ${name} -ErrorAction Stop).Source; & ${name} --version`),
     copilotCommand: () => tool('copilot', []),
-    opencodeCommand: (base) => tool('opencode', [], null, base),
+    opencodeCommand: (base, args) => tool('opencode', args ?? [], null, base),
     userSecretsDir: (id) => {
       const appData =
         env.APPDATA ??

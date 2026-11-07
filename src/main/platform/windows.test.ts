@@ -319,6 +319,19 @@ describe('windowsPlatform', () => {
     ).toBe('& opencode');
   });
 
+  it('passes OpenCode its arguments unchanged', () => {
+    expect(
+      make({ opencode: 'C:\\o\\opencode.exe' }).opencodeCommand(undefined, [
+        'run',
+        '--command',
+        'capture',
+      ]),
+    ).toEqual({
+      command: 'C:\\o\\opencode.exe',
+      args: ['run', '--command', 'capture'],
+    });
+  });
+
   it('starts copilot the same way', () => {
     expect(make({ copilot: 'C:\\c\\copilot.exe' }).copilotCommand()).toEqual({
       command: 'C:\\c\\copilot.exe',
