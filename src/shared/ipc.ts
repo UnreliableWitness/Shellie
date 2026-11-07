@@ -111,6 +111,8 @@ export type Channels = {
   'repos:pickFolder': { args: []; result: string | null };
   /** The agent CLIs on this machine; cached per launch unless `force`. */
   'agents:detect': { args: [force?: boolean]; result: AgentsDetected };
+  /** OpenCode's `provider/model` ids from `opencode models` (no model call); cached per launch; null when it cannot be read. */
+  'agents:opencodeModels': { args: []; result: string[] | null };
   /** The repo's config with its overrides on top; `sources` per key, `file` the values the file alone gives. */
   'repos:config': {
     args: [repoId: string];
@@ -582,6 +584,8 @@ export type Channels = {
         project: string;
         path: string | null;
         wiki: BrainWiki | null;
+        agent: BrainAgent;
+        opencodeModel?: string | null;
       },
     ];
     result: BrainView;

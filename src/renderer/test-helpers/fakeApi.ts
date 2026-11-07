@@ -202,6 +202,7 @@ const defaults: FakeHandlers = {
     },
     shell: { label: 'zsh' },
   }),
+  'agents:opencodeModels': () => null,
   'editor:options': () => ({
     editors: [{ id: 'vscode', label: 'VS Code' }],
     chosen: 'vscode',

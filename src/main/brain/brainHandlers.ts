@@ -518,11 +518,18 @@ export function createBrainHandlers(
         path: dir,
         wiki: BrainWikiSchema.nullable().parse(input.wiki),
         templatesVersion,
+        options: {
+          agent: input.agent,
+          opencodeModel: input.opencodeModel ?? null,
+        },
         createdAt: now().toISOString(),
       });
       await d.brains.add(brain);
       d.remember([name, dir]);
-      d.event('brain.created', { wiki: brain.wiki !== null });
+      d.event('brain.created', {
+        wiki: brain.wiki !== null,
+        agent: brain.options.agent,
+      });
       changed(id);
       return view(brain);
     },

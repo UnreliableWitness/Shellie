@@ -36,6 +36,7 @@ const NEW = {
   project: 'Acme',
   path: null,
   wiki: null,
+  agent: 'claude' as const,
 };
 
 describe('brain handlers', () => {
@@ -164,8 +165,28 @@ describe('brain handlers', () => {
     // Lists carry no health (no git, ledger or source reads).
     expect(listed[0].health).toBeNull();
     expect(broadcasts.at(-1)).toEqual(['brain:changed', { brainId: v.id }]);
-    expect(events).toContainEqual(['brain.created', { wiki: false }]);
+    expect(events).toContainEqual([
+      'brain.created',
+      { wiki: false, agent: 'claude' },
+    ]);
     expect(remembered).toEqual(expect.arrayContaining(['Acme', v.path]));
+  });
+
+  it('create stores the chosen agent and OpenCode model', async () => {
+    const v = await h['brain:create']({
+      ...NEW,
+      agent: 'opencode',
+      opencodeModel: 'opencode/big-pickle',
+    });
+    expect(v.options.agent).toBe('opencode');
+    expect(v.options.opencodeModel).toBe('opencode/big-pickle');
+    expect(events).toContainEqual([
+      'brain.created',
+      { wiki: false, agent: 'opencode' },
+    ]);
+    const plain = await h['brain:create'](NEW);
+    expect(plain.options.agent).toBe('claude');
+    expect(plain.options.opencodeModel).toBeNull();
   });
 
   it('create adopts an existing brain folder and refuses a non-empty other folder', async () => {

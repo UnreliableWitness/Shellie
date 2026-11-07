@@ -1,8 +1,18 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { BrainOptions, BrainView, BrainWiki } from '../../../shared/brain';
+import type { AgentsDetected } from '../../../shared/agents';
+import {
+  BRAIN_AGENT_LABELS,
+  opencodeReady,
+  type Brain,
+  type BrainAgent,
+  type BrainOptions,
+  type BrainView,
+  type BrainWiki,
+} from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
+import { defaultBrainAgent } from '../../brainAgent';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
 import { useBrains } from '../../hooks/useBrains';
 import { useStore } from '../../store';
@@ -16,7 +26,8 @@ type Action =
   | 'open-folder'
   | 'archive'
   | 'restore';
-const trackBrain = (action: Action) => track('settings.brain', { action });
+const trackBrain = (action: Action, field?: 'agent' | 'opencodeModel') =>
+  track('settings.brain', field ? { action, field } : { action });
 
 const TOGGLES: {
   key: Exclude<
@@ -31,7 +42,7 @@ const TOGGLES: {
   },
   {
     key: 'addDirForClaude',
-    label: "Give the task's Claude Code read access to the brain folder",
+    label: "Give the task's agent read access to the brain folder",
   },
   {
     key: 'syncAfterRefresh',
@@ -50,13 +61,20 @@ const TOGGLES: {
 /** The section a deep link ("+ New brain" on the project page) opens with this form focused. */
 export const NEW_BRAIN_SECTION = 'project-brains-new';
 
-function CreateBrainForm({
+const BRAIN_AGENTS: BrainAgent[] = ['claude', 'opencode'];
+const NO_AGENT_NOTE =
+  "Neither Claude Code nor OpenCode was found on this machine; the brain's jobs will fail until one is installed.";
+
+/** The create form; `onCreated` runs after a brain was created (the onboarding page embeds this form). */
+export function CreateBrainForm({
   connection,
   focus,
+  onCreated,
 }: {
   connection: Connection;
   /** Changes (a new deep link) to focus the name field again; null leaves focus alone. */
   focus: object | null;
+  onCreated?: (brain: Brain) => void;
 }) {
   const id = useId();
   const nameRef = useRef<HTMLInputElement>(null);
@@ -67,6 +85,20 @@ function CreateBrainForm({
   const [project, setProject] = useState(connection.project);
   const [path, setPath] = useState<string | null>(null);
   const [wiki, setWiki] = useState<BrainWiki | null>(null);
+  const [detected, setDetected] = useState<AgentsDetected | null>(null);
+  const [picked, setPicked] = useState<BrainAgent | null>(null);
+  useEffect(() => {
+    let live = true;
+    api()
+      .invoke('agents:detect', false)
+      .then((d) => live && setDetected(d))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  const fallback = defaultBrainAgent(detected);
+  const agent = picked ?? fallback.agent;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The picker queries Azure DevOps for this project, so it waits until typing pauses.
@@ -88,17 +120,19 @@ function CreateBrainForm({
     setBusy(true);
     setError(null);
     try {
-      await api().invoke('brain:create', {
+      const created = await api().invoke('brain:create', {
         name: name.trim(),
         connectionId: connection.id,
         project: project.trim(),
         path,
         wiki,
+        agent,
       });
       trackBrain('create');
       setName(`${connection.project} brain`);
       setPath(null);
       setWiki(null);
+      onCreated?.(created);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -134,6 +168,27 @@ function CreateBrainForm({
           setWiki(null);
         }}
       />
+      <label htmlFor={`${id}-agent`}>Agent</label>
+      <select
+        id={`${id}-agent`}
+        className="field"
+        value={agent}
+        onChange={(e) => setPicked(e.target.value as BrainAgent)}
+      >
+        {BRAIN_AGENTS.map((a) => (
+          <option key={a} value={a}>
+            {BRAIN_AGENT_LABELS[a]}
+            {detected
+              ? detected.agents[a].found
+                ? ' (found)'
+                : ' (not found)'
+              : ''}
+          </option>
+        ))}
+      </select>
+      {detected && !fallback.found ? (
+        <div className="small muted">{NO_AGENT_NOTE}</div>
+      ) : null}
       <span id={`${id}-folder`}>Folder</span>
       <div className="row" aria-labelledby={`${id}-folder`}>
         <span className="mono small grow">{path ?? 'Default location'}</span>
@@ -179,6 +234,71 @@ function CreateBrainForm({
   );
 }
 
+/** The OpenCode model: a select of the models `opencode models` lists, or a text field when the list cannot be read. */
+function OpenCodeModelControl({
+  id,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: string | null;
+  disabled: boolean;
+  onChange: (model: string | null) => void;
+}) {
+  // undefined: still reading; null: could not be read.
+  const [models, setModels] = useState<string[] | null | undefined>(undefined);
+  const [typed, setTyped] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api()
+      .invoke('agents:opencodeModels')
+      .then((m) => live && setModels(m))
+      .catch(() => live && setModels(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (models === null) {
+    const commit = () => {
+      const next = (typed ?? value ?? '').trim() || null;
+      setTyped(null);
+      if (next !== value) onChange(next);
+    };
+    return (
+      <input
+        id={id}
+        className="field"
+        placeholder="provider/model"
+        value={typed ?? value ?? ''}
+        disabled={disabled}
+        onChange={(e) => setTyped(e.target.value)}
+        onBlur={commit}
+      />
+    );
+  }
+  const listed = models ?? [];
+  return (
+    <select
+      id={id}
+      className="field"
+      value={value ?? ''}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value || null)}
+    >
+      <option value="">OpenCode's default</option>
+      {value && !listed.includes(value) ? (
+        <option value={value}>{value}</option>
+      ) : null}
+      {listed.map((m) => (
+        <option key={m} value={m}>
+          {m}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function BrainCard({ brain }: { brain: BrainView }) {
   const id = useId();
   const [error, setError] = useState<string | null>(null);
@@ -191,13 +311,17 @@ function BrainCard({ brain }: { brain: BrainView }) {
   const [busy, setBusy] = useState(false);
 
   /** One call at a time per card; `action` null: not counted (a read that is not the use itself). */
-  const run = async (action: Action | null, fn: () => Promise<unknown>) => {
+  const run = async (
+    action: Action | null,
+    fn: () => Promise<unknown>,
+    field?: 'agent' | 'opencodeModel',
+  ) => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
       await fn();
-      if (action) trackBrain(action);
+      if (action) trackBrain(action, field);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -205,7 +329,15 @@ function BrainCard({ brain }: { brain: BrainView }) {
     }
   };
   const update = (options: Partial<BrainOptions>) =>
-    run('update', () => api().invoke('brain:update', brain.id, { options }));
+    run(
+      'update',
+      () => api().invoke('brain:update', brain.id, { options }),
+      'agent' in options
+        ? 'agent'
+        : 'opencodeModel' in options
+          ? 'opencodeModel'
+          : undefined,
+    );
 
   const commitCap = () => {
     const n = Number(cap);
@@ -252,21 +384,52 @@ function BrainCard({ brain }: { brain: BrainView }) {
           onChange={(e) => setCap(e.target.value)}
           onBlur={commitCap}
         />
-        <label htmlFor={`${id}-model`}>Model</label>
+        <label htmlFor={`${id}-agent`}>Agent</label>
         <select
-          id={`${id}-model`}
+          id={`${id}-agent`}
           className="field"
-          value={brain.options.model}
+          value={brain.options.agent}
           disabled={busy}
-          onChange={(e) =>
-            void update({ model: e.target.value as BrainOptions['model'] })
-          }
+          onChange={(e) => void update({ agent: e.target.value as BrainAgent })}
         >
-          <option value="haiku">Haiku</option>
-          <option value="sonnet">Sonnet</option>
-          <option value="opus">Opus</option>
+          {BRAIN_AGENTS.map((a) => (
+            <option key={a} value={a}>
+              {BRAIN_AGENT_LABELS[a]}
+            </option>
+          ))}
         </select>
+        {brain.options.agent === 'opencode' && !opencodeReady(brain) ? (
+          <span className="small muted">Update skills first</span>
+        ) : null}
+        <label htmlFor={`${id}-model`}>Model</label>
+        {brain.options.agent === 'opencode' ? (
+          <OpenCodeModelControl
+            id={`${id}-model`}
+            value={brain.options.opencodeModel}
+            disabled={busy}
+            onChange={(opencodeModel) => void update({ opencodeModel })}
+          />
+        ) : (
+          <select
+            id={`${id}-model`}
+            className="field"
+            value={brain.options.model}
+            disabled={busy}
+            onChange={(e) =>
+              void update({ model: e.target.value as BrainOptions['model'] })
+            }
+          >
+            <option value="haiku">Haiku</option>
+            <option value="sonnet">Sonnet</option>
+            <option value="opus">Opus</option>
+          </select>
+        )}
       </div>
+      {brain.options.agent === 'opencode' ? (
+        <div className="small muted">
+          Pictures are read only by models that can see images.
+        </div>
+      ) : null}
       <div className="actions">
         <button
           type="button"

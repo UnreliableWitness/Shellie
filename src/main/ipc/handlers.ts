@@ -466,6 +466,7 @@ export async function pruneDanglingConnectionLinks(
 export function createHandlers(s: Services): Handlers {
   const tel = s.telemetry ?? NoopTelemetry;
   let agentsCache: AgentsDetected | null = null;
+  let opencodeModelsCache: string[] | null = null;
   const sessionExists = s.claudeSessionExists ?? claudeSessionExists;
   const hasSessionsIn = s.claudeHasSessionsIn ?? claudeHasSessionsIn;
   // Looked up on each call, not once: tests swap these services after the handlers are made.
@@ -3183,6 +3184,25 @@ export function createHandlers(s: Services): Handlers {
         opencode: result.agents.opencode.found,
       });
       return result;
+    },
+    'agents:opencodeModels': async () => {
+      if (opencodeModelsCache) return opencodeModelsCache;
+      try {
+        const { code, stdout } = await (s.runProbe ?? runProbe)(
+          s.platform.opencodeCommand(undefined, ['models']),
+          15_000,
+        );
+        if (code !== 0) return null;
+        const models = stdout
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => /^[\w.-]+\/[\w.:-]+$/.test(l));
+        if (models.length === 0) return null;
+        opencodeModelsCache = models;
+        return models;
+      } catch {
+        return null;
+      }
     },
     'repos:config': async (repoId) => {
       // A repo kept in Shellie only (no file) starts from the base branch it was added with when that still exists,
