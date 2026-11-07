@@ -29,6 +29,7 @@ import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
+import { afterPictureJob, picturesPrompt } from './main/brain/pictures';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
   commitJobOutput,
@@ -892,6 +893,16 @@ async function boot(): Promise<void> {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
+      // A pictures job hands Claude the source's current gaps, or ends without Claude when there are none.
+      promptFor: async (j) =>
+        j.kind === 'pictures' && j.source
+          ? picturesPrompt(brainOf(j.brainId).path, j.source)
+          : undefined,
+      afterJob: (j) =>
+        void afterPictureJob(j, {
+          brainDir: (id) => brainOf(id).path,
+          enqueue: (...a) => brainRunner.enqueue(...a),
+        }),
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
         broadcast('brain:changed', { brainId });

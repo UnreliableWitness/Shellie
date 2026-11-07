@@ -11,6 +11,7 @@ import {
   cleanupTempRepos,
 } from '../test-helpers/gitRepo';
 import { refreshMirror, sparsePatterns, toLf } from './mirror';
+import { readDropped, writeDropped } from './pictures';
 import { scaffoldBrain } from './scaffold';
 import { parseSourceFrontmatter, sha256 } from './sourceFile';
 
@@ -134,6 +135,7 @@ describe('wiki mirror', () => {
       ok: true,
       added: 2,
       pages: 2,
+      attachments: 1,
       warnings: [
         'Attachments in formats Claude cannot view are left as links (pdf)',
         '1 linked attachment not found in the wiki',
@@ -164,7 +166,13 @@ describe('wiki mirror', () => {
     // Unchanged on the next refresh.
     expect(
       await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl),
-    ).toMatchObject({ ok: true, added: 0, changed: 0, removed: 0 });
+    ).toMatchObject({
+      ok: true,
+      added: 0,
+      changed: 0,
+      removed: 0,
+      attachments: 0,
+    });
 
     // Once no page links the picture any more its copy goes.
     await put('Customers/Acme/Second-brain.md', '# Second brain\n');
@@ -175,6 +183,53 @@ describe('wiki mirror', () => {
     ).toMatchObject({ ok: true, changed: 2 });
     expect(await exists('sources/wiki/.attachments/arch-1.png')).toBe(false);
     expect(await count()).toBe(before + 1);
+  });
+
+  it('records unviewable attachments as drops of the mirror and keeps their acceptance', async () => {
+    await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+    await fs.writeFile(path.join(wikiRepo, '.attachments/flow.emf'), 'emf');
+    await fs.writeFile(path.join(wikiRepo, '.attachments/old.tiff'), 'tif');
+    sh(wikiRepo, 'add', '-A');
+    sh(wikiRepo, 'commit', '-q', '-m', 'attachments');
+    await put(
+      KICK,
+      '![f](/.attachments/flow.emf) ![o](/.attachments/old.tiff)\n',
+    );
+    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    const drop = (where: string, ext: string, accepted: string | null) => ({
+      where,
+      reason: `${ext} attachments cannot be viewed`,
+      fix: 'Attach the picture to the wiki page as PNG',
+      accepted,
+    });
+    expect((await readDropped(dir))['sources/wiki']).toEqual({
+      dropped: [drop('flow.emf', 'EMF', null), drop('old.tiff', 'TIFF', null)],
+      tiny: 0,
+    });
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+
+    await writeDropped(dir, (f) => ({
+      ...f,
+      'sources/wiki': {
+        ...f['sources/wiki'],
+        dropped: f['sources/wiki'].dropped.map((d) =>
+          d.where === 'flow.emf' ? { ...d, accepted: 'then' } : d,
+        ),
+      },
+    }));
+    await git.run(dir, ['commit', '-q', '-am', 'accept']);
+    // The page changes, flow.emf stays linked, old.tiff goes.
+    await put(KICK, 'Now ![f](/.attachments/flow.emf)\n');
+    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect((await readDropped(dir))['sources/wiki'].dropped).toEqual([
+      drop('flow.emf', 'EMF', 'then'),
+    ]);
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+
+    await put(KICK, 'Kick-off\n');
+    await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl);
+    expect(await readDropped(dir)).not.toHaveProperty('sources/wiki');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
   });
 
   it('keeps a relinked attachment with spaces in its name one link', async () => {

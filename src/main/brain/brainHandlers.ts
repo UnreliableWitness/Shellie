@@ -34,12 +34,10 @@ import { readPages } from './pages';
 import { absPath } from './paths';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
-  assetsOf,
-  coverage,
   DROPPED_FILE,
   MIRROR_SOURCE,
   readDropped,
-  readSkipped,
+  sourceCoverage,
   writeDropped,
 } from './pictures';
 import {
@@ -476,6 +474,8 @@ export function createBrainHandlers(
       await d.brains.patch(id, { lastRefreshAt: now().toISOString() });
       if (b.options.syncAfterRefresh && r.added + r.changed + r.removed > 0)
         d.runner.enqueue(id, 'sync');
+      // New or changed pictures: one re-evaluation of the mirror, which checks for gaps when it starts.
+      if (r.attachments > 0) d.runner.enqueue(id, 'pictures', MIRROR_SOURCE);
     }
     changed(id);
     return r;
@@ -732,23 +732,11 @@ export function createBrainHandlers(
       if (!rel.startsWith('sources/') || rel.startsWith('sources/../'))
         throw new Error('Only a source under sources/ has pictures');
       // What Health computes for this one source; no picture is read.
-      const [pages, assets, skipped, dropped, sourceText] = await Promise.all([
-        readPages(b.path).catch(() => []),
-        assetsOf(b.path, rel),
-        readSkipped(b.path),
-        readDropped(b.path),
-        rel === MIRROR_SOURCE
-          ? ''
-          : fs.readFile(absPath(b.path, rel), 'utf8').catch(() => ''),
-      ]);
-      return coverage({
-        source: rel,
-        assets,
-        sourceText,
-        pages,
-        skipped,
-        dropped,
-      });
+      return sourceCoverage(
+        b.path,
+        await readPages(b.path).catch(() => []),
+        rel,
+      );
     },
     'brain:acceptDrop': async (id, source, where) => {
       const b = live(id);

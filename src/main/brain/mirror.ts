@@ -6,6 +6,13 @@ import { isFile } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
 import { VIEWABLE, imageExt } from './convert/types';
+import {
+  DROPPED_FILE,
+  MIRROR_SOURCE,
+  readDropped,
+  writeDropped,
+  type PictureDrop,
+} from './pictures';
 import { findSecrets } from './secrets';
 import { parseSourceFrontmatter, renderSource, sha256 } from './sourceFile';
 
@@ -108,7 +115,7 @@ function attachmentName(raw: string): string | null {
   return name;
 }
 
-/** The attachments a page links: the viewable ones by file name, and the formats of the others. */
+/** The attachments a page links by file name: the viewable ones, and the others. */
 function attachmentsOf(text: string): { names: string[]; other: string[] } {
   const names = new Set<string>();
   const other = new Set<string>();
@@ -116,9 +123,40 @@ function attachmentsOf(text: string): { names: string[]; other: string[] } {
     const name = attachmentName(m[1]);
     if (!name) continue;
     if (VIEWABLE.has(imageExt(name))) names.add(name);
-    else other.add(imageExt(name) || 'unknown');
+    else other.add(name);
   }
-  return { names: [...names], other: [...other].sort() };
+  return { names: [...names], other: [...other] };
+}
+
+const formatOf = (name: string) => imageExt(name) || 'unknown';
+
+/**
+ * Writes the unviewable attachments as the mirror's drops in brain/pictures-dropped.json, keeping the acceptance of
+ * those still linked (by file name) and dropping the key when there are none. Returns whether the file changed.
+ */
+async function recordDrops(
+  brainDir: string,
+  other: string[],
+): Promise<boolean> {
+  const before = (await readDropped(brainDir))[MIRROR_SOURCE];
+  const accepted = new Map(
+    (before?.dropped ?? []).map((d) => [d.where, d.accepted]),
+  );
+  const dropped: PictureDrop[] = [...other].sort().map((name) => ({
+    where: name,
+    reason: `${formatOf(name).toUpperCase()} attachments cannot be viewed`,
+    fix: 'Attach the picture to the wiki page as PNG',
+    accepted: accepted.get(name) ?? null,
+  }));
+  const next = dropped.length ? { dropped, tiny: 0 } : undefined;
+  if (JSON.stringify(before) === JSON.stringify(next)) return false;
+  await writeDropped(brainDir, (f) => {
+    const out = { ...f };
+    if (next) out[MIRROR_SOURCE] = next;
+    else delete out[MIRROR_SOURCE];
+    return out;
+  });
+  return true;
 }
 
 /** A link destination that stays one link when the name has spaces or parentheses. */
@@ -336,7 +374,7 @@ export async function refreshMirror(
     // The pictures the pages link: checked out on demand, copied beside the pages.
     const pages = new Map<string, string>(); // gitItemPath -> page text (LF)
     const wanted = new Set<string>(); // attachment file names
-    const otherFormats = new Set<string>();
+    const unviewable = new Set<string>(); // attachment file names
     for (const gitItemPath of found) {
       const text = toLf(
         await fs.readFile(path.join(mirror, ...segments(gitItemPath)), 'utf8'),
@@ -344,11 +382,12 @@ export async function refreshMirror(
       pages.set(gitItemPath, text);
       const linked = attachmentsOf(text);
       for (const name of linked.names) wanted.add(name);
-      for (const f of linked.other) otherFormats.add(f);
+      for (const name of linked.other) unviewable.add(name);
     }
-    if (otherFormats.size > 0) {
+    if (unviewable.size > 0) {
+      const formats = new Set([...unviewable].map(formatOf));
       warnings.push(
-        `Attachments in formats Claude cannot view are left as links (${[...otherFormats].sort().join(', ')})`,
+        `Attachments in formats Claude cannot view are left as links (${[...formats].sort().join(', ')})`,
       );
     }
     if (wanted.size > 0) {
@@ -427,25 +466,28 @@ export async function refreshMirror(
     const attachments = await syncAttachments(brainDir, wiki, wanted, warnings);
     await pruneEmptyDirs(wikiRoot);
 
-    if (added + changed + removed + attachments > 0) {
-      await withBrainGit(brainDir, async () => {
-        await git.run(brainDir, ['add', '-A', '--', WIKI_DIR]);
-        await git.run(brainDir, [
-          'commit',
-          '-q',
-          '-m',
-          `Brain: refresh wiki mirror (+${added} ~${changed} -${removed})`,
-          '--',
-          WIKI_DIR,
-        ]);
-      });
-    }
+    // Under the git queue: accepting a drop rewrites the same file.
+    await withBrainGit(brainDir, async () => {
+      const drops = await recordDrops(brainDir, [...unviewable]);
+      if (added + changed + removed + attachments === 0 && !drops) return;
+      const paths = drops ? [WIKI_DIR, DROPPED_FILE] : [WIKI_DIR];
+      await git.run(brainDir, ['add', '-A', '--', ...paths]);
+      await git.run(brainDir, [
+        'commit',
+        '-q',
+        '-m',
+        `Brain: refresh wiki mirror (+${added} ~${changed} -${removed})`,
+        '--',
+        ...paths,
+      ]);
+    });
     return {
       ok: true,
       added,
       changed,
       removed,
       pages: found.length - skippedPages,
+      attachments,
       ...(warnings.length ? { warnings } : {}),
     };
   } catch (e) {

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
   BrainFinding,
+  BrainJob,
   BrainSourceRow,
   PictureCounts,
   PictureRow,
@@ -9,7 +10,8 @@ import type {
 } from '../../shared/brain';
 import { readJson, writeAtomic } from '../fsRetry';
 import { localTarget } from './check';
-import type { WikiPage } from './pages';
+import type { BrainJobRunner } from './jobs';
+import { readPages, type WikiPage } from './pages';
 import { absPath } from './paths';
 import { pictureLabel } from './pictureLabel';
 
@@ -225,6 +227,36 @@ export function coverage(input: {
   return { source, counts, rows };
 }
 
+/** One source's pictures from what is on disk; the mirror's pages link their attachments relative to themselves, so it has no alt text. */
+async function coverageOn(
+  brainDir: string,
+  pages: WikiPage[],
+  source: string,
+  skipped: SkippedFile,
+  dropped: DroppedFile,
+): Promise<SourcePictures> {
+  const assets = await assetsOf(brainDir, source);
+  // The text only gives alt texts: not read for a source without pictures.
+  const sourceText =
+    source === MIRROR_SOURCE || !assets.length
+      ? ''
+      : await fs.readFile(absPath(brainDir, source), 'utf8').catch(() => '');
+  return coverage({ source, assets, sourceText, pages, skipped, dropped });
+}
+
+/** The pictures of one source (a source file or the wiki mirror), as Health computes them. No picture is read. */
+export async function sourceCoverage(
+  brainDir: string,
+  pages: WikiPage[],
+  source: string,
+): Promise<SourcePictures> {
+  const [skipped, dropped] = await Promise.all([
+    readSkipped(brainDir),
+    readDropped(brainDir),
+  ]);
+  return coverageOn(brainDir, pages, source, skipped, dropped);
+}
+
 /**
  * The pictures of every source that has any (stored files or drop records), newest source first as `sources`
  * lists them, then the wiki mirror when it has attachments or drop records.
@@ -239,31 +271,48 @@ export async function brainCoverage(
     readDropped(brainDir),
   ]);
   const out: SourcePictures[] = [];
-  for (const s of sources) {
-    if (s.path.startsWith(`${MIRROR_SOURCE}/`)) continue;
-    const assets = await assetsOf(brainDir, s.path);
-    if (!assets.length && !dropped[s.path]) continue;
-    const sourceText = await fs
-      .readFile(absPath(brainDir, s.path), 'utf8')
-      .catch(() => '');
-    out.push(
-      coverage({ source: s.path, assets, sourceText, pages, skipped, dropped }),
-    );
+  const paths = sources
+    .map((s) => s.path)
+    .filter((p) => !p.startsWith(`${MIRROR_SOURCE}/`));
+  for (const source of [...paths, MIRROR_SOURCE]) {
+    const c = await coverageOn(brainDir, pages, source, skipped, dropped);
+    if (c.rows.length || dropped[source]) out.push(c);
   }
-  // The mirror's pages link their attachments relative to themselves: no alt text for these.
-  const mirror = await assetsOf(brainDir, MIRROR_SOURCE);
-  if (mirror.length || dropped[MIRROR_SOURCE])
-    out.push(
-      coverage({
-        source: MIRROR_SOURCE,
-        assets: mirror,
-        sourceText: '',
-        pages,
-        skipped,
-        dropped,
-      }),
-    );
   return out;
+}
+
+/** The prompt for a pictures job: null when the source has no picture left to interpret. */
+export async function picturesPrompt(
+  brainDir: string,
+  source: string,
+): Promise<string | null> {
+  const pages = await readPages(brainDir).catch(() => []);
+  const { rows } = await sourceCoverage(brainDir, pages, source);
+  const missing = rows.flatMap((r) =>
+    r.status === 'missing' && r.path ? [r.path] : [],
+  );
+  return missing.length
+    ? `/pictures ${source} ${JSON.stringify(missing)}`
+    : null;
+}
+
+/** After a job: a capture that left gaps queues one pictures job for its source. */
+export async function afterPictureJob(
+  job: BrainJob,
+  d: {
+    brainDir: (id: string) => string;
+    enqueue: BrainJobRunner['enqueue'];
+  },
+): Promise<void> {
+  if (job.kind !== 'capture' || job.status !== 'done' || !job.source) return;
+  try {
+    const dir = d.brainDir(job.brainId);
+    const pages = await readPages(dir).catch(() => []);
+    const { counts } = await sourceCoverage(dir, pages, job.source);
+    if (counts.missing > 0) d.enqueue(job.brainId, 'pictures', job.source);
+  } catch (e) {
+    console.error('[brain] could not check pictures after a capture', e);
+  }
 }
 
 const plural = (n: number, one: string, many: string) =>

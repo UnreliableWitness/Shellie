@@ -771,6 +771,27 @@ describe('brain handlers', () => {
       expect(enqueued).toHaveLength(1);
     });
 
+    it('queues a pictures job for the mirror when its attachments changed', async () => {
+      await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+      await fs.writeFile(path.join(wikiRepo, '.attachments/a.png'), 'png');
+      sh(wikiRepo, 'add', '-A');
+      sh(wikiRepo, 'commit', '-q', '-m', 'attachment');
+      commitFile(wikiRepo, 'Home.md', '# Home\n![a](/.attachments/a.png)\n');
+      const v = await h['brain:create']({ ...NEW, wiki });
+      await h['brain:update'](v.id, { options: { syncAfterRefresh: true } });
+      expect(await h['brain:refresh'](v.id)).toMatchObject({
+        ok: true,
+        attachments: 1,
+      });
+      expect(enqueued).toEqual([
+        [v.id, 'sync', null],
+        [v.id, 'pictures', 'sources/wiki'],
+      ]);
+      // The same attachment again: nothing queued.
+      await h['brain:refresh'](v.id);
+      expect(enqueued).toHaveLength(2);
+    });
+
     it('refuses while a brain job holds the lock, and works after it is released', async () => {
       const v = await h['brain:create']({ ...NEW, wiki });
       const head = async () =>

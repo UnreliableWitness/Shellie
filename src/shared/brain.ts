@@ -299,6 +299,8 @@ export type RefreshResult =
       changed: number;
       removed: number;
       pages: number;
+      /** Picture files of the mirror added, changed or removed. */
+      attachments: number;
       warnings?: string[];
     }
   | { ok: false; message: string };

@@ -1,18 +1,21 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { BrainSourceRow } from '../../shared/brain';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BrainJob, BrainSourceRow } from '../../shared/brain';
 import { readPages } from './pages';
 import {
+  afterPictureJob,
   assetsOf,
   brainCoverage,
   coverage,
   MIRROR_SOURCE,
   pictureFindings,
   pictureLabel,
+  picturesPrompt,
   readDropped,
   readSkipped,
+  sourceCoverage,
   writeDropped,
   type DroppedFile,
   type SkippedFile,
@@ -346,6 +349,92 @@ describe('pictures', () => {
     expect(all[2].rows[0]).toMatchObject({
       label: 'Wiki attachment',
       status: 'missing',
+    });
+  });
+
+  it('covers one source on its own, as brainCoverage does', async () => {
+    await write(`${ASSETS}/slide-2-1.png`, 'x');
+    await write(SOURCE, '![Logo](2026-11-04-deck-assets/slide-2-1.png)\n');
+    const one = await sourceCoverage(dir, await readPages(dir), SOURCE);
+    expect(one.rows[0]).toMatchObject({ status: 'missing', alt: 'Logo' });
+    expect(
+      await brainCoverage(dir, await readPages(dir), [row(SOURCE)]),
+    ).toEqual([one]);
+  });
+
+  describe('re-evaluation', () => {
+    const job = (over: Partial<BrainJob> = {}): BrainJob => ({
+      id: 'j',
+      brainId: 'b',
+      kind: 'capture',
+      source: 'sources/x.md',
+      status: 'done',
+      startedAt: null,
+      endedAt: null,
+      sessionId: null,
+      result: null,
+      error: null,
+      background: false,
+      ...over,
+    });
+    const gap = async () => {
+      await write('sources/x.md', 'text');
+      await write('sources/x-assets/slide-11-1.png', 'x');
+    };
+    const after = async (j: BrainJob) => {
+      const enqueue = vi.fn();
+      await afterPictureJob(j, { brainDir: () => dir, enqueue });
+      return enqueue;
+    };
+
+    it('prompts with the pictures not interpreted, and nothing when there are none', async () => {
+      await gap();
+      expect(await picturesPrompt(dir, 'sources/x.md')).toBe(
+        '/pictures sources/x.md ["sources/x-assets/slide-11-1.png"]',
+      );
+      await write(
+        'brain/pictures-dropped.json',
+        JSON.stringify({
+          'sources/x.md': {
+            dropped: [
+              { where: 'slide 9', reason: 'r', fix: 'f', accepted: null },
+            ],
+            tiny: 0,
+          },
+        }),
+      );
+      await write('wiki/x.md', '![a](../sources/x-assets/slide-11-1.png)\n');
+      expect(await picturesPrompt(dir, 'sources/x.md')).toBeNull();
+    });
+
+    it('queues one pictures job after a capture that left gaps', async () => {
+      await gap();
+      expect((await after(job())).mock.calls).toEqual([
+        ['b', 'pictures', 'sources/x.md'],
+      ]);
+    });
+
+    it('never queues after a pictures job, a failed capture or a capture without gaps', async () => {
+      await gap();
+      expect(await after(job({ kind: 'pictures' }))).not.toHaveBeenCalled();
+      expect(await after(job({ status: 'failed' }))).not.toHaveBeenCalled();
+      expect(
+        await after(job({ source: 'sources/plain.md' })),
+      ).not.toHaveBeenCalled();
+    });
+
+    it('logs instead of throwing when the brain is gone', async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const enqueue = vi.fn();
+      await afterPictureJob(job(), {
+        brainDir: () => {
+          throw new Error('Unknown brain b');
+        },
+        enqueue,
+      });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalled();
+      log.mockRestore();
     });
   });
 });
