@@ -106,18 +106,20 @@ export const BrainStateSchema = z.object({
 });
 export type BrainState = z.infer<typeof BrainStateSchema>;
 
-/** `capture`, `retract` and `lessons` take a source path; the others run on the whole brain. */
+/** `capture`, `retract`, `lessons` and `pictures` take a source path; the others run on the whole brain. */
 export type BrainJobKind =
   | 'capture'
   | 'sync'
   | 'lint'
   | 'digest'
   | 'retract'
-  | 'lessons';
+  | 'lessons'
+  | 'pictures';
 export const SOURCE_JOB_KINDS: ReadonlySet<BrainJobKind> = new Set([
   'capture',
   'retract',
   'lessons',
+  'pictures',
 ]);
 export type BrainJob = {
   id: string;
@@ -130,6 +132,8 @@ export type BrainJob = {
   sessionId: string | null;
   result: string | null;
   error: string | null;
+  /** Runs only when no other job is queued (the one-time pass over earlier sources). */
+  background: boolean;
 };
 export type PictureStatus =
   | 'described'

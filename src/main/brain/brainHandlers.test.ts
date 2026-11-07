@@ -65,6 +65,7 @@ describe('brain handlers', () => {
       sessionId: null,
       result: null,
       error: null,
+      background: false,
     }) satisfies BrainJob;
 
   beforeEach(async () => {

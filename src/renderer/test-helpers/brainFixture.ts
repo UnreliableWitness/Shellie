@@ -94,5 +94,6 @@ export const brainJob = (over: Partial<BrainJob> = {}): BrainJob => ({
   sessionId: 's-1',
   result: null,
   error: 'claude exited 1',
+  background: false,
   ...over,
 });

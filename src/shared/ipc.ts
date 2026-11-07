@@ -673,7 +673,14 @@ export type Channels = {
   'brain:run': {
     args: [
       brainId: string,
-      kind: 'lint' | 'digest' | 'sync' | 'capture' | 'retract' | 'lessons',
+      kind:
+        | 'lint'
+        | 'digest'
+        | 'sync'
+        | 'capture'
+        | 'retract'
+        | 'lessons'
+        | 'pictures',
       source?: string,
     ];
     result: BrainJob;

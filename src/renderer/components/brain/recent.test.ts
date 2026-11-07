@@ -120,6 +120,7 @@ describe('pagesChangedBy', () => {
     sessionId: null,
     result: null,
     error: null,
+    background: false,
     ...over,
   });
 
