@@ -9,6 +9,7 @@ import { useTimeFocus } from './hooks/useTimeFocus';
 import { useShortcuts } from './hooks/useShortcuts';
 import { AddRepoScreen } from './screens/AddRepoScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
+import { BrainNewScreen } from './screens/BrainNewScreen';
 import { BrainScreen } from './screens/BrainScreen';
 import { ConnectScreen } from './screens/ConnectScreen';
 import { FinishScreen } from './screens/FinishScreen';
@@ -30,8 +31,8 @@ function Page() {
   switch (screen.kind) {
     case 'home':
       return <HomeScreen />;
-    // Placeholder until the brain step has its own page: the Get started page lists the step.
     case 'brain-new':
+      return <BrainNewScreen />;
     case 'get-started':
       return <GetStartedScreen />;
     case 'agents':

@@ -18,6 +18,7 @@ const SCOPES = [
   'Work Items (Read & write)',
   'Code (Read & write)',
   'Project and Team (Read)',
+  'Wiki (Read)',
 ];
 
 /** The organization URL Shellie stores (`https://dev.azure.com/<org>` or the visualstudio.com origin) from whatever was typed; null until it reads as one. */
@@ -248,7 +249,7 @@ export function ConnectScreen() {
         <p className="muted">
           {existing
             ? `Projects of ${existing.organizationUrl}, with the token you already saved.`
-            : 'A connection is one organization. You can add more later, and link each repository to one.'}
+            : 'Each project you tick becomes a project in Shellie with its own page and settings; add more later in Settings › Projects.'}
         </p>
         {!existing && <ProviderPicker value={choice} onChange={setChoice} />}
         {choice === 'none' && (
@@ -320,6 +321,9 @@ export function ConnectScreen() {
                         </a>
                       </>
                     )}
+                  </p>
+                  <p className="small muted">
+                    Wiki (Read) is only needed for a brain.
                   </p>
                 </div>
               </>
@@ -417,8 +421,8 @@ export function ConnectScreen() {
           <span className="grow" />
           {choice === 'azure-devops' && (
             <span className="small muted">
-              Writing cost and time back stays off until you turn it on in
-              Settings
+              Writing time back to work items stays off until you turn it on per
+              project.
             </span>
           )}
           <button

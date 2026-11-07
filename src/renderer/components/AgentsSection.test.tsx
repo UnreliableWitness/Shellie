@@ -48,6 +48,27 @@ describe('AgentsSection', () => {
     expect(screen.getByText('zsh')).toBeInTheDocument();
   });
 
+  it('OpenCode cost is per task and the brain line names both agents', async () => {
+    installFakeApi(
+      settingsWith('2026-10-22T09:00:00.000Z', {
+        claude: true,
+        copilot: false,
+        opencode: false,
+        shell: true,
+      }),
+    );
+    render(<AgentsSection />);
+    expect(
+      await screen.findByText('Per task, from its database'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Brains run on Claude Code or OpenCode, whichever you pick per brain.',
+      ),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('budget only');
+  });
+
   it('pre-ticks once on first open in a single save', async () => {
     const { calls } = installFakeApi(
       settingsWith(null, {

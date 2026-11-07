@@ -209,13 +209,13 @@ describe('Home page', () => {
     expect(calls.filter((c) => c.channel === 'home:refresh')).toHaveLength(0);
   });
 
-  it('without connections it shows the Get started band with Connect your tracker', async () => {
+  it('without connections it shows the Get started band with Connect Azure DevOps', async () => {
     useStore.setState({ connections: [], settings: defaultSettings() });
     installFakeApi();
     render(<Shell />);
     const band = await screen.findByRole('region', { name: 'Get started' });
     expect(
-      within(band).getByRole('region', { name: '2 · Connect your tracker' }),
+      within(band).getByRole('region', { name: '2 · Connect Azure DevOps' }),
     ).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: 'Add an Azure DevOps connection' }),
@@ -223,6 +223,43 @@ describe('Home page', () => {
     expect(screen.getByRole('region', { name: 'My tasks' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Stats' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'My sprints' })).toBeNull();
+  });
+
+  it('the band lists the brain step while it is todo', async () => {
+    useStore.setState({ connections: [], settings: defaultSettings() });
+    installFakeApi();
+    render(<Shell />);
+    const band = await screen.findByRole('region', { name: 'Get started' });
+    expect(
+      within(band).getByRole('region', {
+        name: '4 · A brain for your project',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('the band waits for the brains before it shows', async () => {
+    const s = defaultSettings();
+    // Every other step done: only the brain step could keep the band up.
+    useStore.setState({
+      connections: [connection],
+      repos: [{ id: 'r1', name: 'webshop' } as never],
+      settings: { ...s, onboarding: { ...s.onboarding, agentsCheckedAt: 'x' } },
+    });
+    let answer: (b: unknown[]) => void = () => undefined;
+    installFakeApi({
+      'home:get': () => snapshot(),
+      'brain:list': () =>
+        new Promise((r) => {
+          answer = r;
+        }) as never,
+    });
+    render(<Shell />);
+    await screen.findByRole('heading', { name: 'Home' });
+    expect(screen.queryByRole('region', { name: 'Get started' })).toBeNull();
+    act(() => answer([]));
+    expect(
+      await screen.findByRole('region', { name: 'Get started' }),
+    ).toBeTruthy();
   });
 
   it('the band shows only unfinished steps and goes once dismissed', async () => {

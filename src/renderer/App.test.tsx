@@ -241,7 +241,7 @@ describe('first page', () => {
     });
     render(<App />);
     const connect = await screen.findByRole('region', {
-      name: '2 · Connect your tracker',
+      name: '2 · Connect Azure DevOps',
     });
     expect(within(connect).getByLabelText('Done')).toBeInTheDocument();
     const agents = screen.getByRole('region', { name: '1 · Agents' });

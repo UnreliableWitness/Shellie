@@ -23,23 +23,44 @@ export function useBrainChanged(brainId: string | null, run: () => void): void {
   }, [brainId]);
 }
 
-/** Every brain, fetched on mount and again when one changes. */
-export function useBrains(): BrainView[] {
-  const [brains, setBrains] = useState<BrainView[]>([]);
+/** Every brain, fetched on mount and again when one changes; `loaded` once the first answer came. */
+function useBrainList(): { brains: BrainView[]; loaded: boolean } {
+  const [list, setList] = useState({
+    brains: [] as BrainView[],
+    loaded: false,
+  });
   const load = useCallback(() => {
     api()
       .invoke('brain:list')
-      .then(setBrains, () => undefined);
+      // A failed answer keeps what was shown but still counts as loaded.
+      .then(
+        (brains) => setList({ brains, loaded: true }),
+        () => setList((l) => ({ ...l, loaded: true })),
+      );
   }, []);
   useEffect(load, [load]);
   useBrainChanged(null, load);
-  return brains;
+  return list;
+}
+
+/** Every brain, fetched on mount and again when one changes. */
+export function useBrains(): BrainView[] {
+  return useBrainList().brains;
+}
+
+/** The brains that are not archived, and whether `brain:list` has answered yet. */
+export function useActiveBrainsLoaded(): {
+  brains: BrainView[];
+  loaded: boolean;
+} {
+  const { brains, loaded } = useBrainList();
+  const active = useMemo(() => brains.filter((b) => !b.archived), [brains]);
+  return { brains: active, loaded };
 }
 
 /** The brains that are not archived: what "the project has a brain" means in the first-run steps. */
 export function useActiveBrains(): BrainView[] {
-  const brains = useBrains();
-  return useMemo(() => brains.filter((b) => !b.archived), [brains]);
+  return useActiveBrainsLoaded().brains;
 }
 
 /** One brain, fetched on mount and again when it changes; null until loaded or when it is gone. */

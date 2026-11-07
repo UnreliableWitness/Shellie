@@ -4,9 +4,11 @@ import {
   AGENT_LABELS,
   type AgentsDetected,
 } from '../../shared/agents';
+import { BRAIN_AGENT_LABELS, type BrainView } from '../../shared/brain';
 import type { DefaultTerminals } from '../../shared/terminals';
 import { api, saveSettings, tryInvoke } from '../api';
 import { pretick } from '../agentsPretick';
+import { defaultBrainAgent } from '../brainAgent';
 import { MindMark } from '../components/ui';
 import type { OnboardingStep } from '../components/ui/StepStrip';
 import { useActiveBrains } from '../hooks/useBrains';
@@ -54,10 +56,31 @@ function agentsLine(
   return `${foundText}New tasks open ${open.length ? list(open) : 'no tabs'}.`;
 }
 
-/** Opens a step's page; Add folder… asks for the folder first. */
-function useStepActions() {
+/** Card 4's line: the brains made, a skip, a missing project, or the agent a new brain would run on. */
+function brainLine(
+  brains: BrainView[],
+  skipped: boolean,
+  needsProject: boolean,
+  detected: AgentsDetected | null,
+): string {
+  if (brains.length)
+    return `${list(brains.map((b) => `${b.name} on ${BRAIN_AGENT_LABELS[b.options.agent]}`))}.`;
+  if (skipped) return 'Skipped.';
+  if (needsProject) return 'Needs a connected project.';
+  const todo =
+    "A local wiki of the project's documents, kept by your agent, that every task can read. Optional.";
+  if (!detected) return todo;
+  const { agent, found } = defaultBrainAgent(detected);
+  return found
+    ? `${todo} Runs on ${BRAIN_AGENT_LABELS[agent]}.`
+    : `${todo} Needs Claude Code or OpenCode.`;
+}
+
+/** Opens a step's page; Add folder… asks for the folder first, a made brain opens Settings › Project › Brains. */
+function useStepActions(brains: BrainView[]) {
   const go = useStore((s) => s.go);
   const notify = useStore((s) => s.notify);
+  const connections = useStore((s) => s.connections);
   return {
     agents: () => go({ kind: 'agents', from: 'get-started' }),
     connect: () => go({ kind: 'connect', from: 'get-started' }),
@@ -69,12 +92,19 @@ function useStepActions() {
       if (folder) go({ kind: 'add-repo', from: 'get-started', folder });
     },
     brain: () => go({ kind: 'brain-new', from: 'get-started' }),
-  } satisfies Record<OnboardingStep, () => void>;
+    brainSettings: () =>
+      go({
+        kind: 'settings',
+        scope: 'project',
+        connectionId: brains[0]?.connectionId ?? connections[0]?.id,
+        section: 'project-brains',
+      }),
+  } satisfies Record<OnboardingStep | 'brainSettings', () => void>;
 }
 
 const TITLES: Record<OnboardingStep, string> = {
   agents: '1 · Agents',
-  connect: '2 · Connect your tracker',
+  connect: '2 · Connect Azure DevOps',
   repository: '3 · Add a repository',
   brain: '4 · A brain for your project',
 };
@@ -82,17 +112,17 @@ const BUTTONS: Record<OnboardingStep, string> = {
   agents: 'Open',
   connect: 'Connect',
   repository: 'Add folder…',
-  brain: 'Set up',
+  brain: 'Create brain…',
 };
 
-/** The step cards: all three on the page, the unfinished ones (compact) in the Home band. */
+/** The step cards: all four on the page, the unfinished ones (compact) in the Home band. */
 export function StepCards({ band }: { band?: boolean }) {
   const settings = useStore((s) => s.settings);
   const connections = useStore((s) => s.connections);
   const repos = useStore((s) => s.repos);
   const brains = useActiveBrains();
   const steps = stepsFrom({ settings, connections, repos, brains });
-  const actions = useStepActions();
+  const actions = useStepActions(brains);
   const [detected, setDetected] = useState<AgentsDetected | null>(null);
   const agentsDone = steps.agents === 'done';
 
@@ -122,7 +152,7 @@ export function StepCards({ band }: { band?: boolean }) {
         ? `Connected to ${list(connections.map((c) => `${c.name}/${c.project}`))}.`
         : steps.connect === 'done'
           ? 'No tracker: tasks start blank, on a branch.'
-          : 'Azure DevOps now; GitHub later. Shellie reads your sprint and writes cost, time and draft pull requests back.',
+          : 'Shellie reads your sprint, moves the work item when a task starts and opens draft pull requests. GitHub later.',
     repository: repos.length ? (
       `Added ${list(repos.map((r) => r.name))}.`
     ) : (
@@ -131,10 +161,12 @@ export function StepCards({ band }: { band?: boolean }) {
         <code className="chip-code">.shellie.yml</code>.
       </>
     ),
-    brain:
-      steps.brain === 'done'
-        ? 'Done.'
-        : 'Optional: a place for what your agents learn.',
+    brain: brainLine(
+      brains,
+      settings?.onboarding.brain === 'none',
+      steps.brainNeedsProject,
+      detected,
+    ),
   };
 
   const keys = (['agents', 'connect', 'repository', 'brain'] as const).filter(
@@ -172,9 +204,17 @@ export function StepCards({ band }: { band?: boolean }) {
             <button
               type="button"
               className={current ? 'btn btn-primary' : 'btn'}
-              onClick={() => void actions[k]()}
+              onClick={() =>
+                void (k === 'brain' && done
+                  ? actions.brainSettings()
+                  : actions[k]())
+              }
             >
-              {k === 'agents' && agentsDone ? 'Change' : BUTTONS[k]}
+              {k === 'agents' && agentsDone
+                ? 'Change'
+                : k === 'brain' && done
+                  ? 'Open'
+                  : BUTTONS[k]}
             </button>
           </section>
         );
@@ -216,7 +256,7 @@ function Art() {
   );
 }
 
-/** First run: what a task is and the three setup steps. */
+/** First run: what a task is and the four setup steps. */
 export function GetStartedScreen() {
   const go = useStore((s) => s.go);
   const notify = useStore((s) => s.notify);
@@ -234,7 +274,7 @@ export function GetStartedScreen() {
           <h1>Welcome to Shellie</h1>
           <p className="muted">
             A task is a git worktree with its own agent tabs, tied to a work
-            item, with the AI cost and time it took. Three short steps and your
+            item, with the AI cost and time it took. A few short steps and your
             sprint is on this page.
           </p>
           <StepCards />
@@ -254,7 +294,13 @@ export function GetStartedScreen() {
               <li>
                 Start on a sprint item → worktree, branch, setup, agent tabs
               </li>
-              <li>Claude Code and Copilot cost per task, priced in EUR</li>
+              <li>
+                Claude Code, OpenCode and Copilot cost per task, priced in EUR
+              </li>
+              <li>
+                A brain per project: your documents and wiki, kept as pages your
+                agent reads
+              </li>
               <li>Time, changes review, Docs, draft PR at Finish</li>
             </ul>
           </div>
