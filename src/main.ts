@@ -1154,7 +1154,7 @@ async function boot(): Promise<void> {
           if (content) env.OPENCODE_CONFIG_CONTENT = content;
           else if (
             process.env.OPENCODE_CONFIG_CONTENT &&
-            (ctx.denyPaths?.length || opencodePluginReady)
+            (ctx.denyPaths?.length || ctx.brainDir || opencodePluginReady)
           )
             console.warn(
               `[terminals] OPENCODE_CONFIG_CONTENT is not a JSON object; OpenCode starts without Shellie's config (${ctx.denyPaths?.length ?? 0} secret files not denied)`,

@@ -212,11 +212,6 @@ export function tidySummary(text: string): string {
   return `${(nl > PR_SUMMARY_MAX / 2 ? head.slice(0, nl) : head).trimEnd()}…`;
 }
 
-/**
- * Runs a command with `input` on stdin and resolves to its stdout. A non-zero exit rejects with the last line of
- * stderr; exit 127 (the login shell found no such program) says the program is missing; past `timeoutMs` the
- * process is killed.
- */
 /** A run that exited non-zero: the message as before, plus the exit code and what the program printed on stdout. */
 export class ExitError extends Error {
   constructor(
@@ -228,6 +223,11 @@ export class ExitError extends Error {
   }
 }
 
+/**
+ * Runs a command with `input` on stdin and resolves to its stdout. A non-zero exit rejects with the last line of
+ * stderr; exit 127 (the login shell found no such program) says the program is missing; past `timeoutMs` the
+ * process is killed.
+ */
 export function runWithInput(
   { command, args, env }: Command,
   o: {

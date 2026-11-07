@@ -106,11 +106,11 @@ export function opencodeConfigContent(
   brainDir?: string,
 ): string | undefined {
   // The developer's own `permission`; a plain action ("allow") applies to every tool.
-  const permission = (existing: unknown) => {
-    const own = isObject(existing)
-      ? existing
-      : typeof existing === 'string'
-        ? { '*': existing }
+  const permission = (given: unknown) => {
+    const own = isObject(given)
+      ? given
+      : typeof given === 'string'
+        ? { '*': given }
         : {};
     const denied = denyPaths.length > 0 ? withDeny(own, denyPaths) : own;
     return brainDir ? withBrain(denied, brainDir) : denied;

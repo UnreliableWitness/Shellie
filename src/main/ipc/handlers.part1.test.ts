@@ -264,6 +264,24 @@ describe('handlers: agents', () => {
     expect(seen).toHaveLength(1);
   });
 
+  it('runs opencode models once for callers asking at the same time', async () => {
+    let runs = 0;
+    const { h } = await harness(undefined, {
+      runProbe: async () => {
+        runs += 1;
+        await new Promise((r) => setTimeout(r, 10));
+        return { code: 0, stdout: 'opencode/big-pickle\n' };
+      },
+    });
+    const [a, b] = await Promise.all([
+      h['agents:opencodeModels'](),
+      h['agents:opencodeModels'](),
+    ]);
+    expect(runs).toBe(1);
+    expect(a).toEqual(['opencode/big-pickle']);
+    expect(b).toEqual(a);
+  });
+
   it('gives null when opencode fails, prints no models or cannot start, and tries again next time', async () => {
     let n = 0;
     const { h } = await harness(undefined, {

@@ -763,6 +763,48 @@ describe('handlers: finish with a brain', () => {
     );
   });
 
+  it('an OpenCode database error keeps the Claude lessons', async () => {
+    const hx = await brainTask({
+      opencodeSessionTexts: () => {
+        throw new Error('database is locked');
+      },
+    });
+    const sessions = mkdtempSync(path.join(os.tmpdir(), 'shellie-sess-'));
+    const log = path.join(sessions, 'abc.jsonl');
+    writeFileSync(
+      log,
+      `${JSON.stringify({ type: 'user', message: { content: 'Show the delivery date' } })}\n`,
+    );
+    hx.services.claudeSessionFile = (id) => (id === 'abc' ? log : null);
+    await hx.store.update((st) => {
+      st.tasks[0].terminals.push({
+        id: 'c1',
+        kind: 'claude',
+        label: 'Claude Code',
+        sessionId: 'abc',
+      });
+      st.tasks[0].closedTerminals.push({
+        id: 'o1',
+        kind: 'opencode',
+        label: 'OpenCode',
+      });
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await hx.h['tasks:finish'](hx.t.id, { ...finish, captureLessons: true });
+    const [source] = hx.sources();
+    expect(source).toMatch(/session\.md$/);
+    const text = readFileSync(
+      path.join(hx.brain.path, 'sources', source),
+      'utf8',
+    );
+    expect(text).toContain('**Developer:** Show the delivery date');
+    expect(error).toHaveBeenCalledWith(
+      '[brain] OpenCode sessions not read for lessons',
+      expect.any(Error),
+    );
+    error.mockRestore();
+  });
+
   it('does not read OpenCode for lessons of a task that never had an OpenCode tab', async () => {
     const read = vi.fn(() => []);
     const hx = await brainTask({ opencodeSessionTexts: read });

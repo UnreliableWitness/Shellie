@@ -466,7 +466,8 @@ export async function pruneDanglingConnectionLinks(
 export function createHandlers(s: Services): Handlers {
   const tel = s.telemetry ?? NoopTelemetry;
   let agentsCache: AgentsDetected | null = null;
-  let opencodeModelsCache: string[] | null = null;
+  /** The `opencode models` list, shared while it runs; dropped again when it gave none, so the next call retries. */
+  let opencodeModelsRun: Promise<string[] | null> | null = null;
   const sessionExists = s.claudeSessionExists ?? claudeSessionExists;
   const hasSessionsIn = s.claudeHasSessionsIn ?? claudeHasSessionsIn;
   // Looked up on each call, not once: tests swap these services after the handlers are made.
@@ -1857,7 +1858,10 @@ export function createHandlers(s: Services): Handlers {
       : undefined;
   };
 
-  /** What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an OpenCode tab. */
+  /**
+   * What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an
+   * OpenCode tab, and none when OpenCode's database cannot be read (logged, so the Claude lessons still go in).
+   */
   const opencodeSessionTurns = (task: Task) => {
     const tabs = [...task.closedTerminals, ...task.terminals];
     if (!s.opencodeSessionTexts || !tabs.some((t) => t.kind === 'opencode'))
@@ -1867,7 +1871,12 @@ export function createHandlers(s: Services): Handlers {
         taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
       ),
     ];
-    return s.opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0);
+    try {
+      return s.opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0);
+    } catch (e) {
+      console.error('[brain] OpenCode sessions not read for lessons', e);
+      return [];
+    }
   };
 
   /** The transcripts of the task's Claude Code sessions (open and closed tabs), each as its lines; unsaved ones are skipped. */
@@ -3185,24 +3194,29 @@ export function createHandlers(s: Services): Handlers {
       });
       return result;
     },
-    'agents:opencodeModels': async () => {
-      if (opencodeModelsCache) return opencodeModelsCache;
-      try {
-        const { code, stdout } = await (s.runProbe ?? runProbe)(
-          s.platform.opencodeCommand(undefined, ['models']),
-          15_000,
-        );
-        if (code !== 0) return null;
-        const models = stdout
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter((l) => /^[\w.-]+\/[\w.:-]+$/.test(l));
-        if (models.length === 0) return null;
-        opencodeModelsCache = models;
-        return models;
-      } catch {
-        return null;
-      }
+    'agents:opencodeModels': () => {
+      if (opencodeModelsRun) return opencodeModelsRun;
+      const run = (async () => {
+        try {
+          const { code, stdout } = await (s.runProbe ?? runProbe)(
+            s.platform.opencodeCommand(undefined, ['models']),
+            15_000,
+          );
+          if (code !== 0) return null;
+          const models = stdout
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => /^[\w.-]+\/[\w.:-]+$/.test(l));
+          return models.length > 0 ? models : null;
+        } catch {
+          return null;
+        }
+      })();
+      opencodeModelsRun = run;
+      void run.then((models) => {
+        if (!models && opencodeModelsRun === run) opencodeModelsRun = null;
+      });
+      return run;
     },
     'repos:config': async (repoId) => {
       // A repo kept in Shellie only (no file) starts from the base branch it was added with when that still exists,
