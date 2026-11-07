@@ -10,9 +10,11 @@ import {
   type BrainSourceRow,
 } from '../../shared/brain';
 import { GitClient } from '../services/GitClient';
+import { BrainJobRunner } from './jobs';
 import { readPages } from './pages';
 import {
   afterPictureJob,
+  createPictureHooks,
   assetsOf,
   brainCoverage,
   coverage,
@@ -34,6 +36,7 @@ import {
 } from './pictures';
 import { scaffoldBrain } from './scaffold';
 import { addSource, listSources } from './sources';
+import { writeState } from './state';
 
 const SOURCE = 'sources/2026-11-04-deck.md';
 const ASSETS = 'sources/2026-11-04-deck-assets';
@@ -376,6 +379,32 @@ describe('pictures', () => {
     ).toEqual([one]);
   });
 
+  it('leaves out alt texts, without reading the source, when asked', async () => {
+    await write(SOURCE, '![Org chart](2026-11-04-deck-assets/slide-1-1.png)\n');
+    await write(`${ASSETS}/slide-1-1.png`, 'x');
+    const pages = await readPages(dir);
+    const one = await sourceCoverage(dir, pages, SOURCE, { alt: false });
+    expect(one.rows[0]).toMatchObject({ status: 'missing', alt: null });
+    expect((await sourceCoverage(dir, pages, SOURCE)).rows[0].alt).toBe(
+      'Org chart',
+    );
+    const [all] = await brainCoverage(dir, pages, [row(SOURCE)], {
+      alt: false,
+    });
+    expect(all.rows[0].alt).toBeNull();
+  });
+
+  it('refuses to write over a dropped file that is not valid JSON, and reads it as empty', async () => {
+    await write(DROPPED_FILE, '{ "sources/a.md": ');
+    expect(await readDropped(dir)).toEqual({});
+    await expect(writeDropped(dir, (f) => f)).rejects.toThrow(
+      'brain/pictures-dropped.json is not valid JSON; fix or remove it',
+    );
+    expect(await fs.readFile(path.join(dir, DROPPED_FILE), 'utf8')).toBe(
+      '{ "sources/a.md": ',
+    );
+  });
+
   describe('re-evaluation', () => {
     const job = (over: Partial<BrainJob> = {}): BrainJob => ({
       id: 'j',
@@ -395,9 +424,16 @@ describe('pictures', () => {
       await write('sources/x.md', 'text');
       await write('sources/x-assets/slide-11-1.png', 'x');
     };
-    const after = async (j: BrainJob) => {
+    const after = async (
+      j: BrainJob,
+      o: { templatesVersion?: number; jobs?: BrainJob[] } = {},
+    ) => {
       const enqueue = vi.fn();
-      await afterPictureJob(j, { brainDir: () => dir, enqueue });
+      await afterPictureJob(j, {
+        brain: () => ({ path: dir, templatesVersion: o.templatesVersion ?? 6 }),
+        enqueue,
+        jobs: () => o.jobs ?? [],
+      });
       return enqueue;
     };
 
@@ -437,14 +473,43 @@ describe('pictures', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('never queues on a brain whose skills are older than v6', async () => {
+      await gap();
+      expect(
+        await after(job(), { templatesVersion: 5 }),
+      ).not.toHaveBeenCalled();
+    });
+
+    it('never queues when a pictures job for the source is already coming', async () => {
+      await gap();
+      for (const status of ['queued', 'running', 'paused'] as const)
+        expect(
+          await after(job(), {
+            jobs: [job({ kind: 'pictures', status, background: true })],
+          }),
+        ).not.toHaveBeenCalled();
+      // A finished one, or one for another source, does not count.
+      expect(
+        (
+          await after(job(), {
+            jobs: [
+              job({ kind: 'pictures', status: 'done' }),
+              job({ kind: 'pictures', source: 'sources/y.md' }),
+            ],
+          })
+        ).mock.calls,
+      ).toHaveLength(1);
+    });
+
     it('logs instead of throwing when the brain is gone', async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {});
       const enqueue = vi.fn();
       await afterPictureJob(job(), {
-        brainDir: () => {
+        brain: () => {
           throw new Error('Unknown brain b');
         },
         enqueue,
+        jobs: () => [],
       });
       expect(enqueue).not.toHaveBeenCalled();
       expect(log).toHaveBeenCalled();
@@ -605,7 +670,7 @@ describe('one-time pass over earlier sources', () => {
       expect(pictureFindings(all, 't')).toEqual([]);
     });
 
-    it('skips an original that does not convert, with a log line', async () => {
+    it('records an original that does not convert as checked, with one log line', async () => {
       const deck = await earlierDeck();
       await fs.writeFile(
         path.join(dir, deck.replace(/\.md$/, '.pptx')),
@@ -614,10 +679,17 @@ describe('one-time pass over earlier sources', () => {
       await commitAll('broken');
       const log = vi.spyOn(console, 'error').mockImplementation(() => {});
       await rebuildDrops(git, dir, await listSources(dir, null), {});
-      expect(log).toHaveBeenCalled();
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(await readDropped(dir)).toEqual({
+        [deck]: { dropped: [], tiny: 0 },
+      });
+      expect((await subjects())[0]).toBe(
+        'Brain: dropped pictures of earlier sources',
+      );
+      // Not converted again on the next run.
+      await rebuildDrops(git, dir, await listSources(dir, null), {});
+      expect(log).toHaveBeenCalledTimes(1);
       log.mockRestore();
-      expect(await readDropped(dir)).toEqual({});
-      expect((await subjects())[0]).toBe('broken');
     });
   });
 
@@ -633,13 +705,21 @@ describe('one-time pass over earlier sources', () => {
         templatesVersion: 6,
         ...over,
       });
-    const source = async (day: string, pictures: boolean) => {
+    const source = async (day: string, pictures: boolean, captured = true) => {
       const stem = `sources/2026-11-${day}-s${day}`;
       await write(
         `${stem}.md`,
         `---\ntitle: S\nsource_url: s\ningested_at: "2026-11-${day}T09:00:00.000Z"\ncontent_type: deck\nsha256: h${day}\n---\n\nText\n`,
       );
       if (pictures) await write(`${stem}-assets/slide-1-1.png`, 'x');
+      if (captured)
+        await writeState(dir, (s) => ({
+          ...s,
+          captured: {
+            ...s.captured,
+            [`${stem}.md`]: { at: 't', sessionId: null },
+          },
+        }));
       return `${stem}.md`;
     };
     const job = (over: Partial<BrainJob>): BrainJob => ({
@@ -682,7 +762,9 @@ describe('one-time pass over earlier sources', () => {
       expect(next).toEqual({
         startedAt: '2026-11-07T12:00:00.000Z',
         total: 3,
+        sources: [older, newer, MIRROR_SOURCE],
         done: [],
+        failures: {},
         finishedAt: null,
       });
     });
@@ -693,12 +775,45 @@ describe('one-time pass over earlier sources', () => {
       const started = {
         startedAt: '2026-11-06T08:00:00.000Z',
         total: 2,
+        sources: [older, newer],
         done: [older],
+        failures: { [newer]: 1 },
         finishedAt: null,
       };
       const { next, queued } = await pass(brain({ picturePass: started }));
       expect(queued).toEqual([['b', 'pictures', newer, { background: true }]]);
       expect(next).toEqual(started);
+    });
+
+    it('never queues a source that is not captured: its capture looks at its pictures', async () => {
+      const captured = await source('01', true);
+      await source('02', true, false);
+      const { next, queued } = await pass(brain());
+      expect(queued).toEqual([
+        ['b', 'pictures', captured, { background: true }],
+      ]);
+      expect(next).toMatchObject({ total: 1, sources: [captured] });
+    });
+
+    it('covers only what had gaps at its first run: a source or mirror pictures added later are never queued by it', async () => {
+      const older = await source('01', true);
+      const first = await pass(brain());
+      expect(first.queued).toEqual([
+        ['b', 'pictures', older, { background: true }],
+      ]);
+      await source('03', true);
+      await write(`${MIRROR_SOURCE}/.attachments/a.png`, 'x');
+      const again = await pass(brain({ picturePass: first.next }));
+      expect(again.queued).toEqual([
+        ['b', 'pictures', older, { background: true }],
+      ]);
+      expect(again.next).toEqual(first.next);
+      // The earlier source done: the pass is over, the later ones untouched.
+      const done = await pass(
+        brain({ picturePass: { ...first.next!, done: [older] } }),
+      );
+      expect(done.queued).toEqual([]);
+      expect(done.next?.finishedAt).toBe('2026-11-07T12:00:00.000Z');
     });
 
     it('does not queue a source whose pass job is still queued', async () => {
@@ -730,13 +845,19 @@ describe('one-time pass over earlier sources', () => {
       expect(next).toEqual({
         startedAt: '2026-11-07T12:00:00.000Z',
         total: 0,
+        sources: [],
         done: [],
+        failures: {},
         finishedAt: '2026-11-07T12:00:00.000Z',
       });
     });
 
     it('rebuilds drop records before it looks at the gaps', async () => {
       const deck = await earlierDeck();
+      await writeState(dir, (s) => ({
+        ...s,
+        captured: { ...s.captured, [deck]: { at: 't', sessionId: null } },
+      }));
       const { queued } = await pass(brain());
       expect(Object.keys(await readDropped(dir))).toEqual([deck]);
       expect(queued).toEqual([['b', 'pictures', deck, { background: true }]]);
@@ -747,7 +868,9 @@ describe('one-time pass over earlier sources', () => {
     const computed = {
       startedAt: 's',
       total: 3,
+      sources: ['sources/a.md', 'sources/b.md', 'sources/c.md'],
       done: ['sources/a.md'],
+      failures: {},
       finishedAt: null,
     };
     it('keeps sources noted done meanwhile and a finish already saved', () => {
@@ -763,6 +886,9 @@ describe('one-time pass over earlier sources', () => {
       expect(
         mergePass(computed, { ...computed, finishedAt: 'g' }),
       ).toMatchObject({ finishedAt: 'g' });
+      expect(
+        mergePass({ ...computed, failures: { 'sources/b.md': 1 } }, computed),
+      ).toMatchObject({ failures: { 'sources/b.md': 1 } });
       expect(mergePass(null, computed)).toBe(computed);
     });
   });
@@ -781,7 +907,9 @@ describe('one-time pass over earlier sources', () => {
     const pass = {
       startedAt: 's',
       total: 2,
+      sources: ['sources/a.md', 'sources/b.md'],
       done: ['sources/a.md'],
+      failures: {},
       finishedAt: null,
     };
     const finished = (over: Partial<BrainJob> = {}): BrainJob => ({
@@ -806,24 +934,33 @@ describe('one-time pass over earlier sources', () => {
         done: ['sources/a.md', 'sources/b.md'],
         finishedAt: '2026-11-07T12:00:00.000Z',
       });
+      // A Re-evaluate on a pass source replaced its background job: it counts the same.
       expect(
-        notePassJob(
-          b({ ...pass, total: 3 }),
-          finished({ status: 'failed' }),
-          now,
-        ),
-      ).toEqual({
-        ...pass,
-        total: 3,
+        notePassJob(b(pass), finished({ background: false }), now),
+      ).toMatchObject({ done: ['sources/a.md', 'sources/b.md'] });
+    });
+
+    it('counts a failed run, and the source as done only at the second failure', () => {
+      const once = notePassJob(b(pass), finished({ status: 'failed' }), now);
+      expect(once).toEqual({ ...pass, failures: { 'sources/b.md': 1 } });
+      expect(notePassJob(b(once), finished({ status: 'failed' }), now)).toEqual(
+        {
+          ...pass,
+          done: ['sources/a.md', 'sources/b.md'],
+          failures: { 'sources/b.md': 2 },
+          finishedAt: '2026-11-07T12:00:00.000Z',
+        },
+      );
+      expect(notePassJob(b(once), finished(), now)).toMatchObject({
         done: ['sources/a.md', 'sources/b.md'],
       });
     });
 
-    it('ignores other jobs, a source already done and a brain without a pass', () => {
+    it('ignores other jobs, a source already done or not in the pass and a brain without a pass', () => {
       const p = b(pass);
-      expect(notePassJob(p, finished({ background: false }), now)).toBe(
-        p.picturePass,
-      );
+      expect(
+        notePassJob(p, finished({ source: 'sources/later.md' }), now),
+      ).toBe(p.picturePass);
       expect(notePassJob(p, finished({ kind: 'capture' }), now)).toBe(
         p.picturePass,
       );
@@ -834,6 +971,207 @@ describe('one-time pass over earlier sources', () => {
         p.picturePass,
       );
       expect(notePassJob(b(null), finished(), now)).toBeNull();
+    });
+  });
+});
+
+describe('createPictureHooks', () => {
+  const git = new GitClient();
+  let root: string;
+  let dir: string;
+  let stored: Brain;
+  let runs: string[];
+  let runner: BrainJobRunner;
+  /** What a fake pictures run does: describe every picture it is handed, nothing, or fail. */
+  let pictureRun: 'describe' | 'nothing' | 'fail';
+  /** While set, a lint run waits for it. */
+  let holdLint: Promise<void> | null;
+  beforeEach(async () => {
+    pictureRun = 'describe';
+    holdLint = null;
+    root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-hooks-')),
+    );
+    dir = path.join(root, 'brain');
+    await scaffoldBrain(git, dir, 'Acme');
+    stored = BrainSchema.parse({
+      id: 'b',
+      name: 'B',
+      connectionId: 'c',
+      project: 'p',
+      path: dir,
+      createdAt: 't',
+      templatesVersion: 6,
+    });
+    runs = [];
+  });
+  afterEach(async () => {
+    runner?.stop();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const write = async (rel: string, text: string) => {
+    const file = path.join(dir, ...rel.split('/'));
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, text);
+  };
+  /** A source with one picture not interpreted; captured unless told otherwise. */
+  const source = async (name: string, captured = true) => {
+    const rel = `sources/2026-11-01-${name}.md`;
+    await write(
+      rel,
+      `---\ntitle: ${name}\nsource_url: s\ningested_at: "2026-11-01T09:00:00.000Z"\ncontent_type: deck\nsha256: ${name}\n---\n\nText\n`,
+    );
+    await write(`sources/2026-11-01-${name}-assets/slide-1-1.png`, 'x');
+    if (captured)
+      await writeState(dir, (s) => ({
+        ...s,
+        captured: { ...s.captured, [rel]: { at: 't', sessionId: null } },
+      }));
+    return rel;
+  };
+  /** The hooks on a real runner whose Claude is fake (see `pictureRun`). */
+  const setup = () => {
+    const brains = {
+      get: (id: string) => (id === 'b' ? stored : undefined),
+      patch: async (_id: string, p: Partial<Brain>) => {
+        stored = { ...stored, ...p };
+      },
+    };
+    const hooks = createPictureHooks({
+      brains,
+      runner: () => runner,
+      git,
+      now: () => new Date('2026-11-07T12:00:00.000Z'),
+    });
+    runner = new BrainJobRunner({
+      platform: {
+        claudeCommand: (_c, flags) => ({
+          command: 'claude',
+          args: flags ?? [],
+          env: {},
+        }),
+      },
+      run: (async (_cmd: unknown, o: { input: string }) => {
+        runs.push(o.input);
+        if (o.input === '/lint' && holdLint) await holdLint;
+        const m = /^\/pictures (\S+) (\[.*\])$/.exec(o.input);
+        if (m && pictureRun === 'fail') throw new Error('Claude failed');
+        if (m && pictureRun === 'describe') {
+          const files = JSON.parse(m[2]) as string[];
+          await write(
+            `wiki/${path.basename(m[1])}`,
+            files.map((f) => `![p](../${f})`).join('\n'),
+          );
+        }
+        return JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          session_id: 's',
+        });
+      }) as never,
+      env: () => ({}),
+      tokensToday: () => 0,
+      cap: () => 1_000_000,
+      brainDir: () => dir,
+      model: () => 'sonnet',
+      onChange: () => undefined,
+      commit: async () => undefined,
+      beforeJob: async () => undefined,
+      promptFor: hooks.promptFor,
+      afterJob: hooks.afterJob,
+    });
+    return hooks;
+  };
+  const idle = () =>
+    vi.waitFor(() => {
+      expect(runner.running('b')).toBe(false);
+      expect(
+        runner
+          .jobs('b')
+          .every((j) => j.status === 'done' || j.status === 'failed'),
+      ).toBe(true);
+    });
+
+  it('runs the pass end to end: a capture queues its pictures job, the pass job is noted and the pass finishes', async () => {
+    const earlier = await source('earlier');
+    const added = await source('added', false);
+    const hooks = setup();
+    await hooks.picturePass('b');
+    expect(stored.picturePass).toMatchObject({ total: 1, sources: [earlier] });
+    expect(hooks.passRunning('b')).toBe(true);
+    runner.enqueue('b', 'capture', added);
+    await idle();
+    // The pass job started on the idle lane; then the capture, its lint and the pictures job the capture queued.
+    expect(runs).toEqual([
+      `/pictures ${earlier} ["sources/2026-11-01-earlier-assets/slide-1-1.png"]`,
+      `/capture ${added}`,
+      '/lint',
+      `/pictures ${added} ["sources/2026-11-01-added-assets/slide-1-1.png"]`,
+    ]);
+    await vi.waitFor(() =>
+      expect(stored.picturePass).toMatchObject({
+        done: [earlier],
+        finishedAt: '2026-11-07T12:00:00.000Z',
+      }),
+    );
+    expect(hooks.passRunning('b')).toBe(false);
+    // Run again (the scheduler would not): nothing left, nothing queued.
+    await hooks.picturePass('b');
+    await idle();
+    expect(runs).toHaveLength(4);
+  });
+
+  it('a capture of a source with a background pictures job queued adds no second pictures run', async () => {
+    const earlier = await source('earlier');
+    pictureRun = 'nothing';
+    const hooks = setup();
+    // Hold the lane so the background job stays queued while the capture is added.
+    let release = () => {};
+    holdLint = new Promise((r) => (release = r));
+    runner.enqueue('b', 'lint');
+    await hooks.picturePass('b');
+    runner.enqueue('b', 'capture', earlier);
+    holdLint = null;
+    release();
+    await idle();
+    expect(runs[0]).toBe('/lint');
+    expect(runs.filter((r) => r.startsWith('/pictures'))).toHaveLength(1);
+    expect(runs.filter((r) => r.startsWith('/capture'))).toHaveLength(1);
+  });
+
+  it('a failed pass job runs once more on the next pass, then gives up', async () => {
+    const earlier = await source('earlier');
+    pictureRun = 'fail';
+    const hooks = setup();
+    await hooks.picturePass('b');
+    await idle();
+    await vi.waitFor(() =>
+      expect(stored.picturePass?.failures).toEqual({ [earlier]: 1 }),
+    );
+    expect(stored.picturePass?.finishedAt).toBeNull();
+    await hooks.picturePass('b');
+    await idle();
+    await vi.waitFor(() =>
+      expect(stored.picturePass).toMatchObject({
+        done: [earlier],
+        failures: { [earlier]: 2 },
+        finishedAt: '2026-11-07T12:00:00.000Z',
+      }),
+    );
+    expect(runs).toHaveLength(2);
+  });
+
+  it('ends a pictures job without Claude on a brain older than v6', async () => {
+    const earlier = await source('earlier');
+    stored = { ...stored, templatesVersion: 5 };
+    setup();
+    const job = runner.enqueue('b', 'pictures', earlier);
+    await idle();
+    expect(runs).toEqual([]);
+    expect(runner.jobs('b').find((j) => j.id === job.id)).toMatchObject({
+      status: 'done',
+      result: 'Nothing to re-evaluate',
     });
   });
 });

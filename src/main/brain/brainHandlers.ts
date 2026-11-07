@@ -5,6 +5,7 @@ import {
   BrainOptionsSchema,
   BrainSchema,
   BrainWikiSchema,
+  picturesReady,
   SOURCE_JOB_KINDS,
   SourceTypeSchema,
   type AddSourceResult,
@@ -475,7 +476,8 @@ export function createBrainHandlers(
       if (b.options.syncAfterRefresh && r.added + r.changed + r.removed > 0)
         d.runner.enqueue(id, 'sync');
       // New or changed pictures: one re-evaluation of the mirror, which checks for gaps when it starts.
-      if (r.attachments > 0) d.runner.enqueue(id, 'pictures', MIRROR_SOURCE);
+      if (r.attachments > 0 && picturesReady(b))
+        d.runner.enqueue(id, 'pictures', MIRROR_SOURCE);
     }
     changed(id);
     return r;
@@ -612,7 +614,9 @@ export function createBrainHandlers(
       return p;
     },
     'brain:run': async (id, kind, source) => {
-      live(id);
+      const b = live(id);
+      if (kind === 'pictures' && !picturesReady(b))
+        throw new Error('Update skills to re-evaluate pictures');
       return d.runner.enqueue(id, kind, source ?? null);
     },
     'brain:resumeQueue': async (id) => {

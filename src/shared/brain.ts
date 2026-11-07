@@ -54,19 +54,28 @@ export const BrainSchema = z.object({
   archived: z.boolean().default(false),
   /**
    * The one-time pass over sources added before picture coverage (templates v6): when it started, how many sources it
-   * queued, the sources whose job finished, and when it was over. Null until it starts.
+   * queued and which (fixed at its first run), the sources whose job finished, failed runs per source, and when it was
+   * over. Null until it starts.
    */
   picturePass: z
     .object({
       startedAt: z.string(),
       total: z.number().int(),
+      sources: z.array(z.string()).default([]),
       done: z.array(z.string()),
+      failures: z.record(z.string(), z.number().int()).default({}),
       finishedAt: z.string().nullable(),
     })
     .nullable()
     .default(null),
 });
 export type Brain = z.infer<typeof BrainSchema>;
+
+/** The skills version that cites and marks pictures: pictures jobs, Re-evaluate and the one-time pass need it. */
+export const PICTURES_TEMPLATES = 6;
+/** Whether the brain's skills can re-evaluate pictures (templates v6 or later). */
+export const picturesReady = (brain: Pick<Brain, 'templatesVersion'>) =>
+  brain.templatesVersion >= PICTURES_TEMPLATES;
 
 export const BrainsFileSchema = z.object({
   brains: z.array(BrainSchema).default([]),

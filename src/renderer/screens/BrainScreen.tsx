@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
-import { brainTaskId } from '../../shared/brain';
+import { brainTaskId, picturesReady } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainAdd } from '../components/brain/BrainAdd';
@@ -200,6 +200,7 @@ export function BrainScreen({
             openRequest={openRequest}
             active={view === 'read'}
             jobs={brain.jobs}
+            skillsReady={picturesReady(brain)}
           />
         </div>
         <div className="brain-view brain-view-add" hidden={view !== 'add'}>

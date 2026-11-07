@@ -47,6 +47,7 @@ export function BrainPage({
   layout = 'chips',
   onRemoved,
   jobs = [],
+  skillsReady = true,
 }: {
   brainId: string;
   path: string;
@@ -64,6 +65,8 @@ export function BrainPage({
   onRemoved?: () => void;
   /** The brain's jobs, for the Pictures panel's Re-evaluate. */
   jobs?: BrainJob[];
+  /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
+  skillsReady?: boolean;
 }) {
   const notify = useStore((s) => s.notify);
   const [text, setText] = useState<string | null>(null);
@@ -213,6 +216,7 @@ export function BrainPage({
           brainId={brainId}
           pictures={pictures}
           jobs={jobs}
+          skillsReady={skillsReady}
           onOpen={onOpen}
           onView={(src, alt) => setPicture({ src, alt })}
           titleOf={(p) =>

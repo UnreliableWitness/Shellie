@@ -23,20 +23,14 @@ import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
-import { brainTaskId, type Brain, type BrainJob } from './shared/brain';
+import { brainTaskId, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { createRasterizer } from './main/brain/convert/raster';
-import {
-  afterPictureJob,
-  mergePass,
-  notePassJob,
-  picturesPrompt,
-  runPicturePass,
-} from './main/brain/pictures';
+import { createPictureHooks } from './main/brain/pictures';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
   commitJobOutput,
@@ -884,6 +878,13 @@ async function boot(): Promise<void> {
     const brainJobEvents = jobTelemetry((name, props) =>
       telemetry.event(name, props),
     );
+    // Pictures jobs' prompts, the job after a capture, and the one-time pass over earlier sources.
+    const pictureHooks = createPictureHooks({
+      brains,
+      runner: () => brainRunner,
+      git,
+      rasterize: createRasterizer({ platform, run: runWithInput }),
+    });
     const brainRunner = new BrainJobRunner({
       platform,
       run: runWithInput,
@@ -900,57 +901,13 @@ async function boot(): Promise<void> {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
-      // A pictures job hands Claude the source's current gaps, or ends without Claude when there are none.
-      promptFor: async (j) =>
-        j.kind === 'pictures' && j.source
-          ? picturesPrompt(brainOf(j.brainId).path, j.source)
-          : undefined,
-      afterJob: (j) => {
-        void afterPictureJob(j, {
-          brainDir: (id) => brainOf(id).path,
-          enqueue: (...a) => brainRunner.enqueue(...a),
-        });
-        notePicturePass(j);
-      },
+      promptFor: pictureHooks.promptFor,
+      afterJob: pictureHooks.afterJob,
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
         broadcast('brain:changed', { brainId });
       },
     });
-    // Picture pass writes to brains.json one after another, each from the record the previous one saved.
-    let passWrites: Promise<unknown> = Promise.resolve();
-    const savePicturePass = (
-      id: string,
-      next: (b: Brain) => Brain['picturePass'],
-    ) => {
-      const write = passWrites.then(async () => {
-        const b = brains.get(id);
-        if (!b) return;
-        const pass = next(b);
-        if (pass !== b.picturePass)
-          await brains.patch(id, { picturePass: pass });
-      });
-      passWrites = write.catch((err) =>
-        console.error('[brain] could not save the picture pass', err),
-      );
-      return write;
-    };
-    // Logged by savePicturePass already.
-    const notePicturePass = (j: BrainJob) =>
-      void savePicturePass(j.brainId, (b) =>
-        notePassJob(b, j, new Date()),
-      ).catch(() => undefined);
-    const brainRasterize = createRasterizer({ platform, run: runWithInput });
-    const startPicturePass = async (id: string) => {
-      const pass = await runPicturePass(brainOf(id), {
-        git,
-        rasterize: brainRasterize,
-        enqueue: (...a) => brainRunner.enqueue(...a),
-        jobs: (brainId) => brainRunner.jobs(brainId),
-        now: () => new Date(),
-      });
-      await savePicturePass(id, (b) => mergePass(b.picturePass, pass));
-    };
     // The scheduler starts with the window; the runner stops on quit either way.
     let stopBrainScheduler = () => {};
     stopBrains = () => {
@@ -1277,18 +1234,8 @@ async function boot(): Promise<void> {
             .catch((err) => console.error('[brain] lastDigestAt', err));
         },
         running: (id) => brainRunner.running(id),
-        picturePass: startPicturePass,
-        passRunning: (id) =>
-          brainRunner
-            .jobs(id)
-            .some(
-              (j) =>
-                j.background &&
-                j.kind === 'pictures' &&
-                (j.status === 'queued' ||
-                  j.status === 'running' ||
-                  j.status === 'paused'),
-            ),
+        picturePass: pictureHooks.picturePass,
+        passRunning: pictureHooks.passRunning,
       });
       const warnings = [
         loaded.recovered &&

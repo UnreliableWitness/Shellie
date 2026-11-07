@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { BrainView } from '../../../shared/brain';
+import { picturesReady, type BrainView } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
@@ -88,6 +88,7 @@ export function BrainTab({
           onBack={nav.back}
           onForward={nav.forward}
           jobs={brain.jobs}
+          skillsReady={picturesReady(brain)}
         />
       )}
       {/* The lists stay mounted under an open page, so a search and its results are there on Back. */}

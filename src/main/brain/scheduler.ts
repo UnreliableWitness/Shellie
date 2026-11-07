@@ -1,11 +1,9 @@
-import type { Brain } from '../../shared/brain';
+import { picturesReady, type Brain } from '../../shared/brain';
 
 const DAY_MS = 24 * 3600 * 1000;
 const TICK_MS = 15 * 60 * 1000;
 /** A refresh that failed (offline, no access) is tried again after this, not on every tick. */
 const RETRY_MS = 60 * 60 * 1000;
-/** The skills that cite and mark pictures: the one-time picture pass waits for them. */
-const PASS_TEMPLATES = 6;
 
 /** Monday 00:00 local of `now`'s week (the most recent Monday, today when it is one). */
 function lastMonday(now: Date): Date {
@@ -89,7 +87,7 @@ export function startBrainScheduler(d: {
       }
       if (
         !launch &&
-        b.templatesVersion >= PASS_TEMPLATES &&
+        picturesReady(b) &&
         !b.picturePass?.finishedAt &&
         !passing.has(b.id) &&
         !d.passRunning(b.id)

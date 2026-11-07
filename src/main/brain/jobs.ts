@@ -165,6 +165,19 @@ export class BrainJobRunner {
       withSource ? source : null,
       opts?.background ?? false,
     );
+    // A pictures job queued by hand replaces a background one still waiting for the same source: one run, not two.
+    if (kind === 'pictures' && !job.background) {
+      const gone = l.queue.filter(
+        (j) =>
+          j.background &&
+          j.kind === 'pictures' &&
+          j.source === job.source &&
+          (j.status === 'queued' || j.status === 'paused') &&
+          j !== l.current,
+      );
+      l.queue = l.queue.filter((j) => !gone.includes(j));
+      l.list = l.list.filter((j) => !gone.includes(j));
+    }
     l.queue.push(job);
     this.add(l, job);
     this.changed(brainId);

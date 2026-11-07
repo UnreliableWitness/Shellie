@@ -239,6 +239,11 @@ describe('SourcePictures', () => {
     expect(
       screen.getByRole('button', { name: 'Re-evaluating…' }),
     ).toBeDisabled();
+    // Paused by the daily token cap: still coming.
+    rerender(panel(deck(), { jobs: [job({ status: 'paused' })] }));
+    expect(
+      screen.getByRole('button', { name: 'Re-evaluating…' }),
+    ).toBeDisabled();
     rerender(
       panel(deck(), {
         jobs: [job({ status: 'running', source: 'sources/x.md' })],
@@ -247,6 +252,17 @@ describe('SourcePictures', () => {
     expect(
       screen.getByRole('button', { name: 'Re-evaluate 1 picture' }),
     ).toBeEnabled();
+  });
+
+  it('on a brain whose skills are older than v6 there is no Re-evaluate, only a note to update them', () => {
+    fake();
+    render(panel(deck(), { skillsReady: false }));
+    expect(
+      screen.queryByRole('button', { name: /Re-evaluat/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Update skills to re-evaluate')).toHaveClass(
+      'muted',
+    );
   });
 
   it('Fine, I know accepts that drop by its where', async () => {

@@ -1,12 +1,16 @@
 import { useState, type FormEvent } from 'react';
-import type { BrainView, PictureCounts } from '../../../shared/brain';
+import {
+  picturesReady,
+  type BrainView,
+  type PictureCounts,
+} from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
 import { dateTime } from '../../format';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
-import { interpreted } from './SourcePictures';
+import { interpreted, picturesJobComing } from './SourcePictures';
 
 /** Findings listed on the card; the rest is a count (a brain with thousands of broken links must still render). */
 const MAX_SHOWN = 50;
@@ -135,16 +139,30 @@ export function BrainHealth({
               </div>
               {f.kind === 'picture' ? (
                 <>
-                  {f.detail.includes('not interpreted') && (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      aria-label={`Re-evaluate ${f.page}`}
-                      onClick={() => reevaluate(f.page)}
-                    >
-                      Re-evaluate
-                    </button>
-                  )}
+                  {f.detail.includes('not interpreted') &&
+                    (!picturesReady(brain) ? (
+                      <span className="muted small">
+                        Update skills to re-evaluate
+                      </span>
+                    ) : picturesJobComing(brain.jobs, f.page) ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        aria-label={`Re-evaluating ${f.page}`}
+                        disabled
+                      >
+                        Re-evaluating…
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        aria-label={`Re-evaluate ${f.page}`}
+                        onClick={() => reevaluate(f.page)}
+                      >
+                        Re-evaluate
+                      </button>
+                    ))}
                   {f.detail.includes('never reached Claude') && onOpen && (
                     <button
                       type="button"

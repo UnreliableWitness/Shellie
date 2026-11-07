@@ -117,7 +117,8 @@ export async function brainHealth(
       () => [],
     ),
     // Directory listings and the source texts only: no picture is read.
-    brainCoverage(brainDir, pages, sources).catch(() => []),
+    // Health only counts: no source is read for alt texts.
+    brainCoverage(brainDir, pages, sources, { alt: false }).catch(() => []),
   ]);
   const mirror = sources.filter((s) => s.path.startsWith('sources/wiki/'));
   return {

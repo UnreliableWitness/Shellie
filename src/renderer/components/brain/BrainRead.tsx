@@ -22,6 +22,7 @@ export function BrainRead({
   openRequest,
   active,
   jobs,
+  skillsReady,
 }: {
   brainId: string;
   /** The brain's pages, sources and log, loaded once by the screen. */
@@ -32,6 +33,8 @@ export function BrainRead({
   active: boolean;
   /** The brain's jobs, for a source's Re-evaluate. */
   jobs?: BrainJob[];
+  /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
+  skillsReady?: boolean;
 }) {
   const { rows, sources, log, loaded } = pages;
   const nav = useBrainNav();
@@ -130,6 +133,7 @@ export function BrainRead({
             layout="rail"
             onRemoved={nav.home}
             jobs={jobs}
+            skillsReady={skillsReady}
           />
         ) : special === 'recent' ? (
           recent.length ? (

@@ -7,7 +7,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   project: 'Shellie',
   path: '/data/brains/b1',
   wiki: null,
-  templatesVersion: 1,
+  templatesVersion: 6,
   options: {
     contextInTaskMd: true,
     addDirForClaude: true,

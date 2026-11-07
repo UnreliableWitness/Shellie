@@ -395,6 +395,18 @@ describe('brain handlers', () => {
     );
   });
 
+  it('refuses a pictures job on a brain whose skills are older than v6', async () => {
+    const v = await h['brain:create'](NEW);
+    await brains.patch(v.id, { templatesVersion: 5 });
+    await expect(
+      h['brain:run'](v.id, 'pictures', 'sources/a.md'),
+    ).rejects.toThrow('Update skills to re-evaluate pictures');
+    expect(enqueued).toEqual([]);
+    await brains.patch(v.id, { templatesVersion: 6 });
+    await h['brain:run'](v.id, 'pictures', 'sources/a.md');
+    expect(enqueued).toEqual([[v.id, 'pictures', 'sources/a.md']]);
+  });
+
   it('removes a source and queues a retract; refuses while a job runs', async () => {
     const v = await h['brain:create'](NEW);
     const r = await h['brain:addText'](v.id, 'to go', 'Gone', 'note');
@@ -790,6 +802,21 @@ describe('brain handlers', () => {
       // The same attachment again: nothing queued.
       await h['brain:refresh'](v.id);
       expect(enqueued).toHaveLength(2);
+    });
+
+    it('queues no pictures job for the mirror on a brain whose skills are older than v6', async () => {
+      await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+      await fs.writeFile(path.join(wikiRepo, '.attachments/a.png'), 'png');
+      sh(wikiRepo, 'add', '-A');
+      sh(wikiRepo, 'commit', '-q', '-m', 'attachment');
+      commitFile(wikiRepo, 'Home.md', '# Home\n![a](/.attachments/a.png)\n');
+      const v = await h['brain:create']({ ...NEW, wiki });
+      await brains.patch(v.id, { templatesVersion: 5 });
+      expect(await h['brain:refresh'](v.id)).toMatchObject({
+        ok: true,
+        attachments: 1,
+      });
+      expect(enqueued).toEqual([]);
     });
 
     it('refuses while a brain job holds the lock, and works after it is released', async () => {

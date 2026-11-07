@@ -938,6 +938,79 @@ describe('BrainAdd right column', () => {
     expect(onOpenPage).toHaveBeenCalledWith('sources/2026-10-28-network.md');
   });
 
+  it('Health: Re-evaluate says Re-evaluating… while a pictures job for the source is coming', () => {
+    installFakeApi({});
+    const page = 'sources/2026-11-04-acme-kickoff.md';
+    const brain = withOptions({});
+    brain.health = {
+      ...brain.health!,
+      findings: [
+        {
+          kind: 'picture',
+          page,
+          detail: '1 picture not interpreted',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+      ],
+    };
+    const { rerender } = render(<BrainHealth brain={brain} />);
+    expect(
+      screen.getByRole('button', { name: `Re-evaluate ${page}` }),
+    ).toBeEnabled();
+    for (const status of ['queued', 'running', 'paused'] as const) {
+      rerender(
+        <BrainHealth
+          brain={{
+            ...brain,
+            jobs: [
+              brainJob({ kind: 'pictures', source: page, status }),
+              brainJob({ kind: 'capture', source: page, status: 'running' }),
+            ],
+          }}
+        />,
+      );
+      const button = screen.getByRole('button', {
+        name: `Re-evaluating ${page}`,
+      });
+      expect(button).toBeDisabled();
+      expect(button).toHaveTextContent('Re-evaluating…');
+    }
+    rerender(
+      <BrainHealth
+        brain={{
+          ...brain,
+          jobs: [brainJob({ kind: 'pictures', source: page, status: 'done' })],
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: `Re-evaluate ${page}` }),
+    ).toBeEnabled();
+  });
+
+  it('Health on a brain whose skills are older than v6: a note to update them instead of Re-evaluate', () => {
+    installFakeApi({});
+    const page = 'sources/2026-11-04-acme-kickoff.md';
+    const brain = { ...withOptions({}), templatesVersion: 5 };
+    brain.health = {
+      ...brain.health!,
+      findings: [
+        {
+          kind: 'picture',
+          page,
+          detail: '1 picture not interpreted',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+      ],
+    };
+    render(<BrainHealth brain={brain} />);
+    const finding = screen.getByText(page).closest('li') as HTMLElement;
+    expect(within(finding).queryAllByRole('button')).toEqual([]);
+    expect(
+      within(finding).getByText('Update skills to re-evaluate'),
+    ).toHaveClass('muted');
+  });
+
   it('Health without onOpen: a drop-only picture finding has no button', () => {
     installFakeApi({});
     const brain = withOptions({});
@@ -987,7 +1060,9 @@ describe('BrainAdd right column', () => {
     const pass = {
       startedAt: '2026-11-07T08:00:00.000Z',
       total: 23,
+      sources: [],
       done: ['sources/a.md', 'sources/b.md', 'sources/c.md'],
+      failures: {},
       finishedAt: null,
     };
     const { rerender } = render(

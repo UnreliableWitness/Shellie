@@ -430,6 +430,42 @@ describe('pictures jobs and the runner hooks', () => {
     ]);
   });
 
+  it('a pictures job queued by hand replaces a background one still queued for the same source', async () => {
+    dirs = { b: await mk('b') };
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'sync');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    r.enqueue('b', 'pictures', 'sources/old.md', { background: true });
+    r.enqueue('b', 'pictures', 'sources/other.md', { background: true });
+    const fg = r.enqueue('b', 'pictures', 'sources/old.md');
+    expect(
+      r
+        .jobs('b')
+        .filter((j) => j.kind === 'pictures')
+        .map((j) => [j.source, j.background]),
+    ).toEqual([
+      ['sources/old.md', false],
+      ['sources/other.md', true],
+    ]);
+    release();
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual([
+      '/sync',
+      '/pictures sources/old.md',
+      '/pictures sources/other.md',
+    ]);
+    expect(fg.status).toBe('done');
+  });
+
   it('promptFor replaces the prompt', async () => {
     const seen: string[] = [];
     const r = runner({

@@ -233,7 +233,9 @@ describe('the one-time picture pass', () => {
   const started = {
     startedAt: 's',
     total: 2,
+    sources: ['sources/a.md', 'sources/b.md'],
     done: [],
+    failures: {},
     finishedAt: null,
   };
 

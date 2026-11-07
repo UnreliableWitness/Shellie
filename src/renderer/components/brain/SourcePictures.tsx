@@ -41,6 +41,17 @@ const ORDER: PictureStatus[] = [
 const isActive = (j: BrainJob) =>
   j.status === 'queued' || j.status === 'running';
 
+/** Whether a pictures job for the source is queued, running or paused (by the daily token cap). */
+export const picturesJobComing = (jobs: BrainJob[], source: string) =>
+  jobs.some(
+    (j) =>
+      j.kind === 'pictures' &&
+      j.source === source &&
+      (j.status === 'queued' ||
+        j.status === 'running' ||
+        j.status === 'paused'),
+  );
+
 /** Pictures a person still has to act on: not interpreted, or never reached Claude and not accepted. */
 export const pictureGaps = (c: PictureCounts) => c.missing + c.dropped;
 
@@ -81,8 +92,8 @@ export function useSourcePictures(
 
 /**
  * A source's Pictures panel: the counts per status with a bar, one row per picture (thumbnail, label and alt, the
- * pages describing it, the skip or drop reason and fix, its tag), Re-evaluate for the ones not interpreted and
- * Fine, I know on each drop not accepted yet.
+ * pages describing it, the skip or drop reason and fix, its tag), Re-evaluate for the ones not interpreted (a note to
+ * update the skills instead when they are older than v6) and Fine, I know on each drop not accepted yet.
  */
 export function SourcePictures({
   brainId,
@@ -91,11 +102,14 @@ export function SourcePictures({
   onOpen,
   onView,
   titleOf = sourceLabel,
+  skillsReady = true,
 }: {
   brainId: string;
   pictures: SourcePicturesData;
   /** The brain's jobs: a pictures job for the source in flight disables Re-evaluate. */
   jobs: BrainJob[];
+  /** False when the brain's skills are older than v6 (`picturesReady`): they cannot re-evaluate pictures. */
+  skillsReady?: boolean;
   onOpen: (path: string) => void;
   /** Opens a thumbnail at full size. */
   onView?: (src: string, alt: string) => void;
@@ -105,9 +119,7 @@ export function SourcePictures({
   const notify = useStore((s) => s.notify);
   const [all, setAll] = useState(false);
   const { source, counts, rows } = pictures;
-  const reevaluating = jobs.some(
-    (j) => j.kind === 'pictures' && j.source === source && isActive(j),
-  );
+  const reevaluating = picturesJobComing(jobs, source);
   const reevaluate = () => {
     trackBrain('reevaluate');
     void tryInvoke(
@@ -135,7 +147,10 @@ export function SourcePictures({
         <span className="muted small" aria-label="Counts">
           {parts.join(' · ')}
         </span>
-        {counts.missing > 0 && (
+        {counts.missing > 0 && !skillsReady && (
+          <span className="muted small">Update skills to re-evaluate</span>
+        )}
+        {counts.missing > 0 && skillsReady && (
           <button
             type="button"
             className="btn btn-sm brain-card-action"

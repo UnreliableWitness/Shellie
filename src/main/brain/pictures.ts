@@ -1,13 +1,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type {
-  Brain,
-  BrainFinding,
-  BrainJob,
-  BrainSourceRow,
-  PictureCounts,
-  PictureRow,
-  SourcePictures,
+import {
+  picturesReady,
+  type Brain,
+  type BrainFinding,
+  type BrainJob,
+  type BrainSourceRow,
+  type PictureCounts,
+  type PictureRow,
+  type SourcePictures,
 } from '../../shared/brain';
 import { readJson, writeAtomic } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
@@ -19,6 +20,7 @@ import { readPages, type WikiPage } from './pages';
 import { absPath } from './paths';
 import { pictureLabel } from './pictureLabel';
 import { listSources } from './sources';
+import { readState } from './state';
 
 export { pictureLabel };
 
@@ -107,13 +109,26 @@ export async function readDropped(brainDir: string): Promise<DroppedFile> {
   return out;
 }
 
-/** Changes brain/pictures-dropped.json atomically, starting from what `readDropped` makes of it. */
+/**
+ * Changes brain/pictures-dropped.json atomically, starting from what `readDropped` makes of it. A file that is there
+ * but is not valid JSON is refused, never replaced: its records would be lost.
+ */
 export async function writeDropped(
   brainDir: string,
   update: (f: DroppedFile) => DroppedFile,
 ): Promise<void> {
-  const next = update(await readDropped(brainDir));
   const file = absPath(brainDir, DROPPED_FILE);
+  const raw = await fs.readFile(file, 'utf8').catch((e: unknown) => {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  });
+  if (raw !== null)
+    try {
+      JSON.parse(raw);
+    } catch {
+      throw new Error(`${DROPPED_FILE} is not valid JSON; fix or remove it`);
+    }
+  const next = update(await readDropped(brainDir));
   await fs.mkdir(path.dirname(file), { recursive: true });
   await writeAtomic(
     file,
@@ -232,6 +247,9 @@ export function coverage(input: {
   return { source, counts, rows };
 }
 
+/** `alt: false` leaves out the alt texts, so the source text is not read (Health and the gap checks only count). */
+export type CoverageOptions = { alt?: boolean };
+
 /** One source's pictures from what is on disk; the mirror's pages link their attachments relative to themselves, so it has no alt text. */
 async function coverageOn(
   brainDir: string,
@@ -239,11 +257,12 @@ async function coverageOn(
   source: string,
   skipped: SkippedFile,
   dropped: DroppedFile,
+  opts: CoverageOptions,
 ): Promise<SourcePictures> {
   const assets = await assetsOf(brainDir, source);
   // The text only gives alt texts: not read for a source without pictures.
   const sourceText =
-    source === MIRROR_SOURCE || !assets.length
+    source === MIRROR_SOURCE || !assets.length || opts.alt === false
       ? ''
       : await fs.readFile(absPath(brainDir, source), 'utf8').catch(() => '');
   return coverage({ source, assets, sourceText, pages, skipped, dropped });
@@ -254,12 +273,13 @@ export async function sourceCoverage(
   brainDir: string,
   pages: WikiPage[],
   source: string,
+  opts: CoverageOptions = {},
 ): Promise<SourcePictures> {
   const [skipped, dropped] = await Promise.all([
     readSkipped(brainDir),
     readDropped(brainDir),
   ]);
-  return coverageOn(brainDir, pages, source, skipped, dropped);
+  return coverageOn(brainDir, pages, source, skipped, dropped, opts);
 }
 
 /**
@@ -270,6 +290,7 @@ export async function brainCoverage(
   brainDir: string,
   pages: WikiPage[],
   sources: BrainSourceRow[],
+  opts: CoverageOptions = {},
 ): Promise<SourcePictures[]> {
   const [skipped, dropped] = await Promise.all([
     readSkipped(brainDir),
@@ -280,7 +301,7 @@ export async function brainCoverage(
     .map((s) => s.path)
     .filter((p) => !p.startsWith(`${MIRROR_SOURCE}/`));
   for (const source of [...paths, MIRROR_SOURCE]) {
-    const c = await coverageOn(brainDir, pages, source, skipped, dropped);
+    const c = await coverageOn(brainDir, pages, source, skipped, dropped, opts);
     // An empty drop record only says the source was checked: no pictures, nothing to list.
     if (c.rows.length || c.counts.tiny) out.push(c);
   }
@@ -293,7 +314,9 @@ export async function picturesPrompt(
   source: string,
 ): Promise<string | null> {
   const pages = await readPages(brainDir).catch(() => []);
-  const { rows } = await sourceCoverage(brainDir, pages, source);
+  const { rows } = await sourceCoverage(brainDir, pages, source, {
+    alt: false,
+  });
   const missing = rows.flatMap((r) =>
     r.status === 'missing' && r.path ? [r.path] : [],
   );
@@ -302,19 +325,40 @@ export async function picturesPrompt(
     : null;
 }
 
-/** After a job: a capture that left gaps queues one pictures job for its source. */
+const PENDING: ReadonlySet<BrainJob['status']> = new Set([
+  'queued',
+  'running',
+  'paused',
+]);
+
+/** Whether a pictures job for the source is queued, running or paused. */
+const picturesComing = (jobs: BrainJob[], source: string) =>
+  jobs.some(
+    (j) =>
+      j.kind === 'pictures' && j.source === source && PENDING.has(j.status),
+  );
+
+/**
+ * After a job: a capture that left gaps queues one pictures job for its source, on a brain whose skills handle
+ * pictures and when no pictures job for the source is coming already.
+ */
 export async function afterPictureJob(
   job: BrainJob,
   d: {
-    brainDir: (id: string) => string;
+    brain: (id: string) => Pick<Brain, 'path' | 'templatesVersion'>;
     enqueue: BrainJobRunner['enqueue'];
+    jobs: BrainJobRunner['jobs'];
   },
 ): Promise<void> {
   if (job.kind !== 'capture' || job.status !== 'done' || !job.source) return;
   try {
-    const dir = d.brainDir(job.brainId);
-    const pages = await readPages(dir).catch(() => []);
-    const { counts } = await sourceCoverage(dir, pages, job.source);
+    const b = d.brain(job.brainId);
+    if (!picturesReady(b) || picturesComing(d.jobs(job.brainId), job.source))
+      return;
+    const pages = await readPages(b.path).catch(() => []);
+    const { counts } = await sourceCoverage(b.path, pages, job.source, {
+      alt: false,
+    });
     if (counts.missing > 0) d.enqueue(job.brainId, 'pictures', job.source);
   } catch (e) {
     console.error('[brain] could not check pictures after a capture', e);
@@ -324,7 +368,8 @@ export async function afterPictureJob(
 /**
  * Rebuilds the drop records of sources added before drops were recorded, by converting each stored original again
  * (one at a time); a source that has a record, or no original (pasted text), is left alone. A source with nothing
- * dropped gets an empty record, so it is not converted again. Never writes `sources/`.
+ * dropped, or whose original does not convert, gets an empty record, so it is not converted again. Never writes
+ * `sources/`.
  * Commits DROPPED_FILE alone as 'Brain: dropped pictures of earlier sources' when it changed.
  */
 export async function rebuildDrops(
@@ -347,7 +392,9 @@ export async function rebuildDrops(
               tiny: c.tiny,
             };
     } catch (e) {
+      // Recorded as checked too, so it is tried (and logged) once, not on every pass.
       console.error(`[brain] could not convert ${s.original} again`, e);
+      found[s.path] = { dropped: [], tiny: 0 };
     }
   }
   if (!Object.keys(found).length) return;
@@ -370,12 +417,6 @@ export async function rebuildDrops(
   });
 }
 
-const PENDING: ReadonlySet<BrainJob['status']> = new Set([
-  'queued',
-  'running',
-  'paused',
-]);
-
 /** A capture or pictures job still to come for a source: either one has Claude look at its pictures. */
 const comingFor = (jobs: BrainJob[]): Set<string | null> =>
   new Set(
@@ -391,8 +432,10 @@ const comingFor = (jobs: BrainJob[]): Set<string | null> =>
 /**
  * Starts or resumes the one-time pass over earlier sources: rebuilds their drop records, then queues a background
  * pictures job per source with pictures not interpreted that is not in `picturePass.done` and has no capture or
- * pictures job pending, oldest first, the wiki mirror last. A resume keeps `startedAt` and `total`; a pass with nothing left
- * finishes. Returns the new `picturePass` for the caller to save.
+ * pictures job pending, oldest first, the wiki mirror last. Its first run fixes the sources it covers (captured ones
+ * with gaps, and the mirror): a resume only takes those still with gaps, so a source added later is left to its
+ * capture. A resume keeps `startedAt`, `total` and `sources`; a pass with nothing left finishes. Returns the new
+ * `picturePass` for the caller to save.
  */
 export async function runPicturePass(
   b: Brain,
@@ -404,14 +447,24 @@ export async function runPicturePass(
     now: () => Date;
   },
 ): Promise<Brain['picturePass']> {
-  const sources = await listSources(b.path, null);
+  const sources = await listSources(b.path, (await readState(b.path)).state);
   await rebuildDrops(d.git, b.path, sources, { rasterize: d.rasterize });
   const pages = await readPages(b.path).catch(() => []);
   const all = await brainCoverage(b.path, pages, sources);
-  const done = new Set(b.picturePass?.done ?? []);
+  const stored = b.picturePass;
+  const done = new Set(stored?.done ?? []);
+  const captured = new Set(
+    sources.filter((s) => s.captured).map((s) => s.path),
+  );
+  const eligible = (source: string) =>
+    stored
+      ? stored.sources.includes(source)
+      : source === MIRROR_SOURCE || captured.has(source);
   const ingested = new Map(sources.map((s) => [s.path, s.ingestedAt]));
   const left = all
-    .filter((c) => c.counts.missing > 0 && !done.has(c.source))
+    .filter(
+      (c) => c.counts.missing > 0 && !done.has(c.source) && eligible(c.source),
+    )
     .map((c) => c.source)
     .sort((x, y) => {
       if (x === MIRROR_SOURCE || y === MIRROR_SOURCE)
@@ -427,16 +480,18 @@ export async function runPicturePass(
       d.enqueue(b.id, 'pictures', source, { background: true });
   const at = d.now().toISOString();
   return {
-    startedAt: b.picturePass?.startedAt ?? at,
-    total: b.picturePass?.total ?? left.length,
+    startedAt: stored?.startedAt ?? at,
+    total: stored?.total ?? left.length,
+    sources: stored?.sources ?? left,
     done: [...done],
+    failures: stored?.failures ?? {},
     finishedAt: left.length ? null : at,
   };
 }
 
 /**
  * The pass as `runPicturePass` computed it, merged into the one saved meanwhile: sources noted done while it ran stay
- * done, and a pass that finished stays finished.
+ * done, failures noted meanwhile are kept, and a pass that finished stays finished.
  */
 export function mergePass(
   stored: Brain['picturePass'],
@@ -446,11 +501,19 @@ export function mergePass(
   return {
     ...computed,
     done: [...new Set([...stored.done, ...computed.done])],
+    failures: stored.failures,
     finishedAt: stored.finishedAt ?? computed.finishedAt,
   };
 }
 
-/** The pass after a finished background pictures job: its source is done, and the pass is over at its total. */
+/** Failed runs after which the pass gives a source up. */
+const PASS_TRIES = 2;
+
+/**
+ * The pass after a finished pictures job on one of its sources (its own background job, or a Re-evaluate that
+ * replaced it): a done job makes the source done; a failed one counts, and the source is given up (done) at the
+ * second failure. The pass is over when done reaches its total.
+ */
 export function notePassJob(
   brain: Brain,
   job: BrainJob,
@@ -459,19 +522,101 @@ export function notePassJob(
   const pass = brain.picturePass;
   if (
     !pass ||
-    !job.background ||
     job.kind !== 'pictures' ||
     (job.status !== 'done' && job.status !== 'failed') ||
     !job.source ||
+    !pass.sources.includes(job.source) ||
     pass.done.includes(job.source)
   )
     return pass;
-  const done = [...pass.done, job.source];
+  const source = job.source;
+  let failures = pass.failures;
+  if (job.status === 'failed') {
+    failures = { ...failures, [source]: (failures[source] ?? 0) + 1 };
+    if (failures[source] < PASS_TRIES) return { ...pass, failures };
+  }
+  const done = [...pass.done, source];
   return {
     ...pass,
+    failures,
     done,
     finishedAt:
       pass.finishedAt ?? (done.length >= pass.total ? now.toISOString() : null),
+  };
+}
+
+/**
+ * The picture work around the job runner, for main to wire: the runner's `promptFor` and `afterJob`, and the
+ * scheduler's `picturePass` and `passRunning`. Pass writes to brains.json go one after another, each from the record
+ * the previous one saved. `runner` is read late: the runner is built with these hooks.
+ */
+export function createPictureHooks(d: {
+  brains: {
+    get: (id: string) => Brain | undefined;
+    patch: (id: string, p: Partial<Brain>) => Promise<unknown>;
+  };
+  runner: () => Pick<BrainJobRunner, 'enqueue' | 'jobs'>;
+  git: GitClient;
+  rasterize?: Rasterize;
+  now?: () => Date;
+}) {
+  const now = d.now ?? (() => new Date());
+  const brainOf = (id: string): Brain => {
+    const b = d.brains.get(id);
+    if (!b) throw new Error(`Unknown brain ${id}`);
+    return b;
+  };
+  let writes: Promise<unknown> = Promise.resolve();
+  const savePass = (id: string, next: (b: Brain) => Brain['picturePass']) => {
+    const write = writes.then(async () => {
+      const b = d.brains.get(id);
+      if (!b) return;
+      const pass = next(b);
+      if (pass !== b.picturePass)
+        await d.brains.patch(id, { picturePass: pass });
+    });
+    writes = write.catch((err) =>
+      console.error('[brain] could not save the picture pass', err),
+    );
+    return write;
+  };
+  return {
+    /** A pictures job hands Claude the source's current gaps; it ends without Claude when there are none, or when the brain's skills are older than v6. */
+    promptFor: async (j: BrainJob): Promise<string | null | undefined> => {
+      if (j.kind !== 'pictures' || !j.source) return undefined;
+      const b = brainOf(j.brainId);
+      return picturesReady(b) ? picturesPrompt(b.path, j.source) : null;
+    },
+    afterJob: (j: BrainJob) => {
+      void afterPictureJob(j, {
+        brain: brainOf,
+        enqueue: (...a) => d.runner().enqueue(...a),
+        jobs: (id) => d.runner().jobs(id),
+      });
+      // Logged by savePass already.
+      void savePass(j.brainId, (b) => notePassJob(b, j, now())).catch(
+        () => undefined,
+      );
+    },
+    /** Starts or resumes the brain's pass; settles once it is saved. */
+    picturePass: async (id: string) => {
+      const pass = await runPicturePass(brainOf(id), {
+        git: d.git,
+        rasterize: d.rasterize,
+        enqueue: (...a) => d.runner().enqueue(...a),
+        jobs: (brainId) => d.runner().jobs(brainId),
+        now,
+      });
+      await savePass(id, (b) => mergePass(b.picturePass, pass));
+    },
+    /** Whether a background pictures job of the brain is queued, running or paused. */
+    passRunning: (id: string) =>
+      d
+        .runner()
+        .jobs(id)
+        .some(
+          (j) => j.background && j.kind === 'pictures' && PENDING.has(j.status),
+        ),
   };
 }
 
