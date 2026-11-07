@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BrainSchema, BrainStateSchema, brainIdOf, brainTaskId } from './brain';
+import {
+  BRAIN_AGENT_LABELS,
+  BrainOptionsSchema,
+  BrainSchema,
+  BrainStateSchema,
+  brainIdOf,
+  brainTaskId,
+  opencodeReady,
+} from './brain';
 
 describe('brain shared types', () => {
   it('brainIdOf reads the prefix', () => {
@@ -25,10 +33,27 @@ describe('brain shared types', () => {
       dailyTokenCap: 500000,
       openBrainTerminalOnStart: false,
       model: 'sonnet',
+      agent: 'claude',
+      opencodeModel: null,
     });
     expect(b.wiki).toBeNull();
     expect(b.terminal).toBeNull();
     expect(b.templatesVersion).toBe(0);
+  });
+  it('BrainOptionsSchema defaults to Claude Code with no OpenCode model', () => {
+    const o = BrainOptionsSchema.parse({});
+    expect(o.agent).toBe('claude');
+    expect(o.opencodeModel).toBeNull();
+  });
+  it('opencodeReady needs skills version 7', () => {
+    expect(opencodeReady({ templatesVersion: 6 })).toBe(false);
+    expect(opencodeReady({ templatesVersion: 7 })).toBe(true);
+  });
+  it('labels the agents', () => {
+    expect(BRAIN_AGENT_LABELS).toEqual({
+      claude: 'Claude Code',
+      opencode: 'OpenCode',
+    });
   });
   it('BrainStateSchema accepts an empty object', () => {
     expect(BrainStateSchema.parse({}).findings).toEqual([]);

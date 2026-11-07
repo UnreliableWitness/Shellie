@@ -290,6 +290,7 @@ export async function brainServices() {
       result: null,
       error: null,
       background: false,
+      agent: 'claude',
     }),
   );
   const brain: NonNullable<Services['brain']> = {

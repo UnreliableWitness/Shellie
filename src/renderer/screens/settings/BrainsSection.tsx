@@ -19,7 +19,10 @@ type Action =
 const trackBrain = (action: Action) => track('settings.brain', { action });
 
 const TOGGLES: {
-  key: Exclude<keyof BrainOptions, 'dailyTokenCap' | 'model'>;
+  key: Exclude<
+    keyof BrainOptions,
+    'dailyTokenCap' | 'model' | 'agent' | 'opencodeModel'
+  >;
   label: string;
 }[] = [
   {

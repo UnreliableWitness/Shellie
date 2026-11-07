@@ -130,6 +130,7 @@ export class BrainJobRunner {
       result: null,
       error: null,
       background,
+      agent: 'claude',
     };
   }
 

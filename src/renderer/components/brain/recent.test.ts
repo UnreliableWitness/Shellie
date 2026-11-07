@@ -121,6 +121,7 @@ describe('pagesChangedBy', () => {
     result: null,
     error: null,
     background: false,
+    agent: 'claude',
     ...over,
   });
 

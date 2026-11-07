@@ -13,6 +13,13 @@ export const brainIdOf = (taskId: string | undefined): string | null =>
 const BrainModelSchema = z.enum(['haiku', 'sonnet', 'opus']);
 export type BrainModel = z.infer<typeof BrainModelSchema>;
 
+export const BrainAgentSchema = z.enum(['claude', 'opencode']);
+export type BrainAgent = z.infer<typeof BrainAgentSchema>;
+export const BRAIN_AGENT_LABELS: Record<BrainAgent, string> = {
+  claude: 'Claude Code',
+  opencode: 'OpenCode',
+};
+
 export const BrainOptionsSchema = z.object({
   contextInTaskMd: z.boolean().default(true),
   addDirForClaude: z.boolean().default(true),
@@ -21,6 +28,10 @@ export const BrainOptionsSchema = z.object({
   dailyTokenCap: z.number().int().positive().default(500_000),
   openBrainTerminalOnStart: z.boolean().default(false),
   model: BrainModelSchema.default('sonnet'),
+  /** The coding agent that runs the brain's jobs. */
+  agent: BrainAgentSchema.default('claude'),
+  /** OpenCode's `provider/model` for the brain's jobs; null uses OpenCode's own default. */
+  opencodeModel: z.string().nullable().default(null),
 });
 export type BrainOptions = z.infer<typeof BrainOptionsSchema>;
 
@@ -76,6 +87,12 @@ export const PICTURES_TEMPLATES = 6;
 /** Whether the brain's skills can re-evaluate pictures (templates v6 or later). */
 export const picturesReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= PICTURES_TEMPLATES;
+
+/** The skills version that has the OpenCode commands: a brain on OpenCode needs it. */
+export const OPENCODE_TEMPLATES = 7;
+/** Whether the brain's skills include the OpenCode commands (templates v7 or later). */
+export const opencodeReady = (brain: Pick<Brain, 'templatesVersion'>) =>
+  brain.templatesVersion >= OPENCODE_TEMPLATES;
 
 export const BrainsFileSchema = z.object({
   brains: z.array(BrainSchema).default([]),
@@ -156,6 +173,8 @@ export type BrainJob = {
   error: string | null;
   /** Runs only when no other job is queued (the one-time pass over earlier sources). */
   background: boolean;
+  /** The agent that runs this job, taken from the brain when it is queued. */
+  agent: BrainAgent;
 };
 export type PictureStatus =
   | 'described'
