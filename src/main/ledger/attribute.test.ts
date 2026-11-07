@@ -343,6 +343,24 @@ describe('brain attribution', () => {
       level: 'none',
     });
   });
+  it('attributes an OpenCode record with a cwd inside the brain folder to the brain, never billable', () => {
+    const ctx = attributionContext([], [], [c], () => [], brains);
+    const r = rec({
+      id: 'oc:msg_1',
+      tool: 'opencode',
+      sessionId: 'ses_1',
+      model: 'big-pickle',
+      provider: 'opencode',
+      cwd: '/brains/acme/wiki',
+    });
+    expect(attribute(r, ctx)).toEqual({
+      level: 'brain',
+      brainId: 'b1',
+      organization: c.organizationUrl,
+      project: 'Acme',
+    });
+    expect(isBrainRecord(r, ctx)).toBe(true);
+  });
   it('a task inside a brain folder keeps its usage (by session or task id); a brain: id still wins', () => {
     const t = task({
       id: 't1',
