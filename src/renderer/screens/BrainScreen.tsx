@@ -199,6 +199,7 @@ export function BrainScreen({
             since={since}
             openRequest={openRequest}
             active={view === 'read'}
+            jobs={brain.jobs}
           />
         </div>
         <div className="brain-view brain-view-add" hidden={view !== 'add'}>

@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import type { BrainOptions, BrainView } from '../../../shared/brain';
+import { plural } from '../../../shared/text';
 import { api, tryInvoke } from '../../api';
 import { eur } from '../../format';
 import { useStore } from '../../store';
@@ -17,14 +18,22 @@ function Row({
   children,
 }: {
   label: string;
-  tag?: 'auto' | 'on' | 'off';
+  tag?: 'auto' | 'on' | 'off' | 'running';
   children: ReactNode;
 }) {
   return (
     <li className="brain-auto-row">
       <span>{label}</span>
       {tag && (
-        <span className={tag === 'off' ? 'tag tag-warn' : 'tag tag-green'}>
+        <span
+          className={
+            tag === 'off'
+              ? 'tag tag-warn'
+              : tag === 'running'
+                ? 'tag tag-muted'
+                : 'tag tag-green'
+          }
+        >
           {tag}
         </span>
       )}
@@ -39,6 +48,7 @@ export function AutoRuns({ brain }: { brain: BrainView }) {
   const [busy, setBusy] = useState(false);
   const h = brain.health;
   const o = brain.options;
+  const pass = brain.picturePass;
 
   const toggle = async (key: Switchable, value: boolean) => {
     trackBrain('option');
@@ -87,6 +97,13 @@ export function AutoRuns({ brain }: { brain: BrainView }) {
         )}
         {brain.wiki && toggleRow('syncAfterRefresh', 'Sync after a refresh')}
         {toggleRow('weeklyDigest', 'Weekly digest')}
+        {pass && pass.finishedAt === null && pass.total > 0 && (
+          <Row label="Picture check for earlier sources" tag="running">
+            {plural(pass.total, 'source')} captured before Shellie checked
+            pictures. Re-evaluating them in the background, {pass.done.length}{' '}
+            of {pass.total} done.
+          </Row>
+        )}
         <Row label="Daily token cap">
           {h
             ? `${h.tokensToday.toLocaleString('en-US')} of ${o.dailyTokenCap.toLocaleString('en-US')} tokens · ${eur(h.costEurToday)} today`

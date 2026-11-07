@@ -22,14 +22,29 @@ export type PendingFile = BrainPendingFile;
 const failures = (results: AddSourceResult[]) =>
   results.flatMap((r) => (r.ok ? [] : [r.message]));
 
-/** One line per added file, with what it holds, then each converter warning. */
-export const notesOf = (results: AddSourceResult[]) =>
+/** A file that went in: its source, its picture counts, and its lines (what it holds, then each converter warning). */
+export type AddedSource = {
+  path: string;
+  images: number;
+  dropped: number;
+  lines: string[];
+};
+
+/** What each added file brought: `Added <name> · <contents>`, then its warnings. */
+export const addedOf = (results: AddSourceResult[]): AddedSource[] =>
   results.flatMap((r) => {
     if (!r.ok) return [];
     const name = r.path.replace(/^sources\//, '');
     return [
-      `Added ${name}${r.contents ? ` · ${r.contents}` : ''}`,
-      ...r.warnings.map((w) => `${name}: ${w}`),
+      {
+        path: r.path,
+        images: r.images,
+        dropped: r.dropped,
+        lines: [
+          `Added ${name}${r.contents ? ` · ${r.contents}` : ''}`,
+          ...r.warnings.map((w) => `${name}: ${w}`),
+        ],
+      },
     ];
   });
 
@@ -39,7 +54,7 @@ const EMPTY: PendingFile[] = [];
  * Files dropped (or chosen) for a brain wait in `pending` (kept in the store per brain, so they survive a tab or
  * screen switch), each with a type and a note the person can set, until `add` sends them to `brain:addFiles`.
  * `dropProps` go on the drop target, `over` is true while a drag is above it, `problems` are what could not be
- * added, `notes` what was added and what its conversion left out.
+ * added, `added` what was added and what its conversion left out.
  */
 export function useBrainDrop(brainId: string) {
   const notify = useStore((s) => s.notify);
@@ -50,7 +65,7 @@ export function useBrainDrop(brainId: string) {
   const [over, setOver] = useState(false);
   const [adding, setAdding] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [added, setAdded] = useState<AddedSource[]>([]);
 
   /** Queues files; a path already waiting is not queued twice, a File with no path on disk is reported. */
   const addFiles = (files: File[]) => {
@@ -106,7 +121,7 @@ export function useBrainDrop(brainId: string) {
     const sent = new Set(rows.map((r) => r.path));
     setPending((p) => p.filter((f) => !sent.has(f.path)));
     setProblems(failures(results));
-    setNotes(notesOf(results));
+    setAdded(addedOf(results));
   };
 
   const dropProps = {
@@ -126,7 +141,7 @@ export function useBrainDrop(brainId: string) {
     over,
     problems,
     setProblems,
-    notes,
+    added,
     pending,
     adding,
     addFiles,

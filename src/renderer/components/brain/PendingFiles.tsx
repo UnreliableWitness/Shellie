@@ -1,5 +1,6 @@
-import type { SourceType } from '../../../shared/brain';
-import { SOURCE_TYPES, type BrainDrop } from './useBrainDrop';
+import type { BrainJob, SourceType } from '../../../shared/brain';
+import { AddedPictures } from './SourcePictures';
+import { SOURCE_TYPES, type AddedSource, type BrainDrop } from './useBrainDrop';
 
 export const NOTE_HINT = 'What is this? What matters, what is outdated?';
 
@@ -68,5 +69,32 @@ export function PendingFiles({ drop }: { drop: BrainDrop }) {
         </span>
       </div>
     </form>
+  );
+}
+
+/** What the last add brought in, per file: its lines, then how its pictures are doing (when it has any). */
+export function AddedNotes({
+  brainId,
+  added,
+  jobs,
+}: {
+  brainId: string;
+  added: AddedSource[];
+  jobs: BrainJob[];
+}) {
+  if (added.length === 0) return null;
+  return (
+    <ul className="brain-notes muted small" aria-label="Added">
+      {added.flatMap((a) => [
+        ...a.lines.map((l, i) => <li key={`${a.path}:${i}`}>{l}</li>),
+        ...(a.images > 0 || a.dropped > 0
+          ? [
+              <li key={`${a.path}:pictures`} className="brain-notes-pictures">
+                <AddedPictures brainId={brainId} path={a.path} jobs={jobs} />
+              </li>,
+            ]
+          : []),
+      ])}
+    </ul>
   );
 }

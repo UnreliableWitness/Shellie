@@ -715,3 +715,110 @@
   flex-direction: column;
   gap: 6px;
 }
+
+/* A source's Pictures panel above its text: counts, a bar per status, one row per picture with a thumbnail. */
+.brain-pictures {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  min-width: 0;
+}
+.brain-pictures-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.brain-pictures-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.brain-pictures-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-selected);
+}
+.brain-pictures-bar > span {
+  flex-basis: 0;
+}
+.brain-pictures-bar > .tone-green,
+.brain-pictures-legend > .tone-green::before {
+  background: var(--green);
+}
+.brain-pictures-bar > .tone-muted,
+.brain-pictures-legend > .tone-muted::before {
+  background: var(--muted);
+}
+.brain-pictures-bar > .tone-warn,
+.brain-pictures-legend > .tone-warn::before {
+  background: var(--warn);
+}
+.brain-pictures-bar > .tone-red,
+.brain-pictures-legend > .tone-red::before {
+  background: var(--red);
+}
+.brain-pictures-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-pictures-legend > li::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+.brain-pictures-rows {
+  background: transparent;
+  box-shadow: none;
+  border-top: 1px solid var(--line);
+}
+.brain-pictures-rows > .list-row {
+  padding: 8px 0;
+}
+.brain-picture-thumb {
+  flex: none;
+  width: 72px;
+  height: 52px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-page);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: zoom-in;
+}
+.brain-picture-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.brain-picture-thumb.is-drop {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  cursor: default;
+}
+.brain-pictures-all {
+  align-self: flex-start;
+}
+/* The inbox's picture line says nothing while a capture runs. */
+.brain-notes-pictures:empty {
+  display: none;
+}

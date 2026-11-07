@@ -259,6 +259,65 @@ describe('BrainAdd', () => {
     expect(added).not.toHaveTextContent('sow.md ·');
   });
 
+  it('under a drop with pictures, how its pictures are doing', async () => {
+    const counts = {
+      total: 16,
+      described: 13,
+      skipped: 0,
+      missing: 1,
+      dropped: 2,
+      accepted: 0,
+      tiny: 0,
+    };
+    const a = installFakeApi({
+      'brain:addFiles': () => [
+        {
+          ok: true,
+          path: 'sources/2026-11-07-acme-kickoff.md',
+          images: 14,
+          dropped: 2,
+          warnings: [],
+          contents: '16 pictures',
+        },
+        {
+          ok: true,
+          path: 'sources/2026-11-07-sow.md',
+          images: 0,
+          dropped: 0,
+          warnings: [],
+          contents: '',
+        },
+      ],
+      'brain:pictures': (_id, src) => ({ source: src, counts, rows: [] }),
+    });
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          kind: 'pictures',
+          source: 'sources/2026-11-07-acme-kickoff.md',
+          status: 'running',
+          error: null,
+        }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    fireEvent.drop(screen.getByText(/Drop files here/), {
+      dataTransfer: { files: [file('acme-kickoff.pptx'), file('sow.docx')] },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add 2 files' }),
+    );
+    const added = await screen.findByLabelText('Added');
+    await waitFor(() =>
+      expect(added).toHaveTextContent(
+        'Added 2026-11-07-acme-kickoff.md · 16 picturesCapture done · 13 of 14 pictures interpreted · re-evaluating 1 picture…Added 2026-11-07-sow.md',
+      ),
+    );
+    expect(
+      a.calls.filter((c) => c.channel === 'brain:pictures').map((c) => c.args),
+    ).toEqual([['b1', 'sources/2026-11-07-acme-kickoff.md']]);
+  });
+
   it('shows what a drop could not add', async () => {
     installFakeApi({
       'brain:addFiles': () => [
@@ -807,6 +866,116 @@ describe('BrainAdd right column', () => {
     expect(a.tracked).toContainEqual(
       expect.objectContaining({ props: { action: 'help' } }),
     );
+  });
+
+  it('Health: the Pictures fact, and a picture finding offers Re-evaluate or Open source', async () => {
+    const a = installFakeApi({
+      'brain:run': (brainId, kind, src) =>
+        brainJob({ brainId, kind, source: src ?? null, status: 'queued' }),
+    });
+    const onOpenPage = vi.fn();
+    const brain = withOptions({});
+    brain.health = {
+      ...brain.health!,
+      pictures: {
+        total: 214,
+        described: 200,
+        skipped: 11,
+        missing: 1,
+        dropped: 2,
+        accepted: 0,
+        tiny: 23,
+      },
+      findings: [
+        {
+          kind: 'picture',
+          page: 'sources/2026-11-04-acme-kickoff.md',
+          detail: '1 picture not interpreted · 2 never reached Claude',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+        {
+          kind: 'picture',
+          page: 'sources/2026-10-28-network.md',
+          detail: '4 never reached Claude',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+      ],
+    };
+    render(<BrainAdd brain={brain} onOpenPage={onOpenPage} />);
+    const health = screen.getByRole('region', { name: 'Health' });
+    expect(health).toHaveTextContent(
+      'Pictures211 of 214 interpreted · 1 not interpreted · 2 never reached Claude',
+    );
+    await userEvent.click(
+      within(health).getByRole('button', {
+        name: 'Re-evaluate sources/2026-11-04-acme-kickoff.md',
+      }),
+    );
+    expect(
+      a.calls.filter((c) => c.channel === 'brain:run').map((c) => c.args),
+    ).toEqual([['b1', 'pictures', 'sources/2026-11-04-acme-kickoff.md']]);
+    expect(a.tracked).toContainEqual(
+      expect.objectContaining({ props: { action: 'reevaluate' } }),
+    );
+    await userEvent.click(
+      within(health).getByRole('button', {
+        name: 'Open source sources/2026-10-28-network.md',
+      }),
+    );
+    expect(onOpenPage).toHaveBeenCalledWith('sources/2026-10-28-network.md');
+  });
+
+  it('Health: no Pictures fact without pictures; only the parts that are not zero', () => {
+    installFakeApi({});
+    const brain = withOptions({});
+    const { rerender } = render(
+      <BrainAdd brain={brain} onOpenPage={() => undefined} />,
+    );
+    const health = screen.getByRole('region', { name: 'Health' });
+    expect(health).not.toHaveTextContent('Pictures');
+    rerender(
+      <BrainAdd
+        brain={{
+          ...brain,
+          health: {
+            ...brain.health!,
+            pictures: { ...brain.health!.pictures, total: 5, described: 5 },
+          },
+        }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    expect(health).toHaveTextContent(/Pictures5 of 5 interpretedWiki mirror/);
+  });
+
+  it('the picture check for earlier sources shows its progress while it runs, and is gone when done', () => {
+    installFakeApi({});
+    const pass = {
+      startedAt: '2026-11-07T08:00:00.000Z',
+      total: 23,
+      done: ['sources/a.md', 'sources/b.md', 'sources/c.md'],
+      finishedAt: null,
+    };
+    const { rerender } = render(
+      <BrainAdd
+        brain={{ ...withOptions({}), picturePass: pass }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const card = screen.getByRole('region', { name: 'What runs by itself' });
+    expect(card).toHaveTextContent(
+      'Picture check for earlier sourcesrunning23 sources captured before Shellie checked pictures. Re-evaluating them in the background, 3 of 23 done.',
+    );
+    rerender(
+      <BrainAdd
+        brain={{
+          ...withOptions({}),
+          picturePass: { ...pass, finishedAt: '2026-11-08T08:00:00.000Z' },
+        }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    expect(card).not.toHaveTextContent('Picture check');
   });
 
   it('Run now: Open terminal hands the terminal to the caller', async () => {

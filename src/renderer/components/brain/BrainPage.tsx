@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
+import type {
+  BrainJob,
+  BrainPageRow,
+  BrainSourceRow,
+} from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
+import { plural } from '../../../shared/text';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
@@ -11,6 +16,12 @@ import { PageTags } from './PageCards';
 import { PageRail, type RailHeading } from './PageRail';
 import { folderOf, shortDay, sourceLabel } from './recent';
 import { SourceBar } from './SourceBar';
+import {
+  MIRROR_PICTURES,
+  pictureGaps,
+  SourcePictures,
+  useSourcePictures,
+} from './SourcePictures';
 import { VerifiedBar } from './VerifiedBar';
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
@@ -20,7 +31,7 @@ const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
  * One page or source of the brain, presented: a bar with back and forward, a header from its frontmatter (sources
  * and backlinks as chips), the body with working links, pictures in a lightbox. With `layout="rail"` (the Read view)
  * the sources, backlinks and Mark verified move to a rail beside the body, with the page's outline, and a source
- * can be removed.
+ * can be removed. A source shows its Pictures panel above its text; `sources/wiki` is the wiki mirror's pictures alone.
  */
 export function BrainPage({
   brainId,
@@ -35,6 +46,7 @@ export function BrainPage({
   onForward,
   layout = 'chips',
   onRemoved,
+  jobs = [],
 }: {
   brainId: string;
   path: string;
@@ -50,6 +62,8 @@ export function BrainPage({
   layout?: 'chips' | 'rail';
   /** After the source shown was removed (rail layout only). */
   onRemoved?: () => void;
+  /** The brain's jobs, for the Pictures panel's Re-evaluate. */
+  jobs?: BrainJob[];
 }) {
   const notify = useStore((s) => s.notify);
   const [text, setText] = useState<string | null>(null);
@@ -62,6 +76,18 @@ export function BrainPage({
   const [headings, setHeadings] = useState<RailHeading[]>([]);
   const row = rows.find((r) => r.path === path) ?? null;
   const source = sources.find((s) => s.path === path) ?? null;
+  // The mirror's pages share one set of pictures, shown on `sources/wiki` (no file to read), not on each page.
+  const mirror = path === MIRROR_PICTURES;
+  const pictures = useSourcePictures(
+    brainId,
+    mirror || (source && !path.startsWith(`${MIRROR_PICTURES}/`)) ? path : null,
+  );
+  const gaps = pictures ? pictureGaps(pictures.counts) : 0;
+  const gapTag = gaps > 0 && (
+    <span className="tag tag-warn">
+      {plural(gaps, 'picture')} not interpreted
+    </span>
+  );
 
   // Only the answer for the path shown lands: a slow read of the previous page must not show under this header.
   const shown = useRef(path);
@@ -69,6 +95,10 @@ export function BrainPage({
   const load = useCallback(() => {
     const p = path;
     setError(null);
+    if (p === MIRROR_PICTURES) {
+      setText('');
+      return;
+    }
     api()
       .invoke('brain:read', brainId, p)
       .then(
@@ -158,7 +188,9 @@ export function BrainPage({
     top === 'wiki' || top === 'sources'
       ? [top, ...folderOf(path)]
       : folderOf(path);
-  const title = row?.title ?? source?.path.split('/').pop() ?? path;
+  const title = mirror
+    ? 'Wiki mirror'
+    : (row?.title ?? source?.path.split('/').pop() ?? path);
   const verifiedBar = text !== null && (
     <VerifiedBar text={text} brainId={brainId} path={path} onChanged={load} />
   );
@@ -172,11 +204,32 @@ export function BrainPage({
         },
         (e: unknown) => notify('error', errorMessage(e)),
       );
+  // Above the source text (and above the Remove bar in the Read view).
+  const picturesPanel = (
+    <>
+      {pictures && (pictures.rows.length > 0 || pictures.counts.tiny > 0) && (
+        <SourcePictures
+          key={pictures.source}
+          brainId={brainId}
+          pictures={pictures}
+          jobs={jobs}
+          onOpen={onOpen}
+          onView={(src, alt) => setPicture({ src, alt })}
+          titleOf={(p) =>
+            rows.find((r) => r.path === p)?.title ?? sourceLabel(p)
+          }
+        />
+      )}
+      {mirror && pictures?.rows.length === 0 && (
+        <p className="muted small">The wiki mirror has no pictures.</p>
+      )}
+    </>
+  );
   const main = (
     <>
       {error && <p className="brain-error small">{error}</p>}
       {text === null && !error && <p className="muted small">Loading</p>}
-      {text !== null && (
+      {text !== null && !mirror && (
         <div
           className="brain-doc brain-page-body"
           ref={body}
@@ -277,6 +330,7 @@ export function BrainPage({
             ) : (
               <span className="tag tag-warn">not captured</span>
             )}
+            {gapTag}
           </span>
           {source.contents && (
             <p className="brain-page-lead">{source.contents}</p>
@@ -300,8 +354,18 @@ export function BrainPage({
           )}
         </header>
       )}
+      {mirror && (
+        <header className="brain-page-head">
+          <h2>{title}</h2>
+          <span className="brain-tags">{gapTag}</span>
+          <p className="brain-page-lead">
+            The pictures of the DevOps wiki's pages
+          </p>
+        </header>
+      )}
       {rail ? (
         <div className="brain-page-main">
+          {picturesPanel}
           {text !== null &&
             !row &&
             source &&
@@ -311,7 +375,10 @@ export function BrainPage({
           {main}
         </div>
       ) : (
-        main
+        <>
+          {picturesPanel}
+          {main}
+        </>
       )}
       {rail && text !== null && row && (
         <PageRail

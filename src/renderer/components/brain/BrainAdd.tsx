@@ -47,7 +47,11 @@ export function BrainAdd({
       <div className="brain-add-side">
         <AutoRuns brain={brain} />
         <RunNow brain={brain} onTerminal={onTerminal} />
-        <BrainHealth brain={brain} onTerminal={onTerminal} />
+        <BrainHealth
+          brain={brain}
+          onTerminal={onTerminal}
+          onOpen={onOpenPage}
+        />
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
 import { useBrainPages } from './BrainWiki';
 import { PageCard, PageSections } from './PageCards';
-import { PendingFiles } from './PendingFiles';
+import { AddedNotes, PendingFiles } from './PendingFiles';
 import { useBrainDrop } from './useBrainDrop';
 import { useBrainNav } from './useBrainNav';
 
@@ -28,7 +28,7 @@ export function BrainTab({
 }) {
   const go = useStore((s) => s.go);
   const drop = useBrainDrop(brain.id);
-  const { over, problems, notes, dropProps } = drop;
+  const { over, problems, added, dropProps } = drop;
   const { rows, sources } = useBrainPages(brain.id);
   const nav = useBrainNav();
   const [searching, setSearching] = useState(false);
@@ -74,13 +74,7 @@ export function BrainTab({
           ))}
         </ul>
       )}
-      {notes.length > 0 && (
-        <ul className="brain-notes muted small" aria-label="Added">
-          {notes.map((n, i) => (
-            <li key={i}>{n}</li>
-          ))}
-        </ul>
-      )}
+      <AddedNotes brainId={brain.id} added={added} jobs={brain.jobs} />
       {nav.current && (
         <BrainPage
           brainId={brain.id}
@@ -93,6 +87,7 @@ export function BrainTab({
           onOpen={open}
           onBack={nav.back}
           onForward={nav.forward}
+          jobs={brain.jobs}
         />
       )}
       {/* The lists stay mounted under an open page, so a search and its results are there on Back. */}
