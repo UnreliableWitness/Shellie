@@ -168,7 +168,7 @@ describe('brain scaffold', () => {
     for (const s of skills) {
       expect(s.content.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
       expect(s.content).toMatch(
-        /^---\ndescription: .+\n(allowed-tools: .+\n)?---\n/,
+        /^---\nname: [a-z]+\ndescription: .+\n(allowed-tools: .+\n)?---\n/,
       );
       // The read-only ask skill reads the index, not the writers' contract.
       if (!s.path.includes('/ask/')) expect(s.content).toContain('SCHEMA.md');

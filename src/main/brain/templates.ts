@@ -275,6 +275,10 @@ const SETTINGS = `${JSON.stringify(
   2,
 )}\n`;
 
+/** A skill's frontmatter starts with its name: OpenCode does not load a SKILL.md without one (checked live, 1.19.3). */
+const named = (kind: string, skill: string) =>
+  skill.replace(/^---\n/, `---\nname: ${kind}\n`);
+
 /** The skills, in the order they are written: both `.claude/skills/<kind>/SKILL.md` and `.opencode/command/<kind>.md` come from this list. */
 const SKILLS: { kind: string; content: string }[] = [
   { kind: 'capture', content: CAPTURE },
@@ -285,7 +289,7 @@ const SKILLS: { kind: string; content: string }[] = [
   { kind: 'retract', content: RETRACT },
   { kind: 'lessons', content: LESSONS },
   { kind: 'pictures', content: PICTURES },
-];
+].map(({ kind, content }) => ({ kind, content: named(kind, content) }));
 
 /** The same intent as `.claude/settings.json`; the last matching rule wins, so the broad rule comes first. */
 export function brainOpencodePermission(): {

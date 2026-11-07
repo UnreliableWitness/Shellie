@@ -62,6 +62,15 @@ describe('templates v7', () => {
     expect(files.find((f) => f.path === 'opencode.json')?.managed).toBe(true);
   });
 
+  it('names every skill in its frontmatter (OpenCode skips a SKILL.md without a name)', () => {
+    for (const kind of KINDS)
+      expect(
+        content(`.claude/skills/${kind}/SKILL.md`).startsWith(
+          `---\nname: ${kind}\ndescription: `,
+        ),
+      ).toBe(true);
+  });
+
   it('wraps every skill in an OpenCode command with its description', () => {
     for (const kind of KINDS) {
       const skill = content(`.claude/skills/${kind}/SKILL.md`);
