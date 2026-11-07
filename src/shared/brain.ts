@@ -274,6 +274,8 @@ export type AddSourceResult =
       path: string;
       /** Pictures stored beside the source for Claude to look at. */
       images: number;
+      /** Pictures left out of the source (for example an EMF with no rasterizer), recorded for the person to fix. */
+      dropped: number;
       warnings: string[];
       /** What the source holds, in one line. */
       contents: string;

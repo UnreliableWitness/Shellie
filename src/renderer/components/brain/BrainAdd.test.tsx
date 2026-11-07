@@ -66,9 +66,30 @@ describe('BrainAdd', () => {
   it('dropped files wait with guessed types until Add sends them', async () => {
     const a = installFakeApi({
       'brain:addFiles': () => [
-        { ok: true, path: 'sources/x', images: 0, warnings: [], contents: '' },
-        { ok: true, path: 'sources/y', images: 0, warnings: [], contents: '' },
-        { ok: true, path: 'sources/z', images: 0, warnings: [], contents: '' },
+        {
+          ok: true,
+          path: 'sources/x',
+          images: 0,
+          dropped: 0,
+          warnings: [],
+          contents: '',
+        },
+        {
+          ok: true,
+          path: 'sources/y',
+          images: 0,
+          dropped: 0,
+          warnings: [],
+          contents: '',
+        },
+        {
+          ok: true,
+          path: 'sources/z',
+          images: 0,
+          dropped: 0,
+          warnings: [],
+          contents: '',
+        },
       ],
     });
     render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
@@ -106,7 +127,14 @@ describe('BrainAdd', () => {
   it('takes a type and a note per file, drops a removed one, and sends them with Enter', async () => {
     const a = installFakeApi({
       'brain:addFiles': () => [
-        { ok: true, path: 'sources/x', images: 0, warnings: [], contents: '' },
+        {
+          ok: true,
+          path: 'sources/x',
+          images: 0,
+          dropped: 0,
+          warnings: [],
+          contents: '',
+        },
       ],
     });
     render(<BrainAdd brain={brainView()} onOpenPage={() => undefined} />);
@@ -174,7 +202,14 @@ describe('BrainAdd', () => {
       await screen.findByText('ghost.png: not a file on disk'),
     ).toBeInTheDocument();
     answer([
-      { ok: true, path: 'sources/a.md', images: 0, warnings: [], contents: '' },
+      {
+        ok: true,
+        path: 'sources/a.md',
+        images: 0,
+        dropped: 0,
+        warnings: [],
+        contents: '',
+      },
     ]);
     await waitFor(() =>
       expect(screen.queryByLabelText('Note for a.docx')).toBeNull(),
@@ -192,6 +227,7 @@ describe('BrainAdd', () => {
           ok: true,
           path: 'sources/2026-11-04-plan.md',
           images: 3,
+          dropped: 0,
           warnings: ['1 picture in formats Claude cannot view (emf)'],
           contents: '12 slides · 3 pictures: Kick-off',
         },
@@ -199,6 +235,7 @@ describe('BrainAdd', () => {
           ok: true,
           path: 'sources/2026-11-04-sow.md',
           images: 0,
+          dropped: 0,
           warnings: [],
           contents: '',
         },
@@ -248,6 +285,7 @@ describe('BrainAdd', () => {
         ok: true,
         path: 'sources/n.md',
         images: 0,
+        dropped: 0,
         warnings: [],
         contents: '',
       }),
@@ -272,6 +310,7 @@ describe('BrainAdd', () => {
         ok: true,
         path: 'sources/n.md',
         images: 0,
+        dropped: 0,
         warnings: [],
         contents: '',
       }),

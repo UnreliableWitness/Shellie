@@ -941,6 +941,7 @@ describe('tabs and focus', () => {
             ok: true,
             path: 'sources/x.md',
             images: 0,
+            dropped: 0,
             warnings: [],
             contents: '',
           },

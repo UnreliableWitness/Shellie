@@ -15,9 +15,11 @@ import {
   describeContents,
   type ConvertOptions,
   type ConvertedImage,
+  type Converted,
 } from './convert';
 import { withBrainGit } from './gitMutex';
 import { absPath } from './paths';
+import { DROPPED_FILE, readDropped, writeDropped } from './pictures';
 import { findSecrets, secretMessage } from './secrets';
 import { readState, writeState } from './state';
 import {
@@ -33,6 +35,8 @@ export type AddSourceInput =
   | { file: string; note?: string }
   | { text: string; title: string; url?: string; note?: string };
 export type { AddSourceResult };
+
+type ConvertedDrop = Converted['dropped'][number];
 
 type SourceEntry = {
   path: string;
@@ -80,6 +84,8 @@ export async function addSource(
   let original: { buf: Buffer; ext: string } | null = null;
   let images: ConvertedImage[] = [];
   let warnings: string[] = [];
+  let dropped: ConvertedDrop[] = [];
+  let tiny = 0;
   let contents: string;
   const note = input.note?.trim() || undefined;
 
@@ -120,6 +126,8 @@ export async function addSource(
     if (!['.md', '.txt'].includes(ext.toLowerCase())) original = { buf, ext };
     images = converted.images;
     warnings = converted.warnings;
+    dropped = converted.dropped;
+    tiny = converted.tiny;
     contents = describeContents(
       converted.markdown,
       images.length,
@@ -169,6 +177,8 @@ export async function addSource(
       original,
       images,
       warnings,
+      dropped,
+      tiny,
       contents,
       note,
     }),
@@ -189,11 +199,14 @@ async function writeSource(
     original: { buf: Buffer; ext: string } | null;
     images: ConvertedImage[];
     warnings: string[];
+    dropped: ConvertedDrop[];
+    tiny: number;
     contents: string;
     note?: string;
   },
 ): Promise<AddSourceResult> {
   const { title, sourceUrl, hash, slugBase, original, images, warnings } = src;
+  const { dropped, tiny } = src;
   const existing = await readSources(brainDir);
   const dup = existing.find((s) => s.fm.sha256 === hash);
   if (dup) {
@@ -209,6 +222,8 @@ async function writeSource(
   // Repo-relative paths of what is written: the only paths staged and committed.
   const rels: string[] = [];
   let staged = false;
+  let before: string | null = null;
+  let droppedWritten = false;
   try {
     const sourcesDir = path.join(brainDir, 'sources');
     await fs.mkdir(sourcesDir, { recursive: true });
@@ -254,6 +269,21 @@ async function writeSource(
       rels.push(`sources/${copyName}`);
       await fs.writeFile(path.join(sourcesDir, copyName), original.buf);
     }
+    if (dropped.length || tiny) {
+      // Kept so a rollback can put back what was there.
+      before = await fs
+        .readFile(absPath(brainDir, DROPPED_FILE), 'utf8')
+        .catch(() => null);
+      droppedWritten = true;
+      rels.push(DROPPED_FILE);
+      await writeDropped(brainDir, (f) => ({
+        ...f,
+        [`sources/${name}`]: {
+          dropped: dropped.map((d) => ({ ...d, accepted: null })),
+          tiny,
+        },
+      }));
+    }
     staged = true;
     await git.run(brainDir, ['add', '--', ...rels]);
     await git.run(brainDir, [
@@ -268,11 +298,17 @@ async function writeSource(
       ok: true,
       path: `sources/${name}`,
       images: images.length,
+      dropped: dropped.length,
       warnings,
       contents: src.contents,
     };
   } catch (e) {
     for (const f of written) await fs.rm(f, { recursive: true, force: true });
+    if (droppedWritten) {
+      const file = absPath(brainDir, DROPPED_FILE);
+      if (before === null) await fs.rm(file, { force: true });
+      else await fs.writeFile(file, before);
+    }
     if (staged && rels.length) {
       await git.run(brainDir, ['reset', '-q', '--', ...rels]).catch(() => '');
     }
@@ -371,7 +407,18 @@ export async function removeSource(
       const { [rel]: _gone, ...captured } = s.captured;
       return { ...s, captured };
     });
-    const staged = [...trackedFiles, 'brain/state.json'];
+    // The record of dropped pictures goes in the same commit; a brain without one for this source is left alone.
+    const hadDrops = rel in (await readDropped(brainDir));
+    if (hadDrops)
+      await writeDropped(brainDir, (f) => {
+        const { [rel]: _gone, ...rest } = f;
+        return rest;
+      });
+    const staged = [
+      ...trackedFiles,
+      'brain/state.json',
+      ...(hadDrops ? [DROPPED_FILE] : []),
+    ];
     await git.run(brainDir, [
       '--literal-pathspecs',
       'add',
