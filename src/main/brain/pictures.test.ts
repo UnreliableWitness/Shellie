@@ -139,6 +139,22 @@ describe('pictures', () => {
     expect(await readSkipped(path.join(dir, 'nowhere'))).toEqual({});
   });
 
+  it('reads a skipped key written with ./, URL encoding or backslashes as the plain path', async () => {
+    await write(
+      'brain/pictures-skipped.json',
+      JSON.stringify({
+        './sources/x-assets/a%20b.png': { reason: 'logo', at: 'x' },
+        'sources\\x-assets\\c.png': { reason: 'logo', at: 'y' },
+        'sources/x-assets/bad%zz.png': { reason: 'logo', at: 'z' },
+      }),
+    );
+    expect(Object.keys(await readSkipped(dir))).toEqual([
+      'sources/x-assets/a b.png',
+      'sources/x-assets/c.png',
+      'sources/x-assets/bad%zz.png',
+    ]);
+  });
+
   it('lists drops, accepted ones apart, and counts tiny images', async () => {
     const dropped: DroppedFile = {
       [SOURCE]: {

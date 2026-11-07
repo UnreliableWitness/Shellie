@@ -82,7 +82,12 @@ describe('templates v6', () => {
       const text = content(`.claude/skills/${skill}/SKILL.md`);
       expect(text).toContain('brain/pictures-skipped.json');
       expect(text).toContain('never skipped');
+      expect(text).toContain('Only mark a picture you opened');
+      expect(text).toContain('stays unmarked');
     }
+    expect(content('.claude/skills/capture/SKILL.md')).toContain(
+      'or to the picture file for a fact taken from a picture',
+    );
     const schema = content('SCHEMA.md');
     expect(schema).toContain(
       '[Deck slide 4 diagram](../sources/2026-11-04-deck-assets/slide-4-1.png)',
@@ -90,6 +95,8 @@ describe('templates v6', () => {
     expect(schema).toContain('brain/pictures-skipped.json');
     expect(schema).toContain('brain/pictures-dropped.json');
     expect(schema).toContain('"reason"');
+    expect(schema).toContain('no leading `./`, no URL encoding');
+    expect(schema).toContain('stays unmarked');
   });
 
   it('add a managed /pictures skill that takes the source and a JSON list of pictures', () => {
@@ -108,7 +115,7 @@ describe('templates v6', () => {
     const settings = JSON.parse(content('.claude/settings.json')) as {
       permissions: { deny: string[] };
     };
-    for (const tool of ['Edit', 'Write', 'MultiEdit'])
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
       expect(settings.permissions.deny).toContain(
         `${tool}(brain/pictures-dropped.json)`,
       );

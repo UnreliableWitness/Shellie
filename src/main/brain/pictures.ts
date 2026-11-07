@@ -42,6 +42,17 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 const text = (v: unknown): v is string =>
   typeof v === 'string' && v.trim() !== '';
 
+/** A skipped key as the plain path from the brain folder: a skill may write `./`, URL encoding or backslashes. */
+function skippedKey(key: string): string {
+  let p = key.replace(/\\/g, '/');
+  try {
+    p = decodeURIComponent(p);
+  } catch {
+    // Not valid URL encoding: keep it as written.
+  }
+  return path.posix.normalize(p);
+}
+
 /** brain/pictures-skipped.json; a missing, unparsable or wrongly shaped file is empty, and entries without a reason are left out. */
 export async function readSkipped(brainDir: string): Promise<SkippedFile> {
   const raw = await readJson(absPath(brainDir, SKIPPED_FILE));
@@ -49,7 +60,10 @@ export async function readSkipped(brainDir: string): Promise<SkippedFile> {
   if (!isRecord(raw)) return out;
   for (const [file, v] of Object.entries(raw)) {
     if (!isRecord(v) || !text(v.reason)) continue;
-    out[file] = { reason: v.reason, at: typeof v.at === 'string' ? v.at : '' };
+    out[skippedKey(file)] = {
+      reason: v.reason,
+      at: typeof v.at === 'string' ? v.at : '',
+    };
   }
   return out;
 }
