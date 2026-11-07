@@ -67,7 +67,7 @@ export function BrainNewScreen() {
         {connections.length > 1 && connection && (
           <>
             <label htmlFor="brain-new-project" className="muted">
-              Project
+              Create it for
             </label>
             <select
               id="brain-new-project"
@@ -77,14 +77,23 @@ export function BrainNewScreen() {
             >
               {connections.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {`${c.name} / ${c.project}`}
                 </option>
               ))}
             </select>
           </>
         )}
         {!connection ? (
-          <p className="small muted">Needs a connected project.</p>
+          <div className="row">
+            <span className="small muted grow">Connect a project first.</span>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => go({ kind: 'connect', from: 'get-started' })}
+            >
+              Connect
+            </button>
+          </div>
         ) : loaded && !hasBrain ? (
           <CreateBrainForm
             key={connection.id}

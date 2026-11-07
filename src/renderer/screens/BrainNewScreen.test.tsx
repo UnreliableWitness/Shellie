@@ -10,7 +10,7 @@ import { BrainNewScreen } from './BrainNewScreen';
 
 const conn = (id: string, project: string): Connection => ({
   id,
-  name: `unreliablewitness/${project}`,
+  name: 'unreliablewitness',
   organizationUrl: 'https://dev.azure.com/unreliablewitness',
   project,
   user: 'Dries Hoebeke',
@@ -66,7 +66,9 @@ describe('BrainNewScreen', () => {
       ),
     ).toBeTruthy();
     expect(await screen.findByLabelText('Name')).toHaveValue('Shellie brain');
-    expect(screen.queryByRole('combobox', { name: 'Project' })).toBeNull();
+    expect(
+      screen.queryByRole('combobox', { name: 'Create it for' }),
+    ).toBeNull();
   });
 
   it('with several projects a select picks the one the form is for', async () => {
@@ -74,10 +76,11 @@ describe('BrainNewScreen', () => {
     installFakeApi();
     render(<BrainNewScreen />);
     expect(await screen.findByLabelText('Name')).toHaveValue('Shellie brain');
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Project' }),
-      'unreliablewitness/Webshop',
-    );
+    const pick = screen.getByRole('combobox', { name: 'Create it for' });
+    expect(
+      Array.from(pick.querySelectorAll('option')).map((o) => o.textContent),
+    ).toEqual(['unreliablewitness / Shellie', 'unreliablewitness / Webshop']);
+    await userEvent.selectOptions(pick, 'unreliablewitness / Webshop');
     expect(screen.getByLabelText('Name')).toHaveValue('Webshop brain');
   });
 
@@ -154,11 +157,18 @@ describe('BrainNewScreen', () => {
     expect(useStore.getState().screen.kind).toBe('brain-new');
   });
 
-  it('without a connected project it says so instead of the form', async () => {
+  it('without a connected project it offers Connect instead of the form', async () => {
     open([]);
     installFakeApi();
     render(<BrainNewScreen />);
-    expect(await screen.findByText('Needs a connected project.')).toBeTruthy();
+    expect(await screen.findByText('Connect a project first.')).toBeTruthy();
     expect(screen.queryByLabelText('Name')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'connect',
+      from: 'get-started',
+    });
   });
 });

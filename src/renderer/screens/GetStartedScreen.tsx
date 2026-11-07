@@ -56,19 +56,34 @@ function agentsLine(
   return `${foundText}New tasks open ${open.length ? list(open) : 'no tabs'}.`;
 }
 
+type BrainAction = 'open' | 'connect' | 'create';
+
+/** What card 4's button does: open the brains' settings, connect a project first, or create one. */
+function brainAction(
+  brains: BrainView[],
+  skipped: boolean,
+  needsProject: boolean,
+): BrainAction {
+  if (brains.length) return 'open';
+  if (needsProject) return 'connect';
+  return skipped ? 'open' : 'create';
+}
+
 /** Card 4's line: the brains made, a skip, a missing project, or the agent a new brain would run on. */
 function brainLine(
   brains: BrainView[],
   skipped: boolean,
+  noTracker: boolean,
   needsProject: boolean,
   detected: AgentsDetected | null,
 ): string {
   if (brains.length)
     return `${list(brains.map((b) => `${b.name} on ${BRAIN_AGENT_LABELS[b.options.agent]}`))}.`;
+  if (noTracker) return 'Needs a connected project.';
   if (skipped) return 'Skipped.';
-  if (needsProject) return 'Needs a connected project.';
   const todo =
     "A local wiki of the project's documents, kept by your agent, that every task can read. Optional.";
+  if (needsProject) return `${todo} Connect a project first.`;
   if (!detected) return todo;
   const { agent, found } = defaultBrainAgent(detected);
   return found
@@ -76,7 +91,7 @@ function brainLine(
     : `${todo} Needs Claude Code or OpenCode.`;
 }
 
-/** Opens a step's page; Add folder… asks for the folder first, a made brain opens Settings › Project › Brains. */
+/** Opens a step's page; Add folder… asks for the folder first, made brains open Settings › Project › Brains. */
 function useStepActions(brains: BrainView[]) {
   const go = useStore((s) => s.go);
   const notify = useStore((s) => s.notify);
@@ -125,6 +140,7 @@ export function StepCards({ band }: { band?: boolean }) {
   const actions = useStepActions(brains);
   const [detected, setDetected] = useState<AgentsDetected | null>(null);
   const agentsDone = steps.agents === 'done';
+  const skipped = settings?.onboarding.brain === 'none';
 
   // The cached detection, also before Agents is done: card 1 then names what was found and the tabs it will tick.
   useEffect(() => {
@@ -163,11 +179,27 @@ export function StepCards({ band }: { band?: boolean }) {
     ),
     brain: brainLine(
       brains,
-      settings?.onboarding.brain === 'none',
+      skipped,
+      settings?.onboarding.tracker === 'none',
       steps.brainNeedsProject,
       detected,
     ),
   };
+  const brainDoes = brainAction(brains, skipped, steps.brainNeedsProject);
+  const run = (k: OnboardingStep) =>
+    k !== 'brain' || brainDoes === 'create'
+      ? actions[k]()
+      : brainDoes === 'open'
+        ? actions.brainSettings()
+        : actions.connect();
+  const label = (k: OnboardingStep) =>
+    k === 'agents' && agentsDone
+      ? 'Change'
+      : k !== 'brain' || brainDoes === 'create'
+        ? BUTTONS[k]
+        : brainDoes === 'open'
+          ? 'Open'
+          : BUTTONS.connect;
 
   const keys = (['agents', 'connect', 'repository', 'brain'] as const).filter(
     (k) => !band || steps[k] === 'todo',
@@ -204,17 +236,9 @@ export function StepCards({ band }: { band?: boolean }) {
             <button
               type="button"
               className={current ? 'btn btn-primary' : 'btn'}
-              onClick={() =>
-                void (k === 'brain' && done
-                  ? actions.brainSettings()
-                  : actions[k]())
-              }
+              onClick={() => void run(k)}
             >
-              {k === 'agents' && agentsDone
-                ? 'Change'
-                : k === 'brain' && done
-                  ? 'Open'
-                  : BUTTONS[k]}
+              {label(k)}
             </button>
           </section>
         );

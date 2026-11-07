@@ -177,7 +177,11 @@ describe('Get started page', () => {
   it('Connect opens the Connect step, Change the Agents step', async () => {
     installFakeApi();
     render(<Shell />);
-    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await userEvent.click(
+      within(card('2 · Connect Azure DevOps')).getByRole('button', {
+        name: 'Connect',
+      }),
+    );
     expect(useStore.getState().screen).toEqual({
       kind: 'connect',
       from: 'get-started',
@@ -219,13 +223,11 @@ describe('Get started texts', () => {
         'Shellie reads your sprint, moves the work item when a task starts and opens draft pull requests. GitHub later.',
       ),
     ).toBeTruthy();
-    // No connection yet: the brain has no project to build on.
+    // No connection yet: the brain has no project to build on, so its button connects one.
     expect(
-      within(card(BRAIN)).getByText('Needs a connected project.'),
+      within(card(BRAIN)).getByText(`${BRAIN_TODO} Connect a project first.`),
     ).toBeTruthy();
-    expect(
-      within(card(BRAIN)).getByRole('button', { name: 'Create brain…' }),
-    ).toBeTruthy();
+    expect(within(card(BRAIN)).queryByLabelText('Done')).toBeNull();
     const gets = screen.getByRole('heading', {
       name: 'What you get',
     }).parentElement!;
@@ -240,6 +242,13 @@ describe('Get started texts', () => {
       'Time, changes review, Docs, draft PR at Finish',
     ]);
     expect(document.body.textContent).not.toContain('writes cost');
+    await userEvent.click(
+      within(card(BRAIN)).getByRole('button', { name: 'Connect' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'connect',
+      from: 'get-started',
+    });
   });
 
   it.each([
@@ -259,13 +268,24 @@ describe('Get started texts', () => {
     },
   );
 
-  it('with no tracker the brain card needs a connected project', async () => {
+  it('with no tracker the brain card is done, needs a connected project and offers Connect', async () => {
     open(settings({ tracker: 'none' }));
     installFakeApi({ 'agents:detect': () => detected });
     render(<Shell />);
     expect(
       within(card(BRAIN)).getByText('Needs a connected project.'),
     ).toBeTruthy();
+    expect(within(card(BRAIN)).getByLabelText('Done')).toBeTruthy();
+    expect(
+      within(card(BRAIN)).queryByRole('button', { name: 'Open' }),
+    ).toBeNull();
+    await userEvent.click(
+      within(card(BRAIN)).getByRole('button', { name: 'Connect' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'connect',
+      from: 'get-started',
+    });
   });
 
   it('a skipped brain says Skipped.', async () => {
