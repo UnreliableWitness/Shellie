@@ -13,6 +13,9 @@ const DRAWING_MIN_AREA = 0.05;
 /** Most pages rendered per PDF, and the longer side of a render. */
 export const MAX_PAGE_RENDERS = 20;
 const RENDER_SIDE = 1600;
+/** What to do about a page or image the converter could not take. */
+const UNRENDERED_FIX =
+  'Export the page as an image and add it as its own source';
 
 /** pdf.js ImageKind values. */
 const KIND: Record<number, PixelKind> = { 1: 'gray1', 2: 'rgb', 3: 'rgba' };
@@ -247,8 +250,15 @@ export async function pdfToMarkdown(
       // A page with a drawing is shown as drawn; its own pictures are part of that render.
       let rendered = false;
       if (hasDrawing(ops, drawingOps, view.width, view.height)) {
-        if (renders >= MAX_PAGE_RENDERS) unrendered++;
-        else {
+        const where = `Page ${n} (drawing)`;
+        if (renders >= MAX_PAGE_RENDERS) {
+          unrendered++;
+          images.drop(
+            where,
+            `past the ${MAX_PAGE_RENDERS}-page render limit`,
+            `Split the PDF so each part has at most ${MAX_PAGE_RENDERS} drawn pages`,
+          );
+        } else {
           let png: Buffer | null = null;
           try {
             png = await renderPage(page);
@@ -259,9 +269,15 @@ export async function pdfToMarkdown(
               `p.${n}: the drawing could not be rendered (${errorMessage(e)})`,
             );
           }
-          if (png) {
+          if (!png) {
+            images.drop(
+              where,
+              'the drawing could not be rendered',
+              UNRENDERED_FIX,
+            );
+          } else {
             renders++;
-            const ref = images.add(`p${n}.png`, png);
+            const ref = images.add(`p${n}.png`, png, where);
             if (ref) {
               refs.push(`![p.${n} as drawn](${ref})`);
               rendered = true;
@@ -284,11 +300,17 @@ export async function pdfToMarkdown(
         }
         const kind = KIND[img.kind];
         if (!kind) continue;
-        if (img.width < MIN_IMAGE_SIDE || img.height < MIN_IMAGE_SIDE) continue;
+        if (img.width < MIN_IMAGE_SIDE || img.height < MIN_IMAGE_SIDE) {
+          // Counted once, however many pages paint it.
+          images.tinyImage();
+          seen.set(key, null);
+          continue;
+        }
         if (img.width * img.height > MAX_PIXELS) {
           images.warn(
             `p.${n}: an image of ${img.width}×${img.height} px was skipped`,
           );
+          images.drop(`Page ${n}`, 'over 25 megapixels', UNRENDERED_FIX);
           seen.set(key, null);
           continue;
         }
@@ -323,6 +345,8 @@ export async function pdfToMarkdown(
       title: null,
       images: images.images,
       warnings: images.warnings(),
+      dropped: images.dropped,
+      tiny: images.tiny,
       empty: noText && images.images.length === 0,
     };
   } catch (err) {

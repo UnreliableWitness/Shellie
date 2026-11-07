@@ -24,6 +24,8 @@ function plain(markdown: string): Converted {
     title: firstHeading(markdown),
     images: [],
     warnings: [],
+    dropped: [],
+    tiny: 0,
     empty: markdown.trim() === '',
   };
 }

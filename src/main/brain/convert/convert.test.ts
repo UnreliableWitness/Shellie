@@ -10,7 +10,12 @@ import { MAX_PAGE_RENDERS, pdfToMarkdown } from './pdf';
 import * as raster from './raster';
 import { decodePng } from './png';
 import { pptxToMarkdown } from './pptx';
-import { MAX_IMAGES, type Rasterize } from './types';
+import {
+  ImageCollector,
+  MAX_IMAGES,
+  pictureWhere,
+  type Rasterize,
+} from './types';
 
 /** A rasterize hook that turns anything but "bad" into a tiny PNG and records what it saw. */
 const fakeRasterize = (): Rasterize & { seen: string[] } => {
@@ -180,6 +185,12 @@ describe('pdfToMarkdown', () => {
     expect(r.markdown).toContain('Diagram below');
   });
 
+  it('counts pictures below the size floor as tiny, not as dropped', async () => {
+    const r = await pdfToMarkdown(await fs.readFile(fixture('images.pdf')));
+    expect(r.tiny).toBe(2);
+    expect(r.dropped).toEqual([]);
+  });
+
   it('waits for pdf.js to decode a picture and stores one painted on several pages once', async () => {
     const r = await pdfToMarkdown(
       await fs.readFile(fixture('repeated-image.pdf')),
@@ -245,6 +256,13 @@ describe('pdfToMarkdown', () => {
       expect(r.warnings).toEqual([
         'p.1: the drawing could not be rendered (no skia)',
       ]);
+      expect(r.dropped).toEqual([
+        {
+          where: 'Page 1 (drawing)',
+          reason: 'the drawing could not be rendered',
+          fix: 'Export the page as an image and add it as its own source',
+        },
+      ]);
       expect(r.empty).toBe(false);
     } finally {
       spy.mockRestore();
@@ -263,6 +281,44 @@ describe('pdfToMarkdown', () => {
     expect(r.warnings).toEqual([
       `2 more pages with drawings not rendered (limit ${MAX_PAGE_RENDERS})`,
     ]);
+  });
+
+  it('reports each page with a drawing past the render limit', async () => {
+    const r = await pdfToMarkdown(
+      await fs.readFile(fixture('many-drawings.pdf')),
+    );
+    const fix = 'Split the PDF so each part has at most 20 drawn pages';
+    expect(r.dropped).toEqual([
+      {
+        where: 'Page 21 (drawing)',
+        reason: 'past the 20-page render limit',
+        fix,
+      },
+      {
+        where: 'Page 22 (drawing)',
+        reason: 'past the 20-page render limit',
+        fix,
+      },
+    ]);
+  });
+
+  it('reports the drawn pages when the canvas is missing', async () => {
+    const spy = vi.spyOn(raster, 'loadCanvas').mockResolvedValue(null);
+    try {
+      const r = await pdfToMarkdown(await fs.readFile(fixture('drawing.pdf')));
+      expect(r.warnings).toEqual([
+        'pages with drawings were not rendered: canvas unavailable',
+      ]);
+      expect(r.dropped).toEqual([
+        {
+          where: 'Page 1 (drawing)',
+          reason: 'the drawing could not be rendered',
+          fix: 'Export the page as an image and add it as its own source',
+        },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('decodes a JPEG picture to a PNG and references it', async () => {
@@ -385,6 +441,39 @@ describe('pptxToMarkdown', () => {
     ]);
     expect(r.markdown).toContain('_Picture 1 (emf) could not be extracted_');
     expect(r.markdown).not.toContain('example.test');
+  });
+
+  it('reports each picture it could not convert, with where it was', async () => {
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          { text: ['A'] },
+          {
+            text: ['B'],
+            extra: pic('rId2') + pic('rId3') + pic('rId2'),
+            rels: [
+              { id: 'rId2', type: 'image', target: '../media/image1.emf' },
+              { id: 'rId3', type: 'image', target: '../media/image2.svg' },
+            ],
+          },
+        ],
+        { media: { 'ppt/media/image1.emf': PNG, 'ppt/media/image2.svg': PNG } },
+      ),
+    );
+    // The EMF is used twice but is one picture: one drop.
+    expect(r.dropped).toEqual([
+      {
+        where: 'Slide 2, picture 1',
+        reason: 'EMF converts on Windows only',
+        fix: 'Remove the source and add it again on Windows, or save the picture as PNG in the file',
+      },
+      {
+        where: 'Slide 2, picture 2',
+        reason: 'SVG could not be converted',
+        fix: 'Save the picture as PNG in the file, then remove the source and add it again',
+      },
+    ]);
+    expect(r.dropped[0].fix).toContain('Remove the source and add it again');
   });
 
   it('converts pictures in other formats through the rasterize hook', async () => {
@@ -574,6 +663,78 @@ describe('pptxToMarkdown', () => {
     expect(r.markdown).not.toContain(`slide-1-${n}.png`);
   });
 
+  it('reports each picture past the image cap', async () => {
+    const n = MAX_IMAGES + 2;
+    const media: Record<string, Buffer> = {};
+    const rels = [];
+    let extra = '';
+    for (let i = 1; i <= n; i++) {
+      media[`ppt/media/image${i}.png`] = PNG;
+      rels.push({
+        id: `rId${i + 1}`,
+        type: 'image',
+        target: `../media/image${i}.png`,
+      });
+      extra += pic(`rId${i + 1}`);
+    }
+    const r = await pptxToMarkdown(
+      await buildPptx([{ text: ['Many'], extra, rels }], { media }),
+    );
+    const fix =
+      'Split the file, or remove pictures that carry nothing, then remove the source and add it again';
+    expect(r.dropped).toEqual([
+      {
+        where: 'Slide 1, picture 61',
+        reason: 'over the 60-picture limit',
+        fix,
+      },
+      {
+        where: 'Slide 1, picture 62',
+        reason: 'over the 60-picture limit',
+        fix,
+      },
+    ]);
+  });
+
+  it('reports a layout picture it could not convert, numbered among the layout pictures', async () => {
+    const r = await pptxToMarkdown(
+      await buildPptx(
+        [
+          {
+            text: ['One'],
+            rels: [
+              {
+                id: 'rId7',
+                type: 'slideLayout',
+                target: '../slideLayouts/slideLayout1.xml',
+              },
+            ],
+          },
+        ],
+        {
+          media: {
+            'ppt/media/logo.png': PNG,
+            'ppt/media/mark.wmf': PNG,
+            'ppt/slideLayouts/slideLayout1.xml': Buffer.from(
+              `<p:sldLayout ${NS_A} ${NS_P} ${NS_R}><p:cSld><p:spTree>${pic('rId2')}${pic('rId3')}</p:spTree></p:cSld></p:sldLayout>`,
+            ),
+            'ppt/slideLayouts/_rels/slideLayout1.xml.rels': Buffer.from(
+              `<Relationships><Relationship Id="rId2" Type="${REL}/image" Target="../media/logo.png"/><Relationship Id="rId3" Type="${REL}/image" Target="../media/mark.wmf"/></Relationships>`,
+            ),
+          },
+        },
+      ),
+    );
+    expect(r.images.map((i) => i.name)).toEqual(['layout-1.png']);
+    expect(r.dropped).toEqual([
+      {
+        where: 'Slide layouts and master, picture 2',
+        reason: 'WMF converts on Windows only',
+        fix: 'Remove the source and add it again on Windows, or save the picture as PNG in the file',
+      },
+    ]);
+  });
+
   it('renders tables as markdown tables in document order', async () => {
     const r = await pptxToMarkdown(
       await buildPptx([
@@ -749,6 +910,41 @@ describe('docxToMarkdown', () => {
     expect(r.markdown).not.toContain('![');
     expect(r.warnings).toEqual([
       '1 picture in formats Claude cannot view (emf)',
+    ]);
+  });
+
+  it('reports a picture it could not convert', async () => {
+    const r = await docxToMarkdown(await buildDocx({ image: 'emf' }));
+    expect(r.dropped).toEqual([
+      {
+        where: 'Picture 1',
+        reason: 'EMF converts on Windows only',
+        fix: 'Remove the source and add it again on Windows, or save the picture as PNG in the file',
+      },
+    ]);
+    expect(r.tiny).toBe(0);
+  });
+});
+
+describe('ImageCollector', () => {
+  it('names where a picture was from the name its converter gave it', () => {
+    expect(pictureWhere('slide-9-2')).toBe('Slide 9, picture 2');
+    expect(pictureWhere('p3.png')).toBe('Page 3');
+    expect(pictureWhere('p3-2.png')).toBe('Page 3, picture 2');
+    expect(pictureWhere('sheet-2-4')).toBe('Sheet 2, picture 4');
+    expect(pictureWhere('image-5')).toBe('Picture 5');
+    expect(pictureWhere('layout-1')).toBe('Slide layouts and master');
+  });
+
+  it('reports a picture in a format without a name', async () => {
+    const images = new ImageCollector();
+    expect(await images.addAny('image-1', PNG, '')).toBeNull();
+    expect(images.dropped).toEqual([
+      {
+        where: 'Picture 1',
+        reason: 'UNKNOWN could not be converted',
+        fix: 'Save the picture as PNG in the file, then remove the source and add it again',
+      },
     ]);
   });
 });

@@ -55,6 +55,8 @@ export async function docxToMarkdown(
     title: firstHeading(markdown),
     images: images.images,
     warnings: images.warnings(),
+    dropped: images.dropped,
+    tiny: images.tiny,
     empty: markdown.trim() === '' && images.images.length === 0,
   };
 }
