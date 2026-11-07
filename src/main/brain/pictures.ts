@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  Brain,
   BrainFinding,
   BrainJob,
   BrainSourceRow,
@@ -9,11 +10,15 @@ import type {
   SourcePictures,
 } from '../../shared/brain';
 import { readJson, writeAtomic } from '../fsRetry';
+import type { GitClient } from '../services/GitClient';
 import { localTarget } from './check';
+import { convertFile, type ConvertOptions, type Rasterize } from './convert';
+import { withBrainGit } from './gitMutex';
 import type { BrainJobRunner } from './jobs';
 import { readPages, type WikiPage } from './pages';
 import { absPath } from './paths';
 import { pictureLabel } from './pictureLabel';
+import { listSources } from './sources';
 
 export { pictureLabel };
 
@@ -313,6 +318,136 @@ export async function afterPictureJob(
   } catch (e) {
     console.error('[brain] could not check pictures after a capture', e);
   }
+}
+
+/**
+ * Rebuilds the drop records of sources added before drops were recorded, by converting each stored original again
+ * (one at a time); a source that has a record, or no original (pasted text), is left alone. Never writes `sources/`.
+ * Commits DROPPED_FILE alone as 'Brain: dropped pictures of earlier sources' when it changed.
+ */
+export async function rebuildDrops(
+  git: GitClient,
+  brainDir: string,
+  sources: BrainSourceRow[],
+  opts: ConvertOptions,
+): Promise<void> {
+  const known = await readDropped(brainDir);
+  const found: DroppedFile = {};
+  for (const s of sources) {
+    if (!s.original || s.path in known) continue;
+    try {
+      const c = await convertFile(absPath(brainDir, s.original), opts);
+      if (c === 'unsupported' || (!c.dropped.length && !c.tiny)) continue;
+      found[s.path] = {
+        dropped: c.dropped.map((d) => ({ ...d, accepted: null })),
+        tiny: c.tiny,
+      };
+    } catch (e) {
+      console.error(`[brain] could not convert ${s.original} again`, e);
+    }
+  }
+  if (!Object.keys(found).length) return;
+  await withBrainGit(brainDir, async () => {
+    // Read again under the lock: a source added meanwhile keeps the record its add wrote.
+    await writeDropped(brainDir, (f) => ({ ...found, ...f }));
+    const changed = (
+      await git.run(brainDir, ['status', '--porcelain', '--', DROPPED_FILE])
+    ).trim();
+    if (!changed) return;
+    await git.run(brainDir, ['add', '--', DROPPED_FILE]);
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      'Brain: dropped pictures of earlier sources',
+      '--',
+      DROPPED_FILE,
+    ]);
+  });
+}
+
+const PENDING: ReadonlySet<BrainJob['status']> = new Set([
+  'queued',
+  'running',
+  'paused',
+]);
+
+/**
+ * Starts or resumes the one-time pass over earlier sources: rebuilds their drop records, then queues a background
+ * pictures job per source with pictures not interpreted that is not in `picturePass.done` and has no such job
+ * pending, oldest first, the wiki mirror last. A resume keeps `startedAt` and `total`; a pass with nothing left
+ * finishes. Returns the new `picturePass` for the caller to save.
+ */
+export async function runPicturePass(
+  b: Brain,
+  d: {
+    git: GitClient;
+    rasterize?: Rasterize;
+    enqueue: BrainJobRunner['enqueue'];
+    jobs: BrainJobRunner['jobs'];
+    now: () => Date;
+  },
+): Promise<Brain['picturePass']> {
+  const sources = await listSources(b.path, null);
+  await rebuildDrops(d.git, b.path, sources, { rasterize: d.rasterize });
+  const pages = await readPages(b.path).catch(() => []);
+  const all = await brainCoverage(b.path, pages, sources);
+  const done = new Set(b.picturePass?.done ?? []);
+  const ingested = new Map(sources.map((s) => [s.path, s.ingestedAt]));
+  const left = all
+    .filter((c) => c.counts.missing > 0 && !done.has(c.source))
+    .map((c) => c.source)
+    .sort((x, y) => {
+      if (x === MIRROR_SOURCE || y === MIRROR_SOURCE)
+        return Number(x === MIRROR_SOURCE) - Number(y === MIRROR_SOURCE);
+      return (
+        (ingested.get(x) ?? '').localeCompare(ingested.get(y) ?? '') ||
+        x.localeCompare(y)
+      );
+    });
+  const pending = new Set(
+    d
+      .jobs(b.id)
+      .filter(
+        (j) => j.background && j.kind === 'pictures' && PENDING.has(j.status),
+      )
+      .map((j) => j.source),
+  );
+  for (const source of left)
+    if (!pending.has(source))
+      d.enqueue(b.id, 'pictures', source, { background: true });
+  const at = d.now().toISOString();
+  return {
+    startedAt: b.picturePass?.startedAt ?? at,
+    total: b.picturePass?.total ?? left.length,
+    done: [...done],
+    finishedAt: left.length ? null : at,
+  };
+}
+
+/** The pass after a finished background pictures job: its source is done, and the pass is over at its total. */
+export function notePassJob(
+  brain: Brain,
+  job: BrainJob,
+  now: Date,
+): Brain['picturePass'] {
+  const pass = brain.picturePass;
+  if (
+    !pass ||
+    !job.background ||
+    job.kind !== 'pictures' ||
+    (job.status !== 'done' && job.status !== 'failed') ||
+    !job.source ||
+    pass.done.includes(job.source)
+  )
+    return pass;
+  const done = [...pass.done, job.source];
+  return {
+    ...pass,
+    done,
+    finishedAt:
+      pass.finishedAt ?? (done.length >= pass.total ? now.toISOString() : null),
+  };
 }
 
 const plural = (n: number, one: string, many: string) =>

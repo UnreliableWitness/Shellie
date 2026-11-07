@@ -52,6 +52,19 @@ export const BrainSchema = z.object({
   lastDigestAt: z.string().nullable().default(null),
   /** Kept but quiet: out of the nav, no task gets it, no scheduled work, no jobs. Settings lists it for Restore. */
   archived: z.boolean().default(false),
+  /**
+   * The one-time pass over sources added before picture coverage (templates v6): when it started, how many sources it
+   * queued, the sources whose job finished, and when it was over. Null until it starts.
+   */
+  picturePass: z
+    .object({
+      startedAt: z.string(),
+      total: z.number().int(),
+      done: z.array(z.string()),
+      finishedAt: z.string().nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 export type Brain = z.infer<typeof BrainSchema>;
 
