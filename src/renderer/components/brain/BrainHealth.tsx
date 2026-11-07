@@ -21,6 +21,7 @@ export function picturesFact(c: PictureCounts): string | null {
     `${done} of ${c.total} interpreted`,
     c.missing > 0 && `${c.missing} not interpreted`,
     c.dropped > 0 && `${c.dropped} never reached Claude`,
+    c.accepted > 0 && `${c.accepted} accepted`,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -132,27 +133,32 @@ export function BrainHealth({
                 </span>
                 <span className="small">{f.detail}</span>
               </div>
-              {f.kind === 'picture' && f.detail.includes('not interpreted') ? (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  aria-label={`Re-evaluate ${f.page}`}
-                  onClick={() => reevaluate(f.page)}
-                >
-                  Re-evaluate
-                </button>
-              ) : f.kind === 'picture' && onOpen ? (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  aria-label={`Open source ${f.page}`}
-                  onClick={() => {
-                    trackBrain('open-page');
-                    onOpen(f.page);
-                  }}
-                >
-                  Open source
-                </button>
+              {f.kind === 'picture' ? (
+                <>
+                  {f.detail.includes('not interpreted') && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      aria-label={`Re-evaluate ${f.page}`}
+                      onClick={() => reevaluate(f.page)}
+                    >
+                      Re-evaluate
+                    </button>
+                  )}
+                  {f.detail.includes('never reached Claude') && onOpen && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      aria-label={`Open source ${f.page}`}
+                      onClick={() => {
+                        trackBrain('open-page');
+                        onOpen(f.page);
+                      }}
+                    >
+                      Open source
+                    </button>
+                  )}
+                </>
               ) : f.kind === 'uncaptured' ? (
                 <button
                   type="button"

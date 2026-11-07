@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -8,7 +8,11 @@ import type {
   SourcePictures as SourcePicturesData,
 } from '../../../shared/brain';
 import { installFakeApi } from '../../test-helpers/fakeApi';
-import { AddedPictures, SourcePictures } from './SourcePictures';
+import {
+  AddedPictures,
+  SourcePictures,
+  useSourcePictures,
+} from './SourcePictures';
 
 const SOURCE = 'sources/2026-11-04-acme-kickoff.md';
 const ASSETS = 'sources/2026-11-04-acme-kickoff-assets';
@@ -335,5 +339,69 @@ describe('AddedPictures', () => {
       expect(a.calls.some((c) => c.channel === 'brain:pictures')).toBe(true),
     );
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('useSourcePictures', () => {
+  function Described() {
+    const p = useSourcePictures('b1', SOURCE);
+    return <span>{p ? `${p.counts.described} described` : 'none'}</span>;
+  }
+  const described = (n: number) =>
+    data(
+      Array.from({ length: n }, () =>
+        picture({ status: 'described', pages: ['wiki/a.md'] }),
+      ),
+    );
+
+  it('keeps the newer answer when an older refetch answers last', async () => {
+    const answers: ((p: SourcePicturesData) => void)[] = [];
+    const a = installFakeApi({
+      'brain:pictures': () =>
+        new Promise<SourcePicturesData>((resolve) => answers.push(resolve)),
+    });
+    render(<Described />);
+    await waitFor(() => expect(answers).toHaveLength(1));
+    act(() => a.emit('brain:changed', { brainId: 'b1' }));
+    await waitFor(() => expect(answers).toHaveLength(2));
+    await act(async () => answers[1](described(2)));
+    await act(async () => answers[0](described(1)));
+    expect(screen.getByText('2 described')).toBeInTheDocument();
+  });
+
+  it('keeps the last good answer when a refetch fails', async () => {
+    let fail = false;
+    const a = installFakeApi({
+      'brain:pictures': () => {
+        if (fail) throw new Error('gone');
+        return described(3);
+      },
+    });
+    render(<Described />);
+    expect(await screen.findByText('3 described')).toBeInTheDocument();
+    fail = true;
+    act(() => a.emit('brain:changed', { brainId: 'b1' }));
+    await waitFor(() =>
+      expect(
+        a.calls.filter((c) => c.channel === 'brain:pictures'),
+      ).toHaveLength(2),
+    );
+    expect(screen.getByText('3 described')).toBeInTheDocument();
+  });
+});
+
+describe('AddedPictures with nothing Claude could look at', () => {
+  it('says how many never reached Claude', async () => {
+    installFakeApi({
+      'brain:pictures': () =>
+        data([
+          picture({ status: 'dropped', path: null, where: 'p1' }),
+          picture({ status: 'dropped', path: null, where: 'p2' }),
+        ]),
+    });
+    render(<AddedPictures brainId="b1" path={SOURCE} jobs={[]} />);
+    expect(
+      await screen.findByText('2 pictures never reached Claude'),
+    ).toBeInTheDocument();
   });
 });

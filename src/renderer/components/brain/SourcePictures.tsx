@@ -56,20 +56,19 @@ export function useSourcePictures(
   source: string | null,
 ): SourcePicturesData | null {
   const [pictures, setPictures] = useState<SourcePicturesData | null>(null);
-  // Only the answer for the source shown lands.
-  const shown = useRef(source);
-  shown.current = source;
+  // Only the latest request's answer lands: an older refetch, or one for another source or brain, is dropped.
+  const seq = useRef(0);
   const load = useCallback(() => {
+    const n = ++seq.current;
     if (!source) return;
     api()
       .invoke('brain:pictures', brainId, source)
       .then(
         (p) => {
-          if (shown.current === source) setPictures(p);
+          if (seq.current === n) setPictures(p);
         },
-        () => {
-          if (shown.current === source) setPictures(null);
-        },
+        // A failed refetch keeps what was shown.
+        () => undefined,
       );
   }, [brainId, source]);
   useEffect(() => {
@@ -232,8 +231,25 @@ function PictureLine({
   titleOf: (path: string) => string;
 }) {
   const [src, setSrc] = useState<string | null>(null);
+  const thumb = useRef<HTMLButtonElement>(null);
+  // Without IntersectionObserver (tests) the thumbnail loads at once.
+  const [seen, setSeen] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  );
   useEffect(() => {
-    if (!row.path) return;
+    const el = thumb.current;
+    if (seen || !el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setSeen(true);
+        io.disconnect();
+      }
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [seen]);
+  useEffect(() => {
+    if (!row.path || !seen) return;
     let live = true;
     api()
       .invoke('brain:asset', brainId, row.path)
@@ -246,7 +262,7 @@ function PictureLine({
     return () => {
       live = false;
     };
-  }, [brainId, row.path]);
+  }, [brainId, row.path, seen]);
   const name = row.alt ? `${row.label} · ${row.alt}` : row.label;
   const detail = detailOf(row);
   const status = STATUS[row.status];
@@ -254,6 +270,7 @@ function PictureLine({
     <li className="list-row brain-picture">
       {row.path ? (
         <button
+          ref={thumb}
           type="button"
           className="brain-picture-thumb"
           aria-label={`View ${name}`}
@@ -334,7 +351,12 @@ export function AddedPictures({
   if (!pictures) return null;
   const c = pictures.counts;
   const { done, of } = interpreted(c);
-  if (of === 0) return null;
+  if (of === 0)
+    return c.dropped > 0 ? (
+      <span className="muted small">
+        {plural(c.dropped, 'picture')} never reached Claude
+      </span>
+    ) : null;
   const inFlight = (kind: BrainJob['kind']) =>
     jobs.some((j) => j.kind === kind && j.source === path && isActive(j));
   if (inFlight('capture')) return null;

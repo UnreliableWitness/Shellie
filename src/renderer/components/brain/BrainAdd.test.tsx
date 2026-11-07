@@ -17,6 +17,7 @@ import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { brainJob, brainView } from '../../test-helpers/brainFixture';
 import { BrainAdd as BrainAddView } from './BrainAdd';
+import { BrainHealth } from './BrainHealth';
 import { useBrainPages } from './BrainWiki';
 
 const file = (name: string, path = `/dl/${name}`) =>
@@ -901,11 +902,23 @@ describe('BrainAdd right column', () => {
         },
       ],
     };
+    brain.health.pictures.accepted = 1;
     render(<BrainAdd brain={brain} onOpenPage={onOpenPage} />);
     const health = screen.getByRole('region', { name: 'Health' });
     expect(health).toHaveTextContent(
-      'Pictures211 of 214 interpreted · 1 not interpreted · 2 never reached Claude',
+      'Pictures211 of 214 interpreted · 1 not interpreted · 2 never reached Claude · 1 accepted',
     );
+    // A source with both gaps offers both; no picture finding goes to the terminal.
+    expect(
+      within(health).getByRole('button', {
+        name: 'Open source sources/2026-11-04-acme-kickoff.md',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(health).queryByRole('button', {
+        name: /Resolve in terminal: picture/,
+      }),
+    ).not.toBeInTheDocument();
     await userEvent.click(
       within(health).getByRole('button', {
         name: 'Re-evaluate sources/2026-11-04-acme-kickoff.md',
@@ -923,6 +936,27 @@ describe('BrainAdd right column', () => {
       }),
     );
     expect(onOpenPage).toHaveBeenCalledWith('sources/2026-10-28-network.md');
+  });
+
+  it('Health without onOpen: a drop-only picture finding has no button', () => {
+    installFakeApi({});
+    const brain = withOptions({});
+    brain.health = {
+      ...brain.health!,
+      findings: [
+        {
+          kind: 'picture',
+          page: 'sources/2026-10-28-network.md',
+          detail: '4 never reached Claude',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+      ],
+    };
+    render(<BrainHealth brain={brain} />);
+    const finding = screen
+      .getByText('sources/2026-10-28-network.md')
+      .closest('li') as HTMLElement;
+    expect(within(finding).queryAllByRole('button')).toEqual([]);
   });
 
   it('Health: no Pictures fact without pictures; only the parts that are not zero', () => {
