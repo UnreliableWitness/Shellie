@@ -90,6 +90,8 @@ The live check ran GUI-free in temporary vitest files (deleted, never committed)
   - With the pattern relative to the worktree (`../../live-brain-…/acme-brain/**`), the write was refused, both from a plain repo and from the linked worktree.
   - With the config built by the final `opencodeConfigContent(undefined, null, undefined, [], brainDir, folderPaths(worktree))`, the write was refused ("The user has specified a rule which prevents you…"), and reading `<brain>/index.md` worked (it quoted `# Acme brain`).
 
+Onboarding in the running app (2026-11-07, `npm start` on a fresh `SHELLIE_USER_DATA`, macOS, driven over the DevTools protocol): the Get started page (four cards, the agents found, "What you get"), the Agents step (OpenCode "Per task, from its database", the brains line), the Connect step (the new intro, Wiki (Read), the time footer), the brain page with no connection and with two projects of one organization (a connection injected into the renderer store only), and the Home band with steps 3 and 4. That look found four problems, fixed in `Onboarding: the step strip ticks only done steps, and tidier brain page`: the step strip ticked every earlier step by position (it now ticks only done steps), "Connect a project first." was glued to its button, the header had no "Brain" crumb, and the create form's Wiki row (also in Settings › Project › Brains) sat in the label column.
+
 ## Known gaps
 
 - `design/mockups/onboarding/` shows the original three-step design and is older than the screens. The Get started art (`assets/ART.md`) is still pending.
@@ -103,7 +105,7 @@ The live check ran GUI-free in temporary vitest files (deleted, never committed)
 - The OpenCode brain terminal, like the jobs, now drops a developer's own `OPENCODE_CONFIG_CONTENT` (plugins and settings in it included); the global config still loads. Its attention notifications are tested but not run live.
 - The task tab's relative deny assumes OpenCode's worktree is the tab's folder, which holds for Shellie's tabs. It is computed when the tab is spawned, so a brain moved while the tab runs keeps the old path until the tab restarts.
 - Not run live: the OpenCode brain terminal (TUI), its session lookup, Ask, Resolve, Continue, and lessons at Finish from a real OpenCode session. These are covered by unit tests only.
-- The onboarding screens were checked by tests, not in the running app.
+- The onboarding screens were looked at in the dev build only (below), on macOS; creating a brain from the onboarding page with a real saved connection was not done there (the dev Electron's keychain prompt blocks saving a connection under a driver), so that path is covered by renderer tests.
 - Parked from the reviews:
   - a Claude session can be lost after a Continue round trip through an OpenCode job;
   - a session the person starts by hand in the brain folder, after the terminal spawned and before its first message, could be picked as the terminal's;
