@@ -24,10 +24,7 @@ import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
-import {
-  brainFolderPaths,
-  createBrainTerminals,
-} from './main/brain/brainTerminal';
+import { createBrainTerminals } from './main/brain/brainTerminal';
 import { capturedSessionIds } from './main/brain/state';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
@@ -152,7 +149,7 @@ import { HtmlViews, serveView, VIEW_SCHEME } from './main/htmlView';
 import { applyProjectScopeMigration } from './main/migrate/projectScope';
 import { migrateOnboarding } from './main/onboardingMigration';
 import { createWhatsNew, seenAtBoot } from './main/releaseNotes';
-import { userDataOverride } from './main/paths';
+import { folderPaths, userDataOverride } from './main/paths';
 
 if (started) app.quit();
 
@@ -937,7 +934,8 @@ async function boot(): Promise<void> {
         return null;
       }
     };
-    const brainSessions = new OpenCodeReader(openCodeDbPath());
+    // OpenCode's sessions: the brain terminal's, and a task's for its lessons at Finish.
+    const openCodeSessions = new OpenCodeReader(openCodeDbPath());
     brainTerminals = createBrainTerminals({
       brains,
       terminals,
@@ -947,8 +945,8 @@ async function boot(): Promise<void> {
       sessionExists: claudeSessionExists,
       // Never a job's session: the runner's jobs and the captured sources' sessions are left out.
       opencodeSession: (brain, since) =>
-        brainSessions.terminalSession(
-          brainFolderPaths(brain.path),
+        openCodeSessions.terminalSession(
+          folderPaths(brain.path),
           since,
           new Set([
             ...brainRunner
@@ -994,6 +992,8 @@ async function boot(): Promise<void> {
       },
       colorScheme: scheme,
       claudeThemeSettings: claudeSettings,
+      opencodeSessionTexts: (dirs, since) =>
+        openCodeSessions.sessionTexts(dirs, since),
       claudeSpawned: (id) =>
         retheme.spawned(
           id,
@@ -1149,6 +1149,7 @@ async function boot(): Promise<void> {
               ? opencodeRunInstructions(ctx.taskId, ctx.runNames)
               : undefined,
             ctx.denyPaths,
+            ctx.brainDir,
           );
           if (content) env.OPENCODE_CONFIG_CONTENT = content;
           else if (

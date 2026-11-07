@@ -67,13 +67,8 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 const patterns = (v: unknown): Record<string, unknown> =>
   isObject(v) ? v : typeof v === 'string' ? { '*': v } : {};
 
-/** The developer's own `permission` with the deny entries for the secret files added to `read` and `bash`. */
-function withDeny(existing: unknown, paths: string[]) {
-  const own = isObject(existing)
-    ? existing
-    : typeof existing === 'string'
-      ? { '*': existing }
-      : {};
+/** `permission` with the deny entries for the secret files added to `read` and `bash`. */
+function withDeny(own: Record<string, unknown>, paths: string[]) {
   const deny = opencodePermission(paths);
   return {
     ...own,
@@ -82,16 +77,44 @@ function withDeny(existing: unknown, paths: string[]) {
   };
 }
 
+/** `rules` with `pattern` set to `action` as its last entry (OpenCode's last matching rule wins). */
+const last = (rules: unknown, pattern: string, action: string) => {
+  const { [pattern]: _, ...rest } = patterns(rules);
+  return { ...rest, [pattern]: action };
+};
+
+/** `permission` with the brain folder readable from outside the project and not editable, after the developer's own rules. */
+function withBrain(permission: Record<string, unknown>, brainDir: string) {
+  const glob = `${brainDir}/**`;
+  return {
+    ...permission,
+    external_directory: last(permission.external_directory, glob, 'allow'),
+    edit: last(permission.edit, glob, 'deny'),
+  };
+}
+
 /**
  * OPENCODE_CONFIG_CONTENT with Shellie's plugin added, and `instructions` (a file with the `shellie run` line)
- * when given, and `permission` deny entries for `denyPaths` (untracked secret files); undefined when the developer's own value is not a JSON object.
+ * when given, and `permission` deny entries for `denyPaths` (untracked secret files), and read-only access to
+ * `brainDir` (the task's brain folder); undefined when the developer's own value is not a JSON object.
  */
 export function opencodeConfigContent(
   existing: string | undefined,
   pluginPath: string | null,
   instructions?: string,
   denyPaths: string[] = [],
+  brainDir?: string,
 ): string | undefined {
+  // The developer's own `permission`; a plain action ("allow") applies to every tool.
+  const permission = (existing: unknown) => {
+    const own = isObject(existing)
+      ? existing
+      : typeof existing === 'string'
+        ? { '*': existing }
+        : {};
+    const denied = denyPaths.length > 0 ? withDeny(own, denyPaths) : own;
+    return brainDir ? withBrain(denied, brainDir) : denied;
+  };
   const extra = (config: { instructions?: unknown; permission?: unknown }) => ({
     ...(instructions
       ? {
@@ -101,12 +124,13 @@ export function opencodeConfigContent(
           ],
         }
       : {}),
-    ...(denyPaths.length > 0
-      ? { permission: withDeny(config.permission, denyPaths) }
+    ...(denyPaths.length > 0 || brainDir
+      ? { permission: permission(config.permission) }
       : {}),
   });
   // No plugin and nothing else to add: the developer's own value (if any) is left alone.
-  const nothing = !pluginPath && !instructions && denyPaths.length === 0;
+  const nothing =
+    !pluginPath && !instructions && denyPaths.length === 0 && !brainDir;
   if (nothing) return undefined;
   const plugin = (list: unknown[]) =>
     pluginPath ? { plugin: [...list, pluginPath] } : {};

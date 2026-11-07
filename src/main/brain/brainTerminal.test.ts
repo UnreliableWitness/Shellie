@@ -9,7 +9,6 @@ import { testPlatform } from '../test-helpers/shell';
 import { BrainStore } from './BrainStore';
 import {
   brainClaudeArgs,
-  brainFolderPaths,
   brainOpencodeArgs,
   createBrainTerminals,
 } from './brainTerminal';
@@ -337,16 +336,5 @@ describe('createBrainTerminals on OpenCode', () => {
     await bt.open('b1', 'ses_1');
     expect(await bt.restart('brain-b1')).toBe(true);
     expect(line(spawned[1])).toMatch(/'?--session'? '?ses_1'?/);
-  });
-});
-
-describe('brainFolderPaths', () => {
-  it('gives the folder and its real path, or the folder alone', async () => {
-    const real = await fs.realpath(dir);
-    expect(brainFolderPaths(real)).toEqual([real]);
-    const link = path.join(dir, 'link');
-    await fs.symlink(real, link);
-    expect(brainFolderPaths(link)).toEqual([link, real]);
-    expect(brainFolderPaths('/nope/brain')).toEqual(['/nope/brain']);
   });
 });

@@ -637,9 +637,9 @@ describe('handlers: finish with a brain', () => {
     confirmDiscardUnsaved: true,
   };
 
-  async function brainTask() {
+  async function brainTask(over: Partial<Services> = {}) {
     const b = await brainServices();
-    const hx = await harness(fakeCrypto(), { brain: b.brain });
+    const hx = await harness(fakeCrypto(), { brain: b.brain, ...over });
     const c = await hx.connections.save({
       organizationUrl: 'https://dev.azure.com/contoso',
       project: 'P',
@@ -724,6 +724,51 @@ describe('handlers: finish with a brain', () => {
     );
     expect(hx.sources()).toEqual([]);
     expect(hx.b.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("captures the task's OpenCode sessions as lessons, with the Agent speaker", async () => {
+    const asked: { dirs: string[]; since: number }[] = [];
+    const hx = await brainTask({
+      opencodeSessionTexts: (dirs, since) => {
+        asked.push({ dirs: [...dirs], since });
+        return [
+          [
+            { who: 'Developer', text: 'Fix the date' },
+            { who: 'Agent', text: 'Fixed in delivery.ts.' },
+          ],
+        ];
+      },
+    });
+    await hx.h['terminals:open'](hx.t.id, {
+      kind: 'opencode',
+      label: 'OpenCode',
+    });
+    await hx.terminals.killAllForTask(hx.t.id);
+    await hx.h['tasks:finish'](hx.t.id, { ...finish, captureLessons: true });
+    expect(asked).toHaveLength(1);
+    expect(asked[0].dirs).toContain(hx.t.worktreePath);
+    expect(asked[0].since).toBe(Date.parse(hx.t.createdAt));
+    const [source] = hx.sources();
+    expect(source).toMatch(/session\.md$/);
+    const text = readFileSync(
+      path.join(hx.brain.path, 'sources', source),
+      'utf8',
+    );
+    expect(text).toContain('**Developer:** Fix the date');
+    expect(text).toContain('**Agent:** Fixed in delivery.ts.');
+    expect(hx.b.enqueue).toHaveBeenCalledWith(
+      hx.brain.id,
+      'lessons',
+      `sources/${source}`,
+    );
+  });
+
+  it('does not read OpenCode for lessons of a task that never had an OpenCode tab', async () => {
+    const read = vi.fn(() => []);
+    const hx = await brainTask({ opencodeSessionTexts: read });
+    await hx.h['tasks:finish'](hx.t.id, { ...finish, captureLessons: true });
+    expect(read).not.toHaveBeenCalled();
+    expect(hx.sources()).toEqual([]);
   });
 
   it('a brain that fails never fails the finish', async () => {

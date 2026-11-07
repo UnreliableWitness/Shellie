@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { realpathSync } from 'node:fs';
 import { brainTaskId, type Brain, type BrainAgent } from '../../shared/brain';
 import type { TerminalDef } from '../../shared/types';
 import { sleep } from '../async';
@@ -42,16 +41,6 @@ export function brainOpencodeArgs(
     ...(model ? ['-m', model] : []),
     ...(prompt ? ['--prompt', prompt] : []),
   ];
-}
-
-/** The brain folder as given and as its real path (OpenCode stores the real one, e.g. /private/tmp on macOS). */
-export function brainFolderPaths(folder: string): string[] {
-  try {
-    const real = realpathSync(folder);
-    return real === folder ? [folder] : [folder, real];
-  } catch {
-    return [folder];
-  }
 }
 
 export type BrainTerminalDeps = {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DIGEST_MAX,
   sessionDigest,
+  sessionDigestFromTurns,
   sessionTurns,
   TURN_MAX,
 } from './sessionDigest';
@@ -98,5 +99,24 @@ describe('after review', () => {
     expect(sessionDigest('T', [toolsOnly, [user('one')]])).not.toContain(
       '## Session',
     );
+  });
+});
+
+describe('sessionDigestFromTurns', () => {
+  it("writes OpenCode's turns with the Agent speaker, after Claude's", () => {
+    const d = sessionDigestFromTurns('T', [
+      sessionTurns([user('to claude'), claude([{ type: 'text', text: 'C' }])]),
+      [
+        { who: 'Developer', text: 'to opencode' },
+        { who: 'Agent', text: 'O' },
+      ],
+      [{ who: 'Agent', text: 'nobody typed' }],
+    ])!;
+    expect(d).toContain('## Session 1\n\n**Developer:** to claude\n');
+    expect(d).toContain('**Claude:** C\n');
+    expect(d).toContain('## Session 2\n\n**Developer:** to opencode\n');
+    expect(d).toContain('**Agent:** O\n');
+    expect(d).not.toContain('## Session 3');
+    expect(sessionDigestFromTurns('T', [])).toBeNull();
   });
 });

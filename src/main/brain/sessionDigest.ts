@@ -1,6 +1,6 @@
 /**
- * A compact digest of a task's Claude Code sessions for the brain's /lessons skill: what the developer typed and
- * what Claude answered, tool calls and their output left out. Markdown, bounded in size.
+ * A compact digest of a task's Claude Code and OpenCode sessions for the brain's /lessons skill: what the developer
+ * typed and what the agent answered, tool calls and their output left out. Markdown, bounded in size.
  */
 
 import { clip } from '../../shared/text';
@@ -10,6 +10,8 @@ export const DIGEST_MAX = 60_000;
 export const TURN_MAX = 2_000;
 
 type Part = { type?: unknown; text?: unknown };
+/** One turn of a session: Claude Code's agent speaks as Claude, OpenCode's as Agent. */
+export type Turn = { who: 'Developer' | 'Claude' | 'Agent'; text: string };
 type Line = {
   type?: string;
   isMeta?: boolean;
@@ -63,20 +65,28 @@ export function sessionTurns(
 }
 
 /**
- * The markdown digest of a task's sessions, oldest session first. `null` when there is nothing a person typed
- * (a task whose Claude was never used).
+ * The markdown digest of a task's Claude Code transcripts (each as its jsonl lines), oldest session first. `null`
+ * when there is nothing a person typed (a task whose Claude was never used).
  */
 export function sessionDigest(
   title: string,
   sessions: string[][],
 ): string | null {
+  return sessionDigestFromTurns(title, sessions.map(sessionTurns));
+}
+
+/** The markdown digest of sessions already read as turns, in the order given; `null` when nobody typed anything. */
+export function sessionDigestFromTurns(
+  title: string,
+  sessions: readonly (readonly Turn[])[],
+): string | null {
   const parts: string[] = [`# Session of task: ${title}`, ''];
   let any = false;
   let size = parts.join('\n').length;
   // Only sessions where a person typed count, and they are numbered among themselves.
-  const used = sessions
-    .map((lines) => sessionTurns(lines))
-    .filter((turns) => turns.some((t) => t.who === 'Developer'));
+  const used = sessions.filter((turns) =>
+    turns.some((t) => t.who === 'Developer'),
+  );
   for (const [i, turns] of used.entries()) {
     any = true;
     if (used.length > 1) parts.push(`## Session ${i + 1}`, '');

@@ -235,3 +235,51 @@ describe('opencodeConfigContent without the plugin', () => {
     ).toBeUndefined();
   });
 });
+
+describe('opencodeConfigContent brain', () => {
+  it('lets the tab read the brain folder and denies editing it', () => {
+    const c = JSON.parse(
+      opencodeConfigContent(undefined, '/p.js', undefined, [], '/b')!,
+    );
+    expect(c.permission.external_directory).toEqual({ '/b/**': 'allow' });
+    expect(c.permission.edit).toEqual({ '/b/**': 'deny' });
+    expect(c.permission.read).toBeUndefined();
+  });
+
+  it("puts the brain's edit deny after the developer's own edit rules, which stay", () => {
+    const c = JSON.parse(
+      opencodeConfigContent(
+        '{"permission":{"edit":{"/b/**":"allow","*":"allow"},"external_directory":"ask"}}',
+        null,
+        undefined,
+        ['.env'],
+        '/b',
+      )!,
+    );
+    expect(Object.entries(c.permission.edit)).toEqual([
+      ['*', 'allow'],
+      ['/b/**', 'deny'],
+    ]);
+    expect(c.permission.external_directory).toEqual({
+      '*': 'ask',
+      '/b/**': 'allow',
+    });
+    expect(c.permission.read).toEqual({ '.env': 'deny' });
+  });
+
+  it('keeps a plain edit action as the catch-all before the deny', () => {
+    const c = JSON.parse(
+      opencodeConfigContent(
+        '{"permission":{"edit":"ask"}}',
+        null,
+        undefined,
+        [],
+        '/b',
+      )!,
+    );
+    expect(Object.entries(c.permission.edit)).toEqual([
+      ['*', 'ask'],
+      ['/b/**', 'deny'],
+    ]);
+  });
+});
