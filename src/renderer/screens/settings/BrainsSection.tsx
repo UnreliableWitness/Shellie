@@ -190,7 +190,9 @@ export function CreateBrainForm({
       {detected && !fallback.found ? (
         <div className="small muted">{NO_AGENT_NOTE}</div>
       ) : null}
-      <span id={`${id}-folder`}>Folder</span>
+      <span id={`${id}-folder`} className="conn-label">
+        Folder
+      </span>
       <div className="row" aria-labelledby={`${id}-folder`}>
         <span className="mono small grow">{path ?? 'Default location'}</span>
         <button

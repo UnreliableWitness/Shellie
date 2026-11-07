@@ -11,6 +11,12 @@ export function AgentsScreen() {
   const go = useStore((s) => s.go);
   const back = useStore((s) => s.back);
   const brains = useActiveBrains();
+  const steps = stepsFrom({
+    settings: useStore((s) => s.settings),
+    connections: useStore((s) => s.connections),
+    repos: useStore((s) => s.repos),
+    brains,
+  });
   const onboarding = screen.kind === 'agents' && screen.from === 'get-started';
 
   const goBack = () => {
@@ -29,7 +35,7 @@ export function AgentsScreen() {
 
   return (
     <div className="page">
-      {onboarding && <StepStrip current="agents" />}
+      {onboarding && <StepStrip current="agents" steps={steps} />}
       <PageHeader title="Agents" />
       <div className="page-body add-repo">
         <AgentsSection embedded />

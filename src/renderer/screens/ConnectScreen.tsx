@@ -56,6 +56,12 @@ export function ConnectScreen() {
   const connectionId =
     screen.kind === 'connect' ? screen.connectionId : undefined;
   const brains = useActiveBrains();
+  const steps = stepsFrom({
+    settings: useStore((s) => s.settings),
+    connections: connections,
+    repos: useStore((s) => s.repos),
+    brains,
+  });
   const onboarding = from === 'get-started';
   const existing = connectionId
     ? connections.find((c) => c.id === connectionId)
@@ -241,7 +247,7 @@ export function ConnectScreen() {
 
   return (
     <div className="page">
-      {onboarding && <StepStrip current="connect" />}
+      {onboarding && <StepStrip current="connect" steps={steps} />}
       <PageHeader
         title={existing ? 'Add a project' : 'Where do your work items live?'}
       />

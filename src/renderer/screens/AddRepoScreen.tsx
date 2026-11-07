@@ -107,6 +107,12 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
   const notify = useStore((s) => s.notify);
   const from = screen.kind === 'add-repo' ? screen.from : 'settings';
   const brains = useActiveBrains();
+  const steps = stepsFrom({
+    settings: useStore((s) => s.settings),
+    connections: useStore((s) => s.connections),
+    repos: useStore((s) => s.repos),
+    brains,
+  });
   const onboarding = from === 'get-started';
 
   const [folder, setFolder] = useState(initial ?? '');
@@ -198,7 +204,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
 
   return (
     <div className="page">
-      {onboarding && <StepStrip current="repository" />}
+      {onboarding && <StepStrip current="repository" steps={steps} />}
       <PageHeader title="Add a repository" />
       <div className="page-body add-repo">
         <p className="muted">

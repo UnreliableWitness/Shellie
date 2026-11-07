@@ -15,6 +15,12 @@ export function BrainNewScreen() {
   const notify = useStore((s) => s.notify);
   const connections = useStore((s) => s.connections);
   const { brains, loaded } = useActiveBrainsLoaded();
+  const steps = stepsFrom({
+    settings: useStore((s) => s.settings),
+    connections,
+    repos: useStore((s) => s.repos),
+    brains,
+  });
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const connection =
     connections.find((c) => c.id === connectionId) ?? connections[0];
@@ -56,7 +62,7 @@ export function BrainNewScreen() {
 
   return (
     <div className="page">
-      <StepStrip current="brain" />
+      <StepStrip current="brain" steps={steps} />
       <PageHeader title="A brain for your project" />
       <div className="page-body add-repo">
         <p className="muted">
@@ -84,16 +90,18 @@ export function BrainNewScreen() {
           </>
         )}
         {!connection ? (
-          <div className="row">
-            <span className="small muted grow">Connect a project first.</span>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => go({ kind: 'connect', from: 'get-started' })}
-            >
-              Connect
-            </button>
-          </div>
+          <>
+            <p className="muted">Connect a project first.</p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => go({ kind: 'connect', from: 'get-started' })}
+              >
+                Connect
+              </button>
+            </div>
+          </>
         ) : loaded && !hasBrain ? (
           <CreateBrainForm
             key={connection.id}

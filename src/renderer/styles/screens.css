@@ -118,8 +118,19 @@
   padding: 12px 16px;
   border-top: 1px solid var(--line);
 }
-.conn-form label {
+.conn-form label,
+.conn-form .conn-label {
   color: var(--muted);
+}
+.conn-form .wiki-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  gap: 12px 16px;
+  align-items: center;
+}
+.conn-form .wiki-picker > :not(label) {
+  grid-column: 2;
 }
 .conn-form .actions {
   grid-column: 1 / -1;

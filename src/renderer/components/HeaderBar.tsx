@@ -32,6 +32,7 @@ const PAGE_LABEL: Partial<Record<Screen['kind'], string>> = {
   connect: 'Connect',
   'get-started': 'Get started',
   agents: 'Agents',
+  'brain-new': 'Brain',
   'add-repo': 'Add repository',
   secrets: 'Secrets',
   'secrets-import': 'Secrets',
