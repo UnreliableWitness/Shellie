@@ -267,6 +267,20 @@ describe('opencodeConfigContent brain', () => {
     expect(c.permission.read).toEqual({ '.env': 'deny' });
   });
 
+  it("denies editing the brain by its path from the tab's folder, which is how OpenCode matches edit rules", () => {
+    const c = JSON.parse(
+      opencodeConfigContent(undefined, null, undefined, [], '/b/acme', [
+        '/w/t1',
+        '/private/w/t1',
+      ])!,
+    );
+    expect(c.permission.external_directory).toEqual({ '/b/acme/**': 'allow' });
+    expect(Object.entries(c.permission.edit)).toEqual([
+      ['../../b/acme/**', 'deny'],
+      ['../../../b/acme/**', 'deny'],
+    ]);
+  });
+
   it('keeps a plain edit action as the catch-all before the deny', () => {
     const c = JSON.parse(
       opencodeConfigContent(

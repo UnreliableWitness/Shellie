@@ -1150,6 +1150,7 @@ async function boot(): Promise<void> {
               : undefined,
             ctx.denyPaths,
             ctx.brainDir,
+            ctx.worktrees,
           );
           if (content) env.OPENCODE_CONFIG_CONTENT = content;
           else if (

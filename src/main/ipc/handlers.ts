@@ -245,7 +245,8 @@ export type Services = {
    * Extra env per terminal (main: the attention URL and token, OpenCode's plugin, and for agent tabs the task's
    * `shellie run` link). `runNames`: the names agents are told about, only when the repo has a stored secret. `denyPaths`: the untracked
    * secret files an agent tab must not read (relative to its folder, absolute for another repo's worktree).
-   * `brainDir`: the task's brain folder an OpenCode tab may read (when the brain gives tasks read access).
+   * `brainDir`: the task's brain folder an OpenCode tab may read (when the brain gives tasks read access), with
+   * `worktrees`: the tab's folder as given and real, which OpenCode's edit rules are relative to.
    */
   terminalEnv?: (
     def: TerminalDef,
@@ -254,6 +255,7 @@ export type Services = {
       runNames?: string[];
       denyPaths?: string[];
       brainDir?: string;
+      worktrees?: string[];
     },
   ) => Record<string, string>;
   /** `shellie run` for agents (main); handlers give it the task's tabs, config and leak watch. Absent in most tests. */
@@ -1403,10 +1405,11 @@ export function createHandlers(s: Services): Handlers {
       );
       // OpenCode's counterpart of Claude's --add-dir for the brain, given through its config.
       const brainDir = def.kind === 'opencode' ? brainToRead(task) : undefined;
+      const cwd = terminalWorkspace(task, def).worktreePath;
       s.terminals.spawn({
         id: def.id,
         taskId: task.id,
-        cwd: terminalWorkspace(task, def).worktreePath,
+        cwd,
         command: cmd.command,
         args: cmd.args,
         // Agent tabs' output goes through leak watch before it is kept or shown.
@@ -1420,7 +1423,7 @@ export function createHandlers(s: Services): Handlers {
             taskId: task.id,
             ...(secrets.runNames ? { runNames: secrets.runNames } : {}),
             ...(secrets.denyPaths ? { denyPaths: secrets.denyPaths } : {}),
-            ...(brainDir ? { brainDir } : {}),
+            ...(brainDir ? { brainDir, worktrees: folderPaths(cwd) } : {}),
           }),
           ...cmd.env,
           ...extraEnv,

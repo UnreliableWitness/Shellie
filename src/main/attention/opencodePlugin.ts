@@ -1,3 +1,4 @@
+import { toRel } from '../paths';
 import { opencodePermission } from '../secrets/deny';
 
 /**
@@ -83,20 +84,35 @@ const last = (rules: unknown, pattern: string, action: string) => {
   return { ...rest, [pattern]: action };
 };
 
-/** `permission` with the brain folder readable from outside the project and not editable, after the developer's own rules. */
-function withBrain(permission: Record<string, unknown>, brainDir: string) {
+/**
+ * `permission` with the brain folder readable from outside the project and not editable, after the developer's own
+ * rules. OpenCode matches `edit` rules against the path from the tab's folder (an absolute pattern never matched,
+ * checked live with 1.19.3), so the deny names the brain from each of `worktrees`; without them, the absolute path.
+ */
+function withBrain(
+  permission: Record<string, unknown>,
+  brainDir: string,
+  worktrees: readonly string[],
+) {
   const glob = `${brainDir}/**`;
+  const editGlobs = worktrees.length
+    ? [...new Set(worktrees.map((w) => `${toRel(w, brainDir)}/**`))]
+    : [glob];
   return {
     ...permission,
     external_directory: last(permission.external_directory, glob, 'allow'),
-    edit: last(permission.edit, glob, 'deny'),
+    edit: editGlobs.reduce<unknown>(
+      (rules, g) => last(rules, g, 'deny'),
+      permission.edit,
+    ),
   };
 }
 
 /**
  * OPENCODE_CONFIG_CONTENT with Shellie's plugin added, and `instructions` (a file with the `shellie run` line)
  * when given, and `permission` deny entries for `denyPaths` (untracked secret files), and read-only access to
- * `brainDir` (the task's brain folder); undefined when the developer's own value is not a JSON object.
+ * `brainDir` (the task's brain folder, from the tab's folder `worktrees`, as given and real); undefined when the
+ * developer's own value is not a JSON object.
  */
 export function opencodeConfigContent(
   existing: string | undefined,
@@ -104,6 +120,7 @@ export function opencodeConfigContent(
   instructions?: string,
   denyPaths: string[] = [],
   brainDir?: string,
+  worktrees: readonly string[] = [],
 ): string | undefined {
   // The developer's own `permission`; a plain action ("allow") applies to every tool.
   const permission = (given: unknown) => {
@@ -113,7 +130,7 @@ export function opencodeConfigContent(
         ? { '*': given }
         : {};
     const denied = denyPaths.length > 0 ? withDeny(own, denyPaths) : own;
-    return brainDir ? withBrain(denied, brainDir) : denied;
+    return brainDir ? withBrain(denied, brainDir, worktrees) : denied;
   };
   const extra = (config: { instructions?: unknown; permission?: unknown }) => ({
     ...(instructions

@@ -18,6 +18,7 @@ import {
 } from '../../shared/terminalFailure';
 import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { GitClient } from '../services/GitClient';
+import { folderPaths } from '../paths';
 import { loadEffectiveConfig } from '../services/effectiveConfig';
 import { TaskStore } from '../services/TaskStore';
 import { TerminalManager } from '../services/TerminalManager';
@@ -1439,7 +1440,8 @@ describe('handlers: the brain at setup', () => {
   });
 
   it('an OpenCode tab gets the brain folder in its env context, only while the option is on', async () => {
-    const ctxs: { kind: string; brainDir?: string }[] = [];
+    const ctxs: { kind: string; brainDir?: string; worktrees?: string[] }[] =
+      [];
     const { b, c, create, hx } = await brainSetup({
       terminalEnv: (def, ctx) => {
         ctxs.push({ kind: def.kind, ...ctx });
@@ -1450,6 +1452,10 @@ describe('handlers: the brain at setup', () => {
     const on = await create({ openOpencode: true });
     const forKind = (k: string) => ctxs.filter((x) => x.kind === k).at(-1);
     expect(forKind('opencode')?.brainDir).toBe(brain.path);
+    // OpenCode matches edit rules by the path from the tab's folder (as given and real).
+    expect(forKind('opencode')?.worktrees).toEqual(
+      folderPaths(on.t.worktreePath),
+    );
     expect(forKind('claude')?.brainDir).toBeUndefined();
     await b.brain.store.patch(brain.id, {
       options: { ...brain.options, addDirForClaude: false },
