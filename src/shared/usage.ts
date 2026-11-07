@@ -65,6 +65,8 @@ const OnboardingSchema = z.object({
   dismissedAt: z.string().nullable().default(null),
   agentsCheckedAt: z.string().nullable().default(null),
   tracker: z.literal('none').nullable().default(null),
+  /** `none`: the project's brain was skipped, so the fourth step counts as done. */
+  brain: z.enum(['none']).nullable().default(null),
   /** Set on the first start of the version with the first-run page, so its migration for existing installs runs once. */
   migrated: z.boolean().default(false),
 });
@@ -107,6 +109,7 @@ export const AppSettingsSchema = z.object({
     dismissedAt: null,
     agentsCheckedAt: null,
     tracker: null,
+    brain: null,
     migrated: false,
   }),
   /** The version whose What's new card on Home was dismissed (or a fresh install's first version); unset before #126. */

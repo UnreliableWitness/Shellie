@@ -72,6 +72,8 @@ export type Screen =
   | { kind: 'get-started' }
   /** The Agents step as a page (from Get started; Settings shows the same section inline). */
   | { kind: 'agents'; from: 'settings' | 'get-started' }
+  /** The brain step as a page (from Get started). */
+  | { kind: 'brain-new'; from: 'get-started' }
   | { kind: 'sprint' }
   /** The active project's overview page. */
   | { kind: 'project' }
@@ -231,6 +233,7 @@ const TRANSIENT = new Set<Screen['kind']>([
   'add-repo',
   'connect',
   'agents',
+  'brain-new',
 ]);
 
 export const useStore = create<Store>((set, get) => ({

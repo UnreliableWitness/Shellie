@@ -46,6 +46,7 @@ const agentsDone = {
     dismissedAt: null,
     agentsCheckedAt: '2026-10-22T09:00:00.000Z',
     tracker: null,
+    brain: null,
   },
 } as AppSettings;
 

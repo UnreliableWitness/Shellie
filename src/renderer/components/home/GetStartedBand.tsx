@@ -1,3 +1,4 @@
+import { useActiveBrains } from '../../hooks/useBrains';
 import { stepsFrom } from '../../onboardingState';
 import { dismissOnboarding, StepCards } from '../../screens/GetStartedScreen';
 import { useStore } from '../../store';
@@ -7,9 +8,11 @@ export function GetStartedBand() {
   const settings = useStore((s) => s.settings);
   const connections = useStore((s) => s.connections);
   const repos = useStore((s) => s.repos);
+  const brains = useActiveBrains();
   const notify = useStore((s) => s.notify);
   if (!settings || settings.onboarding.dismissedAt !== null) return null;
-  if (stepsFrom({ settings, connections, repos }).current === null) return null;
+  if (stepsFrom({ settings, connections, repos, brains }).current === null)
+    return null;
   return (
     <section aria-label="Get started" className="home-band get-started-band">
       <div className="section-head">

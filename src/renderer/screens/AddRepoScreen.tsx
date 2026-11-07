@@ -5,6 +5,7 @@ import { ShellieYmlSchema } from '../../shared/shellieYml';
 import { api, tryInvoke } from '../api';
 import { errorMessage } from '../../shared/errors';
 import { PageHeader, StepStrip } from '../components/ui';
+import { useActiveBrains } from '../hooks/useBrains';
 import { nextStep, stepsFrom } from '../onboardingState';
 import { useStore } from '../store';
 import { track } from '../telemetry';
@@ -105,6 +106,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
   const back = useStore((s) => s.back);
   const notify = useStore((s) => s.notify);
   const from = screen.kind === 'add-repo' ? screen.from : 'settings';
+  const brains = useActiveBrains();
   const onboarding = from === 'get-started';
 
   const [folder, setFolder] = useState(initial ?? '');
@@ -187,7 +189,7 @@ export function AddRepoScreen({ folder: initial }: { folder?: string }) {
     else if (onboarding) {
       go(
         nextStep(
-          stepsFrom({ ...useStore.getState(), repos: [added] }),
+          stepsFrom({ ...useStore.getState(), repos: [added], brains }),
           'repository',
         ),
       );

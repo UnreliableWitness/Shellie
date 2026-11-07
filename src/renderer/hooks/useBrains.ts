@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrainView } from '../../shared/brain';
 import { api } from '../api';
 
@@ -34,6 +34,12 @@ export function useBrains(): BrainView[] {
   useEffect(load, [load]);
   useBrainChanged(null, load);
   return brains;
+}
+
+/** The brains that are not archived: what "the project has a brain" means in the first-run steps. */
+export function useActiveBrains(): BrainView[] {
+  const brains = useBrains();
+  return useMemo(() => brains.filter((b) => !b.archived), [brains]);
 }
 
 /** One brain, fetched on mount and again when it changes; null until loaded or when it is gone. */

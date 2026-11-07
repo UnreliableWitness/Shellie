@@ -2,6 +2,7 @@ const STEPS = [
   { key: 'agents', label: 'Agents' },
   { key: 'connect', label: 'Connect' },
   { key: 'repository', label: 'Repository' },
+  { key: 'brain', label: 'Brain' },
 ] as const;
 
 export type OnboardingStep = (typeof STEPS)[number]['key'];

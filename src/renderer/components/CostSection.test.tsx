@@ -45,6 +45,7 @@ const settings = {
     dismissedAt: null,
     agentsCheckedAt: null,
     tracker: null,
+    brain: null,
     migrated: false,
   },
   defaultTerminals: {
@@ -133,6 +134,7 @@ describe('CostSection', () => {
         dismissedAt: null,
         agentsCheckedAt: null,
         tracker: null,
+        brain: null,
         migrated: false,
       },
       defaultTerminals: {

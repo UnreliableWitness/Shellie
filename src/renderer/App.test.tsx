@@ -183,6 +183,7 @@ describe('first page', () => {
     dismissedAt: null,
     agentsCheckedAt: null,
     tracker: null,
+    brain: null,
     migrated: false,
   };
   const withOnboarding = (onboarding: typeof fresh) => async () => {

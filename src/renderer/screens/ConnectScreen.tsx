@@ -7,6 +7,7 @@ import {
   type ProviderChoice,
 } from '../components/ProviderPicker';
 import { PageHeader, StepStrip } from '../components/ui';
+import { useActiveBrains } from '../hooks/useBrains';
 import { nextStep, stepsFrom } from '../onboardingState';
 import { useStore } from '../store';
 import { track } from '../telemetry';
@@ -53,6 +54,7 @@ export function ConnectScreen() {
   const from = screen.kind === 'connect' ? screen.from : 'settings';
   const connectionId =
     screen.kind === 'connect' ? screen.connectionId : undefined;
+  const brains = useActiveBrains();
   const onboarding = from === 'get-started';
   const existing = connectionId
     ? connections.find((c) => c.id === connectionId)
@@ -135,7 +137,7 @@ export function ConnectScreen() {
 
   const leave = () =>
     onboarding
-      ? go(nextStep(stepsFrom(useStore.getState()), 'connect'))
+      ? go(nextStep(stepsFrom({ ...useStore.getState(), brains }), 'connect'))
       : go({ kind: 'settings', section: 'ado' });
 
   const goBack = () => {

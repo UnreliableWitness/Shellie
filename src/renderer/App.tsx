@@ -30,6 +30,8 @@ function Page() {
   switch (screen.kind) {
     case 'home':
       return <HomeScreen />;
+    // Placeholder until the brain step has its own page: the Get started page lists the step.
+    case 'brain-new':
     case 'get-started':
       return <GetStartedScreen />;
     case 'agents':

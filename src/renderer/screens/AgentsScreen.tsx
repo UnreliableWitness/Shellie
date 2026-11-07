@@ -1,5 +1,6 @@
 import { AgentsSection } from '../components/AgentsSection';
 import { PageHeader, StepStrip } from '../components/ui';
+import { useActiveBrains } from '../hooks/useBrains';
 import { nextStep, stepsFrom } from '../onboardingState';
 import { useStore } from '../store';
 import { track } from '../telemetry';
@@ -9,6 +10,7 @@ export function AgentsScreen() {
   const screen = useStore((s) => s.screen);
   const go = useStore((s) => s.go);
   const back = useStore((s) => s.back);
+  const brains = useActiveBrains();
   const onboarding = screen.kind === 'agents' && screen.from === 'get-started';
 
   const goBack = () => {
@@ -22,7 +24,7 @@ export function AgentsScreen() {
     if (!onboarding) return go({ kind: 'settings', section: 'terminals' });
     track('onboarding.step', { step: 'agents', outcome: 'continued' });
     // Agents counts as done even if the section's first save has not landed yet.
-    go(nextStep(stepsFrom(useStore.getState()), 'agents'));
+    go(nextStep(stepsFrom({ ...useStore.getState(), brains }), 'agents'));
   };
 
   return (

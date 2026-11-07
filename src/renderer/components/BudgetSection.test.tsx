@@ -29,6 +29,7 @@ const base: AppSettings = {
     dismissedAt: null,
     agentsCheckedAt: null,
     tracker: null,
+    brain: null,
     migrated: false,
   },
   defaultTerminals: {

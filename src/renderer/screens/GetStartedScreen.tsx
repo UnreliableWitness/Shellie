@@ -9,6 +9,7 @@ import { api, saveSettings, tryInvoke } from '../api';
 import { pretick } from '../agentsPretick';
 import { MindMark } from '../components/ui';
 import type { OnboardingStep } from '../components/ui/StepStrip';
+import { useActiveBrains } from '../hooks/useBrains';
 import { stepsFrom } from '../onboardingState';
 import { useStore } from '../store';
 import { track } from '../telemetry';
@@ -67,6 +68,7 @@ function useStepActions() {
       );
       if (folder) go({ kind: 'add-repo', from: 'get-started', folder });
     },
+    brain: () => go({ kind: 'brain-new', from: 'get-started' }),
   } satisfies Record<OnboardingStep, () => void>;
 }
 
@@ -74,11 +76,13 @@ const TITLES: Record<OnboardingStep, string> = {
   agents: '1 · Agents',
   connect: '2 · Connect your tracker',
   repository: '3 · Add a repository',
+  brain: '4 · A brain for your project',
 };
 const BUTTONS: Record<OnboardingStep, string> = {
   agents: 'Open',
   connect: 'Connect',
   repository: 'Add folder…',
+  brain: 'Set up',
 };
 
 /** The step cards: all three on the page, the unfinished ones (compact) in the Home band. */
@@ -86,7 +90,8 @@ export function StepCards({ band }: { band?: boolean }) {
   const settings = useStore((s) => s.settings);
   const connections = useStore((s) => s.connections);
   const repos = useStore((s) => s.repos);
-  const steps = stepsFrom({ settings, connections, repos });
+  const brains = useActiveBrains();
+  const steps = stepsFrom({ settings, connections, repos, brains });
   const actions = useStepActions();
   const [detected, setDetected] = useState<AgentsDetected | null>(null);
   const agentsDone = steps.agents === 'done';
@@ -126,9 +131,13 @@ export function StepCards({ band }: { band?: boolean }) {
         <code className="chip-code">.shellie.yml</code>.
       </>
     ),
+    brain:
+      steps.brain === 'done'
+        ? 'Done.'
+        : 'Optional: a place for what your agents learn.',
   };
 
-  const keys = (['agents', 'connect', 'repository'] as const).filter(
+  const keys = (['agents', 'connect', 'repository', 'brain'] as const).filter(
     (k) => !band || steps[k] === 'todo',
   );
   return (
@@ -151,7 +160,9 @@ export function StepCards({ band }: { band?: boolean }) {
                 className={current ? 'step-mark is-current' : 'step-mark'}
                 aria-hidden="true"
               >
-                {(['agents', 'connect', 'repository'] as const).indexOf(k) + 1}
+                {(
+                  ['agents', 'connect', 'repository', 'brain'] as const
+                ).indexOf(k) + 1}
               </span>
             )}
             <div className="step-card-body">

@@ -9,6 +9,7 @@ const onboarding = (
     dismissedAt: null,
     agentsCheckedAt: null,
     tracker: null,
+    brain: null,
     migrated: false,
     ...o,
   },
@@ -19,11 +20,18 @@ const repo = { id: 'r1' };
 describe('onboardingSteps', () => {
   it('a fresh install has every step to do, Agents first', () => {
     expect(
-      onboardingSteps({ settings: onboarding(), connections: [], repos: [] }),
+      onboardingSteps({
+        settings: onboarding(),
+        connections: [],
+        repos: [],
+        brains: [],
+      }),
     ).toEqual({
       agents: 'todo',
       connect: 'todo',
       repository: 'todo',
+      brain: 'todo',
+      brainNeedsProject: true,
       current: 'agents',
     });
   });
@@ -34,11 +42,14 @@ describe('onboardingSteps', () => {
         settings: onboarding({ agentsCheckedAt: 'x', tracker: 'none' }),
         connections: [],
         repos: [],
+        brains: [],
       }),
     ).toEqual({
       agents: 'done',
       connect: 'done',
       repository: 'todo',
+      brain: 'done',
+      brainNeedsProject: true,
       current: 'repository',
     });
   });
@@ -49,13 +60,46 @@ describe('onboardingSteps', () => {
         settings: onboarding({ agentsCheckedAt: 'x' }),
         connections: [connection],
         repos: [repo],
+        brains: [{ id: 'b1' }],
       }),
     ).toEqual({
       agents: 'done',
       connect: 'done',
       repository: 'done',
+      brain: 'done',
+      brainNeedsProject: false,
       current: null,
     });
+  });
+});
+
+describe('the brain step', () => {
+  const base = { connections: [connection], repos: [repo] };
+  it('is optional: done by a brain, by choosing none, or by having no tracker', () => {
+    const at = (o: Parameters<typeof onboarding>[0], brains: unknown[]) =>
+      onboardingSteps({
+        ...base,
+        settings: onboarding({ agentsCheckedAt: 'x', ...o }),
+        brains,
+      });
+    expect(at({}, []).brain).toBe('todo');
+    expect(at({}, []).current).toBe('brain');
+    expect(at({}, [{ id: 'b' }]).brain).toBe('done');
+    expect(at({ brain: 'none' }, []).brain).toBe('done');
+    expect(at({ tracker: 'none' }, []).brain).toBe('done');
+  });
+
+  it('needs a project when there is no connection or the tracker is none', () => {
+    const f = (c: unknown[], tracker: 'none' | null) =>
+      onboardingSteps({
+        settings: onboarding({ tracker }),
+        connections: c,
+        repos: [],
+        brains: [],
+      }).brainNeedsProject;
+    expect(f([], null)).toBe(true);
+    expect(f([connection], 'none')).toBe(true);
+    expect(f([connection], null)).toBe(false);
   });
 });
 
@@ -72,11 +116,17 @@ describe('firstScreen', () => {
 });
 
 describe('after a step page', () => {
-  const steps = (o: Parameters<typeof onboarding>[0], c = 0, r = 0) =>
+  const steps = (
+    o: Parameters<typeof onboarding>[0],
+    c = 0,
+    r = 0,
+    brains: unknown[] = [],
+  ) =>
     onboardingSteps({
       settings: onboarding(o),
       connections: Array(c).fill(connection),
       repos: Array(r).fill(repo),
+      brains,
     });
 
   it('Continue goes to the next unfinished step page, else Home', () => {
@@ -89,8 +139,12 @@ describe('after a step page', () => {
       from: 'get-started',
     });
     expect(nextStep(steps({ agentsCheckedAt: 'x' }, 1, 1), 'agents')).toEqual({
-      kind: 'home',
+      kind: 'brain-new',
+      from: 'get-started',
     });
+    expect(
+      nextStep(steps({ agentsCheckedAt: 'x' }, 1, 1, [{}]), 'agents'),
+    ).toEqual({ kind: 'home' });
   });
 
   it('Continue never returns to the step just left, even before its save lands', () => {
@@ -98,5 +152,28 @@ describe('after a step page', () => {
       kind: 'connect',
       from: 'get-started',
     });
+  });
+});
+
+describe('after the repository step', () => {
+  it('goes to the brain page while the brain is to do, else Home', () => {
+    const o = { agentsCheckedAt: 'x' };
+    const todo = onboardingSteps({
+      settings: onboarding(o),
+      connections: [connection],
+      repos: [repo],
+      brains: [],
+    });
+    expect(nextStep(todo, 'repository')).toEqual({
+      kind: 'brain-new',
+      from: 'get-started',
+    });
+    const done = onboardingSteps({
+      settings: onboarding({ ...o, brain: 'none' }),
+      connections: [connection],
+      repos: [repo],
+      brains: [],
+    });
+    expect(nextStep(done, 'repository')).toEqual({ kind: 'home' });
   });
 });

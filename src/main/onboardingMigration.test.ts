@@ -17,6 +17,7 @@ describe('migrateOnboarding', () => {
       dismissedAt: NOW,
       agentsCheckedAt: NOW,
       tracker: null,
+      brain: null,
       migrated: true,
     });
     expect(after?.defaultTerminals).toEqual(before.defaultTerminals);
@@ -27,6 +28,7 @@ describe('migrateOnboarding', () => {
       dismissedAt: null,
       agentsCheckedAt: null,
       tracker: null,
+      brain: null,
       migrated: true,
     });
   });
@@ -39,6 +41,7 @@ describe('migrateOnboarding', () => {
       dismissedAt: null,
       agentsCheckedAt: null,
       tracker: null,
+      brain: null,
       migrated: true,
     });
     expect(migrateOnboarding(second, 1, LATER)).toBeNull();
@@ -67,6 +70,7 @@ describe('migrateOnboarding', () => {
       dismissedAt: 'earlier',
       agentsCheckedAt: null,
       tracker: null,
+      brain: null,
       migrated: true,
     });
   });
