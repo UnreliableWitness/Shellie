@@ -822,3 +822,114 @@
 .brain-notes-pictures:empty {
   display: none;
 }
+
+/* The landing's graph of how pages link: dots by page type, lines for links, lit on hover. */
+.brain-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brain-graph-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+.brain-graph-box {
+  height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: radial-gradient(
+    ellipse at center,
+    var(--accent-bg) 0%,
+    var(--bg-card) 75%
+  );
+}
+.brain-graph-box svg {
+  display: block;
+}
+.brain-graph-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background: var(--type-color);
+}
+.brain-graph-node,
+.brain-graph-swatch {
+  --type-color: var(--muted);
+}
+.brain-graph [data-type='account'] {
+  --type-color: var(--repo-1);
+}
+.brain-graph [data-type='scope'] {
+  --type-color: var(--repo-2);
+}
+.brain-graph [data-type='component'] {
+  --type-color: var(--repo-3);
+}
+.brain-graph [data-type='decision'] {
+  --type-color: var(--repo-4);
+}
+.brain-graph [data-type='meeting'] {
+  --type-color: var(--repo-5);
+}
+.brain-graph [data-type='glossary'] {
+  --type-color: var(--repo-6);
+}
+.brain-graph [data-type='lesson'] {
+  --type-color: var(--green);
+}
+.brain-graph [data-type='digest'] {
+  --type-color: var(--amber);
+}
+.brain-graph-node {
+  cursor: pointer;
+  outline: none;
+  transition: opacity 0.15s;
+}
+.brain-graph-node.dim {
+  opacity: 0.25;
+}
+.brain-graph-dot {
+  fill: var(--type-color);
+}
+.brain-graph-node.hover .brain-graph-dot,
+.brain-graph-node:focus-visible .brain-graph-dot {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.brain-graph-new {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 1.5;
+  opacity: 0.7;
+}
+.brain-graph-node text {
+  font: 11px var(--font-ui);
+  fill: var(--muted);
+  pointer-events: none;
+}
+.brain-graph-node.hover text {
+  fill: var(--text);
+  font-weight: 600;
+}
+.brain-graph-link {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  transition: opacity 0.15s;
+}
+.is-lit .brain-graph-link {
+  opacity: 0.35;
+}
+.is-lit .brain-graph-link.on {
+  stroke: var(--link);
+  stroke-width: 1.6;
+  opacity: 1;
+}
+.brain-graph-pulse {
+  fill: var(--link);
+  pointer-events: none;
+}

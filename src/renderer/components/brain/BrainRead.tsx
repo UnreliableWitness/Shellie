@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrainJob } from '../../../shared/brain';
+import { BrainGraph } from './BrainGraph';
 import { BrainLog } from './BrainLog';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
@@ -12,7 +13,7 @@ import { useBrainNav } from './useBrainNav';
 
 /**
  * The brain's Read view: a tree on the left (search on top), the open page in the middle with its rail, or Recent
- * changes, the log, or a landing of the pinned pages and what changed. Pages touched in the log after `since` get a dot.
+ * changes, the log, or a landing of how the pages link, the pinned pages and what changed. Pages touched in the log after `since` get a dot.
  * A new `openRequest` (another `n`) opens its page, as a link from the Add view does.
  */
 export function BrainRead({
@@ -157,6 +158,7 @@ export function BrainRead({
             {loaded && rows.length === 0 && (
               <p className="muted">No pages yet. Add a source in Add.</p>
             )}
+            <BrainGraph rows={rows} newPaths={newPaths} onOpen={open} />
             {pinned.length > 0 && (
               <section className="brain-section" aria-label="Pinned">
                 <div className="brain-card-grid">
