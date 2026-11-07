@@ -72,8 +72,8 @@ export const SourceTypeSchema = z.enum([
 export type SourceType = z.infer<typeof SourceTypeSchema>;
 
 /**
- * A finding on a page: Shellie finds `broken-link`, `stale`, `uncaptured` and `frontmatter` itself on every Health
- * read; `/lint` writes `contradiction` and `scope-change` into state. `orphan` is a kind older lints wrote.
+ * A finding on a page: Shellie finds `broken-link`, `stale`, `uncaptured`, `frontmatter` and `picture` (on a source)
+ * itself on every Health read; `/lint` writes `contradiction` and `scope-change` into state. `orphan` is a kind older lints wrote.
  */
 const BrainFindingSchema = z.object({
   kind: z.enum([
@@ -84,6 +84,7 @@ const BrainFindingSchema = z.object({
     'uncaptured',
     'scope-change',
     'frontmatter',
+    'picture',
   ]),
   page: z.string(),
   detail: z.string(),
@@ -130,6 +131,46 @@ export type BrainJob = {
   result: string | null;
   error: string | null;
 };
+export type PictureStatus =
+  | 'described'
+  | 'skipped'
+  | 'missing'
+  | 'dropped'
+  | 'accepted';
+/** One picture of a source and what became of it: a stored file, or a drop the converter could not deliver. */
+export type PictureRow = {
+  /** Repo-relative picture file; null for a drop (no file). */
+  path: string | null;
+  /** 'Slide 4', 'Page 3', 'Slide layouts and master', 'Picture 2', 'Wiki attachment'. */
+  label: string;
+  /** From the source's `![alt](path)`, null when none. */
+  alt: string | null;
+  status: PictureStatus;
+  /** Wiki pages citing it (described). */
+  pages: string[];
+  /** Skip reason, or drop reason. */
+  reason: string | null;
+  /** Drops only. */
+  fix: string | null;
+  /** Drops only, the key used to accept it. */
+  where: string | null;
+};
+export type PictureCounts = {
+  total: number;
+  described: number;
+  skipped: number;
+  missing: number;
+  dropped: number;
+  accepted: number;
+  /** PDF images too small to extract: counted, never a row. */
+  tiny: number;
+};
+export type SourcePictures = {
+  source: string;
+  counts: PictureCounts;
+  rows: PictureRow[];
+};
+
 /** How many wiki pages and sources a brain has (`brain:counts`). */
 export type BrainCounts = { pages: number; sources: number };
 

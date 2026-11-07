@@ -114,8 +114,10 @@ export function outsideFences(text: string): string[] {
   return out;
 }
 
+// A bare target may hold balanced parentheses and, as wiki renderers allow, spaces (`[d](/sources/a b.png)`); a
+// trailing quoted word is the title.
 const LINK =
-  /!?\[[^\]]*\]\(\s*(?:<([^>]*)>|([^\s()]*(?:\([^\s()]*\)[^\s()]*)*))(?:\s+("[^"]*"|'[^']*'))?\s*\)/g;
+  /!?\[[^\]]*\]\(\s*(?:<([^>]*)>|((?:[^\s()]|\([^\s()]*\))+(?: +(?:[^\s()]|\([^\s()]*\))+)*?)?)(?:\s+("[^"]*"|'[^']*'))?\s*\)/g;
 
 /** Link and image targets of markdown text (outside fences), as written. Inline code is left out. */
 export function linkTargets(text: string): string[] {

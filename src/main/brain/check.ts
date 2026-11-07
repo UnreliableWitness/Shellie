@@ -6,7 +6,7 @@ import { absPath } from './paths';
 
 /** The finding kinds Shellie computes itself; `/lint` owns the others. */
 export const SHELLIE_FINDING_KINDS: ReadonlySet<BrainFinding['kind']> = new Set(
-  ['broken-link', 'stale', 'uncaptured', 'frontmatter'],
+  ['broken-link', 'stale', 'uncaptured', 'frontmatter', 'picture'],
 );
 
 const isUrl = (target: string) => /^[a-z][a-z0-9+.-]*:/i.test(target);
