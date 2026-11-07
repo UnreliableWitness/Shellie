@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { BrainJob } from '../../../shared/brain';
 import { BrainLog } from './BrainLog';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
@@ -20,6 +21,8 @@ export function BrainRead({
   since,
   openRequest,
   active,
+  jobs,
+  skillsReady,
 }: {
   brainId: string;
   /** The brain's pages, sources and log, loaded once by the screen. */
@@ -28,6 +31,10 @@ export function BrainRead({
   openRequest?: { path: string; n: number } | null;
   /** Whether the view is shown: only then does ⌘K/Ctrl+K anywhere on the page go to its search. */
   active: boolean;
+  /** The brain's jobs, for a source's Re-evaluate. */
+  jobs?: BrainJob[];
+  /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
+  skillsReady?: boolean;
 }) {
   const { rows, sources, log, loaded } = pages;
   const nav = useBrainNav();
@@ -125,6 +132,8 @@ export function BrainRead({
             onForward={nav.forward}
             layout="rail"
             onRemoved={nav.home}
+            jobs={jobs}
+            skillsReady={skillsReady}
           />
         ) : special === 'recent' ? (
           recent.length ? (

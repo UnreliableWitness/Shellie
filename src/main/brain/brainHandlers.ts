@@ -5,6 +5,7 @@ import {
   BrainOptionsSchema,
   BrainSchema,
   BrainWikiSchema,
+  picturesReady,
   SOURCE_JOB_KINDS,
   SourceTypeSchema,
   type AddSourceResult,
@@ -33,6 +34,13 @@ import { rebuildIndex } from './indexPage';
 import { readPages } from './pages';
 import { absPath } from './paths';
 import { refreshMirror, type MirrorAuth } from './mirror';
+import {
+  DROPPED_FILE,
+  MIRROR_SOURCE,
+  readDropped,
+  sourceCoverage,
+  writeDropped,
+} from './pictures';
 import {
   applyTemplates,
   isBrainFolder,
@@ -76,7 +84,9 @@ export type BrainChannels =
   | 'brain:pages'
   | 'brain:search'
   | 'brain:relevant'
-  | 'brain:openSource';
+  | 'brain:openSource'
+  | 'brain:pictures'
+  | 'brain:acceptDrop';
 
 export type BrainRunner = Pick<
   BrainJobRunner,
@@ -138,7 +148,13 @@ const ARCHIVED =
   'This brain is archived; restore it in Settings › Project › Brains first';
 
 /** What a skill run writes; committed after a job succeeds so Health does not count it as an outside edit. */
-const JOB_OUTPUT = ['wiki', 'index.md', 'log.md', 'brain/state.json'];
+const JOB_OUTPUT = [
+  'wiki',
+  'index.md',
+  'log.md',
+  'brain/state.json',
+  'brain/pictures-skipped.json',
+];
 
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
 export const OUTSIDE_EDIT_MESSAGE = 'Edited outside a capture';
@@ -205,6 +221,44 @@ export async function refreshIndex(
       'index.md',
     ]);
     return true;
+  });
+}
+
+/**
+ * Marks the source's drop at `where` accepted (now) and commits brain/pictures-dropped.json alone as
+ * `Brain: accepted dropped picture`. A drop accepted before keeps its time and makes no commit.
+ */
+export async function acceptDrop(
+  git: GitClient,
+  brainDir: string,
+  source: string,
+  where: string,
+  now: Date,
+): Promise<void> {
+  return withBrainGit(brainDir, async () => {
+    const drop = (await readDropped(brainDir))[source]?.dropped.find(
+      (d) => d.where === where,
+    );
+    if (!drop) throw new Error('Unknown dropped picture');
+    if (drop.accepted) return;
+    await writeDropped(brainDir, (f) => ({
+      ...f,
+      [source]: {
+        ...f[source],
+        dropped: f[source].dropped.map((d) =>
+          d.where === where ? { ...d, accepted: now.toISOString() } : d,
+        ),
+      },
+    }));
+    await git.run(brainDir, ['add', '--', DROPPED_FILE]);
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      'Brain: accepted dropped picture',
+      '--',
+      DROPPED_FILE,
+    ]);
   });
 }
 
@@ -421,6 +475,9 @@ export function createBrainHandlers(
       await d.brains.patch(id, { lastRefreshAt: now().toISOString() });
       if (b.options.syncAfterRefresh && r.added + r.changed + r.removed > 0)
         d.runner.enqueue(id, 'sync');
+      // New or changed pictures: one re-evaluation of the mirror, which checks for gaps when it starts.
+      if (r.attachments > 0 && picturesReady(b))
+        d.runner.enqueue(id, 'pictures', MIRROR_SOURCE);
     }
     changed(id);
     return r;
@@ -557,7 +614,9 @@ export function createBrainHandlers(
       return p;
     },
     'brain:run': async (id, kind, source) => {
-      live(id);
+      const b = live(id);
+      if (kind === 'pictures' && !picturesReady(b))
+        throw new Error('Update skills to re-evaluate pictures');
       return d.runner.enqueue(id, kind, source ?? null);
     },
     'brain:resumeQueue': async (id) => {
@@ -670,6 +729,23 @@ export function createBrainHandlers(
         throw new Error('Only a document or a picture can be opened');
       const error = await d.openPath(absPath(b.path, p));
       if (error) throw new Error(`Could not open the file: ${error}`);
+    },
+    'brain:pictures': async (id, source) => {
+      const b = brainOf(id);
+      const rel = path.posix.normalize(source.replace(/\\/g, '/'));
+      if (!rel.startsWith('sources/') || rel.startsWith('sources/../'))
+        throw new Error('Only a source under sources/ has pictures');
+      // What Health computes for this one source; no picture is read.
+      return sourceCoverage(
+        b.path,
+        await readPages(b.path).catch(() => []),
+        rel,
+      );
+    },
+    'brain:acceptDrop': async (id, source, where) => {
+      const b = live(id);
+      await acceptDrop(d.git, b.path, source, where, now());
+      changed(id);
     },
   };
 }

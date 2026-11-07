@@ -1,24 +1,49 @@
 import { useState, type FormEvent } from 'react';
-import type { BrainView } from '../../../shared/brain';
+import {
+  picturesReady,
+  type BrainView,
+  type PictureCounts,
+} from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
 import { dateTime } from '../../format';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
+import { interpreted, picturesJobComing } from './SourcePictures';
 
 /** Findings listed on the card; the rest is a count (a brain with thousands of broken links must still render). */
 const MAX_SHOWN = 50;
 
 const when = (iso: string | null) => (iso ? dateTime(iso) : 'never');
 
-/** Lint findings, what still has to be captured, and the wiki mirror. The day's spend and the cap pause live in What runs by itself. */
+/** `211 of 214 interpreted · 1 not interpreted · 2 never reached Claude`; null when there is nothing to say. */
+export function picturesFact(c: PictureCounts): string | null {
+  if (c.total === 0 && c.dropped === 0) return null;
+  const { done } = interpreted(c);
+  return [
+    `${done} of ${c.total} interpreted`,
+    c.missing > 0 && `${c.missing} not interpreted`,
+    c.dropped > 0 && `${c.dropped} never reached Claude`,
+    c.accepted > 0 && `${c.accepted} accepted`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * Lint findings, what still has to be captured, how the pictures are doing, and the wiki mirror. The day's spend
+ * and the cap pause live in What runs by itself.
+ */
 export function BrainHealth({
   brain,
   onTerminal,
+  onOpen,
 }: {
   brain: BrainView;
   onTerminal?: (def: TerminalDef) => void;
+  /** Opens a source in Read (a picture finding's Open source). */
+  onOpen?: (path: string) => void;
 }) {
   const notify = useStore((s) => s.notify);
   const h = brain.health;
@@ -27,6 +52,13 @@ export function BrainHealth({
 
   const shown = findings.slice(0, MAX_SHOWN);
 
+  const reevaluate = (source: string) => {
+    trackBrain('reevaluate');
+    void tryInvoke(
+      () => api().invoke('brain:run', brain.id, 'pictures', source),
+      notify,
+    );
+  };
   const resolve = async (f: (typeof findings)[number]) => {
     if (f.kind === 'uncaptured') {
       // A capture job, not a terminal: only Shellie's runner records a capture.
@@ -47,6 +79,7 @@ export function BrainHealth({
     if (def) onTerminal?.(def);
   };
 
+  const pictures = h ? picturesFact(h.pictures) : null;
   // Only brain:get carries health; a view from a list has none.
   if (!h)
     return (
@@ -69,6 +102,12 @@ export function BrainHealth({
         </dd>
         <dt>Uncaptured</dt>
         <dd>{h.uncaptured} uncaptured</dd>
+        {pictures && (
+          <>
+            <dt>Pictures</dt>
+            <dd>{pictures}</dd>
+          </>
+        )}
         <dt>Wiki mirror</dt>
         <dd>
           {h.mirrorPages} pages, refreshed {when(brain.lastRefreshAt)}
@@ -98,7 +137,47 @@ export function BrainHealth({
                 </span>
                 <span className="small">{f.detail}</span>
               </div>
-              {f.kind === 'uncaptured' ? (
+              {f.kind === 'picture' ? (
+                <>
+                  {f.detail.includes('not interpreted') &&
+                    (!picturesReady(brain) ? (
+                      <span className="muted small">
+                        Update skills to re-evaluate
+                      </span>
+                    ) : picturesJobComing(brain.jobs, f.page) ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        aria-label={`Re-evaluating ${f.page}`}
+                        disabled
+                      >
+                        Re-evaluating…
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        aria-label={`Re-evaluate ${f.page}`}
+                        onClick={() => reevaluate(f.page)}
+                      >
+                        Re-evaluate
+                      </button>
+                    ))}
+                  {f.detail.includes('never reached Claude') && onOpen && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      aria-label={`Open source ${f.page}`}
+                      onClick={() => {
+                        trackBrain('open-page');
+                        onOpen(f.page);
+                      }}
+                    >
+                      Open source
+                    </button>
+                  )}
+                </>
+              ) : f.kind === 'uncaptured' ? (
                 <button
                   type="button"
                   className="btn btn-sm"

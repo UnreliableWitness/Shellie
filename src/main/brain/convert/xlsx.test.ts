@@ -22,7 +22,7 @@ type Cell = {
   is?: string;
   f?: string;
 };
-type SheetSpec = { name: string; rows: Cell[][]; picture?: boolean };
+type SheetSpec = { name: string; rows: Cell[][]; picture?: boolean | 'emf' };
 
 /** A workbook from cell specs; shared strings are given as `t: 's'` with their index in `v`. */
 async function buildXlsx(
@@ -89,11 +89,12 @@ async function buildXlsx(
         `xl/drawings/drawing${n}.xml`,
         '<xdr:wsDr xmlns:a="a" xmlns:r="r"><xdr:pic><a:blip r:embed="rId1"/></xdr:pic></xdr:wsDr>',
       );
+      const media = s.picture === 'emf' ? 'image1.emf' : 'image1.png';
       zip.file(
         `xl/drawings/_rels/drawing${n}.xml.rels`,
-        `<Relationships><Relationship Id="rId1" Type="${REL}/image" Target="../media/image1.png"/></Relationships>`,
+        `<Relationships><Relationship Id="rId1" Type="${REL}/image" Target="../media/${media}"/></Relationships>`,
       );
-      zip.file('xl/media/image1.png', PNG);
+      zip.file(`xl/media/${media}`, PNG);
     }
   });
   return zip.generateAsync({ type: 'nodebuffer' });
@@ -197,6 +198,26 @@ describe('xlsxToMarkdown', () => {
     );
     expect(r.images.map((i) => i.name)).toEqual(['sheet-1-1.png']);
     expect(r.markdown).toContain('![Plan picture 1]({{assets}}/sheet-1-1.png)');
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('reports a picture it could not take, with the sheet it was on', async () => {
+    const r = await xlsxToMarkdown(
+      await buildXlsx([
+        { name: 'Plan', rows: [[{ r: 'A1', is: 'x' }]], picture: 'emf' },
+      ]),
+    );
+    expect(r.images).toEqual([]);
+    expect(r.dropped).toEqual([
+      {
+        where: 'Sheet 1, picture 1',
+        reason: 'EMF converts on Windows only',
+        fix: 'Remove the source and add it again on Windows, or save the picture as PNG in the file',
+      },
+    ]);
+    expect(r.warnings).toEqual([
+      '1 picture in formats Claude cannot view (emf)',
+    ]);
   });
 
   it('is empty without cells or pictures, and marks an empty sheet', async () => {

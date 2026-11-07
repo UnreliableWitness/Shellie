@@ -43,6 +43,27 @@ describe('BrainStore', () => {
     await s.remove('b1');
     expect(s.list()).toHaveLength(1);
   });
+  it('reads a brains.json written before the picture pass with no pass', async () => {
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        brains: [
+          {
+            id: 'b1',
+            name: 'Acme',
+            connectionId: 'c1',
+            project: 'Acme',
+            path: '/x/b1',
+            createdAt: 't',
+            templatesVersion: 5,
+          },
+        ],
+      }),
+    );
+    const s = new BrainStore(file);
+    await s.load();
+    expect(s.get('b1')?.picturePass).toBeNull();
+  });
   it('loads an empty list when the file is missing', async () => {
     const s = new BrainStore(file);
     await s.load();

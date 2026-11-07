@@ -11,7 +11,7 @@ import { api, tryInvoke } from '../../api';
 import { useStore } from '../../store';
 import { HelpTip } from '../ui';
 import { openBrainTerminal, trackBrain } from './brainActions';
-import { NOTE_HINT, PendingFiles } from './PendingFiles';
+import { AddedNotes, NOTE_HINT, PendingFiles } from './PendingFiles';
 import { pagesChangedBy } from './recent';
 import { SOURCE_TYPES, type BrainDrop } from './useBrainDrop';
 import { captureInFlight, waitingSources, waitReason } from './waiting';
@@ -118,7 +118,7 @@ export function AddToBrain({
     if (focusChoose) chooseRef.current?.focus();
   }, [focusChoose]);
   const notify = useStore((s) => s.notify);
-  const { over, problems, setProblems, notes, addFiles } = drop;
+  const { over, problems, setProblems, added, addFiles } = drop;
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [type, setType] = useState<SourceType>('note');
@@ -228,13 +228,7 @@ export function AddToBrain({
           ))}
         </ul>
       )}
-      {notes.length > 0 && (
-        <ul className="brain-notes muted small" aria-label="Added">
-          {notes.map((n, i) => (
-            <li key={i}>{n}</li>
-          ))}
-        </ul>
-      )}
+      <AddedNotes brainId={brain.id} added={added} jobs={brain.jobs} />
     </section>
   );
 }

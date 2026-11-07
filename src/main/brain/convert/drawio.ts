@@ -188,6 +188,8 @@ export function drawioToMarkdown(xml: string): Converted {
       title: null,
       images: [],
       warnings,
+      dropped: [],
+      tiny: 0,
       empty: false,
     };
   }
@@ -196,6 +198,8 @@ export function drawioToMarkdown(xml: string): Converted {
     title: null,
     images: [],
     warnings,
+    dropped: [],
+    tiny: 0,
     empty: false,
   };
 }

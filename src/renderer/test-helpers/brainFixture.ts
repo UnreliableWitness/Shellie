@@ -7,7 +7,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   project: 'Shellie',
   path: '/data/brains/b1',
   wiki: null,
-  templatesVersion: 1,
+  templatesVersion: 6,
   options: {
     contextInTaskMd: true,
     addDirForClaude: true,
@@ -22,6 +22,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   lastRefreshAt: '2026-11-02T09:00:00.000Z',
   lastDigestAt: null,
   archived: false,
+  picturePass: null,
   health: {
     state: {
       schemaVersion: 1,
@@ -65,6 +66,15 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     queuePaused: null,
     costEurToday: 0.42,
     tokensToday: 12_345,
+    pictures: {
+      total: 0,
+      described: 0,
+      skipped: 0,
+      missing: 0,
+      dropped: 0,
+      accepted: 0,
+      tiny: 0,
+    },
   },
   jobs: [],
   ...over,
@@ -85,5 +95,6 @@ export const brainJob = (over: Partial<BrainJob> = {}): BrainJob => ({
   sessionId: 's-1',
   result: null,
   error: 'claude exited 1',
+  background: false,
   ...over,
 });

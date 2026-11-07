@@ -74,6 +74,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-note.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -131,6 +132,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-kickoff.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -248,6 +250,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-platform-deck.md',
       images: 1,
+      dropped: 1,
       warnings: ['1 picture in formats Claude cannot view (emf)'],
       contents: '1 slide · 1 picture: Architecture',
     });
@@ -300,6 +303,52 @@ describe('brain sources', () => {
       'utf8',
     );
     expect(text).toContain('Logo at {{assets}}/logo.png');
+  });
+
+  it('records dropped pictures in the add commit', async () => {
+    const f = path.join(root, 'Deck.pptx');
+    await fs.writeFile(f, await deckWithPicture());
+    const r = await addSource(git, dir, { file: f }, 'deck', now);
+    expect(r).toMatchObject({ ok: true, dropped: 1 });
+    const recorded = JSON.parse(
+      await fs.readFile(path.join(dir, 'brain/pictures-dropped.json'), 'utf8'),
+    );
+    expect(recorded['sources/2026-11-03-deck.md']).toEqual({
+      dropped: [
+        expect.objectContaining({
+          reason: 'EMF converts on Windows only',
+          accepted: null,
+        }),
+      ],
+      tiny: 0,
+    });
+    expect(
+      await git.run(dir, ['show', '--stat', '--format=', 'HEAD']),
+    ).toContain('brain/pictures-dropped.json');
+    expect(await clean()).toBe('');
+  });
+
+  it('adds no drop file when nothing was dropped', async () => {
+    await addSource(git, dir, { text: 'hello', title: 'Note' }, 'note', now);
+    await expect(
+      fs.access(path.join(dir, 'brain/pictures-dropped.json')),
+    ).rejects.toThrow();
+  });
+
+  it('puts the drop file back when the commit fails', async () => {
+    const f = path.join(root, 'Deck.pptx');
+    await fs.writeFile(f, await deckWithPicture());
+    const failing = Object.create(git) as GitClient;
+    failing.run = (cwd, args, opts) =>
+      args[0] === 'commit'
+        ? Promise.reject(new Error('commit refused'))
+        : git.run(cwd, args, opts);
+    const r = await addSource(failing, dir, { file: f }, 'deck', now);
+    expect(r).toMatchObject({ ok: false, reason: 'error' });
+    await expect(
+      fs.access(path.join(dir, 'brain/pictures-dropped.json')),
+    ).rejects.toThrow();
+    expect(await clean()).toBe('');
   });
 
   it('removes the assets folder when the commit fails', async () => {
@@ -365,6 +414,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-kickoff.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -407,6 +457,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-kickoff.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -414,6 +465,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-kickoff-2.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -445,6 +497,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-source.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -452,6 +505,7 @@ describe('brain sources', () => {
       ok: true,
       path: 'sources/2026-11-03-source-2.md',
       images: 0,
+      dropped: 0,
       warnings: [],
       contents: expect.any(String),
     });
@@ -590,6 +644,45 @@ describe('removeSource', () => {
     expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe(
       '?? wiki/hand.md',
     );
+  });
+
+  it('removes the drop entry with the source and keeps the others', async () => {
+    const mk = async (name: string) => {
+      const f = path.join(root, name);
+      await fs.writeFile(f, await deckWithPicture());
+      const r = await addSource(git, dir, { file: f }, 'deck');
+      if (!r.ok) throw new Error(r.message);
+      return r.path;
+    };
+    const a = await mk('A.pptx');
+    // A different deck, so it is not a duplicate.
+    const b = await (async () => {
+      const zip = await JSZip.loadAsync(await deckWithPicture());
+      zip.file('ppt/media/image2.emf', Buffer.from([9, 9, 9]));
+      const f = path.join(root, 'B.pptx');
+      await fs.writeFile(f, await zip.generateAsync({ type: 'nodebuffer' }));
+      const r = await addSource(git, dir, { file: f }, 'deck');
+      if (!r.ok) throw new Error(r.message);
+      return r.path;
+    })();
+    await removeSource(git, dir, a);
+    const left = JSON.parse(
+      await fs.readFile(path.join(dir, 'brain/pictures-dropped.json'), 'utf8'),
+    );
+    expect(Object.keys(left)).toEqual([b]);
+    expect(
+      await git.run(dir, ['show', '--stat', '--format=', 'HEAD']),
+    ).toContain('brain/pictures-dropped.json');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
+  });
+
+  it('leaves the drop file alone for a source without an entry', async () => {
+    const r = await addSource(git, dir, { text: 'x', title: 'X' }, 'note');
+    if (!r.ok) throw new Error(r.message);
+    await removeSource(git, dir, r.path);
+    expect(
+      await git.run(dir, ['show', '--stat', '--format=', 'HEAD']),
+    ).not.toContain('pictures-dropped');
   });
 
   it('refuses wiki mirror pages, paths outside sources/ and missing sources', async () => {

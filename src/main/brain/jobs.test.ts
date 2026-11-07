@@ -398,3 +398,166 @@ describe('dropQueued and paused jobs', () => {
     expect(r.jobs('b')).toEqual([]);
   });
 });
+
+describe('pictures jobs and the runner hooks', () => {
+  it('runs a non-background job before queued background ones', async () => {
+    dirs = { b: await mk('b') };
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'sync');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    const bg = r.enqueue('b', 'pictures', 'sources/old.md', {
+      background: true,
+    });
+    r.enqueue('b', 'pictures', 'sources/older.md', { background: true });
+    const fg = r.enqueue('b', 'lint');
+    expect([bg.background, fg.background]).toEqual([true, false]);
+    release();
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual([
+      '/sync',
+      '/lint',
+      '/pictures sources/old.md',
+      '/pictures sources/older.md',
+    ]);
+  });
+
+  it('a pictures job queued by hand replaces a background one still queued for the same source', async () => {
+    dirs = { b: await mk('b') };
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'sync');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    r.enqueue('b', 'pictures', 'sources/old.md', { background: true });
+    r.enqueue('b', 'pictures', 'sources/other.md', { background: true });
+    const fg = r.enqueue('b', 'pictures', 'sources/old.md');
+    expect(
+      r
+        .jobs('b')
+        .filter((j) => j.kind === 'pictures')
+        .map((j) => [j.source, j.background]),
+    ).toEqual([
+      ['sources/old.md', false],
+      ['sources/other.md', true],
+    ]);
+    release();
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual([
+      '/sync',
+      '/pictures sources/old.md',
+      '/pictures sources/other.md',
+    ]);
+    expect(fg.status).toBe('done');
+  });
+
+  it('promptFor replaces the prompt', async () => {
+    const seen: string[] = [];
+    const r = runner({
+      promptFor: async (job) => {
+        seen.push(
+          `${job.kind}:${existsSync(path.join(dirs[job.brainId], 'brain', 'lock'))}`,
+        );
+        return job.kind === 'pictures'
+          ? `/pictures ${job.source} a.png b.png`
+          : undefined;
+      },
+    });
+    r.enqueue('b1', 'pictures', 'sources/a.md');
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(seen).toEqual(['pictures:true', 'sync:true']);
+    expect(calls.map((c) => c.input)).toEqual([
+      '/pictures sources/a.md a.png b.png',
+      '/sync',
+    ]);
+  });
+
+  it('a null prompt finishes the job without running claude', async () => {
+    const r = runner({ promptFor: async () => null });
+    r.enqueue('b1', 'pictures', 'sources/a.md');
+    await idle(r, 'b1');
+    expect(calls.length).toBe(0);
+    expect(r.jobs('b1')[0]).toMatchObject({
+      status: 'done',
+      result: 'Nothing to re-evaluate',
+    });
+    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
+  });
+
+  it('fails the job when promptFor throws', async () => {
+    const r = runner({
+      promptFor: async () => {
+        throw new Error('no statuses');
+      },
+    });
+    r.enqueue('b1', 'pictures', 'sources/a.md');
+    await idle(r, 'b1');
+    expect(r.jobs('b1')[0]).toMatchObject({
+      status: 'failed',
+      error: 'no statuses',
+    });
+    expect(calls).toHaveLength(0);
+    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
+  });
+
+  it('afterJob sees each finished job once', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let n = 0;
+    run = async () => {
+      if (++n === 2) throw new Error('exit 1');
+      return ok(`s${n}`);
+    };
+    const seen: string[] = [];
+    const r = runner({
+      afterJob: (job) => {
+        seen.push(`${job.kind}:${job.status}`);
+        throw new Error('listener broke');
+      },
+    });
+    r.enqueue('b1', 'capture', 'sources/a.md');
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    // capture ok, its auto lint fails, then sync ok.
+    expect(seen).toEqual(['capture:done', 'lint:failed', 'sync:done']);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('does not call afterJob for a job paused at the cap', async () => {
+    tokens = 600_000;
+    const seen: string[] = [];
+    const r = runner({ afterJob: (job) => seen.push(job.status) });
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(r.jobs('b1')[0].status).toBe('paused');
+    expect(seen).toEqual([]);
+  });
+
+  it('a pictures job needs a source', async () => {
+    const r = runner();
+    expect(() => r.enqueue('b1', 'pictures')).toThrow(/needs a source/);
+    r.enqueue('b1', 'pictures', 'sources/a.md');
+    await idle(r, 'b1');
+    expect(calls.map((c) => c.input)).toEqual(['/pictures sources/a.md']);
+    expect(commits).toEqual([['b1', 'Brain: pictures sources/a.md']]);
+    // No automatic lint after a pictures job, and it does not mark the source captured.
+    expect(r.jobs('b1').map((j) => j.kind)).toEqual(['pictures']);
+    expect((await readState(dirs.b1)).state?.captured).toEqual({});
+  });
+});

@@ -169,4 +169,109 @@ describe('BrainPage', () => {
       screen.queryByRole('button', { name: 'Remove…' }),
     ).not.toBeInTheDocument();
   });
+
+  it('a source with pictures not interpreted gets a warn tag and the Pictures panel above its text', async () => {
+    const counts = {
+      total: 3,
+      described: 1,
+      skipped: 0,
+      missing: 1,
+      dropped: 1,
+      accepted: 0,
+      tiny: 0,
+    };
+    installFakeApi({
+      'brain:read': (_id, rel) => ({ text: pageText(rel) }),
+      'brain:asset': (_id, rel) => `shellie-asset://${rel}`,
+      'brain:pictures': (_id, src) => ({
+        source: src,
+        counts,
+        rows: [
+          {
+            path: 'sources/2026-11-01-kickoff-assets/slide-1-1.png',
+            label: 'Slide 1',
+            alt: null,
+            status: 'missing',
+            pages: [],
+            reason: null,
+            fix: null,
+            where: null,
+          },
+        ],
+      }),
+    });
+    render(page('sources/2026-11-01-kickoff.md', { layout: 'rail' }));
+    expect(
+      await screen.findByText('2 pictures not interpreted', {
+        selector: '.tag-warn',
+      }),
+    ).toBeInTheDocument();
+    const panel = screen.getByRole('region', { name: 'Pictures' });
+    expect(
+      panel.compareDocumentPosition(screen.getByText('Kickoff body.')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('a wiki page and a source without gaps get no picture tag', async () => {
+    const a = installFakeApi({
+      'brain:read': (_id, rel) => ({ text: pageText(rel) }),
+    });
+    const { rerender } = render(page('wiki/plain.md', { layout: 'rail' }));
+    expect(await screen.findByText('Just a paragraph.')).toBeInTheDocument();
+    expect(a.calls.some((c) => c.channel === 'brain:pictures')).toBe(false);
+    rerender(page('sources/2026-11-01-kickoff.md', { layout: 'rail' }));
+    expect(await screen.findByText('Kickoff body.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(a.calls.some((c) => c.channel === 'brain:pictures')).toBe(true),
+    );
+    expect(screen.queryByText(/not interpreted/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Pictures' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('sources/wiki shows the pictures of the wiki mirror, with no file to read', async () => {
+    const a = installFakeApi({
+      'brain:read': (_id, rel) => ({ text: pageText(rel) }),
+      'brain:asset': (_id, rel) => `shellie-asset://${rel}`,
+      'brain:pictures': (_id, src) => ({
+        source: src,
+        counts: {
+          total: 1,
+          described: 0,
+          skipped: 0,
+          missing: 0,
+          dropped: 1,
+          accepted: 0,
+          tiny: 0,
+        },
+        rows: [
+          {
+            path: null,
+            label: 'Wiki attachment',
+            alt: 'diagram.emf',
+            status: 'dropped',
+            pages: [],
+            reason: 'EMF attachments cannot be viewed',
+            fix: 'Save it as PNG in the wiki',
+            where: 'diagram.emf',
+          },
+        ],
+      }),
+    });
+    render(page('sources/wiki', { layout: 'rail' }));
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Wiki mirror' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('1 picture not interpreted', {
+        selector: '.tag-warn',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Fine, I know' }),
+    ).toBeInTheDocument();
+    expect(a.calls.some((c) => c.channel === 'brain:read')).toBe(false);
+  });
 });

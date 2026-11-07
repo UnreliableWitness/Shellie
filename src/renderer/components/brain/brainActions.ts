@@ -39,7 +39,10 @@ export type BrainAction =
   | 'option'
   /** The Read or Add view chosen. */
   | 'view-read'
-  | 'view-add';
+  | 'view-add'
+  /** Pictures: a re-evaluation queued (source panel or Health), a drop accepted with Fine, I know. */
+  | 'reevaluate'
+  | 'accept-drop';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>

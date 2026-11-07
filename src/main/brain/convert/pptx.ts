@@ -162,12 +162,13 @@ async function takeMedia(
   ctx: Pick<SlideCtx, 'readBinary' | 'images' | 'media'>,
   mediaPath: string,
   stem: string,
+  where?: string,
 ): Promise<Media> {
   const known = ctx.media.get(mediaPath);
   if (known) return known;
   const data = await ctx.readBinary(mediaPath);
   const ext = imageExt(mediaPath);
-  const ref = data ? await ctx.images.addAny(stem, data, ext) : null;
+  const ref = data ? await ctx.images.addAny(stem, data, ext, where) : null;
   const taken: Media = {
     ref,
     skipped: data && !ref && ctx.images.lastSkipped === ext ? ext : null,
@@ -274,7 +275,7 @@ function resolveAlternateContent(xml: string): string {
 async function layoutPictures(
   ctx: Pick<SlideCtx, 'read' | 'readBinary' | 'images' | 'media'>,
   part: string,
-  count: { k: number },
+  count: { k: number; all: number },
 ): Promise<string[]> {
   const xml = (await ctx.read(part)) ?? '';
   const dir = part.slice(0, part.lastIndexOf('/'));
@@ -287,7 +288,14 @@ async function layoutPictures(
     if (!rel || rel.mode === 'External') continue;
     const mediaPath = resolve(dir, rel.target);
     if (ctx.media.has(mediaPath)) continue;
-    const taken = await takeMedia(ctx, mediaPath, `layout-${count.k + 1}`);
+    // Taken pictures are numbered among themselves (`layout-<k>`), dropped ones among all layout pictures.
+    count.all++;
+    const taken = await takeMedia(
+      ctx,
+      mediaPath,
+      `layout-${count.k + 1}`,
+      `Slide layouts and master, picture ${count.all}`,
+    );
     if (!taken.ref) continue;
     count.k++;
     // The alt text of the picture shape that holds this blip, when there is one.
@@ -390,7 +398,7 @@ export async function pptxToMarkdown(
     sections.push(out.join('\n'));
   }
 
-  const count = { k: 0 };
+  const count = { k: 0, all: 0 };
   const layoutLines: string[] = [];
   for (const part of layoutParts) {
     layoutLines.push(
@@ -416,6 +424,8 @@ export async function pptxToMarkdown(
     title: null,
     images: images.images,
     warnings: images.warnings(),
+    dropped: images.dropped,
+    tiny: images.tiny,
     empty: text === 0 && images.images.length === 0,
   };
 }

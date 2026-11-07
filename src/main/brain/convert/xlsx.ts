@@ -367,6 +367,8 @@ export async function xlsxToMarkdown(
     title: null,
     images: images.images,
     warnings: images.warnings(),
+    dropped: images.dropped,
+    tiny: images.tiny,
     empty: cells === 0 && images.images.length === 0,
   };
 }

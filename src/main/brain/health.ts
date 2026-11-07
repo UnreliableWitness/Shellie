@@ -1,10 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { BrainFinding, BrainHealth } from '../../shared/brain';
+import type {
+  BrainFinding,
+  BrainHealth,
+  PictureCounts,
+  SourcePictures,
+} from '../../shared/brain';
 import type { CostRecord } from '../../shared/ledger';
 import type { GitClient } from '../services/GitClient';
 import { checkBrain, SHELLIE_FINDING_KINDS } from './check';
 import { readPages } from './pages';
+import { brainCoverage, pictureFindings } from './pictures';
 import { listSources } from './sources';
 import { readState } from './state';
 
@@ -73,6 +79,23 @@ const lintFindings = (findings: BrainFinding[]): BrainFinding[] =>
     (f) => !SHELLIE_FINDING_KINDS.has(f.kind) && f.kind !== 'orphan',
   );
 
+/** The picture counts of all sources added up. */
+function sumPictures(all: SourcePictures[]): PictureCounts {
+  const sum: PictureCounts = {
+    total: 0,
+    described: 0,
+    skipped: 0,
+    missing: 0,
+    dropped: 0,
+    accepted: 0,
+    tiny: 0,
+  };
+  for (const { counts } of all)
+    for (const k of Object.keys(sum) as (keyof PictureCounts)[])
+      sum[k] += counts[k];
+  return sum;
+}
+
 export async function brainHealth(
   brainDir: string,
   git: GitClient,
@@ -89,15 +112,23 @@ export async function brainHealth(
     readPages(brainDir).catch(() => []),
     fs.readFile(path.join(brainDir, 'index.md'), 'utf8').catch(() => null),
   ]);
-  const own = await checkBrain(
-    { brainDir, pages, sources, indexMd, inFlight },
-    now,
-  ).catch(() => []);
+  const [own, pictures] = await Promise.all([
+    checkBrain({ brainDir, pages, sources, indexMd, inFlight }, now).catch(
+      () => [],
+    ),
+    // Directory listings and the source texts only: no picture is read.
+    // Health only counts: no source is read for alt texts.
+    brainCoverage(brainDir, pages, sources, { alt: false }).catch(() => []),
+  ]);
   const mirror = sources.filter((s) => s.path.startsWith('sources/wiki/'));
   return {
     state,
     stateError: error,
-    findings: [...own, ...lintFindings(state?.findings ?? [])],
+    findings: [
+      ...own,
+      ...pictureFindings(pictures, now.toISOString()),
+      ...lintFindings(state?.findings ?? []),
+    ],
     pages: pages.length,
     uncaptured: sources.filter(
       (s) => !s.captured && !s.path.startsWith('sources/wiki/'),
@@ -107,6 +138,7 @@ export async function brainHealth(
     queuePaused: queuePaused ? 'cap' : null,
     costEurToday: ledgerToday.costEur,
     tokensToday: ledgerToday.tokens,
+    pictures: sumPictures(pictures),
   };
 }
 

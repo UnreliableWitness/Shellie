@@ -57,6 +57,13 @@ export type BrainJobDeps = {
    * them in). A throw fails the job.
    */
   beforeJob: (brainId: string) => Promise<void>;
+  /**
+   * Runs with the lock held, after beforeJob: undefined keeps the default prompt, a string replaces it, null ends the
+   * job done without running Claude. A throw fails the job.
+   */
+  promptFor?: (job: BrainJob) => Promise<string | null | undefined>;
+  /** Called once per finished job (done or failed); a throw is logged, never breaks the queue. */
+  afterJob?: (job: BrainJob) => void;
   /** Called when a held lock arms the retry timer (tests wait for it). */
   onLockRetry?: (brainId: string) => void;
   timeoutMs?: number;
@@ -109,6 +116,7 @@ export class BrainJobRunner {
     brainId: string,
     kind: BrainJobKind,
     source: string | null,
+    background = false,
   ): BrainJob {
     return {
       id: `${brainId}:${randomUUID()}:${++this.seq}`,
@@ -121,6 +129,7 @@ export class BrainJobRunner {
       sessionId: null,
       result: null,
       error: null,
+      background,
     };
   }
 
@@ -133,15 +142,42 @@ export class BrainJobRunner {
     }
   }
 
+  private finished(job: BrainJob) {
+    try {
+      this.deps.afterJob?.(job);
+    } catch (e) {
+      console.error('brain afterJob failed', e);
+    }
+  }
+
   enqueue(
     brainId: string,
     kind: BrainJobKind,
     source: string | null = null,
+    opts?: { background?: boolean },
   ): BrainJob {
     const withSource = SOURCE_JOB_KINDS.has(kind);
     if (withSource && !source) throw new Error(`A ${kind} needs a source file`);
     const l = this.lane(brainId);
-    const job = this.make(brainId, kind, withSource ? source : null);
+    const job = this.make(
+      brainId,
+      kind,
+      withSource ? source : null,
+      opts?.background ?? false,
+    );
+    // A pictures job queued by hand replaces a background one still waiting for the same source: one run, not two.
+    if (kind === 'pictures' && !job.background) {
+      const gone = l.queue.filter(
+        (j) =>
+          j.background &&
+          j.kind === 'pictures' &&
+          j.source === job.source &&
+          (j.status === 'queued' || j.status === 'paused') &&
+          j !== l.current,
+      );
+      l.queue = l.queue.filter((j) => !gone.includes(j));
+      l.list = l.list.filter((j) => !gone.includes(j));
+    }
     l.queue.push(job);
     this.add(l, job);
     this.changed(brainId);
@@ -209,7 +245,10 @@ export class BrainJobRunner {
   private pump(brainId: string): void {
     const l = this.lane(brainId);
     if (this.stopped || l.busy || l.paused || l.retry) return;
-    const job = l.queue.find((j) => j.status === 'queued');
+    // Background jobs wait until nothing else is queued.
+    const job =
+      l.queue.find((j) => j.status === 'queued' && !j.background) ??
+      l.queue.find((j) => j.status === 'queued');
     if (!job) return;
     l.busy = true;
     l.current = job;
@@ -244,6 +283,7 @@ export class BrainJobRunner {
       job.endedAt = this.now().toISOString();
       done();
       this.changed(brainId);
+      this.finished(job);
       return;
     }
     let locked = false;
@@ -265,31 +305,13 @@ export class BrainJobRunner {
       job.startedAt = this.now().toISOString();
       this.changed(brainId);
       await d.beforeJob(brainId);
-      const stdout = await d.run(
-        d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
-        {
-          cwd: dir,
-          input: prompt(job),
-          timeoutMs: d.timeoutMs ?? 600_000,
-          env: d.env(brainId),
-        },
-      );
-      const { result, sessionId } = claudeResultWithSession(stdout);
-      job.result = result;
-      job.sessionId = sessionId;
-      // A capture and a lessons run both fold a source into the wiki: the source is captured.
-      if ((job.kind === 'capture' || job.kind === 'lessons') && job.source) {
-        const source = job.source;
-        const at = this.now().toISOString();
-        await writeState(dir, (s) => ({
-          ...s,
-          captured: { ...s.captured, [source]: { at, sessionId } },
-        }));
+      const input = await d.promptFor?.(job);
+      if (input === null) {
+        // Nothing for Claude to do: nothing changed, so there is nothing to commit.
+        job.result = 'Nothing to re-evaluate';
+      } else {
+        await this.runSkill(brainId, dir, job, input ?? prompt(job));
       }
-      await d.commit(
-        brainId,
-        `Brain: ${job.kind}${job.source ? ` ${job.source}` : ''}`,
-      );
       job.status = 'done';
     } catch (e) {
       job.status = 'failed';
@@ -306,5 +328,41 @@ export class BrainJobRunner {
     }
     this.trim(l);
     this.changed(brainId);
+    this.finished(job);
+  }
+
+  /** Runs the skill headless, records a capture, and commits the output; a throw fails the job. */
+  private async runSkill(
+    brainId: string,
+    dir: string,
+    job: BrainJob,
+    input: string,
+  ): Promise<void> {
+    const d = this.deps;
+    const stdout = await d.run(
+      d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
+      {
+        cwd: dir,
+        input,
+        timeoutMs: d.timeoutMs ?? 600_000,
+        env: d.env(brainId),
+      },
+    );
+    const { result, sessionId } = claudeResultWithSession(stdout);
+    job.result = result;
+    job.sessionId = sessionId;
+    // A capture and a lessons run both fold a source into the wiki: the source is captured.
+    if ((job.kind === 'capture' || job.kind === 'lessons') && job.source) {
+      const source = job.source;
+      const at = this.now().toISOString();
+      await writeState(dir, (s) => ({
+        ...s,
+        captured: { ...s.captured, [source]: { at, sessionId } },
+      }));
+    }
+    await d.commit(
+      brainId,
+      `Brain: ${job.kind}${job.source ? ` ${job.source}` : ''}`,
+    );
   }
 }

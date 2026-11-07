@@ -110,6 +110,7 @@ describe('BrainScreen', () => {
         changed: 0,
         removed: 0,
         pages: 4,
+        attachments: 0,
       }),
     });
     render(<BrainScreen brainId="b1" />);

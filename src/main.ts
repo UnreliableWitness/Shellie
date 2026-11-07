@@ -29,6 +29,8 @@ import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
+import { createRasterizer } from './main/brain/convert/raster';
+import { createPictureHooks } from './main/brain/pictures';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
   commitJobOutput,
@@ -876,6 +878,13 @@ async function boot(): Promise<void> {
     const brainJobEvents = jobTelemetry((name, props) =>
       telemetry.event(name, props),
     );
+    // Pictures jobs' prompts, the job after a capture, and the one-time pass over earlier sources.
+    const pictureHooks = createPictureHooks({
+      brains,
+      runner: () => brainRunner,
+      git,
+      rasterize: createRasterizer({ platform, run: runWithInput }),
+    });
     const brainRunner = new BrainJobRunner({
       platform,
       run: runWithInput,
@@ -892,6 +901,8 @@ async function boot(): Promise<void> {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
+      promptFor: pictureHooks.promptFor,
+      afterJob: pictureHooks.afterJob,
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
         broadcast('brain:changed', { brainId });
@@ -1223,6 +1234,8 @@ async function boot(): Promise<void> {
             .catch((err) => console.error('[brain] lastDigestAt', err));
         },
         running: (id) => brainRunner.running(id),
+        picturePass: pictureHooks.picturePass,
+        passRunning: pictureHooks.passRunning,
       });
       const warnings = [
         loaded.recovered &&

@@ -21,6 +21,8 @@ export async function docxToMarkdown(
   const images = new ImageCollector(opts.rasterize);
   // mammoth escapes markdown punctuation in the src it writes, so it gets a bare token per picture.
   const refs: string[] = [];
+  // Pictures are named by their place in the document, taken or not, so a dropped one never shares a number.
+  let tried = 0;
   let result: Awaited<ReturnType<typeof toMarkdown>>;
   try {
     result = await toMarkdown(
@@ -28,8 +30,9 @@ export async function docxToMarkdown(
       {
         // Each picture goes to the assets folder; the markdown keeps an image link in place.
         convertImage: mammoth.images.imgElement(async (image) => {
+          tried++;
           const ref = await images.addAny(
-            `image-${refs.length + 1}`,
+            `image-${tried}`,
             Buffer.from(await image.readAsBuffer()),
             imageExt(image.contentType ?? ''),
           );
@@ -55,6 +58,8 @@ export async function docxToMarkdown(
     title: firstHeading(markdown),
     images: images.images,
     warnings: images.warnings(),
+    dropped: images.dropped,
+    tiny: images.tiny,
     empty: markdown.trim() === '' && images.images.length === 0,
   };
 }

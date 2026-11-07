@@ -66,6 +66,8 @@ describe('startBrainScheduler', () => {
       refresh,
       digest,
       running: (id) => id === 'busy',
+      picturePass: async () => undefined,
+      passRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -119,6 +121,8 @@ describe('startBrainScheduler', () => {
       refresh: vi.fn(async () => undefined),
       digest,
       running: () => false,
+      picturePass: async () => undefined,
+      passRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -139,6 +143,8 @@ describe('startBrainScheduler', () => {
       refresh,
       digest: vi.fn(),
       running: () => false,
+      picturePass: async () => undefined,
+      passRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -163,6 +169,8 @@ describe('startBrainScheduler', () => {
       refresh,
       digest: vi.fn(),
       running: () => false,
+      picturePass: async () => undefined,
+      passRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -208,10 +216,83 @@ describe('archived brains', () => {
       },
       digest: (id) => digested.push(id),
       running: () => false,
+      picturePass: async () => undefined,
+      passRunning: () => false,
     });
     await vi.advanceTimersByTimeAsync(10);
     stop();
     expect(refreshed).toEqual(['live']);
     expect(digested).toEqual(['live']);
+  });
+});
+
+describe('the one-time picture pass', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const started = {
+    startedAt: 's',
+    total: 2,
+    sources: ['sources/a.md', 'sources/b.md'],
+    done: [],
+    failures: {},
+    finishedAt: null,
+  };
+
+  it('starts or resumes it only for live brains on templates v6 with no pass job pending', async () => {
+    const picturePass = vi.fn(async (_id: string) => undefined);
+    const stop = startBrainScheduler({
+      brains: () => [
+        brain({ id: 'new', templatesVersion: 6 }),
+        brain({ id: 'resume', templatesVersion: 6, picturePass: started }),
+        brain({ id: 'v5', templatesVersion: 5 }),
+        brain({ id: 'archived', templatesVersion: 6, archived: true }),
+        brain({
+          id: 'finished',
+          templatesVersion: 6,
+          picturePass: { ...started, finishedAt: 'f' },
+        }),
+        brain({ id: 'pending', templatesVersion: 6, picturePass: started }),
+      ],
+      refresh: vi.fn(async () => undefined),
+      digest: vi.fn(),
+      running: () => false,
+      picturePass,
+      passRunning: (id) => id === 'pending',
+      tick: 1000,
+    });
+    // Not on the launch check: from the next tick on.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(picturePass).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(picturePass.mock.calls.map((c) => c[0])).toEqual(['new', 'resume']);
+    stop();
+  });
+
+  it('does not start it twice while a call is in flight, and logs a failure', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let fail: (e: Error) => void = () => undefined;
+    const picturePass = vi.fn(
+      () => new Promise<void>((_r, rej) => (fail = rej)),
+    );
+    const stop = startBrainScheduler({
+      brains: () => [brain({ id: 'a', templatesVersion: 6 })],
+      refresh: vi.fn(async () => undefined),
+      digest: vi.fn(),
+      running: () => false,
+      picturePass,
+      passRunning: () => false,
+      tick: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(picturePass).toHaveBeenCalledTimes(1);
+    fail(new Error('git'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(picturePass).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+    stop();
   });
 });

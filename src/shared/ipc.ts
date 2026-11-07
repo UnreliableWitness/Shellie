@@ -11,6 +11,7 @@ import type {
   BrainView,
   BrainWiki,
   RefreshResult,
+  SourcePictures,
   SourceType,
 } from './brain';
 import type { ColorScheme } from './theme';
@@ -626,6 +627,16 @@ export type Channels = {
   };
   /** Opens a file under sources/ (an original, a picture) with the system. */
   'brain:openSource': { args: [brainId: string, path: string]; result: void };
+  /** A source's pictures with their status (`sources/wiki`: the mirror's attachments); none is zero counts. */
+  'brain:pictures': {
+    args: [brainId: string, source: string];
+    result: SourcePictures;
+  };
+  /** "Fine, I know": marks the source's drop at `where` accepted and commits that alone. */
+  'brain:acceptDrop': {
+    args: [brainId: string, source: string, where: string];
+    result: void;
+  };
   'brain:delete': {
     args: [brainId: string, deleteFolder: boolean];
     result: void;
@@ -662,7 +673,14 @@ export type Channels = {
   'brain:run': {
     args: [
       brainId: string,
-      kind: 'lint' | 'digest' | 'sync' | 'capture' | 'retract' | 'lessons',
+      kind:
+        | 'lint'
+        | 'digest'
+        | 'sync'
+        | 'capture'
+        | 'retract'
+        | 'lessons'
+        | 'pictures',
       source?: string,
     ];
     result: BrainJob;
