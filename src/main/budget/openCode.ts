@@ -205,4 +205,27 @@ export class OpenCodeReader {
       db.close();
     }
   }
+
+  /** The newest top-level session OpenCode made in `dir` at or after `since` (epoch ms) whose id is not in `exclude`; null when none. */
+  latestSession(
+    dir: string,
+    since: number,
+    exclude: ReadonlySet<string>,
+  ): string | null {
+    if (!existsSync(this.file)) return null;
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      const hasParent = (
+        db.prepare('PRAGMA table_info(session)').all() as { name: string }[]
+      ).some((c) => c.name === 'parent_id');
+      const rows = db
+        .prepare(
+          `SELECT id FROM session WHERE directory = ? AND time_created >= ?${hasParent ? ' AND parent_id IS NULL' : ''} ORDER BY time_created DESC, id DESC`,
+        )
+        .all(dir, since) as { id: string }[];
+      return rows.find((r) => !exclude.has(r.id))?.id ?? null;
+    } finally {
+      db.close();
+    }
+  }
 }

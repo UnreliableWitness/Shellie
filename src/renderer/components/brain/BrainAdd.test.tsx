@@ -432,6 +432,23 @@ describe('BrainAdd', () => {
     );
   });
 
+  it('Continue in terminal opens a job that ran on the other agent on that agent', async () => {
+    const a = installFakeApi({ 'brain:terminal': () => def });
+    const brain = brainView({
+      jobs: [brainJob({ id: 'j1', sessionId: 'ses_1', agent: 'opencode' })],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Continue in terminal' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:terminal',
+        args: ['b1', 'ses_1', undefined, 'opencode'],
+      }),
+    );
+  });
+
   it('lists uncaptured sources (not the wiki mirror) with Capture', async () => {
     const a = installFakeApi({
       'brain:sources': () => [

@@ -42,6 +42,8 @@ export const TerminalDefSchema = z.object({
   command: z.string().optional(),
   /** Claude Code's session id (a UUID), so Restart resumes the same conversation. Absent on older tasks. */
   sessionId: z.string().optional(),
+  /** When an OpenCode brain terminal last started a new session (epoch ms), so its session id can be found afterwards. */
+  spawnedAt: z.number().optional(),
   /** The workspace (repo worktree) the tab runs in; absent means the task's active home. */
   workspaceId: z.string().optional(),
   /** The Setup tab: a `run` tab that runs these setup commands in order. Never restarted by itself. */

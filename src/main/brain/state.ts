@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { writeAtomic } from '../fsRetry';
@@ -25,6 +26,21 @@ export async function readState(
     return { state: parsed.data, error: null };
   } catch (e) {
     return { state: null, error: `brain/state.json: ${(e as Error).message}` };
+  }
+}
+
+/** The session ids of the brain's captured sources, read at once; none when brain/state.json cannot be read. */
+export function capturedSessionIds(brainDir: string): string[] {
+  try {
+    const parsed = BrainStateSchema.safeParse(
+      JSON.parse(readFileSync(stateFile(brainDir), 'utf8')),
+    );
+    if (!parsed.success) return [];
+    return Object.values(parsed.data.captured).flatMap((c) =>
+      c.sessionId ? [c.sessionId] : [],
+    );
+  } catch {
+    return [];
   }
 }
 

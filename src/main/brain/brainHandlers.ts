@@ -690,10 +690,10 @@ export function createBrainHandlers(
       return { verified };
     },
     'brain:asset': async (id, rel) => readAsset(brainOf(id).path, rel),
-    'brain:terminal': async (id, resumeSession, prompt) => {
+    'brain:terminal': async (id, resumeSession, prompt, agent) => {
       brainOf(id);
       if (!d.terminals) throw new Error('Brain terminals are not available');
-      return d.terminals.open(id, resumeSession, prompt);
+      return d.terminals.open(id, resumeSession, prompt, agent);
     },
     'brain:templateDiff': async (id) => {
       const b = brainOf(id);

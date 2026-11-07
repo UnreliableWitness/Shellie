@@ -2,6 +2,7 @@ import type {
   AddSourceResult,
   AdoWiki,
   AdoWikiPage,
+  BrainAgent,
   BrainJob,
   BrainOptions,
   BrainPageRow,
@@ -702,11 +703,17 @@ export type Channels = {
   /** An image of the brain as a data URL. */
   'brain:asset': { args: [brainId: string, rel: string]; result: string };
   /**
-   * Shows the brain's Claude terminal. `resumeSession` other than the running one restarts it on that session;
-   * `prompt` is sent: as the first message of a new process, or typed and submitted into a running one.
+   * Shows the brain's terminal on `agent` (default the brain's). `resumeSession` other than the running one, or another
+   * agent, restarts it on that session; `prompt` is sent: as the first message of a new process, or typed and
+   * submitted into a running one.
    */
   'brain:terminal': {
-    args: [brainId: string, resumeSession?: string | null, prompt?: string];
+    args: [
+      brainId: string,
+      resumeSession?: string | null,
+      prompt?: string,
+      agent?: BrainAgent,
+    ];
     result: TerminalDef;
   };
   /** A person checked a wiki page: writes today's local date as its `verified` and commits. */

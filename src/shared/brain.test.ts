@@ -4,6 +4,7 @@ import {
   BrainOptionsSchema,
   BrainSchema,
   BrainStateSchema,
+  askPrompt,
   brainIdOf,
   brainTaskId,
   opencodeReady,
@@ -57,5 +58,16 @@ describe('brain shared types', () => {
   });
   it('BrainStateSchema accepts an empty object', () => {
     expect(BrainStateSchema.parse({}).findings).toEqual([]);
+  });
+});
+
+describe('askPrompt', () => {
+  it('is the /ask command on Claude Code and plain text on OpenCode', () => {
+    expect(askPrompt('claude', 'who owns billing?')).toBe(
+      '/ask who owns billing?',
+    );
+    expect(askPrompt('opencode', 'who owns billing?')).toBe(
+      'Load the ask skill and answer from this brain, reading only: who owns billing?',
+    );
   });
 });

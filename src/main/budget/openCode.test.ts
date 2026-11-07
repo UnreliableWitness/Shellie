@@ -230,3 +230,59 @@ describe('OpenCodeReader', () => {
       found: false,
     }));
 });
+
+describe('OpenCodeReader.latestSession', () => {
+  const makeDb = (withParent = true) => {
+    const file = path.join(
+      mkdtempSync(path.join(os.tmpdir(), 'oc-ses-')),
+      'opencode.db',
+    );
+    const db = new DatabaseSync(file);
+    db.exec(
+      `CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, ${withParent ? 'parent_id text, ' : ''}slug text NOT NULL, directory text NOT NULL, title text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)`,
+    );
+    const put = (
+      id: string,
+      directory: string,
+      created: number,
+      parent: string | null = null,
+    ) =>
+      withParent
+        ? db
+            .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, 'p', parent, id, directory, 't', '1', created, created)
+        : db
+            .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, 'p', id, directory, 't', '1', created, created);
+    return { file, put, close: () => db.close() };
+  };
+
+  it('finds the newest top-level session in the folder since a time, skipping excluded ids', () => {
+    const { file, put, close } = makeDb();
+    put('ses_old', '/b', 50);
+    put('ses_term', '/b', 120);
+    put('ses_job', '/b', 150);
+    put('ses_child', '/b', 160, 'ses_term');
+    put('ses_other', '/elsewhere', 170);
+    const reader = new OpenCodeReader(file);
+    expect(reader.latestSession('/b', 100, new Set(['ses_job']))).toBe(
+      'ses_term',
+    );
+    expect(reader.latestSession('/b', 100, new Set())).toBe('ses_job');
+    expect(reader.latestSession('/b', 200, new Set())).toBeNull();
+    expect(reader.latestSession('/c', 0, new Set())).toBeNull();
+    close();
+  });
+
+  it('reads a database without parent_id, and none at all', () => {
+    const { file, put, close } = makeDb(false);
+    put('ses_a', '/b', 10);
+    expect(new OpenCodeReader(file).latestSession('/b', 0, new Set())).toBe(
+      'ses_a',
+    );
+    close();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').latestSession('/b', 0, new Set()),
+    ).toBeNull();
+  });
+});

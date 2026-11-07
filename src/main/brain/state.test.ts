@@ -3,7 +3,13 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { acquireLock, readState, releaseLock, writeState } from './state';
+import {
+  acquireLock,
+  capturedSessionIds,
+  readState,
+  releaseLock,
+  writeState,
+} from './state';
 
 let dir: string;
 beforeEach(async () => {
@@ -33,6 +39,19 @@ describe('state', () => {
     );
     expect(raw.custom).toEqual({ a: 1 });
     expect(raw.lastLintAt).toBe('now');
+  });
+
+  it('lists the captured session ids, none for a broken file', async () => {
+    await writeState(dir, (s) => ({
+      ...s,
+      captured: {
+        'sources/a.md': { at: 't', sessionId: 'ses_a' },
+        'sources/b.md': { at: 't', sessionId: null },
+      },
+    }));
+    expect(capturedSessionIds(dir)).toEqual(['ses_a']);
+    await writeFile(path.join(dir, 'brain', 'state.json'), '{nope');
+    expect(capturedSessionIds(dir)).toEqual([]);
   });
 });
 

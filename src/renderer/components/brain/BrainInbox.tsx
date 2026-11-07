@@ -51,7 +51,14 @@ function JobRow({
   };
   const resume = async () => {
     trackBrain('continue');
-    const def = await openBrainTerminal(brain.id, notify, job.sessionId);
+    // A job that ran on the other agent than the brain now has continues on its own agent.
+    const def = await openBrainTerminal(
+      brain.id,
+      notify,
+      job.sessionId,
+      undefined,
+      job.agent === brain.options.agent ? undefined : job.agent,
+    );
     if (def) onTerminal?.(def);
   };
   return (

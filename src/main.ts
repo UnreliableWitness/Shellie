@@ -25,6 +25,7 @@ import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
+import { capturedSessionIds } from './main/brain/state';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
@@ -688,7 +689,7 @@ async function boot(): Promise<void> {
             taskId: brainTaskId(brain.id),
             taskTitle: brain.name,
             label: brain.terminal?.label ?? brain.name,
-            kind: 'claude',
+            kind: brain.terminal?.kind ?? 'claude',
           };
         return null;
       },
@@ -933,6 +934,7 @@ async function boot(): Promise<void> {
         return null;
       }
     };
+    const brainSessions = new OpenCodeReader(openCodeDbPath());
     brainTerminals = createBrainTerminals({
       brains,
       terminals,
@@ -940,6 +942,18 @@ async function boot(): Promise<void> {
       env: (id) => ({ ...brainEnv(id), COLORFGBG: colorFgBg(scheme()) }),
       themeFile: () => claudeSettings(),
       sessionExists: claudeSessionExists,
+      // Never a job's session: the runner's jobs and the captured sources' sessions are left out.
+      opencodeSession: (brain, since) =>
+        brainSessions.latestSession(
+          brain.path,
+          since,
+          new Set([
+            ...brainRunner
+              .jobs(brain.id)
+              .flatMap((j) => (j.sessionId ? [j.sessionId] : [])),
+            ...capturedSessionIds(brain.path),
+          ]),
+        ),
     });
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
     // Agent tabs that stop right after starting (a missing CLI, an invalid OpenCode config) say why (#109).
@@ -949,7 +963,7 @@ async function boot(): Promise<void> {
       kindOf: (id) => {
         for (const t of store.state.tasks)
           for (const d of t.terminals) if (d.id === id) return d.kind;
-        return brainTerminals?.ownerOf(id) ? 'claude' : undefined;
+        return brainTerminals?.ownerOf(id)?.terminal?.kind;
       },
       // Read at each call: telemetry is replaced once its client is set up.
       telemetry: {

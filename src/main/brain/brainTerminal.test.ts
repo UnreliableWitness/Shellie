@@ -7,7 +7,11 @@ import type { TerminalManager } from '../services/TerminalManager';
 import type { SpawnOptions } from '../services/TerminalManager';
 import { testPlatform } from '../test-helpers/shell';
 import { BrainStore } from './BrainStore';
-import { brainClaudeArgs, createBrainTerminals } from './brainTerminal';
+import {
+  brainClaudeArgs,
+  brainOpencodeArgs,
+  createBrainTerminals,
+} from './brainTerminal';
 
 let dir: string;
 let store: BrainStore;
@@ -16,6 +20,8 @@ let running: Set<string>;
 let exited: Set<string>;
 let killed: string[];
 let written: [string, string][];
+let found: string | null;
+let lookups: number[];
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'brain-terminal-'));
@@ -36,6 +42,8 @@ beforeEach(async () => {
   written = [];
   running = new Set();
   exited = new Set();
+  found = null;
+  lookups = [];
 });
 afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
@@ -65,6 +73,11 @@ const make = (exists = true) => {
     env: (id) => ({ SHELLIE_TEST: id }),
     themeFile: () => null,
     sessionExists: () => exists,
+    opencodeSession: (_b, since) => {
+      lookups.push(since);
+      return found;
+    },
+    now: () => 1000,
     wait: async () => undefined,
   });
 };
@@ -204,5 +217,109 @@ describe('createBrainTerminals', () => {
     expect(bt.ownerOf('brain-b1')?.id).toBe('b1');
     expect(bt.ownerOf('x')).toBeUndefined();
     expect(await bt.restart('x')).toBe(false);
+  });
+});
+
+const onOpencode = (opencodeModel: string | null = null) =>
+  store.patch('b1', {
+    options: { ...store.get('b1')!.options, agent: 'opencode', opencodeModel },
+  });
+
+describe('brainOpencodeArgs', () => {
+  it('resumes a stored session, with the model and a first message', () => {
+    const def = { id: 't', kind: 'opencode' as const, label: 'l' };
+    expect(brainOpencodeArgs(def, null)).toEqual([]);
+    expect(
+      brainOpencodeArgs({ ...def, sessionId: 'ses_1' }, 'opencode/big', 'hi'),
+    ).toEqual(['--session', 'ses_1', '-m', 'opencode/big', '--prompt', 'hi']);
+  });
+});
+
+describe('createBrainTerminals on OpenCode', () => {
+  it('keeps a Claude brain on Claude', async () => {
+    const bt = make();
+    const def = await bt.open('b1');
+    expect(def.kind).toBe('claude');
+    expect(lookups).toEqual([]);
+  });
+
+  it('starts OpenCode in the brain folder, never --continue, and records the spawn time', async () => {
+    await onOpencode('opencode/big');
+    const bt = make();
+    const def = await bt.open('b1', null, 'Load the ask skill: q');
+    expect(def).toMatchObject({ id: 'brain-b1', kind: 'opencode' });
+    expect(def.sessionId).toBeUndefined();
+    const command = testPlatform().opencodeCommand(
+      undefined,
+      brainOpencodeArgs(def, 'opencode/big', 'Load the ask skill: q'),
+    );
+    expect(spawned[0]).toMatchObject({
+      id: 'brain-b1',
+      taskId: 'brain:b1',
+      cwd: '/x/b1',
+      command: command.command,
+      args: command.args,
+    });
+    expect(line(spawned[0])).not.toContain('--continue');
+    expect(line(spawned[0])).not.toContain('--session');
+    expect(lookups).toEqual([0]);
+    expect(store.get('b1')?.terminal).toMatchObject({
+      kind: 'opencode',
+      spawnedAt: 1000,
+    });
+  });
+
+  it('finds the session the last spawn made and resumes it', async () => {
+    await onOpencode();
+    const bt = make();
+    await bt.open('b1');
+    running.delete('brain-b1');
+    exited.add('brain-b1');
+    found = 'ses_term';
+    const def = await bt.open('b1');
+    expect(lookups).toEqual([0, 1000]);
+    expect(def.sessionId).toBe('ses_term');
+    expect(store.get('b1')?.terminal?.sessionId).toBe('ses_term');
+    expect(line(spawned[1])).toMatch(/'?--session'? '?ses_term'?/);
+  });
+
+  it('types into a running OpenCode terminal, then Enter', async () => {
+    await onOpencode();
+    const bt = make();
+    await bt.open('b1');
+    await bt.open('b1', null, 'Load the ask skill: q');
+    expect(spawned).toHaveLength(1);
+    expect(written).toEqual([
+      ['brain-b1', 'Load the ask skill: q'],
+      ['brain-b1', '\r'],
+    ]);
+  });
+
+  it('respawns on the job agent when Continue asks for the other one', async () => {
+    const bt = make();
+    await bt.open('b1');
+    const def = await bt.open('b1', 'ses_job', undefined, 'opencode');
+    expect(killed).toEqual(['brain-b1']);
+    expect(def).toMatchObject({ kind: 'opencode', sessionId: 'ses_job' });
+    expect(line(spawned[1])).toMatch(/'?--session'? '?ses_job'?/);
+    expect(store.get('b1')?.terminal?.kind).toBe('opencode');
+  });
+
+  it('a running terminal on the old agent is replaced after the brain switched', async () => {
+    const bt = make();
+    await bt.open('b1');
+    await onOpencode();
+    const def = await bt.open('b1');
+    expect(killed).toEqual(['brain-b1']);
+    expect(def.kind).toBe('opencode');
+    expect(def.sessionId).toBeUndefined();
+  });
+
+  it('restart resumes the stored OpenCode session', async () => {
+    await onOpencode();
+    const bt = make();
+    await bt.open('b1', 'ses_1');
+    expect(await bt.restart('brain-b1')).toBe(true);
+    expect(line(spawned[1])).toMatch(/'?--session'? '?ses_1'?/);
   });
 });

@@ -94,6 +94,12 @@ export const OPENCODE_TEMPLATES = 7;
 export const opencodeReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= OPENCODE_TEMPLATES;
 
+/** A question for the brain's read-only ask skill: the `/ask` command on Claude Code, plain text on OpenCode (a `/` message is not reliably run there). */
+export const askPrompt = (agent: BrainAgent, q: string): string =>
+  agent === 'opencode'
+    ? `Load the ask skill and answer from this brain, reading only: ${q}`
+    : `/ask ${q}`;
+
 export const BrainsFileSchema = z.object({
   brains: z.array(BrainSchema).default([]),
 });
