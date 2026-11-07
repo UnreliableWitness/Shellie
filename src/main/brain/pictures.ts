@@ -281,7 +281,8 @@ export async function brainCoverage(
     .filter((p) => !p.startsWith(`${MIRROR_SOURCE}/`));
   for (const source of [...paths, MIRROR_SOURCE]) {
     const c = await coverageOn(brainDir, pages, source, skipped, dropped);
-    if (c.rows.length || dropped[source]) out.push(c);
+    // An empty drop record only says the source was checked: no pictures, nothing to list.
+    if (c.rows.length || c.counts.tiny) out.push(c);
   }
   return out;
 }
@@ -322,7 +323,8 @@ export async function afterPictureJob(
 
 /**
  * Rebuilds the drop records of sources added before drops were recorded, by converting each stored original again
- * (one at a time); a source that has a record, or no original (pasted text), is left alone. Never writes `sources/`.
+ * (one at a time); a source that has a record, or no original (pasted text), is left alone. A source with nothing
+ * dropped gets an empty record, so it is not converted again. Never writes `sources/`.
  * Commits DROPPED_FILE alone as 'Brain: dropped pictures of earlier sources' when it changed.
  */
 export async function rebuildDrops(
@@ -337,11 +339,13 @@ export async function rebuildDrops(
     if (!s.original || s.path in known) continue;
     try {
       const c = await convertFile(absPath(brainDir, s.original), opts);
-      if (c === 'unsupported' || (!c.dropped.length && !c.tiny)) continue;
-      found[s.path] = {
-        dropped: c.dropped.map((d) => ({ ...d, accepted: null })),
-        tiny: c.tiny,
-      };
+      found[s.path] =
+        c === 'unsupported'
+          ? { dropped: [], tiny: 0 }
+          : {
+              dropped: c.dropped.map((d) => ({ ...d, accepted: null })),
+              tiny: c.tiny,
+            };
     } catch (e) {
       console.error(`[brain] could not convert ${s.original} again`, e);
     }
@@ -372,10 +376,22 @@ const PENDING: ReadonlySet<BrainJob['status']> = new Set([
   'paused',
 ]);
 
+/** A capture or pictures job still to come for a source: either one has Claude look at its pictures. */
+const comingFor = (jobs: BrainJob[]): Set<string | null> =>
+  new Set(
+    jobs
+      .filter(
+        (j) =>
+          (j.kind === 'pictures' || j.kind === 'capture') &&
+          PENDING.has(j.status),
+      )
+      .map((j) => j.source),
+  );
+
 /**
  * Starts or resumes the one-time pass over earlier sources: rebuilds their drop records, then queues a background
- * pictures job per source with pictures not interpreted that is not in `picturePass.done` and has no such job
- * pending, oldest first, the wiki mirror last. A resume keeps `startedAt` and `total`; a pass with nothing left
+ * pictures job per source with pictures not interpreted that is not in `picturePass.done` and has no capture or
+ * pictures job pending, oldest first, the wiki mirror last. A resume keeps `startedAt` and `total`; a pass with nothing left
  * finishes. Returns the new `picturePass` for the caller to save.
  */
 export async function runPicturePass(
@@ -405,14 +421,7 @@ export async function runPicturePass(
         x.localeCompare(y)
       );
     });
-  const pending = new Set(
-    d
-      .jobs(b.id)
-      .filter(
-        (j) => j.background && j.kind === 'pictures' && PENDING.has(j.status),
-      )
-      .map((j) => j.source),
-  );
+  const pending = comingFor(d.jobs(b.id));
   for (const source of left)
     if (!pending.has(source))
       d.enqueue(b.id, 'pictures', source, { background: true });
@@ -422,6 +431,22 @@ export async function runPicturePass(
     total: b.picturePass?.total ?? left.length,
     done: [...done],
     finishedAt: left.length ? null : at,
+  };
+}
+
+/**
+ * The pass as `runPicturePass` computed it, merged into the one saved meanwhile: sources noted done while it ran stay
+ * done, and a pass that finished stays finished.
+ */
+export function mergePass(
+  stored: Brain['picturePass'],
+  computed: Brain['picturePass'],
+): Brain['picturePass'] {
+  if (!stored || !computed) return computed ?? stored;
+  return {
+    ...computed,
+    done: [...new Set([...stored.done, ...computed.done])],
+    finishedAt: stored.finishedAt ?? computed.finishedAt,
   };
 }
 

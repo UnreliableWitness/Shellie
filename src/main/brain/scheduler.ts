@@ -17,7 +17,8 @@ function lastMonday(now: Date): Date {
  * The brains' background work while the app is open: a wiki mirror older than 24 h is refreshed (a failed one again after an hour), and a brain with
  * `weeklyDigest` gets its digest on Monday, or the next time the app is open after a Monday it missed (once per week,
  * and only when nothing runs for it). A brain on templates v6 whose one-time picture pass has not finished gets it started
- * or resumed when none of its pass jobs is pending (after a restart the queue is empty, so it picks up again).
+ * or resumed when none of its pass jobs is pending (after a restart the queue is empty, so it picks up again), from the
+ * second check on.
  * Checks at once and then every tick (default 15 min); returns the stop function.
  */
 export function startBrainScheduler(d: {
@@ -39,9 +40,13 @@ export function startBrainScheduler(d: {
   // brain id -> the Monday its digest was enqueued, so a slow lastDigestAt write never enqueues it twice.
   const digested = new Map<string, number>();
   const passing = new Set<string>();
+  // The picture pass converts originals again: it waits one tick, so it never weighs on the launch.
+  let firstCheck = true;
 
   const check = () => {
     const at = now();
+    const launch = firstCheck;
+    firstCheck = false;
     for (const b of d.brains()) {
       if (b.archived) continue;
       const last = b.lastRefreshAt ? Date.parse(b.lastRefreshAt) : 0;
@@ -83,6 +88,7 @@ export function startBrainScheduler(d: {
         }
       }
       if (
+        !launch &&
         b.templatesVersion >= PASS_TEMPLATES &&
         !b.picturePass?.finishedAt &&
         !passing.has(b.id) &&

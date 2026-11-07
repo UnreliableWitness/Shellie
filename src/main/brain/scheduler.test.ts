@@ -259,7 +259,10 @@ describe('the one-time picture pass', () => {
       passRunning: (id) => id === 'pending',
       tick: 1000,
     });
+    // Not on the launch check: from the next tick on.
     await vi.advanceTimersByTimeAsync(0);
+    expect(picturePass).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
     expect(picturePass.mock.calls.map((c) => c[0])).toEqual(['new', 'resume']);
     stop();
   });
@@ -280,6 +283,7 @@ describe('the one-time picture pass', () => {
       tick: 1000,
     });
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
     await vi.advanceTimersByTimeAsync(1000);
     expect(picturePass).toHaveBeenCalledTimes(1);
     fail(new Error('git'));

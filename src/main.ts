@@ -32,6 +32,7 @@ import { jobTelemetry } from './main/brain/brainTelemetry';
 import { createRasterizer } from './main/brain/convert/raster';
 import {
   afterPictureJob,
+  mergePass,
   notePassJob,
   picturesPrompt,
   runPicturePass,
@@ -948,7 +949,7 @@ async function boot(): Promise<void> {
         jobs: (brainId) => brainRunner.jobs(brainId),
         now: () => new Date(),
       });
-      await savePicturePass(id, () => pass);
+      await savePicturePass(id, (b) => mergePass(b.picturePass, pass));
     };
     // The scheduler starts with the window; the runner stops on quit either way.
     let stopBrainScheduler = () => {};

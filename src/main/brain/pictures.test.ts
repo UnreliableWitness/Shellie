@@ -17,6 +17,7 @@ import {
   brainCoverage,
   coverage,
   DROPPED_FILE,
+  mergePass,
   MIRROR_SOURCE,
   notePassJob,
   pictureFindings,
@@ -574,6 +575,36 @@ describe('one-time pass over earlier sources', () => {
       expect((await subjects())[0]).toBe('accepted');
     });
 
+    it('records a source with nothing dropped as checked: not converted again, no row, no finding', async () => {
+      const f = path.join(root, 'Kickoff.vtt');
+      await fs.writeFile(
+        f,
+        'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v Ann>Welcome.\n',
+      );
+      const r = await addSource(git, dir, { file: f }, 'transcript', at('01'));
+      if (!r.ok) throw new Error(r.message);
+      await rebuildDrops(git, dir, await listSources(dir, null), {});
+      expect(await readDropped(dir)).toEqual({
+        [r.path]: { dropped: [], tiny: 0 },
+      });
+      expect((await subjects())[0]).toBe(
+        'Brain: dropped pictures of earlier sources',
+      );
+      // An unreadable original would log if it were converted again.
+      await fs.chmod(path.join(dir, r.path.replace(/\.md$/, '.vtt')), 0o000);
+      const log = vi.spyOn(console, 'error');
+      await rebuildDrops(git, dir, await listSources(dir, null), {});
+      expect(log).not.toHaveBeenCalled();
+      log.mockRestore();
+      const all = await brainCoverage(
+        dir,
+        await readPages(dir),
+        await listSources(dir, null),
+      );
+      expect(all).toEqual([]);
+      expect(pictureFindings(all, 't')).toEqual([]);
+    });
+
     it('skips an original that does not convert, with a log line', async () => {
       const deck = await earlierDeck();
       await fs.writeFile(
@@ -680,6 +711,18 @@ describe('one-time pass over earlier sources', () => {
       expect(next).toMatchObject({ total: 2, finishedAt: null });
     });
 
+    it('does not queue a source that has a capture or a pictures job coming, background or not', async () => {
+      const a = await source('01', true);
+      const b2 = await source('02', true);
+      const c = await source('03', true);
+      const { queued } = await pass(brain(), [
+        job({ source: a, kind: 'capture', background: false }),
+        job({ source: b2, background: false, status: 'paused' }),
+        job({ source: c, kind: 'capture', status: 'done' }),
+      ]);
+      expect(queued).toEqual([['b', 'pictures', c, { background: true }]]);
+    });
+
     it('finishes at once when nothing has gaps', async () => {
       await source('01', false);
       const { next, queued } = await pass(brain());
@@ -697,6 +740,30 @@ describe('one-time pass over earlier sources', () => {
       const { queued } = await pass(brain());
       expect(Object.keys(await readDropped(dir))).toEqual([deck]);
       expect(queued).toEqual([['b', 'pictures', deck, { background: true }]]);
+    });
+  });
+
+  describe('mergePass', () => {
+    const computed = {
+      startedAt: 's',
+      total: 3,
+      done: ['sources/a.md'],
+      finishedAt: null,
+    };
+    it('keeps sources noted done meanwhile and a finish already saved', () => {
+      expect(
+        mergePass(
+          { ...computed, done: ['sources/a.md', 'sources/b.md'] },
+          computed,
+        ),
+      ).toEqual({ ...computed, done: ['sources/a.md', 'sources/b.md'] });
+      expect(
+        mergePass({ ...computed, finishedAt: 'f' }, computed),
+      ).toMatchObject({ finishedAt: 'f' });
+      expect(
+        mergePass(computed, { ...computed, finishedAt: 'g' }),
+      ).toMatchObject({ finishedAt: 'g' });
+      expect(mergePass(null, computed)).toBe(computed);
     });
   });
 
