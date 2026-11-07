@@ -247,7 +247,7 @@ describe('handlers: agents', () => {
         return {
           code: 0,
           stdout:
-            'opencode/big-pickle\nanthropic/claude-sonnet-4.5\nollama/qwen3:8b\nUpdating cache...\n\n  \n',
+            'opencode/big-pickle\nanthropic/claude-sonnet-4.5\nollama/qwen3:8b\nopenrouter/anthropic/claude-sonnet-4.5\nopenrouter/x/y & calc\nUpdating cache...\n\n  \n',
         };
       },
     });
@@ -256,6 +256,7 @@ describe('handlers: agents', () => {
       'opencode/big-pickle',
       'anthropic/claude-sonnet-4.5',
       'ollama/qwen3:8b',
+      'openrouter/anthropic/claude-sonnet-4.5',
     ]);
     expect(seen).toHaveLength(1);
     expect(seen[0].args.join(' ')).toContain('models');

@@ -35,8 +35,11 @@ export const BrainOptionsSchema = z.object({
 });
 export type BrainOptions = z.infer<typeof BrainOptionsSchema>;
 
-/** `provider/model` with no spaces or shell characters: a typed model reaches OpenCode's command line as `-m`. */
-const OPENCODE_MODEL = /^[\w.-]+\/[\w.:-]+$/;
+/**
+ * `provider/model` (slashes allowed after the provider: `openrouter/vendor/model`) with no spaces or shell characters:
+ * a typed model reaches OpenCode's command line as `-m`.
+ */
+const OPENCODE_MODEL = /^[\w.-]+\/[\w.:/-]+$/;
 export const isOpencodeModel = (model: string): boolean =>
   OPENCODE_MODEL.test(model);
 /** The model to pass as `-m`: null (OpenCode's default) when it is unset or not a valid `provider/model`. */

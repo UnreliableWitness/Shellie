@@ -260,6 +260,12 @@ describe('brainOpencodeArgs', () => {
     const def = { id: 't', kind: 'opencode' as const, label: 'l' };
     expect(brainOpencodeArgs(def, 'a/b" & calc')).toEqual([]);
     expect(brainOpencodeArgs(def, 'a/b c')).toEqual([]);
+    expect(brainOpencodeArgs(def, 'openrouter/x/y"')).toEqual([]);
+    // A nested id after the provider is a model.
+    expect(brainOpencodeArgs(def, 'openrouter/anthropic/claude')).toEqual([
+      '-m',
+      'openrouter/anthropic/claude',
+    ]);
   });
 });
 

@@ -221,7 +221,12 @@ import {
 } from '../brain/context';
 import { sessionDigest, sessionTurns, type Turn } from '../brain/sessionDigest';
 import { addSource } from '../brain/sources';
-import type { Brain, BrainJobKind, RefreshResult } from '../../shared/brain';
+import {
+  isOpencodeModel,
+  type Brain,
+  type BrainJobKind,
+  type RefreshResult,
+} from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { withTimeout } from '../async';
 import { throttleByKey } from './throttleByKey';
@@ -3203,7 +3208,7 @@ export function createHandlers(s: Services): Handlers {
           const models = stdout
             .split(/\r?\n/)
             .map((l) => l.trim())
-            .filter((l) => /^[\w.-]+\/[\w.:-]+$/.test(l));
+            .filter(isOpencodeModel);
           return models.length > 0 ? models : null;
         } catch {
           return null;

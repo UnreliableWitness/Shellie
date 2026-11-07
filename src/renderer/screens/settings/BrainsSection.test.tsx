@@ -475,12 +475,17 @@ describe('archiving', () => {
       expect(screen.getByLabelText('Model').tagName).toBe('INPUT'),
     );
     const model = screen.getByLabelText('Model');
-    await user.type(model, 'ollama/qwen3:8b');
+    await user.type(model, 'openrouter/anthropic/claude-sonnet-4.5');
     await user.tab();
     await waitFor(() =>
       expect(
         calls.filter((c) => c.channel === 'brain:update').at(-1)?.args,
-      ).toEqual(['b1', { options: { opencodeModel: 'ollama/qwen3:8b' } }]),
+      ).toEqual([
+        'b1',
+        {
+          options: { opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5' },
+        },
+      ]),
     );
   });
 

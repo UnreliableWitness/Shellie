@@ -53,11 +53,15 @@ describe('brain shared types', () => {
       'opencode/big-pickle',
       'anthropic/claude-sonnet-4.5',
       'ollama/llama3:8b',
+      'openrouter/anthropic/claude-sonnet-4.5',
     ])
       expect(isOpencodeModel(m)).toBe(true);
     for (const m of [
       'big-pickle',
       'a/b c',
+      'openrouter/x/y z',
+      'openrouter/x/"y"',
+      'openrouter/x/y&calc',
       'a/b" & calc',
       'a/b|x',
       'a/b%PATH%',
