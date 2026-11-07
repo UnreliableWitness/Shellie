@@ -809,6 +809,8 @@ export function createHandlers(s: Services): Handlers {
       running: () => false,
       resume: () => undefined,
       dropQueued: () => 0,
+      held: () => false,
+      release: () => undefined,
     },
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData: s.usageDir,

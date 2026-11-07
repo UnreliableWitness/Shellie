@@ -1053,6 +1053,7 @@ describe('createPictureHooks', () => {
           args: flags ?? [],
           env: {},
         }),
+        opencodeCommand: () => ({ command: 'opencode', args: [] }),
       },
       run: (async (_cmd: unknown, o: { input: string }) => {
         runs.push(o.input);
@@ -1078,6 +1079,9 @@ describe('createPictureHooks', () => {
       cap: () => 1_000_000,
       brainDir: () => dir,
       model: () => 'sonnet',
+      agent: () => 'claude',
+      opencodeModel: () => null,
+      ready: () => true,
       onChange: () => undefined,
       commit: async () => undefined,
       beforeJob: async () => undefined,

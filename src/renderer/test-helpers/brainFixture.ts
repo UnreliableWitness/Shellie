@@ -66,6 +66,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     mirrorPages: 12,
     outsideEdits: [],
     queuePaused: null,
+    queueHeld: null,
     costEurToday: 0.42,
     tokensToday: 12_345,
     pictures: {

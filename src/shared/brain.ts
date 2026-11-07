@@ -173,7 +173,7 @@ export type BrainJob = {
   error: string | null;
   /** Runs only when no other job is queued (the one-time pass over earlier sources). */
   background: boolean;
-  /** The agent that runs this job, taken from the brain when it is queued. */
+  /** The agent that runs this job, taken from the brain when it is queued and again when it starts. */
   agent: BrainAgent;
 };
 export type PictureStatus =
@@ -241,6 +241,8 @@ export type BrainHealth = {
   mirrorPages: number;
   outsideEdits: string[];
   queuePaused: 'cap' | null;
+  /** Why queued jobs wait for the user (an OpenCode brain on skills older than v7); null when they run. */
+  queueHeld: string | null;
   costEurToday: number;
   tokensToday: number;
   /** The pictures of all sources, summed (accepted drops and tiny images are not gaps). */

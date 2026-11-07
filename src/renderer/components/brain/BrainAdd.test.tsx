@@ -1,4 +1,5 @@
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -866,6 +867,22 @@ describe('BrainAdd right column', () => {
     );
     expect(a.tracked).toContainEqual(
       expect.objectContaining({ props: { action: 'help' } }),
+    );
+  });
+
+  it('Health says when the queue waits for Update skills', () => {
+    installFakeApi({});
+    const brain = brainView();
+    render(<BrainHealth brain={brain} />);
+    expect(screen.queryByText('held')).not.toBeInTheDocument();
+    cleanup();
+    brain.health = {
+      ...brain.health!,
+      queueHeld: 'Update skills to run on OpenCode',
+    };
+    render(<BrainHealth brain={brain} />);
+    expect(screen.getByRole('region', { name: 'Health' })).toHaveTextContent(
+      'held Update skills to run on OpenCode: Settings › Project › Brains › Update skills.',
     );
   });
 

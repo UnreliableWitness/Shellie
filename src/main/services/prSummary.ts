@@ -217,6 +217,17 @@ export function tidySummary(text: string): string {
  * stderr; exit 127 (the login shell found no such program) says the program is missing; past `timeoutMs` the
  * process is killed.
  */
+/** A run that exited non-zero: the message as before, plus the exit code and what the program printed on stdout. */
+export class ExitError extends Error {
+  constructor(
+    message: string,
+    readonly exitCode: number | null,
+    readonly stdout: string,
+  ) {
+    super(message);
+  }
+}
+
 export function runWithInput(
   { command, args, env }: Command,
   o: {
@@ -258,9 +269,11 @@ export function runWithInput(
         );
       if (code === 0) return resolve(out);
       if (code === 127)
-        return reject(new Error('Claude Code (claude) was not found'));
+        return reject(
+          new ExitError('Claude Code (claude) was not found', code, out),
+        );
       const last = err.trim().split('\n').pop()?.trim();
-      reject(new Error(last || `exited with code ${code}`));
+      reject(new ExitError(last || `exited with code ${code}`, code, out));
     });
     // A program that never reads stdin closes it early; that is not an error here.
     child.stdin.on('error', () => undefined);

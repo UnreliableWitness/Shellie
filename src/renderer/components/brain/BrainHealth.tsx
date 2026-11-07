@@ -93,6 +93,12 @@ export function BrainHealth({
     <section className="brain-card" aria-labelledby="brain-health-h">
       <h2 id="brain-health-h">Health</h2>
       {h.stateError && <p className="brain-error small">{h.stateError}</p>}
+      {h.queueHeld && (
+        <p className="small">
+          <span className="tag tag-warn">held</span> {h.queueHeld}: Settings ›
+          Project › Brains › Update skills.
+        </p>
+      )}
       <dl className="facts">
         <dt>Last lint</dt>
         <dd>{when(h.state?.lastLintAt ?? null)}</dd>

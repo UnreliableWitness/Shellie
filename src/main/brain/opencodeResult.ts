@@ -5,7 +5,10 @@ type OpencodeEvent = {
   error?: { name?: unknown; data?: { message?: unknown } };
 };
 
-/** The answer and session id of `opencode run --format json`: one JSON event per line; throws when the run failed or gave no text. */
+/**
+ * The answer and session id of `opencode run --format json`: one JSON event per line. The answer is the text of the last
+ * step, or of the newest earlier step with text when the last one only called tools; throws when the run failed or gave no text.
+ */
 export function opencodeResultWithSession(stdout: string): {
   result: string;
   sessionId: string | null;
@@ -13,6 +16,8 @@ export function opencodeResultWithSession(stdout: string): {
   if (!stdout.trim()) throw new Error('OpenCode printed nothing');
   let sessionId: string | null = null;
   let texts: string[] = [];
+  /** The text parts of the newest step that had any, for a run whose last step was only tool calls. */
+  let earlier: string[] = [];
   for (const raw of stdout.split('\n')) {
     let event: OpencodeEvent;
     try {
@@ -29,10 +34,13 @@ export function opencodeResultWithSession(stdout: string): {
         `OpenCode stopped (${typeof message === 'string' ? message.slice(0, 200) : 'error'})`,
       );
     }
-    if (event.type === 'step_start') texts = [];
-    else if (event.type === 'text' && typeof event.part?.text === 'string')
+    if (event.type === 'step_start') {
+      if (texts.length) earlier = texts;
+      texts = [];
+    } else if (event.type === 'text' && typeof event.part?.text === 'string')
       texts.push(event.part.text);
   }
+  if (!texts.length) texts = earlier;
   if (!texts.length) throw new Error('OpenCode gave no result');
   return { result: texts.join('\n'), sessionId };
 }

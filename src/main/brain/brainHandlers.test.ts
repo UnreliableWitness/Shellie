@@ -46,6 +46,7 @@ describe('brain handlers', () => {
   let events: [string, unknown][];
   let remembered: string[];
   let enqueued: [string, BrainJobKind, string | null][];
+  let released: string[];
   let killed: string[];
   let opened: string[];
   let openArgs: [string | null | undefined, string | undefined][];
@@ -79,6 +80,7 @@ describe('brain handlers', () => {
     events = [];
     remembered = [];
     enqueued = [];
+    released = [];
     killed = [];
     opened = [];
     openArgs = [];
@@ -96,6 +98,10 @@ describe('brain handlers', () => {
         running: () => false,
         resume: vi.fn(),
         dropQueued: () => 0,
+        held: () => false,
+        release: (id) => {
+          released.push(id);
+        },
       },
       terminals: {
         open: async (id, resume, prompt) => {
@@ -738,6 +744,16 @@ describe('brain handlers', () => {
         ?.status,
     ).toBe('same');
     expect(brains.get(v.id)?.templatesVersion).toBe(TEMPLATES_VERSION);
+    expect(released).toEqual([v.id]);
+  });
+
+  it('update releases held jobs only when the agent changes', async () => {
+    const v = await h['brain:create'](NEW);
+    await h['brain:update'](v.id, { options: { weeklyDigest: true } });
+    await h['brain:update'](v.id, { options: { agent: 'claude' } });
+    expect(released).toEqual([]);
+    await h['brain:update'](v.id, { options: { agent: 'opencode' } });
+    expect(released).toEqual([v.id]);
   });
 
   describe('refresh', () => {

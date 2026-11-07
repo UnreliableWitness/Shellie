@@ -65,6 +65,22 @@ describe('opencodeResultWithSession', () => {
     );
   });
 
+  it('falls back to the newest earlier text when the last step has none', () => {
+    const out = [
+      start(),
+      text('first'),
+      finish(),
+      start(),
+      text('one'),
+      text('two'),
+      finish(),
+      start(),
+      tool,
+      finish(),
+    ].join('\n');
+    expect(opencodeResultWithSession(out).result).toBe('one\ntwo');
+  });
+
   it('throws when there is no text part', () => {
     expect(() =>
       opencodeResultWithSession([start(), tool, finish()].join('\n')),

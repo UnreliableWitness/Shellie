@@ -23,7 +23,7 @@ import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
-import { brainTaskId, type Brain } from './shared/brain';
+import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
@@ -893,6 +893,13 @@ async function boot(): Promise<void> {
       cap: (id) => brainOf(id).options.dailyTokenCap,
       brainDir: (id) => brainOf(id).path,
       model: (id) => brains.get(id)?.options.model ?? 'sonnet',
+      agent: (id) => brains.get(id)?.options.agent ?? 'claude',
+      opencodeModel: (id) => brains.get(id)?.options.opencodeModel ?? null,
+      // A brain that is gone is ready: its job fails on the folder, as before.
+      ready: (id) => {
+        const b = brains.get(id);
+        return !b || b.options.agent !== 'opencode' || opencodeReady(b);
+      },
       commit: async (id, message) => {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, message, b.name);

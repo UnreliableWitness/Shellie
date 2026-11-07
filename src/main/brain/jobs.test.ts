@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../platform/Platform';
-import { BrainJobRunner, brainJobEnv, type BrainJobDeps } from './jobs';
+import { brainOpencodePermission } from './templates';
+import { ExitError } from '../services/prSummary';
+import {
+  BrainJobRunner,
+  brainJobEnv,
+  opencodeJobArgs,
+  opencodeJobEnv,
+  type BrainJobDeps,
+} from './jobs';
 import { acquireLock, readState } from './state';
 
 const ok = (id: string) =>
@@ -45,6 +53,11 @@ function runner(over: Partial<BrainJobDeps> = {}) {
         args: flags ?? [],
         env: {},
       }),
+      opencodeCommand: (_b, args) => ({
+        command: 'opencode',
+        args: args ?? [],
+        env: {},
+      }),
     },
     run: ((cmd, o) => {
       calls.push({ cmd, cwd: o.cwd, input: o.input, env: o.env });
@@ -55,6 +68,9 @@ function runner(over: Partial<BrainJobDeps> = {}) {
     cap: () => 500_000,
     brainDir: (id) => dirs[id],
     model: () => 'sonnet',
+    agent: () => 'claude',
+    opencodeModel: () => null,
+    ready: () => true,
     onChange: () => undefined,
     commit: async (id, message) => {
       commits.push([id, message]);
@@ -559,5 +575,232 @@ describe('pictures jobs and the runner hooks', () => {
     // No automatic lint after a pictures job, and it does not mark the source captured.
     expect(r.jobs('b1').map((j) => j.kind)).toEqual(['pictures']);
     expect((await readState(dirs.b1)).state?.captured).toEqual({});
+  });
+});
+
+const oc = (text: string, id = 'ses_1') =>
+  [
+    { type: 'step_start', sessionID: id, part: { type: 'step-start' } },
+    { type: 'text', sessionID: id, part: { type: 'text', text } },
+    { type: 'step_finish', sessionID: id, part: { type: 'step-finish' } },
+  ]
+    .map((e) => JSON.stringify(e))
+    .join('\n');
+const RULES = JSON.stringify({ permission: brainOpencodePermission() });
+
+describe('opencodeJobArgs and opencodeJobEnv', () => {
+  it('runs the command headless with json events, and the model only when one is set', () => {
+    expect(opencodeJobArgs('capture', 'opencode/big-pickle')).toEqual([
+      'run',
+      '--command',
+      'capture',
+      '--format',
+      'json',
+      '-m',
+      'opencode/big-pickle',
+    ]);
+    expect(opencodeJobArgs('lint', null)).toEqual([
+      'run',
+      '--command',
+      'lint',
+      '--format',
+      'json',
+    ]);
+  });
+
+  it("sets the brain's rules as the inline config, replacing an inherited one", () => {
+    expect(
+      opencodeJobEnv({
+        A: '1',
+        OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"allow"}}',
+      }),
+    ).toEqual({ A: '1', OPENCODE_CONFIG_CONTENT: RULES });
+  });
+});
+
+describe('jobs on the brain agent', () => {
+  it('a Claude brain runs as before and the job says claude', async () => {
+    const r = runner();
+    const job = r.enqueue('b1', 'capture', 'sources/x.md');
+    expect(job.agent).toBe('claude');
+    await idle(r, 'b1');
+    expect(calls[0].cmd.command).toBe('claude');
+    expect(calls[0].input).toBe('/capture sources/x.md');
+    expect(calls[0].env).toEqual({ BRAIN: 'b1' });
+  });
+
+  it('an OpenCode brain runs opencode with the argument on stdin and its rules in the env', async () => {
+    run = async () => oc('DONE');
+    const r = runner({
+      agent: () => 'opencode',
+      opencodeModel: () => 'opencode/big-pickle',
+      env: (id) => ({
+        BRAIN: id,
+        OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"allow"}}',
+      }),
+    });
+    const job = r.enqueue('b1', 'capture', 'sources/x.md');
+    expect(job.agent).toBe('opencode');
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(2);
+    expect(calls[0].cmd).toEqual({
+      command: 'opencode',
+      args: opencodeJobArgs('capture', 'opencode/big-pickle'),
+      env: {},
+    });
+    expect(calls[0].input).toBe('sources/x.md');
+    expect(calls[0].env).toEqual({
+      BRAIN: 'b1',
+      OPENCODE_CONFIG_CONTENT: RULES,
+    });
+    // The auto lint takes no argument.
+    expect(calls[1].cmd.args).toEqual(
+      opencodeJobArgs('lint', 'opencode/big-pickle'),
+    );
+    expect(calls[1].input).toBe('');
+    const capture = r.jobs('b1').find((j) => j.kind === 'capture');
+    expect(capture).toMatchObject({
+      status: 'done',
+      result: 'DONE',
+      sessionId: 'ses_1',
+      agent: 'opencode',
+    });
+    expect(
+      (await readState(dirs.b1)).state?.captured['sources/x.md']?.sessionId,
+    ).toBe('ses_1');
+  });
+
+  it('a pictures job on OpenCode gets exactly the argument after /pictures', async () => {
+    run = async () => oc('ok');
+    const arg = 'sources/a b.md ["sources/a b-assets/x \\"1\\".png"]';
+    const r = runner({
+      agent: () => 'opencode',
+      promptFor: async (j) =>
+        j.kind === 'pictures' ? `/pictures ${arg}` : undefined,
+    });
+    r.enqueue('b1', 'pictures', 'sources/a b.md');
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cmd.args).toEqual(opencodeJobArgs('pictures', null));
+    expect(calls[0].input).toBe(arg);
+  });
+
+  it('holds the queue of an OpenCode brain on old skills: no run, no timer, no failure, until release', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let ready = false;
+    const finished: string[] = [];
+    const retries = vi.fn();
+    run = async () => oc('DONE');
+    const r = runner({
+      agent: () => 'opencode',
+      ready: () => ready,
+      afterJob: (j) => finished.push(j.status),
+      onLockRetry: retries,
+    });
+    const job = r.enqueue('b1', 'capture', 'sources/x.md');
+    r.enqueue('b1', 'sync');
+    expect(r.held('b1')).toBe(true);
+    expect(r.held('b2')).toBe(false);
+    expect(r.running('b1')).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    // Releasing while the skills are still old keeps holding.
+    r.release('b1');
+    expect(r.held('b1')).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect(job.status).toBe('queued');
+    expect(finished).toEqual([]);
+    expect(retries).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    ready = true;
+    r.release('b1');
+    expect(r.held('b1')).toBe(false);
+    await idle(r, 'b1');
+    expect(calls.map((c) => c.cmd.args[2])).toEqual([
+      'capture',
+      'lint',
+      'sync',
+    ]);
+    expect(finished).toEqual(['done', 'done', 'done']);
+    // A release with nothing held runs nothing.
+    r.release('b1');
+    await new Promise((res) => setTimeout(res, 20));
+    expect(calls).toHaveLength(3);
+  });
+
+  it('a held job runs on the agent the brain has when it starts', async () => {
+    let agent: 'claude' | 'opencode' = 'opencode';
+    const r = runner({
+      agent: () => agent,
+      ready: () => agent === 'claude',
+    });
+    const job = r.enqueue('b1', 'sync');
+    expect(r.held('b1')).toBe(true);
+    agent = 'claude';
+    r.release('b1');
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].input).toBe('/sync');
+    expect(job.agent).toBe('claude');
+  });
+
+  it('a missing opencode fails the job once, naming OpenCode, and the queue moves on', async () => {
+    let n = 0;
+    run = async () => {
+      if (++n === 1)
+        throw Object.assign(new Error('spawn opencode ENOENT'), {
+          code: 'ENOENT',
+        });
+      if (n === 2)
+        throw new ExitError('Claude Code (claude) was not found', 127, '');
+      return oc('ok');
+    };
+    const r = runner({ agent: () => 'opencode' });
+    r.enqueue('b1', 'capture', 'sources/a.md');
+    r.enqueue('b1', 'capture', 'sources/b.md');
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(3);
+    const byKind = r.jobs('b1').reverse();
+    expect(byKind.map((j) => [j.kind, j.status])).toEqual([
+      ['capture', 'failed'],
+      ['capture', 'failed'],
+      ['sync', 'done'],
+    ]);
+    expect(byKind[0].error).toBe('OpenCode (opencode) was not found');
+    expect(byKind[1].error).toBe('OpenCode (opencode) was not found');
+  });
+
+  it("a failed opencode run carries the error event's message", async () => {
+    const event = JSON.stringify({
+      type: 'error',
+      sessionID: 'ses_e',
+      error: {
+        name: 'UnknownError',
+        data: { message: 'Model not found: nope/nope.' },
+      },
+    });
+    let n = 0;
+    run = async () => {
+      if (++n === 1) throw new ExitError('exited with code 1', 1, event);
+      throw new ExitError('boom on stderr', 1, '');
+    };
+    const r = runner({ agent: () => 'opencode' });
+    r.enqueue('b1', 'sync');
+    r.enqueue('b1', 'lint');
+    await idle(r, 'b1');
+    const [lint, sync] = r.jobs('b1');
+    expect(sync.error).toBe('OpenCode stopped (Model not found: nope/nope.)');
+    expect(lint.error).toBe('OpenCode stopped (boom on stderr)');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('a failed claude run keeps its message', async () => {
+    run = async () => {
+      throw new ExitError('boom', 1, 'out');
+    };
+    const r = runner();
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(r.jobs('b1')[0].error).toBe('boom');
   });
 });

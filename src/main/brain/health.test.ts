@@ -68,6 +68,12 @@ describe('brainHealth', () => {
     expect(h.queuePaused).toBe('cap');
   });
 
+  it('says the queue waits for Update skills when it is held', async () => {
+    expect((await brainHealth(dir, git, today, false)).queueHeld).toBeNull();
+    const h = await brainHealth(dir, git, today, false, undefined, [], true);
+    expect(h.queueHeld).toBe('Update skills to run on OpenCode');
+  });
+
   it('lists wiki files edited outside a Brain: commit since the last sync, and uncommitted ones', async () => {
     await write('wiki/old.md', 'old\n');
     await commit('hand edit before');

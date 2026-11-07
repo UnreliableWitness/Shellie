@@ -90,7 +90,7 @@ export type BrainChannels =
 
 export type BrainRunner = Pick<
   BrainJobRunner,
-  'enqueue' | 'jobs' | 'running' | 'resume' | 'dropQueued'
+  'enqueue' | 'jobs' | 'running' | 'resume' | 'dropQueued' | 'held' | 'release'
 >;
 
 export type BrainHandlerDeps = {
@@ -404,6 +404,7 @@ export function createBrainHandlers(
             paused,
             now(),
             inFlight,
+            d.runner.held(b.id),
           )
         : null,
       jobs,
@@ -552,6 +553,8 @@ export function createBrainHandlers(
           : {}),
       });
       if (name) d.remember([name]);
+      // Jobs held for the old agent's skills may run on the new one.
+      if (updated.options.agent !== b.options.agent) d.runner.release(id);
       changed(id);
       return view(updated);
     },
@@ -700,6 +703,8 @@ export function createBrainHandlers(
       const b = brainOf(id);
       await applyTemplates(d.git, b.path, b.name, paths);
       await d.brains.patch(id, { templatesVersion: TEMPLATES_VERSION });
+      // Jobs held for skills older than OpenCode's start now.
+      d.runner.release(id);
       changed(id);
     },
     'brain:openFolder': async (id) => {

@@ -301,6 +301,8 @@ export async function brainServices() {
       running: () => false,
       resume: () => undefined,
       dropQueued: () => 0,
+      held: () => false,
+      release: () => undefined,
     },
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData,
