@@ -50,7 +50,7 @@ const data = (rows: PictureRow[], tiny = 0): SourcePicturesData => ({
   rows,
 });
 
-/** The mockup's deck: 11 described, 2 nothing to record, 1 not interpreted, 2 never reached Claude. */
+/** The mockup's deck: 11 described, 2 nothing to record, 1 not interpreted, 2 never reached the agent. */
 const deck = () =>
   data([
     picture({
@@ -143,13 +143,13 @@ describe('SourcePictures', () => {
     render(panel(deck()));
     const region = screen.getByRole('region', { name: 'Pictures' });
     expect(within(region).getByLabelText('Counts')).toHaveTextContent(
-      '11 described · 2 nothing to record · 1 not interpreted · 2 never reached Claude',
+      '11 described · 2 nothing to record · 1 not interpreted · 2 never reached the agent',
     );
     for (const tag of [
       'described',
       'nothing to record',
       'not interpreted',
-      'never reached Claude',
+      'never reached the agent',
     ])
       expect(
         within(region).getAllByText(tag, { selector: '.tag' }).length,
@@ -161,7 +161,7 @@ describe('SourcePictures', () => {
     ).toBeInTheDocument();
     expect(
       within(region).getAllByText(
-        'Never reached Claude: EMF converts on Windows only. Re-add the deck on Windows, or save the picture as PNG.',
+        'Never reached the agent: EMF converts on Windows only. Re-add the deck on Windows, or save the picture as PNG.',
       ),
     ).toHaveLength(2);
     await waitFor(() =>
@@ -408,7 +408,7 @@ describe('useSourcePictures', () => {
 });
 
 describe('AddedPictures with nothing Claude could look at', () => {
-  it('says how many never reached Claude', async () => {
+  it('says how many never reached the agent', async () => {
     installFakeApi({
       'brain:pictures': () =>
         data([
@@ -418,7 +418,7 @@ describe('AddedPictures with nothing Claude could look at', () => {
     });
     render(<AddedPictures brainId="b1" path={SOURCE} jobs={[]} />);
     expect(
-      await screen.findByText('2 pictures never reached Claude'),
+      await screen.findByText('2 pictures never reached the agent'),
     ).toBeInTheDocument();
   });
 });

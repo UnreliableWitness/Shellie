@@ -635,12 +635,13 @@ export function pictureFindings(
       parts.push(
         `${plural(counts.missing, 'picture', 'pictures')} not interpreted`,
       );
-    if (counts.dropped) parts.push(`${counts.dropped} never reached Claude`);
+    if (counts.dropped) parts.push(`${counts.dropped} never reached the agent`);
     if (parts.length)
       out.push({
         kind: 'picture',
         page: source,
         detail: parts.join(' · '),
+        ...(counts.dropped ? { code: 'pictures-dropped' as const } : {}),
         at,
       });
   }

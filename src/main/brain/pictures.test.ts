@@ -309,7 +309,8 @@ describe('pictures', () => {
       {
         kind: 'picture',
         page: SOURCE,
-        detail: '1 picture not interpreted · 2 never reached Claude',
+        detail: '1 picture not interpreted · 2 never reached the agent',
+        code: 'pictures-dropped',
         at: 'now',
       },
     ]);

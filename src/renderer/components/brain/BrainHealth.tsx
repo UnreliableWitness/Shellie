@@ -17,14 +17,14 @@ const MAX_SHOWN = 50;
 
 const when = (iso: string | null) => (iso ? dateTime(iso) : 'never');
 
-/** `211 of 214 interpreted · 1 not interpreted · 2 never reached Claude`; null when there is nothing to say. */
+/** `211 of 214 interpreted · 1 not interpreted · 2 never reached the agent`; null when there is nothing to say. */
 export function picturesFact(c: PictureCounts): string | null {
   if (c.total === 0 && c.dropped === 0) return null;
   const { done } = interpreted(c);
   return [
     `${done} of ${c.total} interpreted`,
     c.missing > 0 && `${c.missing} not interpreted`,
-    c.dropped > 0 && `${c.dropped} never reached Claude`,
+    c.dropped > 0 && `${c.dropped} never reached the agent`,
     c.accepted > 0 && `${c.accepted} accepted`,
   ]
     .filter(Boolean)
@@ -169,7 +169,7 @@ export function BrainHealth({
                         Re-evaluate
                       </button>
                     ))}
-                  {f.detail.includes('never reached Claude') && onOpen && (
+                  {f.code === 'pictures-dropped' && onOpen && (
                     <button
                       type="button"
                       className="btn btn-sm"

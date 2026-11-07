@@ -388,7 +388,7 @@ export async function refreshMirror(
     if (unviewable.size > 0) {
       const formats = new Set([...unviewable].map(formatOf));
       warnings.push(
-        `Attachments in formats Claude cannot view are left as links (${[...formats].sort().join(', ')})`,
+        `Attachments in formats the agent cannot view are left as links (${[...formats].sort().join(', ')})`,
       );
     }
     if (wanted.size > 0) {

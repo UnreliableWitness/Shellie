@@ -136,6 +136,8 @@ const BrainFindingSchema = z.object({
   ]),
   page: z.string(),
   detail: z.string(),
+  /** What the finding is about, for the UI to act on (never its words): pictures that never reached the agent. */
+  code: z.enum(['pictures-dropped']).optional(),
   at: z.string(),
 });
 export type BrainFinding = z.infer<typeof BrainFindingSchema>;

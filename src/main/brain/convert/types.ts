@@ -155,7 +155,7 @@ export class ImageCollector {
     if (n > 0) {
       const formats = [...this.unviewable.keys()].sort().join(', ');
       out.push(
-        `${n} picture${n === 1 ? '' : 's'} in formats Claude cannot view (${formats})`,
+        `${n} picture${n === 1 ? '' : 's'} in formats the agent cannot view (${formats})`,
       );
     }
     if (this.overCap > 0) {

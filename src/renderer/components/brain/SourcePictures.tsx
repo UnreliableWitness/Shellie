@@ -27,7 +27,7 @@ const STATUS: Record<
   described: { label: 'described', tone: 'green' },
   skipped: { label: 'nothing to record', tone: 'muted' },
   missing: { label: 'not interpreted', tone: 'warn' },
-  dropped: { label: 'never reached Claude', tone: 'red' },
+  dropped: { label: 'never reached the agent', tone: 'red' },
   accepted: { label: 'accepted', tone: 'muted' },
 };
 const ORDER: PictureStatus[] = [
@@ -52,7 +52,7 @@ export const picturesJobComing = (jobs: BrainJob[], source: string) =>
         j.status === 'paused'),
   );
 
-/** Pictures a person still has to act on: not interpreted, or never reached Claude and not accepted. */
+/** Pictures a person still has to act on: not interpreted, or never reached the agent and not accepted. */
 export const pictureGaps = (c: PictureCounts) => c.missing + c.dropped;
 
 /** Pictures Claude could look at, and how many of them it described or marked as carrying nothing. */
@@ -215,7 +215,8 @@ function detailOf(r: PictureRow): string | null {
     return r.reason ? `Nothing to record: ${r.reason}` : 'Nothing to record';
   if (r.status === 'missing') return 'No wiki page cites it yet.';
   if (r.status === 'dropped' || r.status === 'accepted') {
-    const head = r.status === 'dropped' ? 'Never reached Claude' : 'Accepted';
+    const head =
+      r.status === 'dropped' ? 'Never reached the agent' : 'Accepted';
     return [
       r.reason ? `${head}: ${r.reason}.` : `${head}.`,
       r.fix ? `${r.fix}.` : null,
@@ -369,7 +370,7 @@ export function AddedPictures({
   if (of === 0)
     return c.dropped > 0 ? (
       <span className="muted small">
-        {plural(c.dropped, 'picture')} never reached Claude
+        {plural(c.dropped, 'picture')} never reached the agent
       </span>
     ) : null;
   const inFlight = (kind: BrainJob['kind']) =>
