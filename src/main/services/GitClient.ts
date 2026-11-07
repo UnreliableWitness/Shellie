@@ -18,6 +18,7 @@ import {
 } from '../../shared/gitAuth';
 import { errorMessage } from '../../shared/errors';
 import type { GitAuth, GitAuthEnv } from './gitAuth';
+import { gitOperation, perf } from '../telemetry/perf';
 
 const execFileAsync = promisify(execFile);
 
@@ -156,6 +157,16 @@ export class GitClient {
     cwd: string,
     args: string[],
     opts: { timeoutMs?: number; env?: Record<string, string> } = {},
+  ): Promise<string> {
+    return perf.time('git.ms', gitOperation(args), () =>
+      this.runGit(cwd, args, opts),
+    );
+  }
+
+  private async runGit(
+    cwd: string,
+    args: string[],
+    opts: { timeoutMs?: number; env?: Record<string, string> },
   ): Promise<string> {
     try {
       const options = {

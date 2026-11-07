@@ -148,6 +148,33 @@ describe('AppInsightsClient', () => {
     });
   });
 
+  it('sends a summary metric as one aggregation and a warning at level 2', async () => {
+    const { client, posts } = setup();
+    client.metric(
+      'ipc.ms',
+      90,
+      { op: 'tasks:list' },
+      { count: 3, min: 10, max: 50 },
+    );
+    client.exception(new Error('logged'), undefined, 'warning');
+    await client.flush();
+    const [metric, ex] = posts[0].body;
+    expect(metric.data.baseData.metrics).toEqual([
+      { name: 'ipc.ms', kind: 1, value: 90, count: 3, min: 10, max: 50 },
+    ]);
+    expect(ex.data.baseData.severityLevel).toBe(2);
+  });
+
+  it('sends the same error object once', async () => {
+    const { client, posts } = setup();
+    const e = new Error('twice');
+    client.exception(e, { source: 'ipc' });
+    client.exception(e, { source: 'log' });
+    client.exception(new Error('twice'));
+    await client.flush();
+    expect(posts[0].body).toHaveLength(2);
+  });
+
   it('batches: one request per batchSize items, sent as soon as a batch is full', async () => {
     const { client, posts } = setup({ batchSize: 3 });
     for (let i = 0; i < 7; i++) client.event(`e${i}`);

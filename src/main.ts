@@ -118,11 +118,15 @@ import {
 import {
   forwardRendererTelemetry,
   installId,
+  pathOperation,
   sensitiveValues,
   telemetryOptedOut,
   timedFetch,
   trackHandlerFailures,
 } from './main/telemetry/helpers';
+import { startHealthReports } from './main/telemetry/health';
+import { reportLoggedErrors } from './main/telemetry/loggedErrors';
+import { hello, sendRecords } from './main/costServer/client';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
 import {
   type AutoUpdate,
@@ -161,6 +165,10 @@ const htmlViews = new HtmlViews();
 /** Replaced by the real client in boot when the build has a connection string (CI release builds). */
 let telemetry: Telemetry = NoopTelemetry;
 const sessionStart = Date.now();
+// What main logs as an error or warning is a failure it recovered from: report it too.
+reportLoggedErrors(() => telemetry);
+/** Timing summaries and the `app.health` snapshot, every 10 minutes from the end of boot and on quit. */
+let health: ReturnType<typeof startHealthReports> | null = null;
 
 // Monitor only: Electron's own handling of an uncaught exception (the error dialog) stays as it is.
 process.on('uncaughtExceptionMonitor', (error, origin) => {
@@ -168,8 +176,9 @@ process.on('uncaughtExceptionMonitor', (error, origin) => {
   void telemetry.flush();
 });
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection in main:', reason);
+  // Reported before it is logged, so the logged copy is not sent again.
   telemetry.exception(reason, { source: 'main', origin: 'unhandledRejection' });
+  console.error('Unhandled rejection in main:', reason);
 });
 app.on('render-process-gone', (_e, _wc, details) => {
   if (details.reason === 'clean-exit') return;
@@ -301,6 +310,20 @@ function createWindow(): BrowserWindow {
   win.on('closed', () => {
     onWindowFocus(false);
     if (mainWindow === win) mainWindow = null;
+  });
+  // A hung renderer (or a main process too busy to answer it): sent at once, in case the user kills the app.
+  let hungAt: number | null = null;
+  win.on('unresponsive', () => {
+    hungAt = performance.now();
+    telemetry.event('window.unresponsive');
+    void telemetry.flush();
+  });
+  win.on('responsive', () => {
+    if (hungAt === null) return;
+    telemetry.event('window.responsive', undefined, {
+      ms: performance.now() - hungAt,
+    });
+    hungAt = null;
   });
   return win;
 }
@@ -778,12 +801,20 @@ async function boot(): Promise<void> {
     // have no `since`, so the first run backfills all the transcripts and OpenCode still have.
     const ledgerStore = new LedgerStore(path.join(usageDir, 'ledger'));
     // Sends the ledger's dirty records to the cost server in the background (nothing without a connection).
+    // Its requests are dependencies named by path only: the server's address is the company's.
+    const costServerFetch = timedFetch(
+      telemetry,
+      fetch,
+      pathOperation('cost-server'),
+    );
     const sender = new CostSender({
       ledger: ledgerStore,
       server: costServer,
       status: (st) => broadcast('costServer:changed', st),
       notice: (message) => broadcast('notice', { level: 'warn', message }),
       telemetry: (event, props) => telemetry.event(event, props),
+      send: (c, records) => sendRecords(c, records, costServerFetch),
+      hello: (c) => hello(c, costServerFetch),
     });
     const ledger = new LedgerService({
       store: ledgerStore,
@@ -957,6 +988,11 @@ async function boot(): Promise<void> {
         ? createWhatsNew({
             version: app.getVersion(),
             settings: () => settings.get(),
+            fetch: timedFetch(
+              telemetry,
+              fetch,
+              pathOperation('api.github.com'),
+            ),
           })
         : undefined,
       appVersion: app.getVersion(),
@@ -1242,6 +1278,11 @@ async function boot(): Promise<void> {
       },
     );
     telemetry.metric('app.startup.readyMs', timings.readyMs ?? 0);
+    health = startHealthReports({
+      telemetry: () => telemetry,
+      appMetrics: () => app.getAppMetrics(),
+      terminals: () => terminals.ids().length,
+    });
     updates = startAutoUpdate({
       isPackaged: app.isPackaged,
       platform: process.platform,
@@ -1264,8 +1305,8 @@ async function boot(): Promise<void> {
     powerMonitor.on('unlock-screen', () => updates?.wake());
   } catch (e) {
     const message = errorMessage(e);
-    console.error(e);
     telemetry.exception(e, { source: 'boot' }, 'critical');
+    console.error(e);
     void telemetry.flush();
     if (reporter.active) {
       reporter.fail(message);
@@ -1361,6 +1402,7 @@ app.on('will-quit', (e) => {
   if (quitHeld || (!sendTelemetry && timeWrites.size === 0)) return;
   quitHeld = true;
   e.preventDefault();
+  if (sendTelemetry) health?.report();
   if (sendTelemetry)
     telemetry.event('app.quit', undefined, {
       sessionMinutes: (Date.now() - sessionStart) / 60_000,
