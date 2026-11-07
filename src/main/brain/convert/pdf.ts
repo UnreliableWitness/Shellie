@@ -14,7 +14,7 @@ const DRAWING_MIN_AREA = 0.05;
 export const MAX_PAGE_RENDERS = 20;
 const RENDER_SIDE = 1600;
 /** What to do about a page or image the converter could not take. */
-const UNRENDERED_FIX =
+const EXPORT_PAGE_FIX =
   'Export the page as an image and add it as its own source';
 
 /** pdf.js ImageKind values. */
@@ -273,7 +273,7 @@ export async function pdfToMarkdown(
             images.drop(
               where,
               'the drawing could not be rendered',
-              UNRENDERED_FIX,
+              EXPORT_PAGE_FIX,
             );
           } else {
             renders++;
@@ -310,7 +310,11 @@ export async function pdfToMarkdown(
           images.warn(
             `p.${n}: an image of ${img.width}×${img.height} px was skipped`,
           );
-          images.drop(`Page ${n}`, 'over 25 megapixels', UNRENDERED_FIX);
+          images.drop(
+            `Page ${n}`,
+            `over ${MAX_PIXELS / 1e6} megapixels`,
+            EXPORT_PAGE_FIX,
+          );
           seen.set(key, null);
           continue;
         }

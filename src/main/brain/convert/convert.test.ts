@@ -131,13 +131,18 @@ async function buildPptx(
 }
 
 async function buildDocx(
-  opts: { image?: 'png' | 'emf'; bookmark?: boolean } = {},
+  opts: {
+    image?: 'png' | 'emf';
+    /** Several pictures, in document order; `image` is one. */
+    images?: ('png' | 'emf')[];
+    bookmark?: boolean;
+  } = {},
 ): Promise<Buffer> {
   const zip = new JSZip();
-  const ext = opts.image;
+  const exts = opts.images ?? (opts.image ? [opts.image] : []);
   zip.file(
     '[Content_Types].xml',
-    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${ext === 'png' ? '<Default Extension="png" ContentType="image/png"/>' : ''}${ext === 'emf' ? '<Default Extension="emf" ContentType="image/x-emf"/>' : ''}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`,
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${exts.includes('png') ? '<Default Extension="png" ContentType="image/png"/>' : ''}${exts.includes('emf') ? '<Default Extension="emf" ContentType="image/x-emf"/>' : ''}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`,
   );
   zip.file(
     '_rels/.rels',
@@ -145,20 +150,28 @@ async function buildDocx(
   );
   zip.file(
     'word/_rels/document.xml.rels',
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/styles" Target="styles.xml"/>${ext ? `<Relationship Id="rId2" Type="${REL}/image" Target="media/image1.${ext}"/>` : ''}</Relationships>`,
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/styles" Target="styles.xml"/>${exts
+      .map(
+        (ext, i) =>
+          `<Relationship Id="rId${i + 2}" Type="${REL}/image" Target="media/image${i + 1}.${ext}"/>`,
+      )
+      .join('')}</Relationships>`,
   );
   zip.file(
     'word/styles.xml',
     '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>',
   );
-  const drawing = ext
-    ? `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:docPr id="1" name="Picture 1" descr="Flow of orders"/><a:graphic ${NS_A}><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="rId2" ${NS_R}/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
-    : '';
+  const drawing = exts
+    .map(
+      (_, i) =>
+        `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:docPr id="${i + 1}" name="Picture ${i + 1}" descr="Flow of orders"/><a:graphic ${NS_A}><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="rId${i + 2}" ${NS_R}/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
+    )
+    .join('');
   zip.file(
     'word/document.xml',
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ${NS_R}><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>${opts.bookmark ? '<w:bookmarkStart w:id="0" w:name="_Toc123"/>' : ''}<w:r><w:t>Project Plan</w:t></w:r>${opts.bookmark ? '<w:bookmarkEnd w:id="0"/>' : ''}</w:p><w:p><w:r><w:t>Body text.</w:t></w:r></w:p>${drawing}<w:p><w:r><w:t>After the picture.</w:t></w:r></w:p></w:body></w:document>`,
   );
-  if (ext) zip.file(`word/media/image1.${ext}`, PNG);
+  exts.forEach((ext, i) => zip.file(`word/media/image${i + 1}.${ext}`, PNG));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -923,6 +936,15 @@ describe('docxToMarkdown', () => {
       },
     ]);
     expect(r.tiny).toBe(0);
+  });
+
+  it('numbers pictures by their place in the document, taken or not', async () => {
+    const r = await docxToMarkdown(
+      await buildDocx({ images: ['emf', 'emf', 'png'] }),
+    );
+    expect(r.dropped.map((d) => d.where)).toEqual(['Picture 1', 'Picture 2']);
+    expect(r.images.map((i) => i.name)).toEqual(['image-3.png']);
+    expect(r.markdown).toContain('![Flow of orders]({{assets}}/image-3.png)');
   });
 });
 
