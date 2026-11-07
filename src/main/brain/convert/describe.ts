@@ -4,6 +4,7 @@
  */
 
 import { clip, plural } from '../../../shared/text';
+import { xmlRoot } from './xml';
 
 const MAX_LENGTH = 180;
 const MAX_TITLES = 4;
@@ -127,6 +128,10 @@ export function describeContents(
     const pages = headings(/^## /);
     parts.push(plural(pages, 'diagram page'));
     titles = titlesOf(lines, (l) => /^## /.test(l));
+  } else if (e === 'xml') {
+    // The whole file is one code block: its root element says more than a word count.
+    const root = xmlRoot(markdown);
+    parts.push(root ? `XML · <${root}>` : 'XML');
   } else {
     const hs = headings(/^#{1,3} /);
     if (hs > 0) parts.push(plural(hs, 'heading'));

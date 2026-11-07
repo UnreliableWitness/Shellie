@@ -153,6 +153,30 @@ describe('brain sources', () => {
     expect(rows[0].original).toBe('sources/2026-11-03-kickoff.vtt');
   });
 
+  it('adds an xml file as a code block and keeps the original', async () => {
+    const f = path.join(root, 'config.xml');
+    const xml = '<?xml version="1.0"?>\n<config><port>8080</port></config>\n';
+    await fs.writeFile(f, xml);
+    const r = await addSource(git, dir, { file: f }, 'doc', now);
+    expect(r).toMatchObject({
+      ok: true,
+      path: 'sources/2026-11-03-config.md',
+      contents: 'XML · <config>',
+    });
+    expect(
+      await fs.readFile(
+        path.join(dir, 'sources/2026-11-03-config.xml'),
+        'utf8',
+      ),
+    ).toBe(xml);
+    const md = await fs.readFile(
+      path.join(dir, 'sources/2026-11-03-config.md'),
+      'utf8',
+    );
+    expect(md).toContain('```xml\n<?xml version="1.0"?>');
+    expect(await clean()).toBe('');
+  });
+
   it('five concurrent adds all succeed with one commit each', async () => {
     const before = Number(
       (await git.run(dir, ['rev-list', '--count', 'HEAD'])).trim(),

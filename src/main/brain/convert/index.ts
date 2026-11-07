@@ -7,6 +7,7 @@ import { pptxToMarkdown } from './pptx';
 import { firstHeading, type ConvertOptions, type Converted } from './types';
 import { vttToMarkdown } from './vtt';
 import { xlsxToMarkdown } from './xlsx';
+import { xmlToMarkdown } from './xml';
 
 export type {
   ConvertOptions,
@@ -47,6 +48,8 @@ export async function convertFile(
       return drawioToMarkdown(await fs.readFile(absPath, 'utf8'));
     case '.vtt':
       return plain(vttToMarkdown(await fs.readFile(absPath, 'utf8')));
+    case '.xml':
+      return plain(xmlToMarkdown(await fs.readFile(absPath, 'utf8')));
     case '.md':
     case '.txt':
       return plain(await fs.readFile(absPath, 'utf8'));

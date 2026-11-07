@@ -129,6 +129,7 @@ const OPENABLE = new Set([
   '.xlsx',
   '.vtt',
   '.drawio',
+  '.xml',
   '.md',
   '.txt',
   '.png',
@@ -341,6 +342,7 @@ const FORMATS = new Set([
   'xlsx',
   'vtt',
   'drawio',
+  'xml',
   'md',
   'txt',
 ]);
