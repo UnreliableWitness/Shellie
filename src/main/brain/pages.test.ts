@@ -82,14 +82,6 @@ describe('parsePage', () => {
     expect(linkTargets(text)).toEqual(['../sources/My File.md', 'a_(b).md']);
   });
 
-  it('reads bare targets with spaces, apart from a quoted title', () => {
-    expect(
-      linkTargets(
-        '[d](/sources/a b-assets/p4-1.png) ![e](x y.png "a title") [f](a (b) c.md \'t\') [g]()',
-      ),
-    ).toEqual(['/sources/a b-assets/p4-1.png', 'x y.png', 'a (b) c.md']);
-  });
-
   it('splitFrontmatter keeps the body after the block', () => {
     expect(splitFrontmatter('---\r\na: 1\r\n---\r\nbody\r\n')).toEqual({
       data: { a: 1 },

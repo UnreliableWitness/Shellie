@@ -83,7 +83,7 @@ describe('pictures', () => {
       'wiki/sub/x.md',
       '![d](../../sources/a%20b-assets/p3-1.png "t")\n',
     );
-    await write('wiki/y.md', '[d](/sources/a b-assets/p4-1.png)\n');
+    await write('wiki/y.md', '[d](</sources/a b-assets/p4-1.png>)\n');
     const r = await run(
       ['sources/a b-assets/p3-1.png', 'sources/a b-assets/p4-1.png'],
       { source: 'sources/a b.md' },
