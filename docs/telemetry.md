@@ -111,6 +111,10 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `brain.job` | a brain's headless skill run finished; `kind` (`capture`, `sync`, `lint`, `digest`, `retract`, `lessons`), `outcome` (`ok`, `failed`), `ms` (duration) |
 | `brain.refresh` | a brain's wiki mirror was refreshed (the button or the daily refresh); `outcome` (`ok`, `failed`), `pages` (`0`, `1-10`, `11-100`, `>100`), `ms` (duration). Never a page name or URL |
 | `brain.deleted` | a brain was removed; `folder` (whether its folder was deleted too) |
+| `app.health` | every 10 minutes from the end of boot, and on quit; measurements only: `mainRssMb`, `mainHeapMb` (main process), `appMemoryMb` (all processes), `rendererMemoryMb`, `gpuMemoryMb`, `cpuPercent` (all processes), `processes`, `loopDelayP50Ms`, `loopDelayP99Ms`, `loopDelayMaxMs` (main's event loop delay since the last report), `terminals` (open terminals), `uptimeMin` |
+| `window.unresponsive` | the main window stopped answering (a hung renderer, or a main process too busy to answer it); sent at once, in case the app is then killed; none |
+| `window.responsive` | it answered again; measurement `ms`: how long it hung |
+| `renderer.longTasks` | the renderer's main thread was busy for 50 ms or more (clicks and typing waited), summed every 10 minutes and when the page hides, sent only when there were any; measurements `count`, `totalMs`, `maxMs`, `over200` (tasks of 200 ms or more) |
 
 ## Errors
 
@@ -122,6 +126,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 - A terminal whose program could not be spawned (`source: terminal`, the tab's kind; the message is scrubbed like every other).
 - Every warning or error notice shown in the app (`notice` event: level and message).
 - `process.gone`: a renderer or child process (GPU, utility) that crashed or was killed, with the reason and exit code.
+- Every error or warning main logs (`console.error`, `console.warn`): the failures it recovers from, such as a ledger or budget pass that failed, a file it could not save, a scheduled brain refresh that failed. `source: log`, `level` (`error`, `warn`; a warning has severity Warning), `log`: the logged text (a tag such as `[ledger] pass failed`, scrubbed like every message). An Error among the logged values is the exception (its type, message and stack); without one the type is `LoggedError` and the text is the message. Each message is sent at most 3 times and 200 messages at most per launch; an error the app already reported (an IPC failure, a failed boot) is not sent again.
 
 ## Performance
 
@@ -129,6 +134,12 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 - Metric `setup.step.<kind>` per setup step in ms (`setup.step.worktree` is worktree creation), with the step status.
 - `setup.finished` duration.
 - Azure DevOps requests as dependencies: method and API route with ids and project names replaced (`GET _apis/wit/workitems/{id}`), host (`dev.azure.com` or `visualstudio.com`), duration, status code, success.
+- Cost server requests as dependencies: method and path (`POST /api/v1/records`, never the query), target `cost-server` (never the server's address), duration, status code, success.
+- GitHub release notes requests (What's new) as dependencies, target `api.github.com`.
+- Timing summaries, every 10 minutes and on quit, as aggregated metrics (one item per operation and outcome, holding the count, sum, min and max of its samples; in Logs, `customMetrics` columns `valueCount`, `valueSum`, `valueMin`, `valueMax`). Properties `op` and `outcome` (`ok`, `failed`, `timeout`):
+  - `ipc.ms`: every call from the renderer to main, `op` the channel (`tasks:create`, `review:diff`, ...).
+  - `git.ms`: every git command Shellie runs, `op` the subcommand and, for `worktree`, `stash`, `remote`, `submodule`, `lfs` and `notes`, its action (`status`, `worktree add`); never arguments, paths or refs.
+  - `usage.receive.ms`: every post to the usage receiver from Claude Code (and the attention and `shellie run` routes), `op` the route (`/v1/logs`, `/v1/metrics`, `/v1/attention`, `/v1/run`, `other`); a refused post is `failed` with the status in `op` (`/v1/logs 400`): AI usage that was not priced.
 
 ## Never sent
 

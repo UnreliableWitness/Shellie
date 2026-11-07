@@ -14,6 +14,15 @@ export function track(name: string, props?: TelemetryProps): void {
   send({ type: 'event', name, props });
 }
 
+/** Like `track`, with numbers App Insights can chart (counts, durations). */
+export function trackMeasured(
+  name: string,
+  measurements: Record<string, number>,
+  props?: TelemetryProps,
+): void {
+  send({ type: 'event', name, props, measurements });
+}
+
 export function trackScreen(name: string, props?: TelemetryProps): void {
   send({ type: 'pageView', name, props });
 }
@@ -52,4 +61,57 @@ export function installErrorTracking(target: Window = window): void {
   target.addEventListener('unhandledrejection', (ev) =>
     trackError(ev.reason, { source: 'unhandledrejection' }),
   );
+}
+
+/** Long tasks (the main thread busy for 50 ms or more, so clicks and typing wait) summed between reports. */
+export class LongTasks {
+  private count = 0;
+  private totalMs = 0;
+  private maxMs = 0;
+  private over200 = 0;
+
+  add(ms: number): void {
+    this.count++;
+    this.totalMs += ms;
+    this.maxMs = Math.max(this.maxMs, ms);
+    if (ms >= 200) this.over200++;
+  }
+
+  /** The sums since the last call, or null when there were none. */
+  take(): Record<string, number> | null {
+    if (this.count === 0) return null;
+    const out = {
+      count: this.count,
+      totalMs: Math.round(this.totalMs),
+      maxMs: Math.round(this.maxMs),
+      over200: this.over200,
+    };
+    this.count = this.totalMs = this.maxMs = this.over200 = 0;
+    return out;
+  }
+}
+
+/**
+ * Sends `renderer.longTasks` every 10 minutes, and when the page hides, if the main thread stalled.
+ * Call once at startup; does nothing where the browser does not report long tasks (tests).
+ */
+export function installLongTaskTracking(
+  target: Window = window,
+  intervalMs = 10 * 60_000,
+): void {
+  if (
+    typeof PerformanceObserver === 'undefined' ||
+    !PerformanceObserver.supportedEntryTypes?.includes('longtask')
+  )
+    return;
+  const tasks = new LongTasks();
+  new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) tasks.add(e.duration);
+  }).observe({ type: 'longtask', buffered: true });
+  const report = () => {
+    const m = tasks.take();
+    if (m) trackMeasured('renderer.longTasks', m);
+  };
+  target.setInterval(report, intervalMs);
+  target.addEventListener('pagehide', report);
 }

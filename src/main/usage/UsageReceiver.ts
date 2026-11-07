@@ -13,6 +13,7 @@ import {
 } from '../../shared/attention';
 import type { UsageEvent } from '../../shared/usage';
 import { RUN_EXIT, type RunHub } from '../secrets/RunHub';
+import { perf } from '../telemetry/perf';
 import {
   type ClaudeActive,
   parseClaudeActiveTime,
@@ -31,6 +32,8 @@ const RunPostSchema = z.object({
 });
 
 /** The run route's side of RunHub. */
+const ROUTES = new Set(['/v1/logs', '/v1/metrics', '/v1/attention', '/v1/run']);
+
 export type RunRoute = Pick<RunHub, 'taskFor' | 'names' | 'start'>;
 type Status = { listening: boolean; port: number; error: string | null };
 
@@ -92,6 +95,18 @@ export class UsageReceiver {
       res.end(body);
     };
     const path = (req.url ?? '').split('?')[0];
+    // Metric `usage.receive.ms`: a refused post (400, 413, 415, 500) is AI usage that was not priced.
+    const t0 = performance.now();
+    res.once('finish', () => {
+      const route = ROUTES.has(path) ? path : 'other';
+      const ok = res.statusCode < 400;
+      perf.record(
+        'usage.receive.ms',
+        ok ? route : `${route} ${res.statusCode}`,
+        performance.now() - t0,
+        ok ? 'ok' : 'failed',
+      );
+    });
     if (path === '/v1/run' && this.runs !== undefined)
       return this.handleRun(req, res, this.runs);
     const isAttention =

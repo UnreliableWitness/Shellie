@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installErrorTracking, isBenignResizeObserverError } from './telemetry';
+import {
+  installErrorTracking,
+  isBenignResizeObserverError,
+  LongTasks,
+} from './telemetry';
 
 describe('installErrorTracking', () => {
   const track = vi.fn();
@@ -59,5 +63,21 @@ describe('isBenignResizeObserverError', () => {
       false,
     );
     expect(isBenignResizeObserverError(undefined)).toBe(false);
+  });
+});
+
+describe('LongTasks', () => {
+  it('sums the stalls since the last take, then starts over', () => {
+    const t = new LongTasks();
+    expect(t.take()).toBeNull();
+    t.add(60.4);
+    t.add(250);
+    expect(t.take()).toEqual({
+      count: 2,
+      totalMs: 310,
+      maxMs: 250,
+      over200: 1,
+    });
+    expect(t.take()).toBeNull();
   });
 });

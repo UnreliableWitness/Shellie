@@ -3,6 +3,15 @@ import type { TelemetryProps } from '../../shared/telemetry';
 
 export type { TelemetryProps };
 export type Measurements = Record<string, number>;
+/** A summary of several samples of one metric, sent as one aggregated item. */
+export type MetricStats = { count: number; min: number; max: number };
+/** `warning` is a handled failure the app recovered from (a logged error); `critical` stopped the app. */
+export type Severity = 'warning' | 'error' | 'critical';
+const SEVERITY_LEVEL: Record<Severity, number> = {
+  warning: 2,
+  error: 3,
+  critical: 4,
+};
 
 /** Context sent with every item. Nothing in here identifies a person: the install id is random. */
 export type TelemetryContext = {
@@ -24,16 +33,19 @@ export interface Telemetry {
     measurements?: Measurements,
   ): void;
   pageView(name: string, props?: TelemetryProps): void;
-  metric(name: string, value: number, props?: TelemetryProps): void;
-  exception(
-    error: unknown,
+  /** One value, or with `stats` a summary of many: `value` is then their sum. */
+  metric(
+    name: string,
+    value: number,
     props?: TelemetryProps,
-    severity?: 'error' | 'critical',
+    stats?: MetricStats,
   ): void;
+  exception(error: unknown, props?: TelemetryProps, severity?: Severity): void;
   /** A raw exception (the renderer sends one already split into parts). */
   exceptionParts(
     parts: { errorType: string; message: string; stack?: string },
     props?: TelemetryProps,
+    severity?: Severity,
   ): void;
   dependency(d: {
     name: string;
@@ -132,6 +144,7 @@ export class AppInsightsClient implements Telemetry {
   private readonly timeoutMs: number;
   /** Items dropped because the queue was full; reported once with the next batch. */
   private dropped = 0;
+  private readonly reported = new WeakSet<object>();
 
   constructor(private readonly opts: ClientOptions) {
     const parsed = parseConnectionString(opts.connectionString);
@@ -169,11 +182,21 @@ export class AppInsightsClient implements Telemetry {
     });
   }
 
-  metric(name: string, value: number, props?: TelemetryProps) {
+  metric(
+    name: string,
+    value: number,
+    props?: TelemetryProps,
+    stats?: MetricStats,
+  ) {
     if (!Number.isFinite(value)) return;
     this.push('Metric', 'MetricData', {
       ver: 2,
-      metrics: [{ name, kind: 0, value, count: 1 }],
+      metrics: [
+        stats
+          ? // kind 1 = Aggregation: App Insights reads value as the sum of `count` samples.
+            { name, kind: 1, value, ...stats }
+          : { name, kind: 0, value, count: 1 },
+      ],
       properties: this.props(props),
     });
   }
@@ -181,8 +204,13 @@ export class AppInsightsClient implements Telemetry {
   exception(
     error: unknown,
     props?: TelemetryProps,
-    severity: 'error' | 'critical' = 'error',
+    severity: Severity = 'error',
   ) {
+    // The same error caught, logged and reported in more than one place is sent once.
+    if (typeof error === 'object' && error !== null) {
+      if (this.reported.has(error)) return;
+      this.reported.add(error);
+    }
     const e =
       error instanceof Error
         ? error
@@ -197,7 +225,7 @@ export class AppInsightsClient implements Telemetry {
   exceptionParts(
     parts: { errorType: string; message: string; stack?: string },
     props?: TelemetryProps,
-    severity: 'error' | 'critical' = 'error',
+    severity: Severity = 'error',
   ) {
     const message = this.clean(parts.message).slice(0, 1000);
     const stack = parts.stack ? this.clean(parts.stack).slice(0, 8000) : '';
@@ -211,8 +239,7 @@ export class AppInsightsClient implements Telemetry {
           ...(stack ? { stack } : {}),
         },
       ],
-      // 3 = Error, 4 = Critical
-      severityLevel: severity === 'critical' ? 4 : 3,
+      severityLevel: SEVERITY_LEVEL[severity],
       properties: this.props(props),
     });
   }

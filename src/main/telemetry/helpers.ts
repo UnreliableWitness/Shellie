@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Handlers } from '../../shared/ipc';
 import { RendererTelemetrySchema } from '../../shared/telemetry';
 import type { Telemetry } from './AppInsightsClient';
+import { perf, type PerfStats } from './perf';
 
 /** `SHELLIE_TELEMETRY=0`, or the pre-rename `MIAC_TELEMETRY=0`, turns telemetry off for a launch. */
 export const telemetryOptedOut = (env: NodeJS.ProcessEnv): boolean =>
@@ -62,10 +63,41 @@ export function adoOperation(
   return { name: `${method.toUpperCase()} ${route}`, target: host };
 }
 
-/** Wraps fetch so every Azure DevOps request is recorded as a dependency (name, duration, status; never the URL). */
+/**
+ * An operation named by its path, for a server whose address is not ours to send (the company cost
+ * server): `POST https://costs.example/api/v1/records?x=1` becomes `POST /api/v1/records` on `target`.
+ */
+export const pathOperation =
+  (target: string) =>
+  (url: string, method = 'GET'): { name: string; target: string } => {
+    let pathname = '(unknown)';
+    try {
+      pathname = new URL(url).pathname
+        .split('/')
+        .map((s) =>
+          /^\d+$/.test(s) || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s) ? '{id}' : s,
+        )
+        .join('/');
+    } catch {
+      // keep the placeholder
+    }
+    return { name: `${method.toUpperCase()} ${pathname}`, target };
+  };
+
+/**
+ * Wraps fetch so every request is recorded as a dependency (name, duration, status; never the URL).
+ * Named as an Azure DevOps request unless `operation` says otherwise.
+ */
 export function timedFetch(
   telemetry: Telemetry,
   inner: typeof fetch = fetch,
+  operation: (
+    url: string,
+    method?: string,
+  ) => {
+    name: string;
+    target: string;
+  } = adoOperation,
 ): typeof fetch {
   return (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url =
@@ -74,7 +106,7 @@ export function timedFetch(
         : input instanceof URL
           ? input.href
           : input.url;
-    const op = adoOperation(url, init?.method ?? 'GET');
+    const op = operation(url, init?.method ?? 'GET');
     const t0 = performance.now();
     try {
       const res = await inner(input, init);
@@ -98,10 +130,14 @@ export function timedFetch(
   }) as typeof fetch;
 }
 
-/** Records a rejected IPC call as an exception tagged with its channel (never its arguments), then rethrows. */
+/**
+ * Times every IPC call into `stats` under its channel (metric `ipc.ms`), and records a rejected one as an
+ * exception tagged with its channel (never its arguments), then rethrows.
+ */
 export function trackHandlerFailures(
   handlers: Handlers,
   telemetry: Telemetry,
+  stats: PerfStats = perf,
 ): Handlers {
   const out = {} as Record<string, (...args: unknown[]) => Promise<unknown>>;
   for (const [channel, fn] of Object.entries(handlers) as [
@@ -109,9 +145,13 @@ export function trackHandlerFailures(
     (...args: unknown[]) => Promise<unknown>,
   ][]) {
     out[channel] = async (...args) => {
+      const t0 = performance.now();
       try {
-        return await fn(...args);
+        const result = await fn(...args);
+        stats.record('ipc.ms', channel, performance.now() - t0);
+        return result;
       } catch (e) {
+        stats.record('ipc.ms', channel, performance.now() - t0, 'failed');
         telemetry.exception(e, { source: 'ipc', channel });
         throw e;
       }
@@ -129,7 +169,7 @@ export function forwardRendererTelemetry(
   if (!parsed.success) return;
   const m = parsed.data;
   const props = { ...m.props, process: 'renderer' };
-  if (m.type === 'event') telemetry.event(m.name, props);
+  if (m.type === 'event') telemetry.event(m.name, props, m.measurements);
   else if (m.type === 'pageView') telemetry.pageView(m.name, props);
   else
     telemetry.exceptionParts(
