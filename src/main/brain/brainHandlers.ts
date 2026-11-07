@@ -34,6 +34,15 @@ import { readPages } from './pages';
 import { absPath } from './paths';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
+  assetsOf,
+  coverage,
+  DROPPED_FILE,
+  MIRROR_SOURCE,
+  readDropped,
+  readSkipped,
+  writeDropped,
+} from './pictures';
+import {
   applyTemplates,
   isBrainFolder,
   scaffoldBrain,
@@ -76,7 +85,9 @@ export type BrainChannels =
   | 'brain:pages'
   | 'brain:search'
   | 'brain:relevant'
-  | 'brain:openSource';
+  | 'brain:openSource'
+  | 'brain:pictures'
+  | 'brain:acceptDrop';
 
 export type BrainRunner = Pick<
   BrainJobRunner,
@@ -205,6 +216,44 @@ export async function refreshIndex(
       'index.md',
     ]);
     return true;
+  });
+}
+
+/**
+ * Marks the source's drop at `where` accepted (now) and commits brain/pictures-dropped.json alone as
+ * `Brain: accepted dropped picture`. A drop accepted before keeps its time and makes no commit.
+ */
+export async function acceptDrop(
+  git: GitClient,
+  brainDir: string,
+  source: string,
+  where: string,
+  now: Date,
+): Promise<void> {
+  return withBrainGit(brainDir, async () => {
+    const drop = (await readDropped(brainDir))[source]?.dropped.find(
+      (d) => d.where === where,
+    );
+    if (!drop) throw new Error('Unknown dropped picture');
+    if (drop.accepted) return;
+    await writeDropped(brainDir, (f) => ({
+      ...f,
+      [source]: {
+        ...f[source],
+        dropped: f[source].dropped.map((d) =>
+          d.where === where ? { ...d, accepted: now.toISOString() } : d,
+        ),
+      },
+    }));
+    await git.run(brainDir, ['add', '--', DROPPED_FILE]);
+    await git.run(brainDir, [
+      'commit',
+      '-q',
+      '-m',
+      'Brain: accepted dropped picture',
+      '--',
+      DROPPED_FILE,
+    ]);
   });
 }
 
@@ -670,6 +719,35 @@ export function createBrainHandlers(
         throw new Error('Only a document or a picture can be opened');
       const error = await d.openPath(absPath(b.path, p));
       if (error) throw new Error(`Could not open the file: ${error}`);
+    },
+    'brain:pictures': async (id, source) => {
+      const b = brainOf(id);
+      const rel = path.posix.normalize(source.replace(/\\/g, '/'));
+      if (!rel.startsWith('sources/') || rel.startsWith('sources/../'))
+        throw new Error('Only a source under sources/ has pictures');
+      // What Health computes for this one source; no picture is read.
+      const [pages, assets, skipped, dropped, sourceText] = await Promise.all([
+        readPages(b.path).catch(() => []),
+        assetsOf(b.path, rel),
+        readSkipped(b.path),
+        readDropped(b.path),
+        rel === MIRROR_SOURCE
+          ? ''
+          : fs.readFile(absPath(b.path, rel), 'utf8').catch(() => ''),
+      ]);
+      return coverage({
+        source: rel,
+        assets,
+        sourceText,
+        pages,
+        skipped,
+        dropped,
+      });
+    },
+    'brain:acceptDrop': async (id, source, where) => {
+      const b = live(id);
+      await acceptDrop(d.git, b.path, source, where, now());
+      changed(id);
     },
   };
 }

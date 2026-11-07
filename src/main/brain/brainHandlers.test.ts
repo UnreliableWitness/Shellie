@@ -407,6 +407,128 @@ describe('brain handlers', () => {
     );
   });
 
+  it("serves a source's pictures and accepts a drop in a commit of its own", async () => {
+    const v = await h['brain:create'](NEW);
+    const r = await h['brain:addText'](v.id, 'Deck', 'Deck', 'note');
+    if (!r.ok) throw new Error(r.message);
+    const assets = r.path.replace(/\.md$/, '-assets');
+    await fs.mkdir(path.join(v.path, assets));
+    await fs.writeFile(path.join(v.path, assets, 'slide-1.png'), 'png');
+    await fs.writeFile(
+      path.join(v.path, 'brain/pictures-dropped.json'),
+      JSON.stringify({
+        [r.path]: {
+          dropped: [
+            {
+              where: 'slide 9, picture 2',
+              reason: 'EMF converts on Windows only',
+              fix: 'Save it as PNG',
+              accepted: null,
+            },
+          ],
+          tiny: 0,
+        },
+      }),
+    );
+    await git.run(v.path, ['add', '-A']);
+    await git.run(v.path, ['commit', '-q', '-m', 'Brain: add pictures']);
+
+    const pics = await h['brain:pictures'](v.id, r.path);
+    expect(pics.source).toBe(r.path);
+    expect(pics.counts).toMatchObject({ total: 2, missing: 1, dropped: 1 });
+    expect(pics.rows.map((x) => [x.path, x.status])).toEqual([
+      [`${assets}/slide-1.png`, 'missing'],
+      [null, 'dropped'],
+    ]);
+    const other = await h['brain:addText'](v.id, 'Plain', 'Plain', 'note');
+    if (!other.ok) throw new Error(other.message);
+    expect(await h['brain:pictures'](v.id, other.path)).toMatchObject({
+      counts: { total: 0, missing: 0, dropped: 0 },
+      rows: [],
+    });
+    await fs.mkdir(path.join(v.path, 'sources/wiki/.attachments'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(v.path, 'sources/wiki/.attachments/a.png'),
+      'png',
+    );
+    expect(
+      (await h['brain:pictures'](v.id, 'sources/wiki')).rows.map((x) => x.path),
+    ).toEqual(['sources/wiki/.attachments/a.png']);
+    await expect(h['brain:pictures'](v.id, '../outside.md')).rejects.toThrow(
+      'Only a source under sources/ has pictures',
+    );
+
+    const commits = async () =>
+      Number((await git.run(v.path, ['rev-list', '--count', 'HEAD'])).trim());
+    const before = await commits();
+    broadcasts = [];
+    await h['brain:acceptDrop'](v.id, r.path, 'slide 9, picture 2');
+    expect(await commits()).toBe(before + 1);
+    expect((await git.run(v.path, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'Brain: accepted dropped picture',
+    );
+    expect(
+      (await git.run(v.path, ['show', '--name-only', '--format=', 'HEAD']))
+        .trim()
+        .split('\n'),
+    ).toEqual(['brain/pictures-dropped.json']);
+    expect(
+      (
+        await git.run(v.path, [
+          'status',
+          '--porcelain',
+          '--',
+          'brain/pictures-dropped.json',
+        ])
+      ).trim(),
+    ).toBe('');
+    expect(broadcasts).toContainEqual(['brain:changed', { brainId: v.id }]);
+    const after = await h['brain:pictures'](v.id, r.path);
+    expect(after.counts).toMatchObject({ dropped: 0, accepted: 1 });
+    // Only the missing picture is left to flag.
+    expect(
+      (await h['brain:get'](v.id)).health?.findings.filter(
+        (f) => f.kind === 'picture' && f.page === r.path,
+      ),
+    ).toEqual([
+      expect.objectContaining({ detail: '1 picture not interpreted' }),
+    ]);
+
+    await expect(
+      h['brain:acceptDrop'](v.id, r.path, 'slide 1, picture 1'),
+    ).rejects.toThrow('Unknown dropped picture');
+    expect(await commits()).toBe(before + 1);
+  });
+
+  it('accepting the only gap of a source leaves no picture finding for it', async () => {
+    const v = await h['brain:create'](NEW);
+    const r = await h['brain:addText'](v.id, 'Deck', 'Deck', 'note');
+    if (!r.ok) throw new Error(r.message);
+    await fs.writeFile(
+      path.join(v.path, 'brain/pictures-dropped.json'),
+      JSON.stringify({
+        [r.path]: {
+          dropped: [{ where: 'page 2', reason: 'r', fix: 'f', accepted: null }],
+          tiny: 0,
+        },
+      }),
+    );
+    const pictureFindings = async () =>
+      (await h['brain:get'](v.id)).health?.findings.filter(
+        (f) => f.kind === 'picture',
+      );
+    expect(await pictureFindings()).toHaveLength(1);
+    await h['brain:acceptDrop'](v.id, r.path, 'page 2');
+    expect(await pictureFindings()).toEqual([]);
+    const update = await h['brain:update'](v.id, { archived: true });
+    expect(update.archived).toBe(true);
+    await expect(h['brain:acceptDrop'](v.id, r.path, 'page 2')).rejects.toThrow(
+      'archived',
+    );
+  });
+
   it('scrubs a value through the handler', async () => {
     const v = await h['brain:create'](NEW);
     const r = await h['brain:addText'](

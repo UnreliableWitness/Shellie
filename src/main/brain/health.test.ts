@@ -125,6 +125,56 @@ describe('brainHealth', () => {
     expect(h.uncaptured).toBe(1);
   });
 
+  it('counts pictures over all sources, with one finding per source with gaps', async () => {
+    const fresh = await brainHealth(dir, git, today, false);
+    expect(fresh.pictures).toEqual({
+      total: 0,
+      described: 0,
+      skipped: 0,
+      missing: 0,
+      dropped: 0,
+      accepted: 0,
+      tiny: 0,
+    });
+    const a = await addSource(git, dir, { text: 'a', title: 'A' }, 'note');
+    if (!a.ok) throw new Error('add failed');
+    const assets = a.path.replace(/\.md$/, '-assets');
+    await write(`${assets}/slide-1.png`, 'png');
+    await write(`${assets}/slide-2.png`, 'png');
+    await write(
+      'wiki/account.md',
+      `---\ntitle: Acme\nsummary: Who.\nsources: [${a.path}]\n---\n![s1](../${assets}/slide-1.png)\n`,
+    );
+    await write(
+      'brain/pictures-dropped.json',
+      JSON.stringify({
+        [a.path]: {
+          dropped: [{ where: 'slide 3', reason: 'r', fix: 'f', accepted: 't' }],
+          tiny: 4,
+        },
+      }),
+    );
+    const now = new Date('2026-11-07T12:00:00Z');
+    const h = await brainHealth(dir, git, today, false, now);
+    expect(h.pictures).toEqual({
+      total: 3,
+      described: 1,
+      skipped: 0,
+      missing: 1,
+      dropped: 0,
+      accepted: 1,
+      tiny: 4,
+    });
+    expect(h.findings.filter((f) => f.kind === 'picture')).toEqual([
+      {
+        kind: 'picture',
+        page: a.path,
+        detail: '1 picture not interpreted',
+        at: now.toISOString(),
+      },
+    ]);
+  });
+
   it('reports a broken state file without failing', async () => {
     await write('brain/state.json', '{not json');
     const h = await brainHealth(dir, git, today, false);

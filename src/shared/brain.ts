@@ -198,6 +198,8 @@ export type BrainHealth = {
   queuePaused: 'cap' | null;
   costEurToday: number;
   tokensToday: number;
+  /** The pictures of all sources, summed (accepted drops and tiny images are not gaps). */
+  pictures: PictureCounts;
 };
 /** `health` (git, the ledger and the sources read) only from `brain:get`; null from the lists and the other channels. */
 export type BrainView = Brain & {
