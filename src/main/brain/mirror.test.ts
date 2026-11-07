@@ -137,7 +137,7 @@ describe('wiki mirror', () => {
       pages: 2,
       attachments: 1,
       warnings: [
-        'Attachments in formats Claude cannot view are left as links (pdf)',
+        'Attachments in formats the agent cannot view are left as links (pdf)',
         '1 linked attachment not found in the wiki',
       ],
     });
@@ -200,7 +200,7 @@ describe('wiki mirror', () => {
     // The PDF is no picture: only a warning, no drop.
     expect(first).toMatchObject({
       warnings: [
-        'Attachments in formats Claude cannot view are left as links (emf, pdf, tiff)',
+        'Attachments in formats the agent cannot view are left as links (emf, pdf, tiff)',
       ],
     });
     const drop = (where: string, ext: string, accepted: string | null) => ({

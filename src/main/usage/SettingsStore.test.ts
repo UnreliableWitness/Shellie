@@ -57,6 +57,7 @@ describe('SettingsStore', () => {
       dismissedAt: null,
       agentsCheckedAt: null,
       tracker: null,
+      brain: null,
       migrated: false,
     });
   });
@@ -113,6 +114,7 @@ describe('SettingsStore', () => {
         dismissedAt: null,
         agentsCheckedAt: null,
         tracker: null,
+        brain: null,
         migrated: false,
       },
       defaultTerminals: {
@@ -148,6 +150,7 @@ describe('SettingsStore', () => {
         dismissedAt: null,
         agentsCheckedAt: null,
         tracker: null,
+        brain: null,
         migrated: false,
       },
       defaultTerminals: {

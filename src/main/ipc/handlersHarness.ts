@@ -290,6 +290,7 @@ export async function brainServices() {
       result: null,
       error: null,
       background: false,
+      agent: 'claude',
     }),
   );
   const brain: NonNullable<Services['brain']> = {
@@ -300,6 +301,8 @@ export async function brainServices() {
       running: () => false,
       resume: () => undefined,
       dropQueued: () => 0,
+      held: () => false,
+      release: () => undefined,
     },
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData,

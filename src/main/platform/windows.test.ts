@@ -319,6 +319,55 @@ describe('windowsPlatform', () => {
     ).toBe('& opencode');
   });
 
+  it('passes OpenCode its arguments unchanged', () => {
+    expect(
+      make({ opencode: 'C:\\o\\opencode.exe' }).opencodeCommand(undefined, [
+        'run',
+        '--command',
+        'capture',
+      ]),
+    ).toEqual({
+      command: 'C:\\o\\opencode.exe',
+      args: ['run', '--command', 'capture'],
+    });
+  });
+
+  it("passes an OpenCode prompt like Claude's first message: an argument to opencode.exe, an env var through a shim", () => {
+    const prompt = 'Fix "a" & b | c %PATH% <x>';
+    expect(
+      make({ opencode: 'C:\\o\\opencode.exe' }).opencodeCommand(
+        undefined,
+        ['--session', 'ses_1'],
+        prompt,
+      ),
+    ).toEqual({
+      command: 'C:\\o\\opencode.exe',
+      args: ['--session', 'ses_1', '--prompt', prompt],
+    });
+    const shim = make({ opencode: 'C:\\npm\\opencode.cmd' }).opencodeCommand(
+      undefined,
+      ['--session', 'ses_1'],
+      prompt,
+    );
+    const line = shim.args.at(-1) ?? '';
+    expect(line).toBe(
+      "& opencode '--session' 'ses_1' '--prompt' $env:SHELLIE_CLAUDE_FIRST_MESSAGE",
+    );
+    // The prompt is never part of the command line, and loses what could break out of the shim.
+    expect(line).not.toContain('Fix');
+    expect(shim.env).toEqual({
+      SHELLIE_CLAUDE_FIRST_MESSAGE: "Fix 'a' b c PATH x",
+    });
+    // No prompt: no --prompt, no env.
+    const none = make({ opencode: 'C:\\npm\\opencode.cmd' }).opencodeCommand(
+      undefined,
+      [],
+      '',
+    );
+    expect(none.args.at(-1)).toBe('& opencode');
+    expect(none.env).toBeUndefined();
+  });
+
   it('starts copilot the same way', () => {
     expect(make({ copilot: 'C:\\c\\copilot.exe' }).copilotCommand()).toEqual({
       command: 'C:\\c\\copilot.exe',

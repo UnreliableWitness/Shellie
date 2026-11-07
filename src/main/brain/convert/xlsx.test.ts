@@ -216,7 +216,7 @@ describe('xlsxToMarkdown', () => {
       },
     ]);
     expect(r.warnings).toEqual([
-      '1 picture in formats Claude cannot view (emf)',
+      '1 picture in formats the agent cannot view (emf)',
     ]);
   });
 

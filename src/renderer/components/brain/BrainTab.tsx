@@ -93,7 +93,11 @@ export function BrainTab({
       )}
       {/* The lists stay mounted under an open page, so a search and its results are there on Back. */}
       <div hidden={!!nav.current} className="brain-tab-lists">
-        <AskBox brainId={brain.id} onTerminal={onTerminal} />
+        <AskBox
+          brainId={brain.id}
+          agent={brain.options.agent}
+          onTerminal={onTerminal}
+        />
         <BrainSearch brainId={brain.id} onOpen={open} onActive={setSearching} />
         {!searching && (
           <>

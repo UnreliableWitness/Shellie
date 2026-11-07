@@ -172,6 +172,38 @@ describe('darwinPlatform', () => {
     );
     expect(p.opencodeCommand('').args.at(-1)).toBe('exec opencode');
   });
+  it('passes OpenCode its arguments, quoted like the Claude flags', () => {
+    expect(
+      p
+        .opencodeCommand(undefined, [
+          'run',
+          '--command',
+          'capture',
+          '--format',
+          'json',
+          '-m',
+          'opencode/big-pickle',
+        ])
+        .args.at(-1),
+    ).toBe(
+      "exec opencode 'run' '--command' 'capture' '--format' 'json' '-m' 'opencode/big-pickle'",
+    );
+    expect(
+      p.opencodeCommand('opencode --foo', ['run', 'a b"c']).args.at(-1),
+    ).toBe("exec opencode --foo 'run' 'a b\"c'");
+  });
+  it('passes an OpenCode prompt as a quoted --prompt after the arguments', () => {
+    expect(
+      p
+        .opencodeCommand(undefined, ['--session', 'ses_1'], `it's "x" & $(y)`)
+        .args.at(-1),
+    ).toBe(
+      `exec opencode '--session' 'ses_1' '--prompt' 'it'\\''s "x" & $(y)'`,
+    );
+    expect(p.opencodeCommand(undefined, [], '').args.at(-1)).toBe(
+      'exec opencode',
+    );
+  });
   it('starts Copilot CLI through a login shell', () => {
     expect(p.copilotCommand()).toEqual({
       command: '/bin/zsh',

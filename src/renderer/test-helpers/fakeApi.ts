@@ -180,6 +180,7 @@ const defaults: FakeHandlers = {
       dismissedAt: null,
       agentsCheckedAt: '2026-10-22T09:00:00.000Z',
       tracker: null,
+      brain: null,
       migrated: false,
     },
     defaultTerminals: {
@@ -202,6 +203,7 @@ const defaults: FakeHandlers = {
     },
     shell: { label: 'zsh' },
   }),
+  'agents:opencodeModels': () => null,
   'editor:options': () => ({
     editors: [{ id: 'vscode', label: 'VS Code' }],
     chosen: 'vscode',

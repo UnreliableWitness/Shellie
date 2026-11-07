@@ -188,6 +188,12 @@ describe('HeaderBar', () => {
     ]);
     expect(at({ kind: 'finish', taskId: 'a' }).at(-1)).toBe('Finish');
   });
+  it('names the Brain page of the first-run steps', () => {
+    installFakeApi();
+    useStore.setState({ screen: { kind: 'brain-new', from: 'get-started' } });
+    render(<HeaderBar />);
+    expect(crumbs().at(-1)).toBe('Brain');
+  });
   it('leaves out the project without a connection', () => {
     installFakeApi();
     useStore.setState({ connections: [], screen: { kind: 'sprint' } });

@@ -37,7 +37,7 @@ describe('templates v4', () => {
 
   it('tell the skills to open every image and name the assets folders', () => {
     expect(content('.claude/skills/capture/SKILL.md')).toContain(
-      'open the image with the Read tool',
+      'open the image with your file-reading tool',
     );
     expect(content('.claude/skills/sync/SKILL.md')).toContain(
       'open every image it links',
@@ -77,7 +77,7 @@ describe('templates v6', () => {
   const pictures = '.claude/skills/pictures/SKILL.md';
 
   it('make capture and sync cite each picture file or mark it nothing to record', () => {
-    expect(TEMPLATES_VERSION).toBe(6);
+    expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(6);
     for (const skill of ['capture', 'sync']) {
       const text = content(`.claude/skills/${skill}/SKILL.md`);
       expect(text).toContain('brain/pictures-skipped.json');
@@ -168,7 +168,7 @@ describe('brain scaffold', () => {
     for (const s of skills) {
       expect(s.content.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
       expect(s.content).toMatch(
-        /^---\ndescription: .+\n(allowed-tools: .+\n)?---\n/,
+        /^---\nname: [a-z]+\ndescription: .+\n(allowed-tools: .+\n)?---\n/,
       );
       // The read-only ask skill reads the index, not the writers' contract.
       if (!s.path.includes('/ask/')) expect(s.content).toContain('SCHEMA.md');

@@ -23,8 +23,9 @@ import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
-import { brainTaskId, type Brain } from './shared/brain';
+import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
+import { capturedSessionIds } from './main/brain/state';
 import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
@@ -50,6 +51,7 @@ import {
 } from './main/ipc/handlers';
 import { AttentionHub } from './main/attention/AttentionHub';
 import {
+  lostConfig,
   OPENCODE_PLUGIN_SOURCE,
   opencodeConfigContent,
 } from './main/attention/opencodePlugin';
@@ -148,7 +150,7 @@ import { HtmlViews, serveView, VIEW_SCHEME } from './main/htmlView';
 import { applyProjectScopeMigration } from './main/migrate/projectScope';
 import { migrateOnboarding } from './main/onboardingMigration';
 import { createWhatsNew, seenAtBoot } from './main/releaseNotes';
-import { userDataOverride } from './main/paths';
+import { folderPaths, userDataOverride } from './main/paths';
 
 if (started) app.quit();
 
@@ -688,7 +690,7 @@ async function boot(): Promise<void> {
             taskId: brainTaskId(brain.id),
             taskTitle: brain.name,
             label: brain.terminal?.label ?? brain.name,
-            kind: 'claude',
+            kind: brain.terminal?.kind ?? 'claude',
           };
         return null;
       },
@@ -893,6 +895,13 @@ async function boot(): Promise<void> {
       cap: (id) => brainOf(id).options.dailyTokenCap,
       brainDir: (id) => brainOf(id).path,
       model: (id) => brains.get(id)?.options.model ?? 'sonnet',
+      agent: (id) => brains.get(id)?.options.agent ?? 'claude',
+      opencodeModel: (id) => brains.get(id)?.options.opencodeModel ?? null,
+      // A brain that is gone is ready: its job fails on the folder, as before.
+      ready: (id) => {
+        const b = brains.get(id);
+        return !b || b.options.agent !== 'opencode' || opencodeReady(b);
+      },
       commit: async (id, message) => {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, message, b.name);
@@ -926,6 +935,13 @@ async function boot(): Promise<void> {
         return null;
       }
     };
+    // OpenCode's sessions: the brain terminal's, and a task's for its lessons at Finish.
+    const openCodeSessions = new OpenCodeReader(openCodeDbPath());
+    /** The attention route for agent tabs and the brain terminal; the port is read at each spawn. */
+    const attentionEnv = (): Record<string, string> => ({
+      SHELLIE_ATTENTION_URL: `http://127.0.0.1:${settings.get().receiverPort}/v1/attention`,
+      SHELLIE_ATTENTION_TOKEN: attentionToken,
+    });
     brainTerminals = createBrainTerminals({
       brains,
       terminals,
@@ -933,6 +949,23 @@ async function boot(): Promise<void> {
       env: (id) => ({ ...brainEnv(id), COLORFGBG: colorFgBg(scheme()) }),
       themeFile: () => claudeSettings(),
       sessionExists: claudeSessionExists,
+      // Never a job's session: the runner's jobs and the captured sources' sessions are left out.
+      opencodeSession: (brain, since) =>
+        openCodeSessions.terminalSession(
+          folderPaths(brain.path),
+          since,
+          new Set([
+            ...brainRunner
+              .jobs(brain.id)
+              .flatMap((j) => (j.sessionId ? [j.sessionId] : [])),
+            ...capturedSessionIds(brain.path),
+          ]),
+        ),
+      opencodeSessionExists: (id) => openCodeSessions.sessionExists(id),
+      opencodeAttention: () => ({
+        env: attentionEnv(),
+        plugin: opencodePluginReady ? opencodePlugin : null,
+      }),
     });
     protocol.handle(VIEW_SCHEME, (req) => serveView(htmlViews, req.url));
     // Agent tabs that stop right after starting (a missing CLI, an invalid OpenCode config) say why (#109).
@@ -942,7 +975,7 @@ async function boot(): Promise<void> {
       kindOf: (id) => {
         for (const t of store.state.tasks)
           for (const d of t.terminals) if (d.id === id) return d.kind;
-        return brainTerminals?.ownerOf(id) ? 'claude' : undefined;
+        return brainTerminals?.ownerOf(id)?.terminal?.kind;
       },
       // Read at each call: telemetry is replaced once its client is set up.
       telemetry: {
@@ -970,6 +1003,8 @@ async function boot(): Promise<void> {
       },
       colorScheme: scheme,
       claudeThemeSettings: claudeSettings,
+      opencodeSessionTexts: (dirs, since) =>
+        openCodeSessions.sessionTexts(dirs, since),
       claudeSpawned: (id) =>
         retheme.spawned(
           id,
@@ -1104,8 +1139,7 @@ async function boot(): Promise<void> {
       terminalEnv: (def, ctx) => {
         const port = settings.get().receiverPort;
         const env: Record<string, string> = {
-          SHELLIE_ATTENTION_URL: `http://127.0.0.1:${port}/v1/attention`,
-          SHELLIE_ATTENTION_TOKEN: attentionToken,
+          ...attentionEnv(),
           // Agent tabs only: their task's `shellie run` link and the shim on PATH.
           ...(shimsReady
             ? agentRunEnv(def.kind, {
@@ -1125,14 +1159,16 @@ async function boot(): Promise<void> {
               ? opencodeRunInstructions(ctx.taskId, ctx.runNames)
               : undefined,
             ctx.denyPaths,
+            ctx.brainDir,
+            ctx.worktrees,
           );
           if (content) env.OPENCODE_CONFIG_CONTENT = content;
           else if (
             process.env.OPENCODE_CONFIG_CONTENT &&
-            (ctx.denyPaths?.length || opencodePluginReady)
+            (ctx.denyPaths?.length || ctx.brainDir || opencodePluginReady)
           )
             console.warn(
-              `[terminals] OPENCODE_CONFIG_CONTENT is not a JSON object; OpenCode starts without Shellie's config (${ctx.denyPaths?.length ?? 0} secret files not denied)`,
+              `[terminals] OPENCODE_CONFIG_CONTENT is not a JSON object; OpenCode starts without Shellie's config (${lostConfig(ctx.denyPaths?.length ?? 0, Boolean(ctx.brainDir))})`,
             );
         }
         return env;

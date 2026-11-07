@@ -22,7 +22,7 @@ const DOTS: Record<AgentId, string> = {
 const COST: Record<AgentId, string> = {
   claude: 'Per task, via OpenTelemetry',
   copilot: 'Per task, via its log',
-  opencode: 'Not tracked per task (budget only)',
+  opencode: 'Per task, from its database',
 };
 
 /** Settings, and the body of the Agents step: what is installed and which tabs a new task opens. */
@@ -189,6 +189,9 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
           </tr>
         </tbody>
       </table>
+      <div className="small muted" style={{ marginTop: 6 }}>
+        Brains run on Claude Code or OpenCode, whichever you pick per brain.
+      </div>
       {detected && AGENT_IDS.every((id) => !detected.agents[id].found) && (
         <div className="small muted" style={{ marginTop: 6 }}>
           No agent CLI found. Shellie works with a shell; install one and Check

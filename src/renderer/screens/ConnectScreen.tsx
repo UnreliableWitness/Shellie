@@ -7,6 +7,7 @@ import {
   type ProviderChoice,
 } from '../components/ProviderPicker';
 import { PageHeader, StepStrip } from '../components/ui';
+import { useActiveBrains } from '../hooks/useBrains';
 import { nextStep, stepsFrom } from '../onboardingState';
 import { useStore } from '../store';
 import { track } from '../telemetry';
@@ -17,6 +18,7 @@ const SCOPES = [
   'Work Items (Read & write)',
   'Code (Read & write)',
   'Project and Team (Read)',
+  'Wiki (Read)',
 ];
 
 /** The organization URL Shellie stores (`https://dev.azure.com/<org>` or the visualstudio.com origin) from whatever was typed; null until it reads as one. */
@@ -53,6 +55,13 @@ export function ConnectScreen() {
   const from = screen.kind === 'connect' ? screen.from : 'settings';
   const connectionId =
     screen.kind === 'connect' ? screen.connectionId : undefined;
+  const brains = useActiveBrains();
+  const steps = stepsFrom({
+    settings: useStore((s) => s.settings),
+    connections: connections,
+    repos: useStore((s) => s.repos),
+    brains,
+  });
   const onboarding = from === 'get-started';
   const existing = connectionId
     ? connections.find((c) => c.id === connectionId)
@@ -135,7 +144,7 @@ export function ConnectScreen() {
 
   const leave = () =>
     onboarding
-      ? go(nextStep(stepsFrom(useStore.getState()), 'connect'))
+      ? go(nextStep(stepsFrom({ ...useStore.getState(), brains }), 'connect'))
       : go({ kind: 'settings', section: 'ado' });
 
   const goBack = () => {
@@ -238,7 +247,7 @@ export function ConnectScreen() {
 
   return (
     <div className="page">
-      {onboarding && <StepStrip current="connect" />}
+      {onboarding && <StepStrip current="connect" steps={steps} />}
       <PageHeader
         title={existing ? 'Add a project' : 'Where do your work items live?'}
       />
@@ -246,7 +255,7 @@ export function ConnectScreen() {
         <p className="muted">
           {existing
             ? `Projects of ${existing.organizationUrl}, with the token you already saved.`
-            : 'A connection is one organization. You can add more later, and link each repository to one.'}
+            : 'Each project you tick becomes a project in Shellie with its own page and settings; add more later in Settings › Projects.'}
         </p>
         {!existing && <ProviderPicker value={choice} onChange={setChoice} />}
         {choice === 'none' && (
@@ -318,6 +327,9 @@ export function ConnectScreen() {
                         </a>
                       </>
                     )}
+                  </p>
+                  <p className="small muted">
+                    Wiki (Read) is only needed for a brain.
                   </p>
                 </div>
               </>
@@ -415,8 +427,8 @@ export function ConnectScreen() {
           <span className="grow" />
           {choice === 'azure-devops' && (
             <span className="small muted">
-              Writing cost and time back stays off until you turn it on in
-              Settings
+              Writing time back to work items stays off until you turn it on per
+              project.
             </span>
           )}
           <button

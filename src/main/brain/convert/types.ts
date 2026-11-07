@@ -24,7 +24,7 @@ export const ASSETS_PLACEHOLDER = '{{assets}}';
 
 /** Formats Claude Code's Read tool shows as a picture. */
 export const VIEWABLE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
-/** Picture formats Claude cannot view as they are (a file in one of these is a picture that did not reach Claude). */
+/** Picture formats the agent cannot view as they are (a file in one of these is a picture that did not reach the agent). */
 export const PICTURE_FORMATS = new Set([
   'svg',
   'emf',
@@ -45,7 +45,7 @@ const OVER_CAP: Omit<DroppedPicture, 'where'> = {
   fix: 'Split the file, or remove pictures that carry nothing, then remove the source and add it again',
 };
 
-/** Why a picture in a format Claude cannot view was not taken, and what to do about it. */
+/** Why a picture in a format the agent cannot view was not taken, and what to do about it. */
 function notConverted(ext: string): Omit<DroppedPicture, 'where'> {
   const e = (ext || 'unknown').toUpperCase();
   if (e === 'EMF' || e === 'WMF') {
@@ -129,7 +129,7 @@ export class ImageCollector {
     return `${ASSETS_PLACEHOLDER}/${name}`;
   }
 
-  /** Counts a picture in a format Claude cannot view. */
+  /** Counts a picture in a format the agent cannot view. */
   skip(ext: string): void {
     const key = ext.toLowerCase() || 'unknown';
     this.unviewable.set(key, (this.unviewable.get(key) ?? 0) + 1);
@@ -155,7 +155,7 @@ export class ImageCollector {
     if (n > 0) {
       const formats = [...this.unviewable.keys()].sort().join(', ');
       out.push(
-        `${n} picture${n === 1 ? '' : 's'} in formats Claude cannot view (${formats})`,
+        `${n} picture${n === 1 ? '' : 's'} in formats the agent cannot view (${formats})`,
       );
     }
     if (this.overCap > 0) {

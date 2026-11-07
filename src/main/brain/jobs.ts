@@ -1,17 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BRAIN_JOB_TITLE,
   brainTaskId,
   SOURCE_JOB_KINDS,
+  type BrainAgent,
   type BrainJob,
   type BrainJobKind,
   type BrainModel,
+  opencodeModelArg,
 } from '../../shared/brain';
 import type { Platform } from '../platform/Platform';
 import {
   claudeResultWithSession,
+  ExitError,
   type runWithInput,
 } from '../services/prSummary';
+import { opencodeResultWithSession } from './opencodeResult';
 import { acquireLock, releaseLock, writeState } from './state';
+import { brainOpencodePermission } from './templates';
 
 const MAX_JOBS = 50;
 
@@ -40,15 +46,79 @@ export function brainJobEnv(
   };
 }
 
+/** `opencode run` for a job: the brain's command of that kind, json events, and the model only when a valid one is set. */
+export function opencodeJobArgs(
+  kind: BrainJobKind,
+  model: string | null,
+): string[] {
+  const m = opencodeModelArg(model);
+  return [
+    'run',
+    '--command',
+    kind,
+    '--format',
+    'json',
+    '--title',
+    `${BRAIN_JOB_TITLE}: ${kind}`,
+    ...(m ? ['-m', m] : []),
+  ];
+}
+
+/**
+ * An OpenCode job's env, and the brain terminal's: the brain's own permission rules as the inline config, so an
+ * inherited one cannot loosen them; `plugin` (the terminal's attention plugin) is loaded through it too.
+ */
+export function opencodeJobEnv(
+  base: Record<string, string>,
+  plugin: string | null = null,
+): Record<string, string> {
+  return {
+    ...base,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      permission: brainOpencodePermission(),
+      ...(plugin ? { plugin: [plugin] } : {}),
+    }),
+  };
+}
+
+/** Why an OpenCode run failed: the error event it printed, or that the program is missing. */
+function opencodeFailure(e: unknown): Error {
+  const code = (e as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT' || (e instanceof ExitError && e.exitCode === 127))
+    return new Error('OpenCode (opencode) was not found');
+  if (e instanceof ExitError && e.stdout.trim()) {
+    try {
+      opencodeResultWithSession(e.stdout);
+    } catch (parsed) {
+      if ((parsed as Error).message.startsWith('OpenCode stopped'))
+        return parsed as Error;
+    }
+  }
+  return new Error(`OpenCode stopped (${(e as Error).message})`);
+}
+
+/** What OpenCode gets on stdin: the command's argument, the prompt without its leading `/<kind>`. */
+function opencodeInput(kind: BrainJobKind, input: string): string {
+  if (input === `/${kind}`) return '';
+  return input.startsWith(`/${kind} `) ? input.slice(kind.length + 2) : input;
+}
+
 export type BrainJobDeps = {
-  platform: Pick<Platform, 'claudeCommand'>;
+  platform: Pick<Platform, 'claudeCommand' | 'opencodeCommand'>;
   run: typeof runWithInput;
   /** The full environment of the spawned process. */
   env: (brainId: string) => Record<string, string>;
   tokensToday: (brainId: string) => number;
   cap: (brainId: string) => number;
   brainDir: (brainId: string) => string;
+  /** The Claude Code model. */
   model: (brainId: string) => BrainModel;
+  /** The agent a job of the brain runs on. */
+  agent: (brainId: string) => BrainAgent;
+  /** The OpenCode model (`provider/model`); null is OpenCode's own default. */
+  opencodeModel: (brainId: string) => string | null;
+  /** False while the brain's skills are too old for its agent: its jobs wait (no run, no timer) until release. */
+  ready: (brainId: string) => boolean;
   onChange: (brainId: string, jobs: BrainJob[]) => void;
   /** Commits the job's output (wiki/, index.md, log.md, state); a throw fails the job. */
   commit: (brainId: string, message: string) => Promise<void>;
@@ -80,6 +150,8 @@ type Lane = {
   /** The job being executed (its status may still read queued until the lock is taken). */
   current: BrainJob | null;
   paused: boolean;
+  /** Queued jobs wait for Update skills. */
+  held: boolean;
   retry: ReturnType<typeof setTimeout> | null;
 };
 
@@ -103,6 +175,7 @@ export class BrainJobRunner {
         busy: false,
         current: null,
         paused: false,
+        held: false,
         retry: null,
       };
       this.lanes.set(id, l);
@@ -130,7 +203,26 @@ export class BrainJobRunner {
       result: null,
       error: null,
       background,
+      agent: this.agentOf(brainId),
     };
+  }
+
+  /** The brain's agent; Claude when the brain is gone (the job then fails on its folder, as before). */
+  private agentOf(brainId: string): BrainAgent {
+    try {
+      return this.deps.agent(brainId);
+    } catch {
+      return 'claude';
+    }
+  }
+
+  /** Whether the brain's jobs may run; a throw (a brain that is gone) lets the job start and fail as before. */
+  private isReady(brainId: string): boolean {
+    try {
+      return this.deps.ready(brainId);
+    } catch {
+      return true;
+    }
   }
 
   private changed(brainId: string) {
@@ -217,12 +309,28 @@ export class BrainJobRunner {
     if (!gone.length) return 0;
     l.queue = l.queue.filter((j) => !gone.includes(j));
     l.list = l.list.filter((j) => !gone.includes(j));
+    // Nothing left to wait for Update skills.
+    if (!l.queue.some((j) => j.status === 'queued')) l.held = false;
     this.changed(brainId);
     return gone.length;
   }
 
   running(brainId: string): boolean {
     return this.lane(brainId).busy;
+  }
+
+  /** Whether queued jobs wait for Update skills (an OpenCode brain on skills older than v7). */
+  held(brainId: string): boolean {
+    return this.lane(brainId).held;
+  }
+
+  /** Lets held jobs start once the skills or the agent changed; they stay held while the brain is still not ready. */
+  release(brainId: string): void {
+    const l = this.lane(brainId);
+    if (!l.held) return;
+    l.held = false;
+    this.changed(brainId);
+    this.pump(brainId);
   }
 
   resume(brainId: string): void {
@@ -250,6 +358,20 @@ export class BrainJobRunner {
       l.queue.find((j) => j.status === 'queued' && !j.background) ??
       l.queue.find((j) => j.status === 'queued');
     if (!job) return;
+    if (!this.isReady(brainId)) {
+      // Held, not failed: no timer; release starts the queue again.
+      if (!l.held) {
+        l.held = true;
+        this.changed(brainId);
+      }
+      return;
+    }
+    if (l.held) {
+      l.held = false;
+      this.changed(brainId);
+    }
+    // The job runs on the agent the brain has now (it may have switched while the job waited).
+    job.agent = this.agentOf(brainId);
     l.busy = true;
     l.current = job;
     void this.execute(brainId, l, job).finally(() => {
@@ -307,7 +429,7 @@ export class BrainJobRunner {
       await d.beforeJob(brainId);
       const input = await d.promptFor?.(job);
       if (input === null) {
-        // Nothing for Claude to do: nothing changed, so there is nothing to commit.
+        // Nothing for the agent to do: nothing changed, so there is nothing to commit.
         job.result = 'Nothing to re-evaluate';
       } else {
         await this.runSkill(brainId, dir, job, input ?? prompt(job));
@@ -339,16 +461,34 @@ export class BrainJobRunner {
     input: string,
   ): Promise<void> {
     const d = this.deps;
-    const stdout = await d.run(
-      d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
-      {
-        cwd: dir,
-        input,
-        timeoutMs: d.timeoutMs ?? 600_000,
-        env: d.env(brainId),
-      },
-    );
-    const { result, sessionId } = claudeResultWithSession(stdout);
+    const timeoutMs = d.timeoutMs ?? 600_000;
+    let result: string;
+    let sessionId: string | null;
+    if (job.agent === 'opencode') {
+      const stdout = await d
+        .run(
+          d.platform.opencodeCommand(
+            undefined,
+            opencodeJobArgs(job.kind, d.opencodeModel(brainId)),
+          ),
+          {
+            cwd: dir,
+            input: opencodeInput(job.kind, input),
+            timeoutMs,
+            env: opencodeJobEnv(d.env(brainId)),
+          },
+        )
+        .catch((e: unknown) => {
+          throw opencodeFailure(e);
+        });
+      ({ result, sessionId } = opencodeResultWithSession(stdout));
+    } else {
+      const stdout = await d.run(
+        d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
+        { cwd: dir, input, timeoutMs, env: d.env(brainId) },
+      );
+      ({ result, sessionId } = claudeResultWithSession(stdout));
+    }
     job.result = result;
     job.sessionId = sessionId;
     // A capture and a lessons run both fold a source into the wiki: the source is captured.

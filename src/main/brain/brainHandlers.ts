@@ -90,12 +90,12 @@ export type BrainChannels =
 
 export type BrainRunner = Pick<
   BrainJobRunner,
-  'enqueue' | 'jobs' | 'running' | 'resume' | 'dropQueued'
+  'enqueue' | 'jobs' | 'running' | 'resume' | 'dropQueued' | 'held' | 'release'
 >;
 
 export type BrainHandlerDeps = {
   brains: BrainStore;
-  /** Converts pictures in formats Claude cannot view (createRasterizer); absent in tests. */
+  /** Converts pictures in formats the agent cannot view (createRasterizer); absent in tests. */
   rasterize?: Rasterize;
   git: GitClient;
   runner: BrainRunner;
@@ -404,6 +404,7 @@ export function createBrainHandlers(
             paused,
             now(),
             inFlight,
+            d.runner.held(b.id),
           )
         : null,
       jobs,
@@ -517,11 +518,18 @@ export function createBrainHandlers(
         path: dir,
         wiki: BrainWikiSchema.nullable().parse(input.wiki),
         templatesVersion,
+        options: {
+          agent: input.agent,
+          opencodeModel: input.opencodeModel ?? null,
+        },
         createdAt: now().toISOString(),
       });
       await d.brains.add(brain);
       d.remember([name, dir]);
-      d.event('brain.created', { wiki: brain.wiki !== null });
+      d.event('brain.created', {
+        wiki: brain.wiki !== null,
+        agent: brain.options.agent,
+      });
       changed(id);
       return view(brain);
     },
@@ -552,6 +560,8 @@ export function createBrainHandlers(
           : {}),
       });
       if (name) d.remember([name]);
+      // Jobs held for the old agent's skills may run on the new one.
+      if (updated.options.agent !== b.options.agent) d.runner.release(id);
       changed(id);
       return view(updated);
     },
@@ -687,10 +697,10 @@ export function createBrainHandlers(
       return { verified };
     },
     'brain:asset': async (id, rel) => readAsset(brainOf(id).path, rel),
-    'brain:terminal': async (id, resumeSession, prompt) => {
+    'brain:terminal': async (id, resumeSession, prompt, agent) => {
       brainOf(id);
       if (!d.terminals) throw new Error('Brain terminals are not available');
-      return d.terminals.open(id, resumeSession, prompt);
+      return d.terminals.open(id, resumeSession, prompt, agent);
     },
     'brain:templateDiff': async (id) => {
       const b = brainOf(id);
@@ -700,6 +710,8 @@ export function createBrainHandlers(
       const b = brainOf(id);
       await applyTemplates(d.git, b.path, b.name, paths);
       await d.brains.patch(id, { templatesVersion: TEMPLATES_VERSION });
+      // Jobs held for skills older than OpenCode's start now.
+      d.runner.release(id);
       changed(id);
     },
     'brain:openFolder': async (id) => {

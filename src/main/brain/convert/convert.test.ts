@@ -426,7 +426,7 @@ describe('pptxToMarkdown', () => {
     expect(r.warnings).toEqual([]);
   });
 
-  it('warns about pictures in formats Claude cannot view and skips linked ones', async () => {
+  it('warns about pictures in formats the agent cannot view and skips linked ones', async () => {
     const r = await pptxToMarkdown(
       await buildPptx(
         [
@@ -450,7 +450,7 @@ describe('pptxToMarkdown', () => {
     );
     expect(r.images).toEqual([]);
     expect(r.warnings).toEqual([
-      '2 pictures in formats Claude cannot view (emf, svg)',
+      '2 pictures in formats the agent cannot view (emf, svg)',
     ]);
     expect(r.markdown).toContain('_Picture 1 (emf) could not be extracted_');
     expect(r.markdown).not.toContain('example.test');
@@ -518,7 +518,7 @@ describe('pptxToMarkdown', () => {
     expect(r.markdown).toContain('![Visio flow]({{assets}}/slide-1-1.png)');
     expect(r.markdown).toContain('_Picture 2 (bad) could not be extracted_');
     expect(r.warnings).toEqual([
-      '1 picture in formats Claude cannot view (bad)',
+      '1 picture in formats the agent cannot view (bad)',
     ]);
   });
 
@@ -550,7 +550,7 @@ describe('pptxToMarkdown', () => {
     // A missing media file is not a format problem: no marker.
     expect(r.markdown).not.toContain('Picture 4');
     expect(r.warnings).toEqual([
-      '1 picture in formats Claude cannot view (emf)',
+      '1 picture in formats the agent cannot view (emf)',
     ]);
   });
 
@@ -917,12 +917,12 @@ describe('docxToMarkdown', () => {
     expect(r.warnings).toEqual([]);
   });
 
-  it('warns about pictures in formats Claude cannot view', async () => {
+  it('warns about pictures in formats the agent cannot view', async () => {
     const r = await docxToMarkdown(await buildDocx({ image: 'emf' }));
     expect(r.images).toEqual([]);
     expect(r.markdown).not.toContain('![');
     expect(r.warnings).toEqual([
-      '1 picture in formats Claude cannot view (emf)',
+      '1 picture in formats the agent cannot view (emf)',
     ]);
   });
 

@@ -104,6 +104,8 @@ export async function brainHealth(
   now: Date = new Date(),
   /** Sources with a capture queued or running (not uncaptured). */
   inFlight: string[] = [],
+  /** The runner holds the queue until Update skills (an OpenCode brain on old skills). */
+  queueHeld = false,
 ): Promise<BrainHealth> {
   const { state, error } = await readState(brainDir);
   const [sources, edits, pages, indexMd] = await Promise.all([
@@ -136,6 +138,7 @@ export async function brainHealth(
     mirrorPages: mirror.length,
     outsideEdits: edits,
     queuePaused: queuePaused ? 'cap' : null,
+    queueHeld: queueHeld ? 'Update skills to run on OpenCode' : null,
     costEurToday: ledgerToday.costEur,
     tokensToday: ledgerToday.tokens,
     pictures: sumPictures(pictures),

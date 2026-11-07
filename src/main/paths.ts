@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 
 /** Worktrees for `/src/webshop` live in `/src/webshop.worktrees/<slug>`. */
@@ -9,6 +10,16 @@ export function worktreeRoot(repoPath: string): string {
 /** Git prints `C:/x/y` on Windows; this gives the native form (`C:\x\y`). A no-op on POSIX. */
 export function nativePath(p: string): string {
   return path.resolve(p);
+}
+
+/** A folder as given and as its real path (OpenCode stores the real one, e.g. /private/tmp on macOS). */
+export function folderPaths(folder: string): string[] {
+  try {
+    const real = realpathSync(folder);
+    return real === folder ? [folder] : [folder, real];
+  } catch {
+    return [folder];
+  }
 }
 
 /** `abs` relative to `root` with forward slashes, the form git and our configs use on every platform. */

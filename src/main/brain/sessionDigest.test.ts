@@ -10,6 +10,9 @@ const user = (text: string, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ type: 'user', message: { content: text }, ...extra });
 const claude = (parts: unknown[]) =>
   JSON.stringify({ type: 'assistant', message: { content: parts } });
+/** Claude Code transcripts (jsonl lines) as Finish reads them. */
+const digestOfLines = (title: string, sessions: string[][]) =>
+  sessionDigest(title, sessions.map(sessionTurns));
 
 describe('sessionTurns', () => {
   it('keeps what the developer typed and what Claude said, not tools, meta or injected text', () => {
@@ -44,11 +47,11 @@ describe('sessionTurns', () => {
   });
 });
 
-describe('sessionDigest', () => {
+describe('sessionDigest of Claude Code transcripts', () => {
   it('writes a markdown digest per session, cut per turn and in total', () => {
     const a = [user('First question'), claude([{ type: 'text', text: 'A' }])];
     const b = [user('x'.repeat(TURN_MAX + 50))];
-    const d = sessionDigest('Login bug', [a, b])!;
+    const d = digestOfLines('Login bug', [a, b])!;
     expect(
       d.startsWith('# Session of task: Login bug\n\n## Session 1\n\n'),
     ).toBe(true);
@@ -57,17 +60,17 @@ describe('sessionDigest', () => {
     expect(d).toContain('## Session 2');
     expect(d).toContain(`${'x'.repeat(TURN_MAX - 1)}…`);
     const many = Array.from({ length: 200 }, () => user('y'.repeat(1000)));
-    const big = sessionDigest('T', [many])!;
+    const big = digestOfLines('T', [many])!;
     expect(big.length).toBeLessThanOrEqual(DIGEST_MAX + 100);
     expect(big.endsWith('_(cut: the sessions were longer)_\n')).toBe(true);
   });
 
   it('is null when nobody typed anything', () => {
-    expect(sessionDigest('T', [])).toBeNull();
+    expect(digestOfLines('T', [])).toBeNull();
     expect(
-      sessionDigest('T', [[claude([{ type: 'text', text: 'hello' }])]]),
+      digestOfLines('T', [[claude([{ type: 'text', text: 'hello' }])]]),
     ).toBeNull();
-    const single = sessionDigest('T', [[user('only one')]])!;
+    const single = digestOfLines('T', [[user('only one')]])!;
     expect(single).not.toContain('## Session');
   });
 });
@@ -86,7 +89,7 @@ describe('after review', () => {
       { who: 'Developer', text: 'real' },
     ]);
     const toolsOnly = [claude([{ type: 'text', text: 'only me' }])];
-    const d = sessionDigest('T', [
+    const d = digestOfLines('T', [
       toolsOnly,
       [user('one')],
       toolsOnly,
@@ -95,8 +98,27 @@ describe('after review', () => {
     expect(d).toContain('## Session 1\n\n**Developer:** one');
     expect(d).toContain('## Session 2\n\n**Developer:** two');
     expect(d).not.toContain('## Session 3');
-    expect(sessionDigest('T', [toolsOnly, [user('one')]])).not.toContain(
+    expect(digestOfLines('T', [toolsOnly, [user('one')]])).not.toContain(
       '## Session',
     );
+  });
+});
+
+describe('sessionDigest of mixed agents', () => {
+  it("writes OpenCode's turns with the Agent speaker, after Claude's", () => {
+    const d = sessionDigest('T', [
+      sessionTurns([user('to claude'), claude([{ type: 'text', text: 'C' }])]),
+      [
+        { who: 'Developer', text: 'to opencode' },
+        { who: 'Agent', text: 'O' },
+      ],
+      [{ who: 'Agent', text: 'nobody typed' }],
+    ])!;
+    expect(d).toContain('## Session 1\n\n**Developer:** to claude\n');
+    expect(d).toContain('**Claude:** C\n');
+    expect(d).toContain('## Session 2\n\n**Developer:** to opencode\n');
+    expect(d).toContain('**Agent:** O\n');
+    expect(d).not.toContain('## Session 3');
+    expect(sessionDigest('T', [])).toBeNull();
   });
 });

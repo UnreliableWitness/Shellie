@@ -18,7 +18,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 const REL =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
-/** One slide with a title, a picture and a picture in a format Claude cannot view. */
+/** One slide with a title, a picture and a picture in a format the agent cannot view. */
 async function deckWithPicture(): Promise<Buffer> {
   const zip = new JSZip();
   zip.file(
@@ -275,7 +275,7 @@ describe('brain sources', () => {
       path: 'sources/2026-11-03-platform-deck.md',
       images: 1,
       dropped: 1,
-      warnings: ['1 picture in formats Claude cannot view (emf)'],
+      warnings: ['1 picture in formats the agent cannot view (emf)'],
       contents: '1 slide · 1 picture: Architecture',
     });
     const text = await fs.readFile(
@@ -289,7 +289,7 @@ describe('brain sources', () => {
     expect(r.ok && r.contents).toBe('1 slide · 1 picture: Architecture');
     expect(text).not.toContain('{{assets}}');
     expect(text).toContain(
-      '> Note: 1 picture in formats Claude cannot view (emf)',
+      '> Note: 1 picture in formats the agent cannot view (emf)',
     );
     const asset = await fs.readFile(
       path.join(dir, 'sources/2026-11-03-platform-deck-assets/slide-1-1.png'),

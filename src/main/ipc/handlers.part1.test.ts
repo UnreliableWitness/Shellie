@@ -238,6 +238,67 @@ describe('handlers: agents', () => {
     await h['agents:detect'](true);
     expect(runs).toBe(6);
   });
+
+  it('lists OpenCode models once per launch, keeping only provider/model lines', async () => {
+    const seen: { args: string[]; timeout: number }[] = [];
+    const { h } = await harness(undefined, {
+      runProbe: async (cmd, timeout) => {
+        seen.push({ args: cmd.args, timeout });
+        return {
+          code: 0,
+          stdout:
+            'opencode/big-pickle\nanthropic/claude-sonnet-4.5\nollama/qwen3:8b\nopenrouter/anthropic/claude-sonnet-4.5\nopenrouter/x/y & calc\nUpdating cache...\n\n  \n',
+        };
+      },
+    });
+    const models = await h['agents:opencodeModels']();
+    expect(models).toEqual([
+      'opencode/big-pickle',
+      'anthropic/claude-sonnet-4.5',
+      'ollama/qwen3:8b',
+      'openrouter/anthropic/claude-sonnet-4.5',
+    ]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].args.join(' ')).toContain('models');
+    expect(seen[0].timeout).toBe(15000);
+    expect(await h['agents:opencodeModels']()).toBe(models);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('runs opencode models once for callers asking at the same time', async () => {
+    let runs = 0;
+    const { h } = await harness(undefined, {
+      runProbe: async () => {
+        runs += 1;
+        await new Promise((r) => setTimeout(r, 10));
+        return { code: 0, stdout: 'opencode/big-pickle\n' };
+      },
+    });
+    const [a, b] = await Promise.all([
+      h['agents:opencodeModels'](),
+      h['agents:opencodeModels'](),
+    ]);
+    expect(runs).toBe(1);
+    expect(a).toEqual(['opencode/big-pickle']);
+    expect(b).toEqual(a);
+  });
+
+  it('gives null when opencode fails, prints no models or cannot start, and tries again next time', async () => {
+    let n = 0;
+    const { h } = await harness(undefined, {
+      runProbe: async () => {
+        n += 1;
+        if (n === 1) return { code: 1, stdout: 'opencode/x\n' };
+        if (n === 2) return { code: 0, stdout: 'no models here\n' };
+        if (n === 3) throw new Error('spawn ENOENT');
+        return { code: 0, stdout: 'a/b\n' };
+      },
+    });
+    expect(await h['agents:opencodeModels']()).toBeNull();
+    expect(await h['agents:opencodeModels']()).toBeNull();
+    expect(await h['agents:opencodeModels']()).toBeNull();
+    expect(await h['agents:opencodeModels']()).toEqual(['a/b']);
+  });
 });
 
 describe('handlers: repos', () => {

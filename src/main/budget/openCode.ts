@@ -2,7 +2,9 @@ import { existsSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { BRAIN_JOB_TITLE } from '../../shared/brain';
 import type { BudgetRecord } from '../../shared/budget';
+import type { Turn } from '../brain/sessionDigest';
 
 const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
 
@@ -83,6 +85,21 @@ function fingerprint(file: string): string {
   return `${part(file)}|${part(`${file}-wal`)}`;
 }
 
+/** Whether the database's `session` table has `parent_id` (subagents); older databases have flat sessions. */
+const hasParentId = (db: DatabaseSync) =>
+  (db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).some(
+    (c) => c.name === 'parent_id',
+  );
+
+const json = (raw: string): Record<string, unknown> => {
+  try {
+    const v: unknown = JSON.parse(raw);
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+
 /** Reads OpenCode's SQLite database read-only; OpenCode may be writing (WAL), so a busy database waits briefly. */
 export class OpenCodeReader {
   /**
@@ -135,10 +152,7 @@ export class OpenCodeReader {
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
       // A subagent runs in a child session; older databases without `session.parent_id` read as flat sessions.
-      const hasParent = (
-        db.prepare('PRAGMA table_info(session)').all() as { name: string }[]
-      ).some((c) => c.name === 'parent_id');
-      const parent = hasParent
+      const parent = hasParentId(db)
         ? ', (SELECT parent_id FROM session WHERE session.id = message.session_id) AS parent_id'
         : '';
       const rows = (
@@ -205,4 +219,103 @@ export class OpenCodeReader {
       db.close();
     }
   }
+
+  /**
+   * The brain terminal's session: the earliest top-level session OpenCode made in one of `dirs` (a folder and its real
+   * path) at or after `since` (epoch ms), not a brain job's (by title) and not in `exclude`; null when none.
+   */
+  terminalSession(
+    dirs: readonly string[],
+    since: number,
+    exclude: ReadonlySet<string>,
+  ): string | null {
+    if (!existsSync(this.file) || dirs.length === 0) return null;
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      return (
+        topSessions(db, dirs, since).find((id) => !exclude.has(id)) ?? null
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  /** Whether OpenCode has a session with this id; null (unknown) when there is no database. */
+  sessionExists(id: string): boolean | null {
+    if (!existsSync(this.file)) return null;
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      return (
+        db.prepare('SELECT 1 FROM session WHERE id = ?').get(id) !== undefined
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * What was said in each top-level session OpenCode made in one of `dirs` (a folder and its real path) at or after
+   * `since` (epoch ms), oldest first, brain jobs left out: text parts by the message's role, not the ones OpenCode
+   * injected (`synthetic`), the agent's consecutive texts as one turn.
+   */
+  sessionTexts(dirs: readonly string[], since = 0): Turn[][] {
+    if (!existsSync(this.file) || dirs.length === 0) return [];
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      const ids = topSessions(db, dirs, since);
+      if (ids.length === 0) return [];
+      const rows = db
+        .prepare(
+          `SELECT part.session_id AS session_id, part.message_id AS message_id, part.data AS data, message.data AS message FROM part JOIN message ON message.id = part.message_id WHERE part.session_id IN (${ids.map(() => '?').join(', ')}) ORDER BY message.time_created, message.id, part.time_created, part.id`,
+        )
+        .all(...ids) as {
+        session_id: string;
+        message_id: string;
+        data: string;
+        message: string;
+      }[];
+      const bySession = new Map<string, Turn[]>(ids.map((id) => [id, []]));
+      let lastMessage = '';
+      for (const r of rows) {
+        const part = json(r.data);
+        if (
+          part.type !== 'text' ||
+          part.synthetic === true ||
+          typeof part.text !== 'string'
+        )
+          continue;
+        const text = part.text.trim();
+        const role = json(r.message).role;
+        if (!text || (role !== 'user' && role !== 'assistant')) continue;
+        const who = role === 'user' ? 'Developer' : 'Agent';
+        const turns = bySession.get(r.session_id)!;
+        const prev = turns.at(-1);
+        // The agent's texts between tool calls read as one turn, and so do the parts of one typed message.
+        if (
+          prev?.who === who &&
+          (who === 'Agent' || lastMessage === r.message_id)
+        )
+          prev.text = `${prev.text}\n${text}`;
+        else turns.push({ who, text });
+        lastMessage = r.message_id;
+      }
+      return ids.map((id) => bySession.get(id)!);
+    } finally {
+      db.close();
+    }
+  }
+}
+
+/** Top-level sessions in one of `dirs` created at or after `since`, oldest first, brain jobs (by title) left out. */
+function topSessions(
+  db: DatabaseSync,
+  dirs: readonly string[],
+  since: number,
+): string[] {
+  const rows = db
+    .prepare(
+      `SELECT id FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_created, id`,
+    )
+    .all(...dirs, since, `${BRAIN_JOB_TITLE}%`) as { id: string }[];
+  return rows.map((r) => r.id);
 }

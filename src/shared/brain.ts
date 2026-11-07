@@ -13,6 +13,13 @@ export const brainIdOf = (taskId: string | undefined): string | null =>
 const BrainModelSchema = z.enum(['haiku', 'sonnet', 'opus']);
 export type BrainModel = z.infer<typeof BrainModelSchema>;
 
+export const BrainAgentSchema = z.enum(['claude', 'opencode']);
+export type BrainAgent = z.infer<typeof BrainAgentSchema>;
+export const BRAIN_AGENT_LABELS: Record<BrainAgent, string> = {
+  claude: 'Claude Code',
+  opencode: 'OpenCode',
+};
+
 export const BrainOptionsSchema = z.object({
   contextInTaskMd: z.boolean().default(true),
   addDirForClaude: z.boolean().default(true),
@@ -21,8 +28,23 @@ export const BrainOptionsSchema = z.object({
   dailyTokenCap: z.number().int().positive().default(500_000),
   openBrainTerminalOnStart: z.boolean().default(false),
   model: BrainModelSchema.default('sonnet'),
+  /** The coding agent that runs the brain's jobs. */
+  agent: BrainAgentSchema.default('claude'),
+  /** OpenCode's `provider/model` for the brain's jobs; null uses OpenCode's own default. */
+  opencodeModel: z.string().nullable().default(null),
 });
 export type BrainOptions = z.infer<typeof BrainOptionsSchema>;
+
+/**
+ * `provider/model` (slashes allowed after the provider: `openrouter/vendor/model`) with no spaces or shell characters:
+ * a typed model reaches OpenCode's command line as `-m`.
+ */
+const OPENCODE_MODEL = /^[\w.-]+\/[\w.:/-]+$/;
+export const isOpencodeModel = (model: string): boolean =>
+  OPENCODE_MODEL.test(model);
+/** The model to pass as `-m`: null (OpenCode's default) when it is unset or not a valid `provider/model`. */
+export const opencodeModelArg = (model: string | null): string | null =>
+  model !== null && isOpencodeModel(model) ? model : null;
 
 export const BrainWikiSchema = z.object({
   wikiId: z.string(),
@@ -77,6 +99,21 @@ export const PICTURES_TEMPLATES = 6;
 export const picturesReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= PICTURES_TEMPLATES;
 
+/** The skills version that has the OpenCode commands: a brain on OpenCode needs it. */
+export const OPENCODE_TEMPLATES = 7;
+/** Whether the brain's skills include the OpenCode commands (templates v7 or later). */
+export const opencodeReady = (brain: Pick<Brain, 'templatesVersion'>) =>
+  brain.templatesVersion >= OPENCODE_TEMPLATES;
+
+/** OpenCode session titles of the brain's headless jobs start with this, so the terminal never takes one for its own. */
+export const BRAIN_JOB_TITLE = 'Shellie brain job';
+
+/** A question for the brain's read-only ask skill: the `/ask` command on Claude Code, plain text on OpenCode (a `/` message is not reliably run there). */
+export const askPrompt = (agent: BrainAgent, q: string): string =>
+  agent === 'opencode'
+    ? `Load the ask skill and answer from this brain, reading only: ${q}`
+    : `/ask ${q}`;
+
 export const BrainsFileSchema = z.object({
   brains: z.array(BrainSchema).default([]),
 });
@@ -110,6 +147,8 @@ const BrainFindingSchema = z.object({
   ]),
   page: z.string(),
   detail: z.string(),
+  /** What the finding is about, for the UI to act on (never its words): pictures that never reached the agent. */
+  code: z.enum(['pictures-dropped']).optional(),
   at: z.string(),
 });
 export type BrainFinding = z.infer<typeof BrainFindingSchema>;
@@ -156,6 +195,8 @@ export type BrainJob = {
   error: string | null;
   /** Runs only when no other job is queued (the one-time pass over earlier sources). */
   background: boolean;
+  /** The agent that runs this job, taken from the brain when it is queued and again when it starts. */
+  agent: BrainAgent;
 };
 export type PictureStatus =
   | 'described'
@@ -222,6 +263,8 @@ export type BrainHealth = {
   mirrorPages: number;
   outsideEdits: string[];
   queuePaused: 'cap' | null;
+  /** Why queued jobs wait for the user (an OpenCode brain on skills older than v7); null when they run. */
+  queueHeld: string | null;
   costEurToday: number;
   tokensToday: number;
   /** The pictures of all sources, summed (accepted drops and tiny images are not gaps). */

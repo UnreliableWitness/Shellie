@@ -6,6 +6,7 @@ import {
   prSummaryFlags,
   prSummaryPrompt,
   runWithInput,
+  ExitError,
   tidySummary,
   userRequests,
   type PrSummaryContext,
@@ -230,6 +231,25 @@ describe('runWithInput', () => {
         { cwd: process.cwd(), input: '', timeoutMs: 10_000 },
       ),
     ).rejects.toThrow(/boom/);
+  });
+
+  it('keeps the exit code and stdout on the error of a failed exit', async () => {
+    const e = await runWithInput(
+      {
+        command: node,
+        args: [
+          '-e',
+          'process.stdout.write(\'{"type":"error"}\');process.exit(1)',
+        ],
+      },
+      { cwd: process.cwd(), input: '', timeoutMs: 10_000 },
+    ).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ExitError);
+    expect(e).toMatchObject({
+      message: 'exited with code 1',
+      exitCode: 1,
+      stdout: '{"type":"error"}',
+    });
   });
 
   it('says the program is missing on exit code 127', async () => {

@@ -136,6 +136,7 @@ export function BrainScreen({
           <>
             <AskBox
               brainId={brain.id}
+              agent={brain.options.agent}
               onTerminal={setTerminal}
               initiallyOpen={focus === 'ask'}
             />

@@ -16,6 +16,8 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     dailyTokenCap: 500_000,
     openBrainTerminalOnStart: false,
     model: 'sonnet',
+    agent: 'claude',
+    opencodeModel: null,
   },
   terminal: { id: 'bt1', kind: 'claude', label: 'Brain' },
   createdAt: '2026-11-01T09:00:00.000Z',
@@ -64,6 +66,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     mirrorPages: 12,
     outsideEdits: [],
     queuePaused: null,
+    queueHeld: null,
     costEurToday: 0.42,
     tokensToday: 12_345,
     pictures: {
@@ -96,5 +99,6 @@ export const brainJob = (over: Partial<BrainJob> = {}): BrainJob => ({
   result: null,
   error: 'claude exited 1',
   background: false,
+  agent: 'claude',
   ...over,
 });

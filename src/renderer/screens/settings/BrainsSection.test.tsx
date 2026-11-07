@@ -1,12 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentsDetected } from '../../../shared/agents';
 import type { AdoWiki, BrainView } from '../../../shared/brain';
 import type { Connection } from '../../../shared/types';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
-import { BrainsForConnection } from './BrainsSection';
+import { BrainsForConnection, CreateBrainForm } from './BrainsSection';
 
 const conn: Connection = {
   id: 'c1',
@@ -51,10 +52,34 @@ const brain = {
     dailyTokenCap: 500000,
     openBrainTerminalOnStart: false,
     model: 'sonnet',
+    agent: 'claude',
+    opencodeModel: null,
   },
+  templatesVersion: 7,
   health: null,
   jobs: [],
 } as unknown as BrainView;
+
+const detected = (claude: boolean, opencode: boolean): AgentsDetected => {
+  const probe = (found: boolean) => ({ found, version: null, path: null });
+  return {
+    checkedAt: '2026-11-07T10:00:00.000Z',
+    agents: {
+      claude: probe(claude),
+      copilot: probe(false),
+      opencode: probe(opencode),
+    },
+    shell: { label: 'zsh' },
+  };
+};
+const onOpenCode = (over: object = {}) =>
+  ({
+    ...brain,
+    options: { ...brain.options, agent: 'opencode' },
+    ...over,
+  }) as unknown as BrainView;
+const NEITHER =
+  "Neither Claude Code nor OpenCode was found on this machine; the brain's jobs will fail until one is installed.";
 
 beforeEach(() => useStore.setState({ connections: [conn] }));
 
@@ -88,6 +113,7 @@ describe('BrainsForConnection', () => {
       connectionId: 'c1',
       project: 'Acme',
       path: null,
+      agent: 'claude',
       wiki: {
         wikiId: 'w1',
         wikiName: 'Acme.wiki',
@@ -319,5 +345,199 @@ describe('archiving', () => {
         args: ['b1', { archived: false }],
       }),
     );
+  });
+
+  it('pre-selects Claude Code when it is found, labelling what was found', async () => {
+    installFakeApi({ 'agents:detect': () => detected(true, true) });
+    render(<BrainsForConnection connection={conn} />);
+    const agent = await screen.findByLabelText('Agent');
+    await waitFor(() => expect(agent).toHaveValue('claude'));
+    expect(
+      screen.getByRole('option', { name: 'Claude Code (found)' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'OpenCode (found)' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NEITHER)).not.toBeInTheDocument();
+  });
+
+  it('pre-selects OpenCode when only it is found', async () => {
+    installFakeApi({ 'agents:detect': () => detected(false, true) });
+    render(<BrainsForConnection connection={conn} />);
+    const agent = await screen.findByLabelText('Agent');
+    await waitFor(() => expect(agent).toHaveValue('opencode'));
+    expect(
+      screen.getByRole('option', { name: 'Claude Code (not found)' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NEITHER)).not.toBeInTheDocument();
+  });
+
+  it('pre-selects Claude Code and says so when neither is found', async () => {
+    installFakeApi({ 'agents:detect': () => detected(false, false) });
+    render(<BrainsForConnection connection={conn} />);
+    expect(await screen.findByText(NEITHER)).toBeInTheDocument();
+    expect(screen.getByLabelText('Agent')).toHaveValue('claude');
+  });
+
+  it('creates a brain on the agent the user picked', async () => {
+    const { calls } = installFakeApi({
+      'agents:detect': () => detected(true, true),
+      'brain:create': () => brain,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText('Agent'), 'opencode');
+    await user.click(screen.getByRole('button', { name: 'Create brain' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'brain:create')?.args[0]).toEqual(
+        expect.objectContaining({ agent: 'opencode' }),
+      ),
+    );
+  });
+
+  it('calls onCreated with the new brain', async () => {
+    installFakeApi({ 'brain:create': () => brain });
+    const onCreated = vi.fn();
+    render(
+      <CreateBrainForm connection={conn} focus={null} onCreated={onCreated} />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Create brain' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(brain));
+  });
+
+  it('changes the agent on a card', async () => {
+    const { calls, tracked } = installFakeApi({
+      'brain:list': () => [brain],
+      'brain:update': () => brain,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    const user = userEvent.setup();
+    await screen.findByText('/data/brains/b1');
+    const form = screen.getByRole('form', { name: 'New brain' });
+    const [cardAgent] = screen
+      .getAllByLabelText('Agent')
+      .filter((el) => !form.contains(el));
+    expect(cardAgent).toHaveValue('claude');
+    await user.selectOptions(cardAgent, 'opencode');
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'brain:update')?.args).toEqual([
+        'b1',
+        { options: { agent: 'opencode' } },
+      ]),
+    );
+    expect(tracked).toContainEqual(
+      expect.objectContaining({
+        name: 'settings.brain',
+        props: { action: 'update', field: 'agent' },
+      }),
+    );
+  });
+
+  it('shows Claude models for Claude Code and listed models for OpenCode', async () => {
+    const { calls } = installFakeApi({
+      'brain:list': () => [onOpenCode()],
+      'brain:update': () => brain,
+      'agents:opencodeModels': () => ['opencode/big-pickle', 'ollama/qwen3:8b'],
+    });
+    render(<BrainsForConnection connection={conn} />);
+    const user = userEvent.setup();
+    const model = await screen.findByLabelText('Model');
+    expect(
+      await within(model).findByRole('option', { name: 'ollama/qwen3:8b' }),
+    ).toBeInTheDocument();
+    expect(
+      within(model)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(["OpenCode's default", 'opencode/big-pickle', 'ollama/qwen3:8b']);
+    expect(
+      screen.getByText('Pictures are read only by models that can see images.'),
+    ).toBeInTheDocument();
+    await user.selectOptions(model, 'opencode/big-pickle');
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'brain:update')?.args).toEqual([
+        'b1',
+        { options: { opencodeModel: 'opencode/big-pickle' } },
+      ]),
+    );
+  });
+
+  it('uses a text field for the OpenCode model when the list cannot be read', async () => {
+    const { calls } = installFakeApi({
+      'brain:list': () => [onOpenCode()],
+      'brain:update': () => brain,
+      'agents:opencodeModels': () => null,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model').tagName).toBe('INPUT'),
+    );
+    const model = screen.getByLabelText('Model');
+    await user.type(model, 'openrouter/anthropic/claude-sonnet-4.5');
+    await user.tab();
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.channel === 'brain:update').at(-1)?.args,
+      ).toEqual([
+        'b1',
+        {
+          options: { opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5' },
+        },
+      ]),
+    );
+  });
+
+  it('does not save a typed OpenCode model that is not a plain provider/model', async () => {
+    const { calls } = installFakeApi({
+      'brain:list': () => [onOpenCode()],
+      'brain:update': () => brain,
+      'agents:opencodeModels': () => null,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model').tagName).toBe('INPUT'),
+    );
+    const model = screen.getByLabelText('Model');
+    await user.type(model, 'a/b" & calc');
+    await user.tab();
+    expect(
+      await screen.findByText('Use provider/model, without spaces or quotes'),
+    ).toBeInTheDocument();
+    expect(calls.filter((c) => c.channel === 'brain:update')).toEqual([]);
+    expect(model).toHaveValue('a/b" & calc');
+  });
+
+  it('keeps the Claude model select and no picture note for Claude Code', async () => {
+    installFakeApi({ 'brain:list': () => [brain] });
+    render(<BrainsForConnection connection={conn} />);
+    expect((await screen.findByLabelText('Model')).tagName).toBe('SELECT');
+    expect(
+      screen.queryByText(
+        'Pictures are read only by models that can see images.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hints "Update skills first" for an OpenCode brain below skills version 7', async () => {
+    installFakeApi({
+      'brain:list': () => [onOpenCode({ templatesVersion: 6 })],
+    });
+    render(<BrainsForConnection connection={conn} />);
+    expect(await screen.findByText('Update skills first')).toBeInTheDocument();
+  });
+
+  it('has no hint for a ready OpenCode brain or a Claude one below version 7', async () => {
+    installFakeApi({
+      'brain:list': () => [
+        onOpenCode({ templatesVersion: 7 }),
+        { ...brain, id: 'b2', templatesVersion: 3 },
+      ],
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await screen.findAllByText('/data/brains/b1');
+    expect(screen.queryByText('Update skills first')).not.toBeInTheDocument();
   });
 });

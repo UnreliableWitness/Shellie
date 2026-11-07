@@ -1,3 +1,4 @@
+import type { BrainAgent } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
 import { track } from '../../telemetry';
@@ -70,21 +71,35 @@ export const refreshWiki = async (
 };
 
 /**
- * Starts (or resumes) the brain's terminal; the caller shows it. `prompt` is submitted to Claude by main: the first
- * message of a new process, or typed into the running one.
+ * Starts (or resumes) the brain's terminal; the caller shows it. `prompt` is submitted to the agent by main: the first
+ * message of a new process, or typed into the running one. `agent` opens it on another agent than the brain's.
  */
 export const openBrainTerminal = (
   brainId: string,
   notify: Notify,
   resumeSession?: string | null,
   prompt?: string,
+  agent?: BrainAgent,
 ): Promise<TerminalDef | undefined> =>
   tryInvoke(
     () =>
-      prompt
-        ? api().invoke('brain:terminal', brainId, resumeSession ?? null, prompt)
-        : resumeSession
-          ? api().invoke('brain:terminal', brainId, resumeSession)
-          : api().invoke('brain:terminal', brainId),
+      agent
+        ? api().invoke(
+            'brain:terminal',
+            brainId,
+            resumeSession ?? null,
+            prompt,
+            agent,
+          )
+        : prompt
+          ? api().invoke(
+              'brain:terminal',
+              brainId,
+              resumeSession ?? null,
+              prompt,
+            )
+          : resumeSession
+            ? api().invoke('brain:terminal', brainId, resumeSession)
+            : api().invoke('brain:terminal', brainId),
     notify,
   );

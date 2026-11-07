@@ -230,3 +230,212 @@ describe('OpenCodeReader', () => {
       found: false,
     }));
 });
+
+describe('OpenCodeReader.terminalSession', () => {
+  const makeDb = (withParent = true) => {
+    const file = path.join(
+      mkdtempSync(path.join(os.tmpdir(), 'oc-ses-')),
+      'opencode.db',
+    );
+    const db = new DatabaseSync(file);
+    db.exec(
+      `CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, ${withParent ? 'parent_id text, ' : ''}slug text NOT NULL, directory text NOT NULL, title text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)`,
+    );
+    const put = (
+      id: string,
+      directory: string,
+      created: number,
+      o: { parent?: string; title?: string } = {},
+    ) => {
+      const title = o.title ?? 'New session';
+      if (withParent)
+        db.prepare(
+          'INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).run(
+          id,
+          'p',
+          o.parent ?? null,
+          id,
+          directory,
+          title,
+          '1',
+          created,
+          created,
+        );
+      else
+        db.prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+          id,
+          'p',
+          id,
+          directory,
+          title,
+          '1',
+          created,
+          created,
+        );
+    };
+    return { file, put, close: () => db.close() };
+  };
+
+  it('finds the earliest top-level session in the folder since a time, never a job', () => {
+    const { file, put, close } = makeDb();
+    put('ses_old', '/b', 50);
+    put('ses_job', '/b', 110, { title: 'Shellie brain job: capture' });
+    put('ses_excluded', '/b', 115);
+    put('ses_child', '/b', 118, { parent: 'ses_term' });
+    put('ses_term', '/b', 120);
+    put('ses_later', '/b', 150);
+    put('ses_other', '/elsewhere', 105);
+    const reader = new OpenCodeReader(file);
+    expect(reader.terminalSession(['/b'], 100, new Set(['ses_excluded']))).toBe(
+      'ses_term',
+    );
+    expect(reader.terminalSession(['/b'], 130, new Set())).toBe('ses_later');
+    expect(reader.terminalSession(['/b'], 200, new Set())).toBeNull();
+    expect(reader.terminalSession(['/c'], 0, new Set())).toBeNull();
+    // OpenCode stores the real path: either spelling of the folder matches.
+    expect(
+      reader.terminalSession(['/tmp/x', '/elsewhere'], 100, new Set()),
+    ).toBe('ses_other');
+    close();
+  });
+
+  it('reads a database without parent_id, and none at all', () => {
+    const { file, put, close } = makeDb(false);
+    put('ses_a', '/b', 10);
+    expect(new OpenCodeReader(file).terminalSession(['/b'], 0, new Set())).toBe(
+      'ses_a',
+    );
+    close();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').terminalSession(
+        ['/b'],
+        0,
+        new Set(),
+      ),
+    ).toBeNull();
+  });
+
+  it('says whether a session exists; unknown (null) without a database', () => {
+    const { file, put, close } = makeDb();
+    put('ses_a', '/b', 10);
+    const reader = new OpenCodeReader(file);
+    expect(reader.sessionExists('ses_a')).toBe(true);
+    expect(reader.sessionExists('ses_gone')).toBe(false);
+    close();
+    expect(new OpenCodeReader('/nope/opencode.db').sessionExists('ses_a')).toBe(
+      null,
+    );
+  });
+});
+
+describe('OpenCodeReader.sessionTexts', () => {
+  const makeDb = () => {
+    const file = path.join(
+      mkdtempSync(path.join(os.tmpdir(), 'oc-txt-')),
+      'opencode.db',
+    );
+    const db = new DatabaseSync(file);
+    db.exec(
+      'CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL, directory text NOT NULL, title text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)',
+    );
+    db.exec(
+      'CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+    );
+    db.exec(
+      'CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+    );
+    const session = (
+      id: string,
+      directory: string,
+      created: number,
+      o: { parent?: string; title?: string } = {},
+    ) =>
+      db
+        .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(
+          id,
+          'p',
+          o.parent ?? null,
+          id,
+          directory,
+          o.title ?? 'New session',
+          '1',
+          created,
+          created,
+        );
+    let n = 0;
+    /** One message with its parts, each a text unless given as an object. */
+    const say = (
+      sessionId: string,
+      role: string,
+      t: number,
+      parts: (string | Record<string, unknown>)[],
+    ) => {
+      const id = `msg_${++n}`;
+      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(
+        id,
+        sessionId,
+        t,
+        t,
+        JSON.stringify({ role }),
+      );
+      parts.forEach((p, i) =>
+        db
+          .prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)')
+          .run(
+            `prt_${n}_${i}`,
+            id,
+            sessionId,
+            t + i,
+            t + i,
+            JSON.stringify(
+              typeof p === 'string' ? { type: 'text', text: p } : p,
+            ),
+          ),
+      );
+    };
+    return { file, session, say, close: () => db.close() };
+  };
+
+  it("returns each top-level session's texts in order, roles mapped, consecutive agent parts joined", () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_b', '/w', 200);
+    session('ses_a', '/private/w', 100);
+    session('ses_child', '/w', 150, { parent: 'ses_a' });
+    session('ses_job', '/w', 160, { title: 'Shellie brain job: capture' });
+    session('ses_other', '/elsewhere', 120);
+    say('ses_a', 'user', 100, [
+      'Fix the bug',
+      { type: 'text', text: 'injected', synthetic: true },
+    ]);
+    say('ses_a', 'assistant', 110, [
+      'Looking.',
+      { type: 'tool', tool: 'read' },
+      'Found it.',
+    ]);
+    say('ses_a', 'assistant', 120, ['Fixed.']);
+    say('ses_a', 'user', 130, ['Thanks']);
+    say('ses_child', 'user', 150, ['subagent task']);
+    say('ses_job', 'user', 160, ['job prompt']);
+    say('ses_other', 'user', 120, ['elsewhere']);
+    say('ses_b', 'user', 200, ['Second']);
+    expect(new OpenCodeReader(file).sessionTexts(['/w', '/private/w'])).toEqual(
+      [
+        [
+          { who: 'Developer', text: 'Fix the bug' },
+          { who: 'Agent', text: 'Looking.\nFound it.\nFixed.' },
+          { who: 'Developer', text: 'Thanks' },
+        ],
+        [{ who: 'Developer', text: 'Second' }],
+      ],
+    );
+    expect(new OpenCodeReader(file).sessionTexts(['/w'], 150)).toEqual([
+      [{ who: 'Developer', text: 'Second' }],
+    ]);
+    close();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').sessionTexts(['/w']),
+    ).toEqual([]);
+  });
+});

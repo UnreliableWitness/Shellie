@@ -36,6 +36,7 @@ const NEW = {
   project: 'Acme',
   path: null,
   wiki: null,
+  agent: 'claude' as const,
 };
 
 describe('brain handlers', () => {
@@ -46,9 +47,11 @@ describe('brain handlers', () => {
   let events: [string, unknown][];
   let remembered: string[];
   let enqueued: [string, BrainJobKind, string | null][];
+  let released: string[];
   let killed: string[];
   let opened: string[];
   let openArgs: [string | null | undefined, string | undefined][];
+  let openAgents: (string | undefined)[];
   let pages: AdoWikiPage[];
   let tasks: Task[];
   let h: ReturnType<typeof createBrainHandlers>;
@@ -66,6 +69,7 @@ describe('brain handlers', () => {
       result: null,
       error: null,
       background: false,
+      agent: 'claude',
     }) satisfies BrainJob;
 
   beforeEach(async () => {
@@ -78,9 +82,11 @@ describe('brain handlers', () => {
     events = [];
     remembered = [];
     enqueued = [];
+    released = [];
     killed = [];
     opened = [];
     openArgs = [];
+    openAgents = [];
     pages = [];
     tasks = [];
     const deps: BrainHandlerDeps = {
@@ -95,11 +101,16 @@ describe('brain handlers', () => {
         running: () => false,
         resume: vi.fn(),
         dropQueued: () => 0,
+        held: () => false,
+        release: (id) => {
+          released.push(id);
+        },
       },
       terminals: {
-        open: async (id, resume, prompt) => {
+        open: async (id, resume, prompt, agent) => {
           opened.push(id);
           openArgs.push([resume, prompt]);
+          openAgents.push(agent);
           return { id: 't', kind: 'claude' as const, label: 'x' };
         },
         kill: async (id) => {
@@ -154,8 +165,28 @@ describe('brain handlers', () => {
     // Lists carry no health (no git, ledger or source reads).
     expect(listed[0].health).toBeNull();
     expect(broadcasts.at(-1)).toEqual(['brain:changed', { brainId: v.id }]);
-    expect(events).toContainEqual(['brain.created', { wiki: false }]);
+    expect(events).toContainEqual([
+      'brain.created',
+      { wiki: false, agent: 'claude' },
+    ]);
     expect(remembered).toEqual(expect.arrayContaining(['Acme', v.path]));
+  });
+
+  it('create stores the chosen agent and OpenCode model', async () => {
+    const v = await h['brain:create']({
+      ...NEW,
+      agent: 'opencode',
+      opencodeModel: 'opencode/big-pickle',
+    });
+    expect(v.options.agent).toBe('opencode');
+    expect(v.options.opencodeModel).toBe('opencode/big-pickle');
+    expect(events).toContainEqual([
+      'brain.created',
+      { wiki: false, agent: 'opencode' },
+    ]);
+    const plain = await h['brain:create'](NEW);
+    expect(plain.options.agent).toBe('claude');
+    expect(plain.options.opencodeModel).toBeNull();
   });
 
   it('create adopts an existing brain folder and refuses a non-empty other folder', async () => {
@@ -390,6 +421,8 @@ describe('brain handlers', () => {
     expect(opened).toEqual([v.id]);
     await h['brain:terminal'](v.id, 'sess', 'What is in scope?');
     expect(openArgs.at(-1)).toEqual(['sess', 'What is in scope?']);
+    await h['brain:terminal'](v.id, 'ses_1', undefined, 'opencode');
+    expect(openAgents).toEqual([undefined, undefined, 'opencode']);
     await expect(h['brain:run']('nope', 'lint')).rejects.toThrow(
       'Unknown brain',
     );
@@ -737,6 +770,16 @@ describe('brain handlers', () => {
         ?.status,
     ).toBe('same');
     expect(brains.get(v.id)?.templatesVersion).toBe(TEMPLATES_VERSION);
+    expect(released).toEqual([v.id]);
+  });
+
+  it('update releases held jobs only when the agent changes', async () => {
+    const v = await h['brain:create'](NEW);
+    await h['brain:update'](v.id, { options: { weeklyDigest: true } });
+    await h['brain:update'](v.id, { options: { agent: 'claude' } });
+    expect(released).toEqual([]);
+    await h['brain:update'](v.id, { options: { agent: 'opencode' } });
+    expect(released).toEqual([v.id]);
   });
 
   describe('refresh', () => {

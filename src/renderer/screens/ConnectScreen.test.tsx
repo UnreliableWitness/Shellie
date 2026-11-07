@@ -46,6 +46,7 @@ const agentsDone = {
     dismissedAt: null,
     agentsCheckedAt: '2026-10-22T09:00:00.000Z',
     tracker: null,
+    brain: null,
   },
 } as AppSettings;
 
@@ -106,7 +107,29 @@ describe('ConnectScreen', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
   });
 
-  it('lists the three scopes and links to the tokens page of the organization', async () => {
+  it('names the Wiki (Read) scope, says when it is needed and writes no cost', async () => {
+    installFakeApi();
+    render(<ConnectScreen />);
+    expect(screen.getByTestId('connect-scopes')).toHaveTextContent(
+      'Wiki (Read)',
+    );
+    expect(
+      screen.getByText('Wiki (Read) is only needed for a brain.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Each project you tick becomes a project in Shellie with its own page and settings; add more later in Settings › Projects.',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Writing time back to work items stays off until you turn it on per project.',
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/cost/i);
+  });
+
+  it('lists the scopes and links to the tokens page of the organization', async () => {
     installFakeApi();
     render(<ConnectScreen />);
     await userEvent.type(
@@ -116,7 +139,9 @@ describe('ConnectScreen', () => {
     const scopes = screen.getByTestId('connect-scopes');
     expect(scopes).toHaveTextContent('Work Items (Read & write)');
     expect(scopes).toHaveTextContent('Code (Read & write)');
-    expect(scopes).toHaveTextContent('Project and Team (Read)');
+    expect(scopes).toHaveTextContent(
+      'Work Items (Read & write), Code (Read & write), Project and Team (Read), Wiki (Read).',
+    );
     expect(
       screen.getByRole('link', { name: /Open the tokens page/ }),
     ).toHaveAttribute(

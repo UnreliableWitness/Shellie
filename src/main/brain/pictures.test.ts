@@ -309,7 +309,8 @@ describe('pictures', () => {
       {
         kind: 'picture',
         page: SOURCE,
-        detail: '1 picture not interpreted · 2 never reached Claude',
+        detail: '1 picture not interpreted · 2 never reached the agent',
+        code: 'pictures-dropped',
         at: 'now',
       },
     ]);
@@ -418,6 +419,7 @@ describe('pictures', () => {
       result: null,
       error: null,
       background: false,
+      agent: 'claude',
       ...over,
     });
     const gap = async () => {
@@ -734,6 +736,7 @@ describe('one-time pass over earlier sources', () => {
       result: null,
       error: null,
       background: true,
+      agent: 'claude',
       ...over,
     });
     const now = () => new Date('2026-11-07T12:00:00.000Z');
@@ -924,6 +927,7 @@ describe('one-time pass over earlier sources', () => {
       result: null,
       error: null,
       background: true,
+      agent: 'claude',
       ...over,
     });
     const now = new Date('2026-11-07T12:00:00.000Z');
@@ -1050,6 +1054,7 @@ describe('createPictureHooks', () => {
           args: flags ?? [],
           env: {},
         }),
+        opencodeCommand: () => ({ command: 'opencode', args: [] }),
       },
       run: (async (_cmd: unknown, o: { input: string }) => {
         runs.push(o.input);
@@ -1075,6 +1080,9 @@ describe('createPictureHooks', () => {
       cap: () => 1_000_000,
       brainDir: () => dir,
       model: () => 'sonnet',
+      agent: () => 'claude',
+      opencodeModel: () => null,
+      ready: () => true,
       onChange: () => undefined,
       commit: async () => undefined,
       beforeJob: async () => undefined,

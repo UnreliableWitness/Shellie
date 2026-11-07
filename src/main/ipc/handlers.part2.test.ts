@@ -18,6 +18,7 @@ import {
 } from '../../shared/terminalFailure';
 import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { GitClient } from '../services/GitClient';
+import { folderPaths } from '../paths';
 import { loadEffectiveConfig } from '../services/effectiveConfig';
 import { TaskStore } from '../services/TaskStore';
 import { TerminalManager } from '../services/TerminalManager';
@@ -1365,10 +1366,14 @@ describe('handlers: the brain at setup', () => {
   };
 
   /** A repo linked to a connection whose work item lives in project Acme Project. */
-  async function brainSetup() {
+  async function brainSetup(over: Partial<Services> = {}) {
     const { platform, calls } = recording();
     const b = await brainServices();
-    const hx = await harness(fakeCrypto(), { platform, brain: b.brain });
+    const hx = await harness(fakeCrypto(), {
+      platform,
+      brain: b.brain,
+      ...over,
+    });
     routeHealthyOrg(hx.server);
     const c = await hx.h['connections:save']({
       organizationUrl: `${hx.server.url}/unreliablewitness`,
@@ -1432,6 +1437,37 @@ describe('handlers: the brain at setup', () => {
     const at = flags.indexOf('--add-dir');
     expect(flags.slice(at, at + 2)).toEqual(['--add-dir', brain.path]);
     await hx.terminals.killAllForTask(t.id);
+  });
+
+  it('an OpenCode tab gets the brain folder in its env context, only while the option is on', async () => {
+    const ctxs: { kind: string; brainDir?: string; worktrees?: string[] }[] =
+      [];
+    const { b, c, create, hx } = await brainSetup({
+      terminalEnv: (def, ctx) => {
+        ctxs.push({ kind: def.kind, ...ctx });
+        return {};
+      },
+    });
+    const brain = await b.add({ connectionId: c.id, project: 'Acme Project' });
+    const on = await create({ openOpencode: true });
+    const forKind = (k: string) => ctxs.filter((x) => x.kind === k).at(-1);
+    expect(forKind('opencode')?.brainDir).toBe(brain.path);
+    // OpenCode matches edit rules by the path from the tab's folder (as given and real).
+    expect(forKind('opencode')?.worktrees).toEqual(
+      folderPaths(on.t.worktreePath),
+    );
+    expect(forKind('claude')?.brainDir).toBeUndefined();
+    await b.brain.store.patch(brain.id, {
+      options: { ...brain.options, addDirForClaude: false },
+    });
+    ctxs.length = 0;
+    const tab = hx.store.state.tasks[0].terminals.find(
+      (x) => x.kind === 'opencode',
+    )!;
+    await hx.h['terminals:restart'](tab.id);
+    expect(forKind('opencode')).toBeDefined();
+    expect(forKind('opencode')?.brainDir).toBeUndefined();
+    await hx.terminals.killAllForTask(on.t.id);
   });
 
   it('names the brain in the recorded summary when the work item project is known', async () => {

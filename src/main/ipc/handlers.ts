@@ -109,7 +109,7 @@ import {
 import { plural } from '../../shared/text';
 import { UPDATE_REPO } from '../autoUpdate';
 import { pathExists } from '../fsRetry';
-import { toRel, worktreeRoot } from '../paths';
+import { folderPaths, toRel, worktreeRoot } from '../paths';
 import type { BudgetService } from '../budget/BudgetService';
 import {
   CostServerError,
@@ -219,9 +219,14 @@ import {
   closeLine,
   contextSection,
 } from '../brain/context';
-import { sessionDigest } from '../brain/sessionDigest';
+import { sessionDigest, sessionTurns, type Turn } from '../brain/sessionDigest';
 import { addSource } from '../brain/sources';
-import type { Brain, BrainJobKind, RefreshResult } from '../../shared/brain';
+import {
+  isOpencodeModel,
+  type Brain,
+  type BrainJobKind,
+  type RefreshResult,
+} from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { withTimeout } from '../async';
 import { throttleByKey } from './throttleByKey';
@@ -245,10 +250,18 @@ export type Services = {
    * Extra env per terminal (main: the attention URL and token, OpenCode's plugin, and for agent tabs the task's
    * `shellie run` link). `runNames`: the names agents are told about, only when the repo has a stored secret. `denyPaths`: the untracked
    * secret files an agent tab must not read (relative to its folder, absolute for another repo's worktree).
+   * `brainDir`: the task's brain folder an OpenCode tab may read (when the brain gives tasks read access), with
+   * `worktrees`: the tab's folder as given and real, which OpenCode's edit rules are relative to.
    */
   terminalEnv?: (
     def: TerminalDef,
-    ctx: { taskId: string; runNames?: string[]; denyPaths?: string[] },
+    ctx: {
+      taskId: string;
+      runNames?: string[];
+      denyPaths?: string[];
+      brainDir?: string;
+      worktrees?: string[];
+    },
   ) => Record<string, string>;
   /** `shellie run` for agents (main); handlers give it the task's tabs, config and leak watch. Absent in most tests. */
   runs?: Pick<
@@ -344,6 +357,8 @@ export type Services = {
   rememberSensitive?: (values: string[]) => void;
   /** Whether Claude Code saved a session with this id (default: looks in ~/.claude/projects). */
   claudeSessionExists?: (sessionId: string) => boolean;
+  /** What was said in the top-level OpenCode sessions in `dirs` since `since` (epoch ms), oldest first (main); none when absent. */
+  opencodeSessionTexts?: (dirs: readonly string[], since: number) => Turn[][];
   /** Where Claude Code saved a session id's transcript (default: looks in ~/.claude/projects). */
   claudeSessionFile?: (sessionId: string) => string | null;
   /** Runs a command with stdin and a time limit (default: runWithInput); tests stub Claude Code's print mode. */
@@ -455,6 +470,8 @@ export async function pruneDanglingConnectionLinks(
 export function createHandlers(s: Services): Handlers {
   const tel = s.telemetry ?? NoopTelemetry;
   let agentsCache: AgentsDetected | null = null;
+  /** The `opencode models` list, shared while it runs; dropped again when it gave none, so the next call retries. */
+  let opencodeModelsRun: Promise<string[] | null> | null = null;
   const sessionExists = s.claudeSessionExists ?? claudeSessionExists;
   const hasSessionsIn = s.claudeHasSessionsIn ?? claudeHasSessionsIn;
   // Looked up on each call, not once: tests swap these services after the handlers are made.
@@ -809,6 +826,8 @@ export function createHandlers(s: Services): Handlers {
       running: () => false,
       resume: () => undefined,
       dropQueued: () => 0,
+      held: () => false,
+      release: () => undefined,
     },
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData: s.usageDir,
@@ -1145,6 +1164,14 @@ export function createHandlers(s: Services): Handlers {
       ? []
       : s.secrets.list({ repoId: terminalWorkspace(task, def).repoId });
 
+  /** The task's brain folder its agent tabs may read, when the brain gives tasks read access and the folder is there. */
+  const brainToRead = (task: Task): string | undefined => {
+    const b = taskBrain(task);
+    return b?.options.addDirForClaude && existsSync(b.path)
+      ? b.path
+      : undefined;
+  };
+
   /**
    * Claude Code starts with the task in its system prompt and waits for the user. Resuming continues the tab's own
    * session, starts it again when the user never sent a message (nothing was saved), or continues the latest
@@ -1167,9 +1194,8 @@ export function createHandlers(s: Services): Handlers {
         // A folder removed by hand would make Claude refuse to start.
         .filter((w) => w.worktreePath !== cwd && existsSync(w.worktreePath))
         .flatMap((w) => ['--add-dir', w.worktreePath]);
-      const b = taskBrain(task);
-      if (b?.options.addDirForClaude && existsSync(b.path))
-        dirs.push('--add-dir', b.path);
+      const b = brainToRead(task);
+      if (b) dirs.push('--add-dir', b);
       const themeFile =
         s.claudeThemeSettings?.(denyRulesFor(denyPaths)) ?? null;
       const theme = themeFile ? ['--settings', themeFile] : [];
@@ -1379,10 +1405,13 @@ export function createHandlers(s: Services): Handlers {
         secrets.runNames,
         secrets.denyPaths,
       );
+      // OpenCode's counterpart of Claude's --add-dir for the brain, given through its config.
+      const brainDir = def.kind === 'opencode' ? brainToRead(task) : undefined;
+      const cwd = terminalWorkspace(task, def).worktreePath;
       s.terminals.spawn({
         id: def.id,
         taskId: task.id,
-        cwd: terminalWorkspace(task, def).worktreePath,
+        cwd,
         command: cmd.command,
         args: cmd.args,
         // Agent tabs' output goes through leak watch before it is kept or shown.
@@ -1396,6 +1425,7 @@ export function createHandlers(s: Services): Handlers {
             taskId: task.id,
             ...(secrets.runNames ? { runNames: secrets.runNames } : {}),
             ...(secrets.denyPaths ? { denyPaths: secrets.denyPaths } : {}),
+            ...(brainDir ? { brainDir, worktrees: folderPaths(cwd) } : {}),
           }),
           ...cmd.env,
           ...extraEnv,
@@ -1833,6 +1863,27 @@ export function createHandlers(s: Services): Handlers {
       : undefined;
   };
 
+  /**
+   * What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an
+   * OpenCode tab, and none when OpenCode's database cannot be read (logged, so the Claude lessons still go in).
+   */
+  const opencodeSessionTurns = (task: Task) => {
+    const tabs = [...task.closedTerminals, ...task.terminals];
+    if (!s.opencodeSessionTexts || !tabs.some((t) => t.kind === 'opencode'))
+      return [];
+    const dirs = [
+      ...new Set(
+        taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
+      ),
+    ];
+    try {
+      return s.opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0);
+    } catch (e) {
+      console.error('[brain] OpenCode sessions not read for lessons', e);
+      return [];
+    }
+  };
+
   /** The transcripts of the task's Claude Code sessions (open and closed tabs), each as its lines; unsaved ones are skipped. */
   const claudeSessionLines = async (task: Task): Promise<string[][]> => {
     const ids = [...task.closedTerminals, ...task.terminals]
@@ -1883,12 +1934,12 @@ export function createHandlers(s: Services): Handlers {
     if (!b) return;
     const taskMd = path.join(task.worktreePath, '.shellie', 'task.md');
     if (options.captureLessons) {
-      // What the developer and Claude said in the task's sessions, as a source the /lessons skill reads.
+      // What the developer and the agents said in the task's sessions (Claude's first), as a source the /lessons skill reads.
       try {
-        const digest = sessionDigest(
-          task.workItem?.title ?? task.name,
-          await claudeSessionLines(task),
-        );
+        const digest = sessionDigest(task.workItem?.title ?? task.name, [
+          ...(await claudeSessionLines(task)).map(sessionTurns),
+          ...opencodeSessionTurns(task),
+        ]);
         if (digest)
           await addTempSource(b, `${task.slug}-session.md`, digest, 'lessons');
       } catch (e) {
@@ -3144,6 +3195,30 @@ export function createHandlers(s: Services): Handlers {
         opencode: result.agents.opencode.found,
       });
       return result;
+    },
+    'agents:opencodeModels': () => {
+      if (opencodeModelsRun) return opencodeModelsRun;
+      const run = (async () => {
+        try {
+          const { code, stdout } = await (s.runProbe ?? runProbe)(
+            s.platform.opencodeCommand(undefined, ['models']),
+            15_000,
+          );
+          if (code !== 0) return null;
+          const models = stdout
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(isOpencodeModel);
+          return models.length > 0 ? models : null;
+        } catch {
+          return null;
+        }
+      })();
+      opencodeModelsRun = run;
+      void run.then((models) => {
+        if (!models && opencodeModelsRun === run) opencodeModelsRun = null;
+      });
+      return run;
     },
     'repos:config': async (repoId) => {
       // A repo kept in Shellie only (no file) starts from the base branch it was added with when that still exists,

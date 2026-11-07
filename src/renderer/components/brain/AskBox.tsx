@@ -1,15 +1,18 @@
 import { useState, type FormEvent } from 'react';
+import { askPrompt, type BrainAgent } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
 
-/** A question for the brain's read-only `/ask` skill, sent to the brain terminal the caller then shows. */
+/** A question for the brain's read-only ask skill, sent to the brain terminal (on `agent`) the caller then shows. */
 export function AskBox({
   brainId,
+  agent,
   onTerminal,
   initiallyOpen = false,
 }: {
   brainId: string;
+  agent: BrainAgent;
   onTerminal: (def: TerminalDef) => void;
   initiallyOpen?: boolean;
 }) {
@@ -22,7 +25,12 @@ export function AskBox({
     if (!q) return;
     trackBrain('ask');
     // The read-only ask skill: index first, cited answer, nothing written.
-    const def = await openBrainTerminal(brainId, notify, null, `/ask ${q}`);
+    const def = await openBrainTerminal(
+      brainId,
+      notify,
+      null,
+      askPrompt(agent, q),
+    );
     if (!def) return;
     onTerminal(def);
     setQuestion('');

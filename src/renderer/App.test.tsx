@@ -183,6 +183,7 @@ describe('first page', () => {
     dismissedAt: null,
     agentsCheckedAt: null,
     tracker: null,
+    brain: null,
     migrated: false,
   };
   const withOnboarding = (onboarding: typeof fresh) => async () => {
@@ -240,7 +241,7 @@ describe('first page', () => {
     });
     render(<App />);
     const connect = await screen.findByRole('region', {
-      name: '2 · Connect your tracker',
+      name: '2 · Connect Azure DevOps',
     });
     expect(within(connect).getByLabelText('Done')).toBeInTheDocument();
     const agents = screen.getByRole('region', { name: '1 · Agents' });

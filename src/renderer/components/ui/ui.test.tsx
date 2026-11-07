@@ -9,9 +9,11 @@ import {
   Pivots,
   RingGauge,
   StateDot,
+  StepStrip,
   WorkItemTypeIcon,
 } from '.';
 import { installFakeApi } from '../../test-helpers/fakeApi';
+import type { OnboardingSteps } from '../../onboardingState';
 import { useWorkItemTypes } from '../../workItemTypes';
 
 const projectTypes = () =>
@@ -288,5 +290,32 @@ describe('HelpTip', () => {
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
     await userEvent.tab();
     expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+});
+
+describe('StepStrip', () => {
+  const steps = (over: Partial<OnboardingSteps>): OnboardingSteps => ({
+    agents: 'todo',
+    connect: 'todo',
+    repository: 'todo',
+    brain: 'todo',
+    brainNeedsProject: false,
+    current: null,
+    ...over,
+  });
+  const dots = () =>
+    screen.getAllByRole('listitem').map((li) => li.textContent?.[0]);
+
+  it('ticks only the steps that are done, not the ones before the current', () => {
+    render(<StepStrip current="brain" steps={steps({ agents: 'done' })} />);
+    expect(dots()).toEqual(['✓', '2', '3', '4']);
+    expect(screen.getByText('Brain').closest('li')).toHaveAttribute(
+      'aria-current',
+      'step',
+    );
+  });
+  it('keeps the current step numbered even when it is done', () => {
+    render(<StepStrip current="connect" steps={steps({ connect: 'done' })} />);
+    expect(dots()).toEqual(['1', '2', '3', '4']);
   });
 });

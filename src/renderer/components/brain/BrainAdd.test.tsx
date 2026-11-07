@@ -1,4 +1,5 @@
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -229,7 +230,7 @@ describe('BrainAdd', () => {
           path: 'sources/2026-11-04-plan.md',
           images: 3,
           dropped: 0,
-          warnings: ['1 picture in formats Claude cannot view (emf)'],
+          warnings: ['1 picture in formats the agent cannot view (emf)'],
           contents: '12 slides · 3 pictures: Kick-off',
         },
         {
@@ -254,7 +255,7 @@ describe('BrainAdd', () => {
       'Added 2026-11-04-plan.md · 12 slides · 3 pictures: Kick-off',
     );
     expect(added).toHaveTextContent(
-      '2026-11-04-plan.md: 1 picture in formats Claude cannot view (emf)',
+      '2026-11-04-plan.md: 1 picture in formats the agent cannot view (emf)',
     );
     expect(added).toHaveTextContent('Added 2026-11-04-sow.md');
     expect(added).not.toHaveTextContent('sow.md ·');
@@ -427,6 +428,23 @@ describe('BrainAdd', () => {
       expect(a.calls).toContainEqual({
         channel: 'brain:terminal',
         args: ['b1', 's-1'],
+      }),
+    );
+  });
+
+  it('Continue in terminal opens a job that ran on the other agent on that agent', async () => {
+    const a = installFakeApi({ 'brain:terminal': () => def });
+    const brain = brainView({
+      jobs: [brainJob({ id: 'j1', sessionId: 'ses_1', agent: 'opencode' })],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Continue in terminal' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:terminal',
+        args: ['b1', 'ses_1', undefined, 'opencode'],
       }),
     );
   });
@@ -869,6 +887,22 @@ describe('BrainAdd right column', () => {
     );
   });
 
+  it('Health says when the queue waits for Update skills', () => {
+    installFakeApi({});
+    const brain = brainView();
+    render(<BrainHealth brain={brain} />);
+    expect(screen.queryByText('held')).not.toBeInTheDocument();
+    cleanup();
+    brain.health = {
+      ...brain.health!,
+      queueHeld: 'Update skills to run on OpenCode',
+    };
+    render(<BrainHealth brain={brain} />);
+    expect(screen.getByRole('region', { name: 'Health' })).toHaveTextContent(
+      'held Update skills to run on OpenCode: Settings › Project › Brains › Update skills.',
+    );
+  });
+
   it('Health: the Pictures fact, and a picture finding offers Re-evaluate or Open source', async () => {
     const a = installFakeApi({
       'brain:run': (brainId, kind, src) =>
@@ -891,13 +925,15 @@ describe('BrainAdd right column', () => {
         {
           kind: 'picture',
           page: 'sources/2026-11-04-acme-kickoff.md',
-          detail: '1 picture not interpreted · 2 never reached Claude',
+          detail: '1 picture not interpreted · 2 never reached the agent',
+          code: 'pictures-dropped',
           at: '2026-11-07T09:00:00.000Z',
         },
         {
           kind: 'picture',
           page: 'sources/2026-10-28-network.md',
-          detail: '4 never reached Claude',
+          detail: '4 never reached the agent',
+          code: 'pictures-dropped',
           at: '2026-11-07T09:00:00.000Z',
         },
       ],
@@ -906,7 +942,7 @@ describe('BrainAdd right column', () => {
     render(<BrainAdd brain={brain} onOpenPage={onOpenPage} />);
     const health = screen.getByRole('region', { name: 'Health' });
     expect(health).toHaveTextContent(
-      'Pictures211 of 214 interpreted · 1 not interpreted · 2 never reached Claude · 1 accepted',
+      'Pictures211 of 214 interpreted · 1 not interpreted · 2 never reached the agent · 1 accepted',
     );
     // A source with both gaps offers both; no picture finding goes to the terminal.
     expect(
@@ -1020,7 +1056,8 @@ describe('BrainAdd right column', () => {
         {
           kind: 'picture',
           page: 'sources/2026-10-28-network.md',
-          detail: '4 never reached Claude',
+          detail: '4 never reached the agent',
+          code: 'pictures-dropped',
           at: '2026-11-07T09:00:00.000Z',
         },
       ],
@@ -1030,6 +1067,36 @@ describe('BrainAdd right column', () => {
       .getByText('sources/2026-10-28-network.md')
       .closest('li') as HTMLElement;
     expect(within(finding).queryAllByRole('button')).toEqual([]);
+  });
+
+  it('Health: Open source follows the finding code, not its words', () => {
+    installFakeApi({});
+    const brain = withOptions({});
+    brain.health = {
+      ...brain.health!,
+      findings: [
+        {
+          kind: 'picture',
+          page: 'sources/a.md',
+          detail: 'worded otherwise',
+          code: 'pictures-dropped',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+        {
+          kind: 'picture',
+          page: 'sources/b.md',
+          detail: '4 never reached the agent',
+          at: '2026-11-07T09:00:00.000Z',
+        },
+      ],
+    };
+    render(<BrainHealth brain={brain} onOpen={() => undefined} />);
+    expect(
+      screen.getByRole('button', { name: 'Open source sources/a.md' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Open source sources/b.md' }),
+    ).not.toBeInTheDocument();
   });
 
   it('Health: no Pictures fact without pictures; only the parts that are not zero', () => {
