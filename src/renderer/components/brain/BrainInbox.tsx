@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import {
   isBookJob,
   type BrainJob,
-  BrainPageRow,
-  BrainSourceRow,
-  BrainView,
-  SourceType,
+  type BrainPageRow,
+  type BrainSourceRow,
+  type BrainView,
+  type SourceType,
 } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
