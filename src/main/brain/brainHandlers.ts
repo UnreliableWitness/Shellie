@@ -636,12 +636,17 @@ export function createBrainHandlers(
       if (kind === 'pictures' && !picturesReady(b))
         throw new Error('Update skills to re-evaluate pictures');
       // A Sync from Run now also arranges a missing book, as its own job: plain /sync leaves the book alone.
-      const arrange =
+      let arrange =
         kind === 'sync' &&
         bookReady(b) &&
-        !d.runner.jobs(id).some((j) => isBookJob(j) && PENDING.has(j.status)) &&
         (await readPages(b.path).catch(() => [])).length > 0 &&
         !(await readBook(b.path));
+      // Judged last, in the turn that queues: a book job queued while the reads were in flight is seen.
+      if (
+        arrange &&
+        d.runner.jobs(id).some((j) => isBookJob(j) && PENDING.has(j.status))
+      )
+        arrange = false;
       // Queued after the sync, which would drop a book job waiting before it.
       const job = d.runner.enqueue(id, kind, source ?? null);
       if (arrange) d.runner.enqueue(id, 'sync', null, { background: true });

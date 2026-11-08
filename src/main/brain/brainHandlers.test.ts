@@ -460,6 +460,25 @@ describe('brain handlers', () => {
       ]);
     });
 
+    it('queues no book job when one appears while the reads are in flight', async () => {
+      const v = await setup();
+      const read = fs.readFile.bind(fs);
+      // A book job is queued (by the scheduler, say) while the page reads are in flight.
+      const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (
+        ...a: unknown[]
+      ) => {
+        const r = await (read as (...a: unknown[]) => unknown)(...a);
+        pending = [{ ...job(v.id, 'sync', null), background: true }];
+        return r;
+      }) as never);
+      try {
+        await h['brain:run'](v.id, 'sync');
+      } finally {
+        spy.mockRestore();
+      }
+      expect(enqueued).toEqual([[v.id, 'sync', null]]);
+    });
+
     it('queues no book job with a valid book, with one pending, for an empty wiki, on old skills, or for other kinds', async () => {
       const withBook = await setup({ book: true });
       await h['brain:run'](withBook.id, 'sync');

@@ -24,7 +24,7 @@ The book is a file only skills write, read through a tolerant parser against the
 
 ## Verified
 
-`npm test` (338 files, 4134 passing), `npm run typecheck`, `npm run lint` green.
+`npm test` (340 files, 4147 passing, 31 skipped), `npm run typecheck`, `npm run lint` green.
 
 In the running app (`SHELLIE_USER_DATA=<scratch> npm start -- -- --remote-debugging-port=<port>`, raw CDP over WebSocket; note the double `--` needed by Electron Forge's start), on a fresh data folder, with two scaffolded sample brains on skills v8, one with a book (22 pages: 15 in chapters, one not placed, 6 at the back; 6 chapters, one of them empty; three real PNGs, one cited from three pages; four pages with the heading "Open questions"), one without. No keychain prompt came up, since no connection was saved. Viewport sizes were set with the DevTools device metrics override (`Browser.setWindowBounds` hangs on this Electron), and the theme with emulated `prefers-color-scheme`. Screenshotted and looked at:
 

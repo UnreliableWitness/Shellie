@@ -365,6 +365,26 @@ describe('BrainChapter', () => {
     expect(scrolled).not.toHaveBeenCalled();
   });
 
+  it('keeps the sections, and does not scroll, when the chapters are reordered around the open one', async () => {
+    fake();
+    const view = render(chapter({ path: 'wiki/two.md' }));
+    await screen.findByText('Partners.');
+    await waitFor(() => expect(scrolled).toHaveBeenCalled());
+    scrolled.mockReset();
+    const reordered: BrainBook = {
+      chapters: [
+        { title: 'New', summary: '', intro: '', pages: ['wiki/n.md'] },
+        ...book.chapters,
+      ],
+    };
+    view.rerender(chapter({ book: reordered, index: 3, path: 'wiki/two.md' }));
+    expect(screen.queryByText('Loading')).toBeNull();
+    expect(screen.getByText('Partners.')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Partners.')).toBeTruthy());
+    expect(screen.queryByText('Loading')).toBeNull();
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+
   it('refetches on a brain change without scrolling', async () => {
     const { emit, calls } = fake();
     render(chapter({ path: 'wiki/two.md' }));

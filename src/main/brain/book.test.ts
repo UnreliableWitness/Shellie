@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainPageType } from '../../shared/brain';
 import { parseBook, readBook } from './book';
 
@@ -186,11 +186,21 @@ describe('readBook', () => {
       path.join(dir, 'brain', 'book.json'),
       book([{ title: 'Why', pages: ['wiki/subject-mission.md'] }]),
     );
-    await fs.chmod(page, 0o000);
+    // A read that fails, portably: chmod does not stop a read on Windows.
+    const read = fs.readFile.bind(fs);
+    const spy = vi
+      .spyOn(fs, 'readFile')
+      .mockImplementation(((
+        file: Parameters<typeof fs.readFile>[0],
+        ...rest: unknown[]
+      ) =>
+        String(file).endsWith('subject-mission.md')
+          ? Promise.reject(new Error('EACCES'))
+          : (read as (...a: unknown[]) => unknown)(file, ...rest)) as never);
     try {
       expect(await readBook(dir)).toBeNull();
     } finally {
-      await fs.chmod(page, 0o644);
+      spy.mockRestore();
     }
   });
 });

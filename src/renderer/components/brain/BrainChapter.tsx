@@ -65,18 +65,22 @@ export function BrainChapter({
   const root = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const [got, setGot] = useState<{
-    chapter: string;
+    brainId: string;
+    index: number;
+    key: string;
     pages: string[];
     reads: Read[];
   } | null>(null);
 
   // Only the answer for the chapter shown lands: a slow read of the previous one must not show under this title.
   const key = `${brainId}\n${pages.join('\n')}`;
-  // The data carries its chapter and the pages it was read for: the first render of another chapter is loading, not
-  // the old texts, but the same chapter with another page list (a capture added one) keeps its sections until the
-  // new reads land.
-  const chapterKey = `${brainId}\n${index}`;
-  const live = got?.chapter === chapterKey ? got : null;
+  // The data carries its brain, index and page list: the first render of another chapter is loading, not the old
+  // texts. The same chapter with another page list (a capture added one) keeps its sections until the new reads
+  // land, and the same pages at another index (a Digest reordered the chapters) are not another chapter.
+  const live =
+    got?.brainId === brainId && (got.index === index || got.key === key)
+      ? got
+      : null;
   const reads = live?.reads ?? null;
   const shownPages = live?.pages ?? pages;
   const target = Math.max(0, shownPages.indexOf(path));
@@ -96,11 +100,12 @@ export function BrainChapter({
           ),
       ),
     ).then((r) => {
-      if (shown.current === k) setGot({ chapter: chapterKey, pages, reads: r });
+      if (shown.current === k)
+        setGot({ brainId, index, key: k, pages, reads: r });
     });
     // `pages` is in `key`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brainId, key]);
+  }, [brainId, index, key]);
   useEffect(() => {
     load();
   }, [load]);
@@ -117,7 +122,7 @@ export function BrainChapter({
     if (reads === null) return;
     // The page opened is not among the sections shown yet (a capture just added it): wait for the reads that have it.
     if (!shownPages.includes(path) && pages.includes(path)) return;
-    const at = `${brainId}:${index}:${opened ?? 0}:${path}#${anchor ?? ''}`;
+    const at = `${brainId}:${opened ?? 0}:${path}#${anchor ?? ''}`;
     if (scrolledFor.current === at) return;
     scrolledFor.current = at;
     setReading(target);
@@ -139,7 +144,6 @@ export function BrainChapter({
   }, [
     reads,
     brainId,
-    index,
     path,
     anchor,
     opened,
@@ -165,7 +169,7 @@ export function BrainChapter({
     };
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
-  }, [loaded, chapterKey]);
+  }, [loaded, key]);
   const readingPath = shownPages[reading];
   useEffect(() => {
     if (readingPath) latest.current.onReading?.(readingPath);
