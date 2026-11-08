@@ -32,6 +32,7 @@ export function BrainChapter({
   index,
   path,
   anchor,
+  opened,
   rows,
   canBack,
   canForward,
@@ -47,6 +48,8 @@ export function BrainChapter({
   /** The page to scroll to: the chapter's first page opens at the chapter's top. */
   path: string;
   anchor?: string;
+  /** Counts the opens (useBrainNav): opening the page already shown scrolls to it again. */
+  opened?: number;
   rows: BrainPageRow[];
   canBack: boolean;
   canForward: boolean;
@@ -61,15 +64,24 @@ export function BrainChapter({
   const { asset, openFile, onBodyClick, lightbox } = usePageMedia(brainId);
   const root = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
-  const [got, setGot] = useState<{ key: string; reads: Read[] } | null>(null);
-  const target = Math.max(0, pages.indexOf(path));
-  const [readingRaw, setReading] = useState(target);
+  const [got, setGot] = useState<{
+    chapter: string;
+    pages: string[];
+    reads: Read[];
+  } | null>(null);
 
   // Only the answer for the chapter shown lands: a slow read of the previous one must not show under this title.
   const key = `${brainId}\n${pages.join('\n')}`;
-  // The data carries its chapter's key: the first render of another chapter is loading, not the old texts.
-  const reads = got?.key === key ? got.reads : null;
-  const reading = reads ? Math.min(readingRaw, pages.length - 1) : target;
+  // The data carries its chapter and the pages it was read for: the first render of another chapter is loading, not
+  // the old texts, but the same chapter with another page list (a capture added one) keeps its sections until the
+  // new reads land.
+  const chapterKey = `${brainId}\n${index}`;
+  const live = got?.chapter === chapterKey ? got : null;
+  const reads = live?.reads ?? null;
+  const shownPages = live?.pages ?? pages;
+  const target = Math.max(0, shownPages.indexOf(path));
+  const [readingRaw, setReading] = useState(target);
+  const reading = reads ? Math.min(readingRaw, shownPages.length - 1) : target;
   const shown = useRef(key);
   shown.current = key;
   const load = useCallback(() => {
@@ -84,7 +96,7 @@ export function BrainChapter({
           ),
       ),
     ).then((r) => {
-      if (shown.current === k) setGot({ key: k, reads: r });
+      if (shown.current === k) setGot({ chapter: chapterKey, pages, reads: r });
     });
     // `pages` is in `key`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,7 +106,7 @@ export function BrainChapter({
   }, [load]);
   useBrainChanged(brainId, load);
 
-  // Once per navigation (path and anchor), not on every refetch: a reader halfway down stays there.
+  // Once per navigation (each open, with its path and anchor), not on every refetch: a reader halfway down stays there.
   const scrolledFor = useRef<string | null>(null);
   const holding = useRef<(() => void) | null>(null);
   const release = useCallback(() => {
@@ -103,12 +115,14 @@ export function BrainChapter({
   }, []);
   useEffect(() => {
     if (reads === null) return;
-    const at = `${brainId}:${index}:${path}#${anchor ?? ''}`;
+    // The page opened is not among the sections shown yet (a capture just added it): wait for the reads that have it.
+    if (!shownPages.includes(path) && pages.includes(path)) return;
+    const at = `${brainId}:${index}:${opened ?? 0}:${path}#${anchor ?? ''}`;
     if (scrolledFor.current === at) return;
     scrolledFor.current = at;
     setReading(target);
     release();
-    const n = pages.indexOf(path);
+    const n = shownPages.indexOf(path);
     if (n <= 0 && !anchor) {
       // The first page, or none: the chapter's title and introduction come into view with it.
       bar.current?.scrollIntoView?.({ block: 'start' });
@@ -122,7 +136,18 @@ export function BrainChapter({
     el?.scrollIntoView?.({ block: 'start' });
     // The pictures above it load after the text: the section opened stays at the top until the reader moves.
     if (el && root.current) holding.current = holdInView(el, root.current);
-  }, [reads, brainId, index, path, anchor, pages, target, release]);
+  }, [
+    reads,
+    brainId,
+    index,
+    path,
+    anchor,
+    opened,
+    pages,
+    shownPages,
+    target,
+    release,
+  ]);
   useEffect(() => release, [release]);
 
   // The section being read follows the scroll of the reading column.
@@ -140,8 +165,8 @@ export function BrainChapter({
     };
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
-  }, [loaded, key]);
-  const readingPath = pages[reading];
+  }, [loaded, chapterKey]);
+  const readingPath = shownPages[reading];
   useEffect(() => {
     if (readingPath) latest.current.onReading?.(readingPath);
   }, [readingPath]);
@@ -153,7 +178,7 @@ export function BrainChapter({
     root.current
       ?.querySelector(`[id="${CSS.escape(id)}"]`)
       ?.scrollIntoView?.({ block: 'start' });
-  const outline: RailHeading[] = pages.map((p, n) => ({
+  const outline: RailHeading[] = shownPages.map((p, n) => ({
     id: sectionId(n),
     text: titleOf(p),
     level: 2,
@@ -213,7 +238,7 @@ export function BrainChapter({
       <div className="brain-page-main">
         {reads === null && <p className="muted small">Loading</p>}
         {reads !== null &&
-          pages.map((p, n) => {
+          shownPages.map((p, n) => {
             const row = rowOf(p);
             const read = reads[n];
             return (
@@ -241,7 +266,7 @@ export function BrainChapter({
                       onOpenDoc={onOpen}
                       onOpenFile={openFile}
                       idPrefix={`${sectionId(n)}-`}
-                      figures={{ shown: shownBefore(rows, pages, n) }}
+                      figures={{ shown: shownBefore(rows, shownPages, n) }}
                     />
                   </div>
                 )}

@@ -190,6 +190,7 @@ export function BrainRead({
             index={openChapter}
             path={nav.current.path}
             anchor={nav.current.anchor}
+            opened={nav.opened}
             rows={rows}
             canBack={nav.canBack}
             canForward={nav.canForward}

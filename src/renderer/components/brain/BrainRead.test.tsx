@@ -414,6 +414,27 @@ describe('BrainRead', () => {
         ...over,
       });
 
+    it("shows neither today's tree nor its landing while the book is still on its way", async () => {
+      let release: (b: BrainBook) => void = () => undefined;
+      const late = new Promise<BrainBook>((res) => (release = res));
+      const a = withBook({ 'brain:book': () => late });
+      render(<BrainRead brainId="b1" brainName="Acme brain" since={null} />);
+      await waitFor(() =>
+        expect(a.calls.some((c) => c.channel === 'brain:pages')).toBe(true),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('region', { name: 'Pinned' })).toBeNull();
+      expect(
+        within(tree()).queryByRole('button', { name: 'Hosting' }),
+      ).toBeNull();
+      release(book);
+      expect(
+        await screen.findByRole('heading', { name: 'Acme brain' }),
+      ).toBeInTheDocument();
+    });
+
     it('lands on the front page, with the tree as the book, the back of the book and not placed yet', async () => {
       withBook();
       render(<BrainRead brainId="b1" brainName="Acme brain" since={null} />);

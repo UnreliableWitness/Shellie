@@ -14,16 +14,22 @@ export function useBrainPages(brainId: string): BrainPages {
   const [sources, setSources] = useState<BrainSourceRow[]>([]);
   const [log, setLog] = useState('');
   const [book, setBook] = useState<BrainBook | null>(null);
-  /** Whether `brain:pages` has answered once, so an empty list means an empty brain. */
+  /** Whether `brain:pages` and `brain:book` have answered once, so an empty list means an empty brain. */
   const [loaded, setLoaded] = useState(false);
   const load = useCallback(() => {
-    api()
-      .invoke('brain:pages', brainId)
-      .then(setRows, () => undefined)
-      .finally(() => setLoaded(true));
-    api()
-      .invoke('brain:book', brainId)
-      .then(setBook, () => setBook(null));
+    // Set together: pages known before the book would flash today's tree and landing for a brain that has a book.
+    void Promise.all([
+      api()
+        .invoke('brain:pages', brainId)
+        .catch(() => undefined),
+      api()
+        .invoke('brain:book', brainId)
+        .catch(() => null),
+    ]).then(([r, b]) => {
+      if (r) setRows(r);
+      setBook(b);
+      setLoaded(true);
+    });
     api()
       .invoke('brain:sources', brainId)
       .then(setSources, () => undefined);
@@ -46,7 +52,7 @@ export type BrainPages = {
   log: string;
   /** The brain's book (its chapters), or null without one or when it cannot be read. */
   book: BrainBook | null;
-  /** Whether `brain:pages` has answered once, so an empty list means an empty brain. */
+  /** Whether `brain:pages` and `brain:book` have answered once, so an empty list means an empty brain. */
   loaded: boolean;
 };
 

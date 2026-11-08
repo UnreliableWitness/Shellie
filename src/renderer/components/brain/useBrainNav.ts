@@ -11,14 +11,20 @@ export function useBrainNav() {
   const [stack, setStack] = useState<NavEntry[]>([]);
   const [at, setAt] = useState(-1);
   const current: NavEntry | null = at >= 0 ? stack[at] : null;
+  // Bumped by every open, so a reader opening the page already shown is told to scroll to it again.
+  const [opened, setOpened] = useState(0);
 
   const open = useCallback(
     (path: string, anchor?: string) => {
       trackBrain('open-page');
+      setOpened((n) => n + 1);
+      // The page already shown is not a new place: Back would otherwise appear to do nothing once.
+      const here = at >= 0 ? stack[at] : null;
+      if (here && here.path === path && here.anchor === anchor) return;
       setStack((s) => [...s.slice(0, at + 1), { path, anchor }]);
       setAt(at + 1);
     },
-    [at],
+    [at, stack],
   );
   /** Back to the previous page, or to the lists from the first one. */
   const back = useCallback(() => {
@@ -35,6 +41,8 @@ export function useBrainNav() {
 
   return {
     current,
+    /** Counts the opens, the identical ones too. */
+    opened,
     open,
     back,
     forward,

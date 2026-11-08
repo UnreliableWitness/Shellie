@@ -195,6 +195,21 @@ describe('BrainChapter', () => {
     );
   });
 
+  it('scrolls again when the page already shown is opened again', async () => {
+    fake();
+    const view = render(chapter({ path: 'wiki/two.md', opened: 1 }));
+    await screen.findByText('Partners.');
+    await waitFor(() => expect(scrolled).toHaveBeenCalled());
+    scrolled.mockReset();
+    view.rerender(chapter({ path: 'wiki/two.md', opened: 1 }));
+    expect(scrolled).not.toHaveBeenCalled();
+    view.rerender(chapter({ path: 'wiki/two.md', opened: 2 }));
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect((scrolled.mock.calls.at(-1)![0] as HTMLElement).dataset.path).toBe(
+      'wiki/two.md',
+    );
+  });
+
   it('opens a link to another page of the chapter through onOpen', async () => {
     fake();
     const onOpen = vi.fn();
@@ -325,6 +340,29 @@ describe('BrainChapter', () => {
     expect(screen.queryByText('Partners.')).toBeNull();
     expect(await screen.findByText('Orders move.')).toBeTruthy();
     expect(screen.getByText('Order flow', { selector: 'h2' })).toBeTruthy();
+  });
+
+  it('keeps the sections on screen, and does not scroll, when a page is added to the chapter', async () => {
+    fake();
+    const view = render(chapter({ path: 'wiki/two.md' }));
+    await screen.findByText('Partners.');
+    await waitFor(() => expect(scrolled).toHaveBeenCalled());
+    scrolled.mockReset();
+    const added: BrainBook = {
+      chapters: book.chapters.map((c, i) =>
+        i === 2 ? { ...c, pages: [...c.pages, 'wiki/four.md'] } : c,
+      ),
+    };
+    view.rerender(chapter({ book: added, path: 'wiki/two.md' }));
+    expect(screen.queryByText('Loading')).toBeNull();
+    expect(screen.getByText('Orders move.')).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        document.querySelector('section[data-path="wiki/four.md"]'),
+      ).not.toBeNull(),
+    );
+    expect(screen.queryByText('Loading')).toBeNull();
+    expect(scrolled).not.toHaveBeenCalled();
   });
 
   it('refetches on a brain change without scrolling', async () => {
