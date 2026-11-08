@@ -1155,6 +1155,27 @@ describe('BrainAdd right column', () => {
     expect(card).not.toHaveTextContent('Picture check');
   });
 
+  it('the first arrangement of the book is listed for a brain on skills v8 only', () => {
+    installFakeApi({});
+    const { rerender } = render(
+      <BrainAdd
+        brain={{ ...withOptions({}), templatesVersion: 8 }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const card = screen.getByRole('region', { name: 'What runs by itself' });
+    expect(card).toHaveTextContent(
+      'Arrange the brain as a bookautoonce, in the background, when a brain has pages and no book yet',
+    );
+    rerender(
+      <BrainAdd
+        brain={{ ...withOptions({}), templatesVersion: 7 }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    expect(card).not.toHaveTextContent('Arrange the brain as a book');
+  });
+
   it('Run now: Open terminal hands the terminal to the caller', async () => {
     installFakeApi({ 'brain:terminal': () => def });
     const onTerminal = vi.fn();

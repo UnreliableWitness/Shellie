@@ -112,6 +112,9 @@ export const BOOK_TEMPLATES = 8;
 /** Whether the brain's skills can write the book (templates v8 or later). */
 export const bookReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= BOOK_TEMPLATES;
+/** The job that makes a brain's first book: a sync in the background lane, run with the `book` argument. */
+export const isBookJob = (j: Pick<BrainJob, 'kind' | 'background'>) =>
+  j.kind === 'sync' && j.background;
 
 /** OpenCode session titles of the brain's headless jobs start with this, so the terminal never takes one for its own. */
 export const BRAIN_JOB_TITLE = 'Shellie brain job';

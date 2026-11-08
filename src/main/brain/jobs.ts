@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BRAIN_JOB_TITLE,
   brainTaskId,
+  isBookJob,
   SOURCE_JOB_KINDS,
   type BrainAgent,
   type BrainJob,
@@ -156,7 +157,11 @@ type Lane = {
 };
 
 const prompt = (j: BrainJob) =>
-  j.source ? `/${j.kind} ${j.source}` : `/${j.kind}`;
+  isBookJob(j)
+    ? '/sync book'
+    : j.source
+      ? `/${j.kind} ${j.source}`
+      : `/${j.kind}`;
 
 /** Runs the brain's skills headless, one job at a time per brain (brains in parallel). */
 export class BrainJobRunner {
@@ -264,6 +269,17 @@ export class BrainJobRunner {
           j.background &&
           j.kind === 'pictures' &&
           j.source === job.source &&
+          (j.status === 'queued' || j.status === 'paused') &&
+          j !== l.current,
+      );
+      l.queue = l.queue.filter((j) => !gone.includes(j));
+      l.list = l.list.filter((j) => !gone.includes(j));
+    }
+    // Likewise a sync by hand makes the first arrangement itself when there is no book: one run, not two.
+    if (kind === 'sync' && !job.background) {
+      const gone = l.queue.filter(
+        (j) =>
+          isBookJob(j) &&
           (j.status === 'queued' || j.status === 'paused') &&
           j !== l.current,
       );

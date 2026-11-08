@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OPENCODE_TEMPLATES } from '../../shared/brain';
+import { BOOK_TEMPLATES, OPENCODE_TEMPLATES } from '../../shared/brain';
 import {
   TEMPLATES_VERSION,
   brainOpencodePermission,
@@ -19,10 +19,11 @@ const KINDS = [
   'pictures',
 ];
 
-describe('templates v7', () => {
-  it('is the version OpenCode needs', () => {
-    expect(TEMPLATES_VERSION).toBe(7);
-    expect(TEMPLATES_VERSION).toBe(OPENCODE_TEMPLATES);
+describe('templates v8', () => {
+  it('is the version the book needs, and has what OpenCode needs', () => {
+    expect(TEMPLATES_VERSION).toBe(8);
+    expect(TEMPLATES_VERSION).toBe(BOOK_TEMPLATES);
+    expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(OPENCODE_TEMPLATES);
   });
 
   it('shields sources and the dropped record, and only allows read-only git', () => {

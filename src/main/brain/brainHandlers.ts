@@ -157,6 +157,7 @@ const JOB_OUTPUT = [
   'log.md',
   'brain/state.json',
   'brain/pictures-skipped.json',
+  'brain/book.json',
 ];
 
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */

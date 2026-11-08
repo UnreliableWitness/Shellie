@@ -1,4 +1,5 @@
-import { picturesReady, type Brain } from '../../shared/brain';
+import { bookReady, picturesReady, type Brain } from '../../shared/brain';
+import { MAX_BOOK_ATTEMPTS } from './bookPass';
 
 const DAY_MS = 24 * 3600 * 1000;
 const TICK_MS = 15 * 60 * 1000;
@@ -17,6 +18,8 @@ function lastMonday(now: Date): Date {
  * and only when nothing runs for it). A brain on templates v6 whose one-time picture pass has not finished gets it started
  * or resumed when none of its pass jobs is pending (after a restart the queue is empty, so it picks up again), from the
  * second check on.
+ * A brain on templates v8 with pages and no book gets its first arrangement queued the same way, until two attempts
+ * have failed.
  * Checks at once and then every tick (default 15 min); returns the stop function.
  */
 export function startBrainScheduler(d: {
@@ -28,6 +31,10 @@ export function startBrainScheduler(d: {
   picturePass: (id: string) => Promise<unknown>;
   /** Whether a background pictures job of the brain is queued, running or paused. */
   passRunning: (id: string) => boolean;
+  /** Queues the brain's first book arrangement when it is due; settles once queued or skipped. */
+  bookPass: (id: string) => Promise<unknown>;
+  /** Whether the brain's first arrangement is queued, running or paused, or its attempt not saved yet. */
+  bookPassRunning: (id: string) => boolean;
   now?: () => Date;
   tick?: number;
 }): () => void {
@@ -38,7 +45,8 @@ export function startBrainScheduler(d: {
   // brain id -> the Monday its digest was enqueued, so a slow lastDigestAt write never enqueues it twice.
   const digested = new Map<string, number>();
   const passing = new Set<string>();
-  // The picture pass converts originals again: it waits one tick, so it never weighs on the launch.
+  const bookPassing = new Set<string>();
+  // The picture pass converts originals again, and both passes read every page: they wait one tick, so they never weigh on the launch.
   let firstCheck = true;
 
   const check = () => {
@@ -97,6 +105,19 @@ export function startBrainScheduler(d: {
           .picturePass(b.id)
           .catch((e) => console.error('[brain] picture pass failed', e))
           .finally(() => passing.delete(b.id));
+      }
+      if (
+        !launch &&
+        bookReady(b) &&
+        (b.bookPass?.attempts ?? 0) < MAX_BOOK_ATTEMPTS &&
+        !bookPassing.has(b.id) &&
+        !d.bookPassRunning(b.id)
+      ) {
+        bookPassing.add(b.id);
+        void d
+          .bookPass(b.id)
+          .catch((e) => console.error('[brain] book pass failed', e))
+          .finally(() => bookPassing.delete(b.id));
       }
     }
   };

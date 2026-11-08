@@ -714,6 +714,25 @@ describe('brain handlers', () => {
     ).toBe(skipped);
   });
 
+  it('commits the book a job wrote, with the pages it added', async () => {
+    const v = await h['brain:create'](NEW);
+    await fs.writeFile(
+      path.join(v.path, 'wiki', 'subject-mission.md'),
+      '# M\n',
+    );
+    await fs.writeFile(
+      path.join(v.path, 'brain', 'book.json'),
+      '{"chapters":[]}\n',
+    );
+    await commitJobOutput(git, v.path, 'Brain: sync');
+    expect(
+      (await git.run(v.path, ['show', '--name-only', '--format=', 'HEAD']))
+        .trim()
+        .split('\n')
+        .sort(),
+    ).toEqual(['brain/book.json', 'index.md', 'wiki/subject-mission.md']);
+  });
+
   it('job output commits leave other files alone', async () => {
     const v = await h['brain:create'](NEW);
     await fs.writeFile(path.join(v.path, 'notes.txt'), 'mine\n');

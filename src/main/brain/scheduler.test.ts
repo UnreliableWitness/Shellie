@@ -68,6 +68,8 @@ describe('startBrainScheduler', () => {
       running: (id) => id === 'busy',
       picturePass: async () => undefined,
       passRunning: () => false,
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -123,6 +125,8 @@ describe('startBrainScheduler', () => {
       running: () => false,
       picturePass: async () => undefined,
       passRunning: () => false,
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -145,6 +149,8 @@ describe('startBrainScheduler', () => {
       running: () => false,
       picturePass: async () => undefined,
       passRunning: () => false,
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -171,6 +177,8 @@ describe('startBrainScheduler', () => {
       running: () => false,
       picturePass: async () => undefined,
       passRunning: () => false,
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
       now: () => now,
       tick: 1000,
     });
@@ -218,6 +226,8 @@ describe('archived brains', () => {
       running: () => false,
       picturePass: async () => undefined,
       passRunning: () => false,
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
     });
     await vi.advanceTimersByTimeAsync(10);
     stop();
@@ -259,6 +269,8 @@ describe('the one-time picture pass', () => {
       running: () => false,
       picturePass,
       passRunning: (id) => id === 'pending',
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
       tick: 1000,
     });
     // Not on the launch check: from the next tick on.
@@ -282,6 +294,8 @@ describe('the one-time picture pass', () => {
       running: () => false,
       picturePass,
       passRunning: () => false,
+      bookPass: async () => undefined,
+      bookPassRunning: () => false,
       tick: 1000,
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -291,6 +305,62 @@ describe('the one-time picture pass', () => {
     fail(new Error('git'));
     await vi.advanceTimersByTimeAsync(1000);
     expect(picturePass).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+    stop();
+  });
+  it('starts the first arrangement from the second check on, only for live v8 brains under two failed attempts, none in flight', async () => {
+    const bookPass = vi.fn(async (_id: string) => undefined);
+    const stop = startBrainScheduler({
+      brains: () => [
+        brain({ id: 'new', templatesVersion: 8 }),
+        brain({ id: 'one', templatesVersion: 8, bookPass: { attempts: 1 } }),
+        brain({ id: 'v7', templatesVersion: 7 }),
+        brain({ id: 'archived', templatesVersion: 8, archived: true }),
+        brain({
+          id: 'given-up',
+          templatesVersion: 8,
+          bookPass: { attempts: 2 },
+        }),
+        brain({ id: 'queued', templatesVersion: 8 }),
+      ],
+      refresh: vi.fn(async () => undefined),
+      digest: vi.fn(),
+      running: () => false,
+      picturePass: async () => undefined,
+      passRunning: () => false,
+      bookPass,
+      bookPassRunning: (id) => id === 'queued',
+      tick: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bookPass).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(bookPass.mock.calls.map((c) => c[0])).toEqual(['new', 'one']);
+    stop();
+  });
+
+  it('does not start the first arrangement again while its call is pending, and logs a failure', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let fail: (e: Error) => void = () => undefined;
+    const bookPass = vi.fn(() => new Promise<void>((_r, rej) => (fail = rej)));
+    const stop = startBrainScheduler({
+      brains: () => [brain({ id: 'a', templatesVersion: 8 })],
+      refresh: vi.fn(async () => undefined),
+      digest: vi.fn(),
+      running: () => false,
+      picturePass: async () => undefined,
+      passRunning: () => false,
+      bookPass,
+      bookPassRunning: () => false,
+      tick: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(bookPass).toHaveBeenCalledTimes(1);
+    fail(new Error('disk'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(bookPass).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
     stop();
