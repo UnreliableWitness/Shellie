@@ -33,6 +33,9 @@ jobs:
       - run: npm test
       # The packaged app must load node-pty and spawn a pty (Windows does this in the installer jobs).
       # Unsigned here (MAC_SIGN is set only in macos-release); make also checks the DMG and zip makers.
+      # GitHub's download can be briefly unavailable, and packaging would not retry it.
+      - name: Download Electron
+        run: node tools/release/fetch-electron.mjs
       - name: Make and smoke-test (macOS)
         env:
           APPINSIGHTS_CONNECTION_STRING: ${{ vars.APPINSIGHTS_CONNECTION_STRING }}
@@ -84,6 +87,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Download Electron
+        run: node tools/release/fetch-electron.mjs
       # App telemetry (docs/telemetry.md): baked into the main bundle at build time; empty means none is sent.
       - run: npm run make
         env:
@@ -227,6 +232,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
           "Release: **v$version**" >> $env:GITHUB_STEP_SUMMARY
+      - name: Download Electron
+        run: node tools/release/fetch-electron.mjs
       # App telemetry (docs/telemetry.md): baked into the main bundle at build time; empty means none is sent.
       - run: npm run make
         env:
@@ -360,6 +367,8 @@ jobs:
           security list-keychains -d user -s "$keychain" ${existing[@]+"${existing[@]}"}
           rm -f "$RUNNER_TEMP/cert.p12"
           echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+      - name: Download Electron
+        run: node tools/release/fetch-electron.mjs
       # App telemetry (docs/telemetry.md): baked into the main bundle at build time; empty means none is sent.
       # Signs and notarizes only when MAC_SIGN=true (tools/forge/macSigning.mjs).
       - name: Make (Apple Silicon)
