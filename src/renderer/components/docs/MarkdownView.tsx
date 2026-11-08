@@ -163,10 +163,10 @@ export function MarkdownView({
           if (!href) return;
           if (href.startsWith('#')) {
             const id = decodeAnchor(href.slice(1));
-            (
-              document.getElementById(idPrefix + id) ??
-              document.getElementById(id)
-            )?.scrollIntoView?.({ block: 'start' });
+            // With a prefix only this view's ids count: another section's heading must not catch the link.
+            document
+              .getElementById(idPrefix + id)
+              ?.scrollIntoView?.({ block: 'start' });
           } else if (isWeb(href)) {
             openWeb(href);
           } else if (!hasScheme(href)) {

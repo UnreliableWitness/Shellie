@@ -1,5 +1,4 @@
 import type { Image, Link, Root, RootContent } from 'mdast';
-import { toString } from 'mdast-util-to-string';
 import { visit } from 'unist-util-visit';
 import { resolveRelative } from './linkify';
 
@@ -11,6 +10,16 @@ function pictureOf(path: string, url: string): string | null {
   if (!url || hasScheme(url) || url.startsWith('#')) return null;
   const target = resolveRelative(path, url);
   return target && PICTURE.test(target) ? target : null;
+}
+
+/** The text of a link: its text and inline code, however deeply nested. */
+function textOf(node: Link): string {
+  let out = '';
+  visit(node, (n) => {
+    if (n.type === 'text' || n.type === 'inlineCode')
+      out += (n as { value: string }).value;
+  });
+  return out;
 }
 
 /**
@@ -46,7 +55,7 @@ export function remarkFigures({
             {
               type: 'image',
               url: link.url.split('#')[0],
-              alt: toString(link),
+              alt: textOf(link),
               data: { hProperties: { dataFigure: 'true' } },
             },
           ],
