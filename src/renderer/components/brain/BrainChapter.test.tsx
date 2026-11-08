@@ -309,6 +309,24 @@ describe('BrainChapter', () => {
     ).toBe('location');
   });
 
+  it('shows the new chapter, not the old texts, when the chapter changes to one with more pages', async () => {
+    fake();
+    const small: BrainBook = {
+      chapters: [
+        book.chapters[2],
+        { ...book.chapters[2], pages: ['wiki/three.md'] },
+      ],
+    };
+    const view = render(
+      chapter({ book: small, index: 1, path: 'wiki/three.md' }),
+    );
+    await screen.findByText('Partners.');
+    view.rerender(chapter({ book: small, index: 0, path: 'wiki/one.md' }));
+    expect(screen.queryByText('Partners.')).toBeNull();
+    expect(await screen.findByText('Orders move.')).toBeTruthy();
+    expect(screen.getByText('Order flow', { selector: 'h2' })).toBeTruthy();
+  });
+
   it('refetches on a brain change without scrolling', async () => {
     const { emit, calls } = fake();
     render(chapter({ path: 'wiki/two.md' }));

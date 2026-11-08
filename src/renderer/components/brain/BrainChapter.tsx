@@ -55,12 +55,15 @@ export function BrainChapter({
   const { asset, openFile, onBodyClick, lightbox } = usePageMedia(brainId);
   const root = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
-  const [reads, setReads] = useState<Read[] | null>(null);
+  const [got, setGot] = useState<{ key: string; reads: Read[] } | null>(null);
   const target = Math.max(0, pages.indexOf(path));
-  const [reading, setReading] = useState(target);
+  const [readingRaw, setReading] = useState(target);
 
   // Only the answer for the chapter shown lands: a slow read of the previous one must not show under this title.
   const key = `${brainId}\n${pages.join('\n')}`;
+  // The data carries its chapter's key: the first render of another chapter is loading, not the old texts.
+  const reads = got?.key === key ? got.reads : null;
+  const reading = reads ? Math.min(readingRaw, pages.length - 1) : target;
   const shown = useRef(key);
   shown.current = key;
   const load = useCallback(() => {
@@ -75,13 +78,12 @@ export function BrainChapter({
           ),
       ),
     ).then((r) => {
-      if (shown.current === k) setReads(r);
+      if (shown.current === k) setGot({ key: k, reads: r });
     });
     // `pages` is in `key`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brainId, key]);
   useEffect(() => {
-    setReads(null);
     load();
   }, [load]);
   useBrainChanged(brainId, load);
@@ -90,7 +92,7 @@ export function BrainChapter({
   const scrolledFor = useRef<string | null>(null);
   useEffect(() => {
     if (reads === null) return;
-    const at = `${index}:${path}#${anchor ?? ''}`;
+    const at = `${brainId}:${index}:${path}#${anchor ?? ''}`;
     if (scrolledFor.current === at) return;
     scrolledFor.current = at;
     setReading(target);
@@ -109,7 +111,7 @@ export function BrainChapter({
     )?.scrollIntoView?.({
       block: 'start',
     });
-  }, [reads, index, path, anchor, pages, target]);
+  }, [reads, brainId, index, path, anchor, pages, target]);
 
   // The section being read follows the scroll of the reading column.
   const latest = useRef({ onReading, target });
