@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  BrainBook,
   BrainPageRow,
   BrainPageType,
   BrainSourceRow,
   SourceType,
 } from '../../../shared/brain';
-import { pageGroups, pinnedPages, sourceGroup } from './brainTree';
+import {
+  backOfBook,
+  pageGroups,
+  pinnedPages,
+  sourceGroup,
+  unplaced,
+} from './brainTree';
 
 const row = (
   path: string,
@@ -107,5 +114,50 @@ describe('pinnedPages', () => {
       'wiki/scope.md',
       'wiki/digests/2026-w45.md',
     ]);
+  });
+});
+
+describe('backOfBook', () => {
+  it('groups decisions, meetings, digests, lessons and glossary, then the sources, leaving out the empty ones', () => {
+    const groups = backOfBook(
+      [
+        row('wiki/g.md', 'glossary', 'Terms'),
+        row('wiki/m.md', 'meeting', 'Kickoff'),
+        row('wiki/d.md', 'decision', 'Database'),
+        row('wiki/w.md', 'digest', 'W45'),
+        row('wiki/s.md', 'scope', 'Scope'),
+      ],
+      [src('sources/sow.md', 'sow')],
+    );
+    expect(groups.map((g) => [g.key, g.label])).toEqual([
+      ['decision', 'Decisions'],
+      ['meeting', 'Meetings'],
+      ['digest', 'Weekly digests'],
+      ['glossary', 'Glossary'],
+      ['sources', 'Sources'],
+    ]);
+    expect(groups[0].items).toEqual([{ path: 'wiki/d.md', label: 'Database' }]);
+  });
+
+  it('is empty for no such pages and no sources', () => {
+    expect(backOfBook([row('wiki/s.md', 'scope')], [])).toEqual([]);
+  });
+});
+
+describe('unplaced', () => {
+  const book: BrainBook = {
+    chapters: [{ title: 'A', summary: '', intro: '', pages: ['wiki/in.md'] }],
+  };
+  it('lists the pages in no chapter and not at the back of the book', () => {
+    expect(
+      unplaced(
+        [
+          row('wiki/in.md', 'scope', 'In'),
+          row('wiki/out.md', 'component', 'Out'),
+          row('wiki/d.md', 'decision', 'Database'),
+        ],
+        book,
+      ),
+    ).toEqual([{ path: 'wiki/out.md', label: 'Out' }]);
   });
 });

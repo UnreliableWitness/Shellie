@@ -196,6 +196,7 @@ export function BrainScreen({
         <div className="brain-view brain-view-read" hidden={view !== 'read'}>
           <BrainRead
             brainId={brain.id}
+            brainName={brain.name}
             pages={pages}
             since={since}
             openRequest={openRequest}

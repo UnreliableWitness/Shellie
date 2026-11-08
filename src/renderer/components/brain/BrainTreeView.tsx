@@ -3,12 +3,23 @@ import {
   ChevronRight16Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { BrainChapter } from '../../../shared/brain';
 import { local } from '../../localStorage';
 import type { TreeGroup, TreeItem } from './brainTree';
 
 export type TreeSpecial = 'recent' | 'log';
 
+/** The book in the tree: its numbered chapters, the open one listing its pages. */
+export type TreeBook = {
+  chapters: BrainChapter[];
+  /** The chapter shown, or -1. */
+  openChapter: number;
+  titleOf: (path: string) => string;
+  onOpenChapter: (n: number) => void;
+};
+
 const START = 'start';
+const UNPLACED = 'unplaced';
 /** Collapsed when nothing is stored yet: the sources can run long. */
 const DEFAULT_COLLAPSED = ['sources'];
 
@@ -86,6 +97,8 @@ function Item({
 /**
  * The Read view's tree: Start here (pinned pages and Recent changes), a collapsible group per page type and the
  * sources, then Log. The collapsed groups are remembered under `collapsedKey`; the group holding `current` opens.
+ * With a `book`, Start here is replaced by The book (numbered chapters), then `groups` as Back of the book and Not
+ * placed yet when `unplaced` has pages, then Recent changes and Log.
  */
 export function BrainTree({
   groups,
@@ -95,6 +108,8 @@ export function BrainTree({
   onOpen,
   onOpenSpecial,
   collapsedKey,
+  book,
+  unplaced = [],
 }: {
   groups: TreeGroup[];
   start: TreeItem[];
@@ -105,6 +120,9 @@ export function BrainTree({
   onOpenSpecial: (which: TreeSpecial) => void;
   /** The localStorage key the collapsed groups are stored under. */
   collapsedKey: string;
+  book?: TreeBook;
+  /** With a book: the pages in no chapter nor at the back of the book. */
+  unplaced?: TreeItem[];
 }) {
   const [collapsed, setCollapsed] = useState(() => readCollapsed(collapsedKey));
   const update = (next: Set<string>) => {
@@ -120,11 +138,19 @@ export function BrainTree({
   // The group holding a newly opened page opens, once: a group the reader collapses afterwards stays collapsed
   // when the brain changes (new `groups`).
   const expandedFor = useRef<string | null>(null);
+  const unplacedGroup: TreeGroup = {
+    key: UNPLACED,
+    label: 'Not placed yet',
+    items: unplaced,
+  };
   useEffect(() => {
     if (!current || expandedFor.current === current) return;
     const holding = start.some((i) => i.path === current)
       ? [START]
-      : keysHolding(groups, current);
+      : keysHolding(
+          unplaced.length ? [...groups, unplacedGroup] : groups,
+          current,
+        );
     // Not in the tree yet (pages still loading): try again when they arrive.
     if (!holding.length) return;
     expandedFor.current = current;
@@ -190,6 +216,66 @@ export function BrainTree({
       </>,
     );
   };
+
+  if (book)
+    return (
+      <ul className="brain-tree">
+        <li>
+          <h3 className="brain-tree-heading">The book</h3>
+          <ul className="brain-tree-list brain-tree-book">
+            {book.chapters.map((c, n) => {
+              const open = n === book.openChapter;
+              return (
+                <li key={n}>
+                  {c.pages.length ? (
+                    <button
+                      type="button"
+                      className="brain-tree-item brain-tree-chapter"
+                      aria-expanded={open}
+                      onClick={() => book.onOpenChapter(n)}
+                    >
+                      <span className="brain-tree-num">{n + 1}</span>
+                      {c.title}
+                    </button>
+                  ) : (
+                    <span className="brain-tree-item brain-tree-chapter is-empty muted">
+                      <span className="brain-tree-num">{n + 1}</span>
+                      {c.title}
+                    </span>
+                  )}
+                  {open && (
+                    <ul className="brain-tree-list" aria-label={c.title}>
+                      {c.pages.map((p) =>
+                        item({ path: p, label: book.titleOf(p) }),
+                      )}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </li>
+        {groups.length > 0 && (
+          <li>
+            <h3 className="brain-tree-heading">Back of the book</h3>
+            <ul className="brain-tree-list">
+              {groups.map((g) => typed(g, null))}
+            </ul>
+          </li>
+        )}
+        {unplaced.length > 0 && typed(unplacedGroup, null)}
+        <Item
+          label="Recent changes"
+          current={current === 'recent'}
+          onClick={() => onOpenSpecial('recent')}
+        />
+        <Item
+          label="Log"
+          current={current === 'log'}
+          onClick={() => onOpenSpecial('log')}
+        />
+      </ul>
+    );
 
   return (
     <ul className="brain-tree">

@@ -1,15 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrainJob } from '../../../shared/brain';
+import { chapterOf } from './book';
+import { BrainChapter } from './BrainChapter';
+import { BrainFront } from './BrainFront';
 import { BrainGraph } from './BrainGraph';
 import { BrainLog } from './BrainLog';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
 import { BrainTree, type TreeSpecial } from './BrainTreeView';
-import { pageGroups, pinnedPages, sourceGroup } from './brainTree';
+import {
+  backOfBook,
+  pageGroups,
+  pinnedPages,
+  sourceGroup,
+  unplaced as unplacedPages,
+} from './brainTree';
+import { local } from '../../localStorage';
 import { RecentList, type BrainPages } from './BrainWiki';
 import { PageCard } from './PageCards';
 import { isAfter, recentEntries } from './recent';
 import { useBrainNav } from './useBrainNav';
+
+const CONTINUE = (brainId: string) => `shellie.brain.continue.${brainId}`;
+
+/** The page last read in the brain (a convenience in localStorage), or null. */
+function readContinue(brainId: string): { path: string } | null {
+  try {
+    const path = local()?.getItem(CONTINUE(brainId));
+    return path ? { path } : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The brain's Read view: a tree on the left (search on top), the open page in the middle with its rail, or Recent
@@ -18,6 +40,7 @@ import { useBrainNav } from './useBrainNav';
  */
 export function BrainRead({
   brainId,
+  brainName = '',
   pages,
   since,
   openRequest,
@@ -26,7 +49,9 @@ export function BrainRead({
   skillsReady,
 }: {
   brainId: string;
-  /** The brain's pages, sources and log, loaded once by the screen. */
+  /** The brain's name, the front page's title. */
+  brainName?: string;
+  /** The brain's pages, sources, log and book, loaded once by the screen. */
   pages: BrainPages;
   since: string | null;
   openRequest?: { path: string; n: number } | null;
@@ -37,7 +62,7 @@ export function BrainRead({
   /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
   skillsReady?: boolean;
 }) {
-  const { rows, sources, log, loaded } = pages;
+  const { rows, sources, log, book, loaded } = pages;
   const nav = useBrainNav();
   const [special, setSpecial] = useState<TreeSpecial | null>(null);
   const [searching, setSearching] = useState(false);
@@ -57,9 +82,27 @@ export function BrainRead({
     [pinned],
   );
   const groups = useMemo(() => {
+    if (book) return backOfBook(rows, sources);
     const src = sourceGroup(sources);
     return src ? [...pageGroups(rows), src] : pageGroups(rows);
-  }, [rows, sources]);
+  }, [rows, sources, book]);
+  const unplaced = useMemo(
+    () => (book ? unplacedPages(rows, book) : []),
+    [rows, book],
+  );
+  // The section being read in the open chapter, for the tree to highlight.
+  const [reading, setReading] = useState<string | null>(null);
+  const onReading = useCallback(
+    (path: string) => {
+      setReading(path);
+      try {
+        local()?.setItem(CONTINUE(brainId), path);
+      } catch {
+        /* no storage: Continue reading is not offered */
+      }
+    },
+    [brainId],
+  );
 
   const open = useCallback(
     (path: string, anchor?: string) => {
@@ -75,7 +118,26 @@ export function BrainRead({
     },
     [nav],
   );
-  const current = nav.current?.path ?? special;
+  const shown = nav.current?.path;
+  const openChapter = book && shown ? chapterOf(book, shown) : -1;
+  // The highlighted page follows the section being read, while the chapter shown is the one it belongs to.
+  const highlight =
+    book &&
+    reading &&
+    openChapter >= 0 &&
+    chapterOf(book, reading) === openChapter
+      ? reading
+      : shown;
+  const current = highlight ?? special;
+  const treeBook = book && {
+    chapters: book.chapters,
+    openChapter,
+    titleOf: (p: string) => rows.find((r) => r.path === p)?.title ?? p,
+    onOpenChapter: (n: number) => {
+      const first = book.chapters[n]?.pages[0];
+      if (first) open(first);
+    },
+  };
 
   const openRef = useRef(open);
   openRef.current = open;
@@ -115,11 +177,28 @@ export function BrainRead({
             onOpen={open}
             onOpenSpecial={openSpecial}
             collapsedKey={`shellie.brain.tree.${brainId}`}
+            book={treeBook ?? undefined}
+            unplaced={unplaced}
           />
         )}
       </nav>
       <section className="brain-read-main" aria-label="Reading">
-        {nav.current ? (
+        {nav.current && book && openChapter >= 0 ? (
+          <BrainChapter
+            brainId={brainId}
+            book={book}
+            index={openChapter}
+            path={nav.current.path}
+            anchor={nav.current.anchor}
+            rows={rows}
+            canBack={nav.canBack}
+            canForward={nav.canForward}
+            onOpen={open}
+            onBack={nav.back}
+            onForward={nav.forward}
+            onReading={onReading}
+          />
+        ) : nav.current ? (
           <BrainPage
             brainId={brainId}
             path={nav.current.path}
@@ -144,6 +223,26 @@ export function BrainRead({
           )
         ) : special === 'log' ? (
           <BrainLog brainId={brainId} />
+        ) : book ? (
+          <div className="brain-read-landing is-front">
+            {nav.canForward && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={nav.forward}
+              >
+                Forward ›
+              </button>
+            )}
+            <BrainFront
+              brainName={brainName}
+              book={book}
+              rows={rows}
+              newPaths={newPaths}
+              continueAt={readContinue(brainId)}
+              onOpen={open}
+            />
+          </div>
         ) : (
           <div className="brain-read-landing">
             {nav.canForward && (

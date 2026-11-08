@@ -701,6 +701,10 @@
   gap: 12px;
   max-width: 960px;
 }
+/* The front page of a book uses the whole reading width. */
+.brain-read-landing.is-front {
+  max-width: none;
+}
 .brain-tree,
 .brain-tree-list {
   margin: 0;
@@ -745,6 +749,143 @@
 .brain-tree-count {
   margin-left: auto;
   font-weight: 400;
+}
+/* The book in the tree: numbered chapters, and the headings of its sections. */
+.brain-tree-heading {
+  margin: 10px 0 2px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-tree-book {
+  padding-left: 0;
+}
+.brain-tree-chapter {
+  align-items: baseline;
+}
+.brain-tree-chapter.is-empty {
+  cursor: default;
+}
+.brain-tree-num {
+  flex: none;
+  width: 1em;
+  color: var(--muted);
+}
+
+/* The front page of a book: title and introduction, Continue reading, then the contents beside the graph. */
+.brain-front {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.brain-front h2 {
+  margin: 0;
+  font-size: calc(var(--read-size) * 1.8);
+  line-height: 1.2;
+}
+.brain-front-intro {
+  margin: 0;
+  max-width: 62em;
+  font-size: calc(var(--read-size) * 1.2);
+  color: var(--muted);
+}
+.brain-front-continue {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+  color: inherit;
+  font: inherit;
+  font-size: var(--read-size);
+  text-align: left;
+  cursor: pointer;
+}
+.brain-front-continue span {
+  color: var(--muted);
+}
+.brain-front-continue b {
+  font-weight: 500;
+}
+.brain-front-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px 48px;
+  align-items: start;
+}
+.brain-front-heading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-front-chapters {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-front-chapter {
+  display: grid;
+  grid-template-columns: 2em minmax(0, 1fr) auto;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--read-size);
+  text-align: left;
+}
+button.brain-front-chapter {
+  cursor: pointer;
+}
+button.brain-front-chapter:hover {
+  background: var(--bg-hover);
+}
+.brain-front-num {
+  font-size: 1.3em;
+  color: var(--muted);
+}
+.brain-front-text {
+  display: flex;
+  flex-direction: column;
+}
+.brain-front-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2em;
+  font-weight: 500;
+}
+.brain-front-chapter.is-empty .brain-front-title {
+  color: var(--muted);
+}
+.brain-front-chapter.is-empty .brain-front-summary {
+  color: var(--warn);
+}
+.brain-front-summary {
+  color: var(--muted);
+}
+.brain-front-count {
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+/* A narrow reading column: the contents above the graph. */
+@container brain-reading (max-width: 820px) {
+  .brain-front-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .brain-dot {
   width: 6px;

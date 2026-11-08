@@ -34,6 +34,8 @@ export type BrainAction =
   | 'open-page'
   | 'search'
   | 'back'
+  /** The front page's Continue reading, back to the page last read. */
+  | 'continue-reading'
   /** Run now: a sync; a `?` opened; an option switched in What runs by itself. */
   | 'sync'
   | 'help'
