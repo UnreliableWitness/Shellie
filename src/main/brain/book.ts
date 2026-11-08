@@ -19,8 +19,8 @@ const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
 /**
  * The book in `text` against the pages that exist (`known`: path to type), or null when it is not a book: not JSON,
- * not an object, no chapters, or a chapter without a title. A page stays at its first place; a chapter left with
- * no pages is kept.
+ * not an object, or no chapter left. A chapter that is not an object or has no title is skipped. A page stays at
+ * its first place; a chapter left with no pages is kept.
  */
 export function parseBook(
   source: string,
@@ -37,10 +37,10 @@ export function parseBook(
   const placed = new Set<string>();
   const chapters: BrainChapter[] = [];
   for (const c of list) {
-    if (!c || typeof c !== 'object') return null;
+    if (!c || typeof c !== 'object') continue;
     const o = c as Record<string, unknown>;
     const title = text(o.title);
-    if (!title) return null;
+    if (!title) continue;
     const pages: string[] = [];
     for (const p of Array.isArray(o.pages) ? o.pages : []) {
       if (typeof p !== 'string' || placed.has(p)) continue;
@@ -56,7 +56,7 @@ export function parseBook(
       pages,
     });
   }
-  return { chapters };
+  return chapters.length ? { chapters } : null;
 }
 
 /** The brain's book, or null when there is no file or it is not a usable book. */
@@ -67,6 +67,12 @@ export async function readBook(brainDir: string): Promise<BrainBook | null> {
   } catch {
     return null;
   }
-  const pages = await readPages(brainDir).catch(() => []);
+  // Pages that cannot be read are not an empty wiki: the book would come back with every chapter empty.
+  let pages;
+  try {
+    pages = await readPages(brainDir);
+  } catch {
+    return null;
+  }
   return parseBook(raw, new Map(pages.map((p) => [p.path, pageType(p.path)])));
 }

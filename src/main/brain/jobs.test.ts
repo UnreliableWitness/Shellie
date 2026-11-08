@@ -699,21 +699,23 @@ describe('jobs on the brain agent', () => {
     expect(calls.map((c) => c.input)).toEqual(['', 'book']);
   });
 
-  it('a sync queued by hand replaces a background one still waiting', async () => {
+  it('a sync queued by hand leaves a background book job waiting, and goes first', async () => {
     let release: () => void = () => undefined;
     run = () => new Promise<string>((res) => (release = () => res(ok('s'))));
     const r = runner();
     r.enqueue('b1', 'lint');
     const book = r.enqueue('b1', 'sync', null, { background: true });
     const hand = r.enqueue('b1', 'sync');
-    expect(r.jobs('b1')).not.toContain(book);
+    expect(r.jobs('b1')).toContain(book);
     expect(r.jobs('b1')).toContain(hand);
     await vi.waitFor(() => expect(calls).toHaveLength(1));
     release();
     await vi.waitFor(() => expect(calls).toHaveLength(2));
     release();
+    await vi.waitFor(() => expect(calls).toHaveLength(3));
+    release();
     await idle(r, 'b1');
-    expect(calls.map((c) => c.input)).toEqual(['/lint', '/sync']);
+    expect(calls.map((c) => c.input)).toEqual(['/lint', '/sync', '/sync book']);
   });
 
   it('a pictures job on OpenCode gets exactly the argument after /pictures', async () => {

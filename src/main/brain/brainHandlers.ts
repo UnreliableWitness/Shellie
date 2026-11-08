@@ -6,6 +6,8 @@ import {
   BrainSchema,
   BrainWikiSchema,
   picturesReady,
+  bookReady,
+  isBookJob,
   SOURCE_JOB_KINDS,
   SourceTypeSchema,
   type AddSourceResult,
@@ -27,6 +29,7 @@ import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
 import { readBook } from './book';
+import { PENDING } from './bookPass';
 import { pageRows, relevantPages, searchBrain, taskWords } from './browse';
 import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
@@ -632,7 +635,17 @@ export function createBrainHandlers(
       const b = live(id);
       if (kind === 'pictures' && !picturesReady(b))
         throw new Error('Update skills to re-evaluate pictures');
-      return d.runner.enqueue(id, kind, source ?? null);
+      // A Sync from Run now also arranges a missing book, as its own job: plain /sync leaves the book alone.
+      const arrange =
+        kind === 'sync' &&
+        bookReady(b) &&
+        !d.runner.jobs(id).some((j) => isBookJob(j) && PENDING.has(j.status)) &&
+        (await readPages(b.path).catch(() => [])).length > 0 &&
+        !(await readBook(b.path));
+      // Queued after the sync, which would drop a book job waiting before it.
+      const job = d.runner.enqueue(id, kind, source ?? null);
+      if (arrange) d.runner.enqueue(id, 'sync', null, { background: true });
+      return job;
     },
     'brain:resumeQueue': async (id) => {
       live(id);

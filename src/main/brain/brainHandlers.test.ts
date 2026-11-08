@@ -46,7 +46,13 @@ describe('brain handlers', () => {
   let broadcasts: [string, unknown][];
   let events: [string, unknown][];
   let remembered: string[];
-  let enqueued: [string, BrainJobKind, string | null][];
+  let enqueued: [
+    string,
+    BrainJobKind,
+    string | null,
+    { background?: boolean }?,
+  ][];
+  let pending: BrainJob[];
   let released: string[];
   let killed: string[];
   let opened: string[];
@@ -82,6 +88,7 @@ describe('brain handlers', () => {
     events = [];
     remembered = [];
     enqueued = [];
+    pending = [];
     released = [];
     killed = [];
     opened = [];
@@ -93,11 +100,11 @@ describe('brain handlers', () => {
       brains,
       git,
       runner: {
-        enqueue: (id, kind, source = null) => {
-          enqueued.push([id, kind, source]);
+        enqueue: (id, kind, source = null, opts) => {
+          enqueued.push(opts ? [id, kind, source, opts] : [id, kind, source]);
           return job(id, kind, source);
         },
-        jobs: () => [],
+        jobs: () => pending,
         running: () => false,
         resume: vi.fn(),
         dropQueued: () => 0,
@@ -427,6 +434,60 @@ describe('brain handlers', () => {
     await expect(h['brain:run']('nope', 'lint')).rejects.toThrow(
       'Unknown brain',
     );
+  });
+
+  describe('Run now sync and the book', () => {
+    const book = JSON.stringify({ chapters: [{ title: 'A', pages: [] }] });
+    const setup = async (opts: { page?: boolean; book?: boolean } = {}) => {
+      const v = await h['brain:create'](NEW);
+      if (opts.page ?? true)
+        await fs.writeFile(
+          path.join(v.path, 'wiki', 'account.md'),
+          '---\ntitle: Acme\nsummary: Who.\nsources: [sources/k.md]\n---\n',
+        );
+      if (opts.book)
+        await fs.writeFile(path.join(v.path, 'brain', 'book.json'), book);
+      enqueued.length = 0;
+      return v;
+    };
+
+    it('queues the sync, then one background book job, when the wiki has pages and no book', async () => {
+      const v = await setup();
+      await h['brain:run'](v.id, 'sync');
+      expect(enqueued).toEqual([
+        [v.id, 'sync', null],
+        [v.id, 'sync', null, { background: true }],
+      ]);
+    });
+
+    it('queues no book job with a valid book, with one pending, for an empty wiki, on old skills, or for other kinds', async () => {
+      const withBook = await setup({ book: true });
+      await h['brain:run'](withBook.id, 'sync');
+      expect(enqueued).toEqual([[withBook.id, 'sync', null]]);
+
+      const busy = await setup();
+      pending = [{ ...job(busy.id, 'sync', null), background: true }];
+      for (const status of ['queued', 'running', 'paused'] as const) {
+        pending[0].status = status;
+        enqueued.length = 0;
+        await h['brain:run'](busy.id, 'sync');
+        expect(enqueued).toEqual([[busy.id, 'sync', null]]);
+      }
+      pending = [];
+
+      const empty = await setup({ page: false });
+      await h['brain:run'](empty.id, 'sync');
+      expect(enqueued).toEqual([[empty.id, 'sync', null]]);
+
+      const old = await setup();
+      await brains.patch(old.id, { templatesVersion: 7 });
+      await h['brain:run'](old.id, 'sync');
+      expect(enqueued).toEqual([[old.id, 'sync', null]]);
+
+      const lint = await setup();
+      await h['brain:run'](lint.id, 'lint');
+      expect(enqueued).toEqual([[lint.id, 'lint', null]]);
+    });
   });
 
   it('refuses a pictures job on a brain whose skills are older than v6', async () => {

@@ -11,7 +11,7 @@ import { readPages } from './pages';
 /** Failed attempts after which a brain's first arrangement is given up (a Sync from Run now still makes it). */
 export const MAX_BOOK_ATTEMPTS = 2;
 
-const PENDING: ReadonlySet<BrainJob['status']> = new Set([
+export const PENDING: ReadonlySet<BrainJob['status']> = new Set([
   'queued',
   'running',
   'paused',

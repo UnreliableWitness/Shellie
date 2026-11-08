@@ -26,6 +26,13 @@ describe('templates v8', () => {
     expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(OPENCODE_TEMPLATES);
   });
 
+  it('arranges the book only with the argument book, never in a plain sync', () => {
+    const sync = content('.claude/skills/sync/SKILL.md');
+    const plain = sync.slice(0, sync.indexOf('The first arrangement:'));
+    expect(plain).toContain('only the argument `book` arranges');
+    expect(plain).not.toContain('make the first arrangement (below) now');
+  });
+
   it('shields sources and the dropped record, and only allows read-only git', () => {
     const p = brainOpencodePermission();
     expect(Object.keys(p.edit)).toEqual([

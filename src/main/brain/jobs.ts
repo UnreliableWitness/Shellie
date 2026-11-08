@@ -275,17 +275,6 @@ export class BrainJobRunner {
       l.queue = l.queue.filter((j) => !gone.includes(j));
       l.list = l.list.filter((j) => !gone.includes(j));
     }
-    // Likewise a sync by hand makes the first arrangement itself when there is no book: one run, not two.
-    if (kind === 'sync' && !job.background) {
-      const gone = l.queue.filter(
-        (j) =>
-          isBookJob(j) &&
-          (j.status === 'queued' || j.status === 'paused') &&
-          j !== l.current,
-      );
-      l.queue = l.queue.filter((j) => !gone.includes(j));
-      l.list = l.list.filter((j) => !gone.includes(j));
-    }
     l.queue.push(job);
     this.add(l, job);
     this.changed(brainId);

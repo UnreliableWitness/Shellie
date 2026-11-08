@@ -78,6 +78,21 @@ describe('scrubBrain', () => {
     });
   });
 
+  it('redacts the book: a page path and a chapter title', async () => {
+    const secret = 'Sup3rSecretValue';
+    await write(
+      'brain/book.json',
+      JSON.stringify({
+        chapters: [{ title: `About ${secret}`, pages: [`wiki/${secret}.md`] }],
+      }),
+    );
+    await commit('Brain: book');
+    await scrubBrain(git, dir, secret);
+    const book = await read('brain/book.json');
+    expect(book).not.toContain(secret);
+    expect(book).toContain('About REDACTED');
+  });
+
   it("saves a person's uncommitted wiki edit as an outside edit before redacting it", async () => {
     const secret = 'hunter2x!';
     await write('wiki/h.md', 'committed\n');

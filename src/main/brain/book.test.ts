@@ -64,6 +64,22 @@ describe('parseBook', () => {
     expect(parseBook(book([]), known)).toBeNull();
     expect(parseBook(book([{ pages: ['wiki/account.md'] }]), known)).toBeNull();
     expect(parseBook(book([{ title: '  ' }]), known)).toBeNull();
+    expect(parseBook(book([7, null, 'x']), known)).toBeNull();
+  });
+
+  it('skips a chapter without a title or that is not an object, and keeps the rest', () => {
+    const b = parseBook(
+      book([
+        { pages: ['wiki/account.md'] },
+        7,
+        null,
+        { title: 'Good', pages: ['wiki/account.md'] },
+      ]),
+      known,
+    );
+    expect(b?.chapters.map((c) => [c.title, c.pages])).toEqual([
+      ['Good', ['wiki/account.md']],
+    ]);
   });
 
   it('drops paths that are not pages', () => {
@@ -159,5 +175,22 @@ describe('readBook', () => {
         },
       ],
     });
+  });
+
+  it('is null when the pages cannot be read, not a book of empty chapters', async () => {
+    await fs.mkdir(path.join(dir, 'wiki'), { recursive: true });
+    await fs.mkdir(path.join(dir, 'brain'), { recursive: true });
+    const page = path.join(dir, 'wiki', 'subject-mission.md');
+    await fs.writeFile(page, '# M\n');
+    await fs.writeFile(
+      path.join(dir, 'brain', 'book.json'),
+      book([{ title: 'Why', pages: ['wiki/subject-mission.md'] }]),
+    );
+    await fs.chmod(page, 0o000);
+    try {
+      expect(await readBook(dir)).toBeNull();
+    } finally {
+      await fs.chmod(page, 0o644);
+    }
   });
 });
