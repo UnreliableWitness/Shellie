@@ -509,11 +509,32 @@
 .brain-page-body .doc-md img {
   cursor: zoom-in;
 }
+/* In the Read view the page uses the width and its type grows with it (headings in em follow). */
+.with-rail .brain-page-body .doc-md {
+  max-width: none;
+  font-size: var(--read-size);
+}
+.with-rail .brain-page-body .doc-md h1 {
+  font-size: 1.43em;
+}
+.with-rail .brain-page-body .doc-md h2 {
+  font-size: 1.14em;
+}
+.with-rail .brain-page-body .doc-md h3,
+.with-rail .brain-page-body .doc-md h4 {
+  font-size: 1em;
+}
+.with-rail > .brain-page-head h2 {
+  font-size: calc(var(--read-size) * 1.3);
+}
+.with-rail > .brain-page-head .brain-page-lead {
+  font-size: var(--read-size);
+}
 
 /* The Read view's page: the body at reading width, a rail beside it (outline, backlinks, sources, verified). */
 .brain-page.with-rail {
   display: grid;
-  grid-template-columns: minmax(0, 72ch) 240px;
+  grid-template-columns: minmax(0, 1fr) 240px;
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
     'bar rail'
@@ -584,7 +605,7 @@
 }
 /* A source page has no rail: the body keeps the whole reading width. */
 .brain-page.with-rail.no-rail {
-  grid-template-columns: minmax(0, 72ch);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'bar'
     'head'
@@ -635,8 +656,9 @@
   overflow: auto;
   padding: 12px 0 32px 32px;
 }
-.brain-read-main > .brain-page.with-rail {
-  justify-content: center;
+/* The page's type grows with the reading column: 14px up to 860px wide, then about 0.74px per 100px, to 22px. */
+.brain-read-main > * {
+  --read-size: clamp(14px, calc(14px + (100cqw - 860px) * 0.0074), 22px);
 }
 .brain-read-landing {
   display: flex;

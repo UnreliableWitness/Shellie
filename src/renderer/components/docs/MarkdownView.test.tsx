@@ -218,4 +218,24 @@ describe('MarkdownView', () => {
     expect(fireEvent.click(screen.getByText('img'))).toBe(false);
     expect(api.calls.filter((c) => c.channel === 'links:open')).toEqual([]);
   });
+  it('idPrefix prefixes heading ids and #links scroll to the prefixed heading', async () => {
+    const { container } = render(
+      <MarkdownView
+        asset={(p) => shellie().invoke('docs:asset', 't', p)}
+        path="a.md"
+        text={'## Intro\n\n[up](#intro)\n'}
+        idPrefix="s1-"
+        onOpenDoc={() => {}}
+        onOpenFile={() => {}}
+      />,
+    );
+    const h = container.querySelector('h2') as HTMLElement;
+    expect(h.id).toBe('s1-intro');
+    const scroll = vi.fn();
+    h.scrollIntoView = scroll;
+    await userEvent.click(
+      container.querySelector('a[href="#intro"]') as HTMLElement,
+    );
+    expect(scroll).toHaveBeenCalled();
+  });
 });

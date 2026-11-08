@@ -45,6 +45,25 @@
 .doc-md img {
   max-width: 100%;
 }
+.doc-md p:empty {
+  display: none;
+}
+/* A picture a page cites, under the block that cites it. */
+.doc-figure {
+  display: block;
+  margin: 0.4em 0;
+}
+.doc-figure img {
+  max-width: 100%;
+  display: block;
+  cursor: zoom-in;
+}
+.doc-figure-cap {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85em;
+  color: var(--muted);
+}
 .doc-md code {
   font-family: var(--font-code);
   background: var(--bg-card);

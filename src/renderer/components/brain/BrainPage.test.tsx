@@ -275,4 +275,59 @@ describe('BrainPage', () => {
     ).toBeInTheDocument();
     expect(a.calls.some((c) => c.channel === 'brain:read')).toBe(false);
   });
+
+  describe('pictures cited in a page', () => {
+    const cited =
+      '---\ntitle: Move invoicing\n---\n\nSee [the slide](../sources/a-assets/x.png) for it.\n';
+    const read = (assetFails = false) =>
+      installFakeApi({
+        'brain:read': () => ({ text: cited }),
+        'brain:asset': (_id, rel) => {
+          if (assetFails) throw new Error('gone');
+          return `shellie-asset://${rel}`;
+        },
+      });
+
+    it('the rail layout shows the picture as a figure with its caption; a click opens the lightbox', async () => {
+      read();
+      render(page('wiki/decision-eu.md', { layout: 'rail' }));
+      const img = await screen.findByRole('img', { name: 'the slide' });
+      expect(img).toHaveAttribute(
+        'src',
+        'shellie-asset://sources/a-assets/x.png',
+      );
+      expect(document.querySelector('.doc-figure-cap')?.textContent).toBe(
+        'the slide',
+      );
+      expect(
+        screen.getByRole('link', { name: 'the slide' }),
+      ).toBeInTheDocument();
+      await userEvent.click(img);
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('a picture that fails leaves the link and no image, caption or alt text', async () => {
+      const a = read(true);
+      render(page('wiki/decision-eu.md', { layout: 'rail' }));
+      await waitFor(() =>
+        expect(a.calls.some((c) => c.channel === 'brain:asset')).toBe(true),
+      );
+      expect(
+        await screen.findByRole('link', { name: 'the slide' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('img')).not.toBeInTheDocument();
+      expect(document.querySelector('.doc-figure')).toBeNull();
+      expect(screen.getAllByText('the slide')).toHaveLength(1);
+    });
+
+    it('the chips layout shows no figure', async () => {
+      const a = read();
+      render(page('wiki/decision-eu.md'));
+      expect(
+        await screen.findByRole('link', { name: 'the slide' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('img')).not.toBeInTheDocument();
+      expect(a.calls.some((c) => c.channel === 'brain:asset')).toBe(false);
+    });
+  });
 });
