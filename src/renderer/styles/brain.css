@@ -509,7 +509,10 @@
 .brain-page-body .doc-md img {
   cursor: zoom-in;
 }
-/* In the Read view the page uses the width and its type grows with it (headings in em follow). */
+/* In the Read view the page uses the width, from the same left edge as its titles, and its type grows with it (headings in em follow). */
+.with-rail .brain-page-body {
+  padding: 0;
+}
 .with-rail .brain-page-body .doc-md {
   max-width: none;
   font-size: var(--read-size);
@@ -691,9 +694,9 @@
   overflow: auto;
   padding: 12px 0 32px 32px;
 }
-/* The page's type grows with the reading column: 14px up to 860px wide, then about 0.74px per 100px, to 22px. */
+/* The page's type grows with the reading column: 14px up to 860px wide, then 1.7px per 100px, to 22px (about 18px in a 1700px window). */
 .brain-read-main > * {
-  --read-size: clamp(14px, calc(14px + (100cqw - 860px) * 0.0074), 22px);
+  --read-size: clamp(14px, calc(14px + (100cqw - 860px) * 0.017), 22px);
 }
 .brain-read-landing {
   display: flex;
@@ -790,6 +793,7 @@
   margin: 0;
   max-width: 62em;
   font-size: calc(var(--read-size) * 1.2);
+  line-height: 1.4;
   color: var(--muted);
 }
 .brain-front-continue {
@@ -860,6 +864,7 @@ button.brain-front-chapter:hover {
 .brain-front-text {
   display: flex;
   flex-direction: column;
+  line-height: 1.35;
 }
 .brain-front-title {
   display: inline-flex;

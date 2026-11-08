@@ -74,6 +74,19 @@ describe('book', () => {
     expect(sectionBeingRead(sections, scroller, 3)).toBe(1);
   });
 
+  it('reads the last section once the scroller is at its end', () => {
+    const scroller = (scrollTop: number) =>
+      ({
+        ...el(0, 900),
+        scrollTop,
+        scrollHeight: 3000,
+        clientHeight: 900,
+      }) as unknown as Element;
+    const sections = [el(-900), el(-300), el(700)];
+    expect(sectionBeingRead(sections, scroller(1500), 0)).toBe(1);
+    expect(sectionBeingRead(sections, scroller(2100), 0)).toBe(2);
+  });
+
   it('reads the first section when none is above the line', () => {
     expect(sectionBeingRead([el(700), el(900)], el(0, 900), 1)).toBe(0);
   });

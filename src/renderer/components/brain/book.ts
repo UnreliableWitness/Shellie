@@ -29,7 +29,8 @@ export const stripTitle = (text: string): string =>
 
 /**
  * The section being read: the last whose top is above the scroller's top plus a third of its height, the first when
- * none is. Without layout (a zero-height scroller) it is `fallback`.
+ * none is, and the last section once the scroller is at its end (a short last section never gets that high). Without
+ * layout (a zero-height scroller) it is `fallback`.
  */
 export function sectionBeingRead(
   sections: Element[],
@@ -38,6 +39,9 @@ export function sectionBeingRead(
 ): number {
   const box = scroller.getBoundingClientRect();
   if (box.height === 0) return fallback;
+  const room = scroller.scrollHeight - scroller.clientHeight;
+  if (room > 0 && scroller.scrollTop >= room - 2)
+    return Math.max(sections.length - 1, 0);
   const line = box.top + box.height / 3;
   let read = 0;
   sections.forEach((s, i) => {
