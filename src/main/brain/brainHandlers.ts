@@ -647,7 +647,6 @@ export function createBrainHandlers(
         d.runner.jobs(id).some((j) => isBookJob(j) && PENDING.has(j.status))
       )
         arrange = false;
-      // Queued after the sync, which would drop a book job waiting before it.
       const job = d.runner.enqueue(id, kind, source ?? null);
       if (arrange) d.runner.enqueue(id, 'sync', null, { background: true });
       return job;
