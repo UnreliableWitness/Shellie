@@ -49,3 +49,28 @@ export function sectionBeingRead(
   });
   return read;
 }
+
+/**
+ * Keeps `target` where it was scrolled to while the content around it grows (pictures load after the text), until the
+ * reader moves (wheel, touch, pointer or key anywhere) or `ms` have passed. Returns the stop function.
+ */
+export function holdInView(
+  target: Element,
+  content: Element,
+  ms = 4000,
+): () => void {
+  if (typeof ResizeObserver === 'undefined') return () => undefined;
+  const moves = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+  const observer = new ResizeObserver(() =>
+    target.scrollIntoView?.({ block: 'start' }),
+  );
+  const stop = () => {
+    observer.disconnect();
+    clearTimeout(timer);
+    for (const m of moves) document.removeEventListener(m, stop);
+  };
+  const timer = setTimeout(stop, ms);
+  for (const m of moves) document.addEventListener(m, stop, { passive: true });
+  observer.observe(content);
+  return stop;
+}

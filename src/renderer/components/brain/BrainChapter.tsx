@@ -4,7 +4,13 @@ import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { MarkdownView } from '../docs/MarkdownView';
-import { sectionBeingRead, sectionId, shownBefore, stripTitle } from './book';
+import {
+  holdInView,
+  sectionBeingRead,
+  sectionId,
+  shownBefore,
+  stripTitle,
+} from './book';
 import { PageTags } from './PageCards';
 import { PageRail, type RailHeading } from './PageRail';
 import { usePageMedia } from './usePageMedia';
@@ -90,12 +96,18 @@ export function BrainChapter({
 
   // Once per navigation (path and anchor), not on every refetch: a reader halfway down stays there.
   const scrolledFor = useRef<string | null>(null);
+  const holding = useRef<(() => void) | null>(null);
+  const release = useCallback(() => {
+    holding.current?.();
+    holding.current = null;
+  }, []);
   useEffect(() => {
     if (reads === null) return;
     const at = `${brainId}:${index}:${path}#${anchor ?? ''}`;
     if (scrolledFor.current === at) return;
     scrolledFor.current = at;
     setReading(target);
+    release();
     const n = pages.indexOf(path);
     if (n <= 0 && !anchor) {
       // The first page, or none: the chapter's title and introduction come into view with it.
@@ -103,15 +115,15 @@ export function BrainChapter({
       return;
     }
     const prefix = `${sectionId(n)}-`;
-    const el = root.current?.querySelector(
-      `[id="${CSS.escape(anchor && n >= 0 ? prefix + anchor : sectionId(n))}"]`,
-    );
-    (
-      el ?? root.current?.querySelector(`[id="${sectionId(n)}"]`)
-    )?.scrollIntoView?.({
-      block: 'start',
-    });
-  }, [reads, brainId, index, path, anchor, pages, target]);
+    const el =
+      root.current?.querySelector(
+        `[id="${CSS.escape(anchor && n >= 0 ? prefix + anchor : sectionId(n))}"]`,
+      ) ?? root.current?.querySelector(`[id="${sectionId(n)}"]`);
+    el?.scrollIntoView?.({ block: 'start' });
+    // The pictures above it load after the text: the section opened stays at the top until the reader moves.
+    if (el && root.current) holding.current = holdInView(el, root.current);
+  }, [reads, brainId, index, path, anchor, pages, target, release]);
+  useEffect(() => release, [release]);
 
   // The section being read follows the scroll of the reading column.
   const latest = useRef({ onReading, target });

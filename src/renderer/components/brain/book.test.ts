@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainBook, BrainPageRow } from '../../../shared/brain';
 import {
   chapterOf,
+  holdInView,
   sectionBeingRead,
   sectionId,
   shownBefore,
@@ -93,5 +94,64 @@ describe('book', () => {
 
   it('falls back without layout', () => {
     expect(sectionBeingRead([el(0), el(0)], el(0, 0), 1)).toBe(1);
+  });
+});
+
+describe('holdInView', () => {
+  let observed: ResizeObserverCallback[];
+  beforeEach(() => {
+    observed = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: ResizeObserverCallback) {
+          observed.push(cb);
+        }
+        observe() {}
+        disconnect() {
+          observed = [];
+        }
+      },
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const grow = () =>
+    observed.forEach((cb) => cb([], null as unknown as ResizeObserver));
+
+  it('scrolls the target back while the content grows, until the reader moves', () => {
+    const scrollIntoView = vi.fn();
+    const target = { scrollIntoView } as unknown as Element;
+    holdInView(target, document.createElement('div'));
+    grow();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    document.dispatchEvent(new Event('wheel'));
+    grow();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops by itself', () => {
+    vi.useFakeTimers();
+    const scrollIntoView = vi.fn();
+    holdInView(
+      { scrollIntoView } as unknown as Element,
+      document.createElement('div'),
+      1000,
+    );
+    vi.advanceTimersByTime(1000);
+    grow();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('stops when told to', () => {
+    const scrollIntoView = vi.fn();
+    const stop = holdInView(
+      { scrollIntoView } as unknown as Element,
+      document.createElement('div'),
+    );
+    stop();
+    grow();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
