@@ -500,6 +500,24 @@ describe('BrainAdd', () => {
     });
   });
 
+  it('offers no Retry on a failed first arrangement of the book', () => {
+    installFakeApi({});
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          id: 'k',
+          kind: 'sync',
+          background: true,
+          status: 'failed',
+          error: 'x',
+        }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    expect(screen.getByText('failed')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
   it('offers no Retry on a paused job and shows takeaways of a done one', async () => {
     installFakeApi({});
     const brain = brainView({

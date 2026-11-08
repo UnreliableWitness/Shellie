@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  BrainJob,
+import {
+  isBookJob,
+  type BrainJob,
   BrainPageRow,
   BrainSourceRow,
   BrainView,
@@ -90,8 +91,8 @@ function JobRow({
       <span className={`brain-status brain-status-${job.status} small`}>
         {job.status}
       </span>
-      {/* A paused job runs again on Resume (Health); only a failed one is retried. */}
-      {job.status === 'failed' && (
+      {/* A paused job runs again on Resume (Health); only a failed one is retried, never the book's: a retry would be a full sync. */}
+      {job.status === 'failed' && !isBookJob(job) && (
         <button type="button" className="btn btn-sm" onClick={retry}>
           Retry
         </button>
