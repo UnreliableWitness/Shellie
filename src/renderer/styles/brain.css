@@ -603,6 +603,41 @@
   padding: 0;
   border-bottom: 0;
 }
+.brain-rail-outline.is-current {
+  color: var(--text);
+  font-weight: 600;
+  border-left-color: var(--accent);
+}
+/* A chapter: its pages one after another, each under its own title and tags. */
+.brain-chapter > .brain-page-head .brain-page-body .doc-md {
+  color: var(--muted);
+  padding: 0;
+}
+.brain-chapter-section {
+  padding: 20px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.brain-chapter-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.brain-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brain-section-head h2 {
+  margin: 0;
+  font-size: calc(var(--read-size) * 1.3);
+}
+.brain-chapter-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
 /* A source page has no rail: the body keeps the whole reading width. */
 .brain-page.with-rail.no-rail {
   grid-template-columns: minmax(0, 1fr);

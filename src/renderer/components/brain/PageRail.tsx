@@ -16,6 +16,8 @@ export function PageRail({
   onOpen,
   onJump,
   verified,
+  outlineLabel = 'On this page',
+  current,
 }: {
   headings: RailHeading[];
   row: BrainPageRow;
@@ -24,17 +26,22 @@ export function PageRail({
   onJump: (id: string) => void;
   /** The `VerifiedBar` for the page. */
   verified: React.ReactNode;
+  /** The outline's title: "In this chapter" when the outline lists a chapter's sections. */
+  outlineLabel?: string;
+  /** The outline id being read, highlighted. */
+  current?: string;
 }) {
   return (
     <aside className="brain-rail" aria-label="About this page">
       {headings.length > 0 && (
-        <section className="brain-rail-section" aria-label="On this page">
-          <h3 className="brain-rail-label">On this page</h3>
+        <section className="brain-rail-section" aria-label={outlineLabel}>
+          <h3 className="brain-rail-label">{outlineLabel}</h3>
           {headings.map((h) => (
             <a
               key={h.id}
               href={`#${h.id}`}
-              className={`brain-rail-link brain-rail-outline${h.level === 3 ? ' is-sub' : ''}`}
+              className={`brain-rail-link brain-rail-outline${h.level === 3 ? ' is-sub' : ''}${h.id === current ? ' is-current' : ''}`}
+              aria-current={h.id === current ? 'location' : undefined}
               onClick={(e) => {
                 e.preventDefault();
                 onJump(h.id);
