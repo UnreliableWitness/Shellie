@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
@@ -34,6 +35,13 @@ const config: ForgeConfig = {
       unpack: '{**/node_modules/node-pty/**,**/node_modules/@napi-rs/**}',
     },
     ignore: (file: string) => !keepInPackage(file),
+    // The checksums the electron package ships: packaging then needs no SHASUMS256.txt from GitHub, which is fetched
+    // anew even for a cached zip (tools/release/fetch-electron.mjs puts the zip in the cache, with retries).
+    download: {
+      checksums: JSON.parse(
+        readFileSync('node_modules/electron/checksums.json', 'utf8'),
+      ),
+    },
     executableName: 'Shellie',
     icon: 'assets/icon/shellie',
     // macOS only (Windows ignores extendInfo): the hardened runtime asks for these when a CLI run in a
