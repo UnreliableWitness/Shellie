@@ -47,6 +47,7 @@ const page = (path: string, title: string) => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
 });
 const source = (path: string): BrainSourceRow => ({
   path,

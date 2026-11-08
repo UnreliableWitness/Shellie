@@ -16,6 +16,7 @@ export type TreeGroup = {
 };
 
 const TYPE_LABELS: Record<BrainPageType, string> = {
+  subject: 'Subjects',
   account: 'Accounts',
   scope: 'Scope',
   component: 'Components',

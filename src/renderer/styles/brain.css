@@ -861,6 +861,9 @@
 .brain-graph-swatch {
   --type-color: var(--muted);
 }
+.brain-graph [data-type='subject'] {
+  --type-color: var(--accent);
+}
 .brain-graph [data-type='account'] {
   --type-color: var(--repo-1);
 }

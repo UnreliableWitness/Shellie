@@ -17,6 +17,7 @@ describe('pageType', () => {
     expect(pageType('wiki/account.md')).toBe('account');
     expect(pageType('wiki/scope-platform.md')).toBe('scope');
     expect(pageType('wiki/component-api.md')).toBe('component');
+    expect(pageType('wiki/subject-mission.md')).toBe('subject');
     expect(pageType('wiki/glossary.md')).toBe('glossary');
     expect(pageType('wiki/decision-2026-11-03-db.md')).toBe('decision');
     expect(pageType('wiki/meeting-2026-11-01-kickoff.md')).toBe('meeting');
@@ -24,6 +25,35 @@ describe('pageType', () => {
     expect(pageType('wiki/digests/2026-w45.md')).toBe('digest');
     expect(pageType('wiki/notes.md')).toBe('other');
     expect(pageType('wiki/decisions/2026-11-03-db.md')).toBe('other');
+  });
+});
+
+describe('pageRows pictures', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-browse-pic-'));
+    await fs.mkdir(path.join(dir, 'wiki'), { recursive: true });
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('lists the pictures a page links or embeds once each, in order, without fragments', async () => {
+    await fs.writeFile(
+      path.join(dir, 'wiki', 'subject-mission.md'),
+      '---\ntitle: Mission\n---\n\n# Mission\n\n![deck](../sources/d-assets/a.png#p2) and [again](../sources/d-assets/b.JPG) and ![dup](../sources/d-assets/a.png) [page](account.md) [web](https://x.test/c.png)\n',
+    );
+    await fs.writeFile(path.join(dir, 'wiki', 'account.md'), '# A\n');
+    const rows = await pageRows(dir);
+    const mission = rows.find((r) => r.path === 'wiki/subject-mission.md')!;
+    expect(mission.type).toBe('subject');
+    expect(mission.pictures).toEqual([
+      'sources/d-assets/a.png',
+      'sources/d-assets/b.JPG',
+    ]);
+    expect(rows.find((r) => r.path === 'wiki/account.md')!.pictures).toEqual(
+      [],
+    );
   });
 });
 
@@ -165,6 +195,7 @@ describe('relevance', () => {
       changedSinceVerified: false,
       sources: [],
       linkedFrom: [],
+      pictures: [],
     });
     const rows = [
       row('wiki/a.md', 'Billing', 'The export runs nightly.'),

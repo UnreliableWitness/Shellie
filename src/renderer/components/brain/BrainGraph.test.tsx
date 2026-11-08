@@ -15,6 +15,7 @@ const row = (over: Partial<BrainPageRow> & { path: string }): BrainPageRow => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
   ...over,
 });
 const rows = [

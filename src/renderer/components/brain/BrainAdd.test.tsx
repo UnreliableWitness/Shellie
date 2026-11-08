@@ -45,6 +45,7 @@ const page = (path: string, title: string): BrainPageRow => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
 });
 
 /** BrainAdd with its pages loaded the way the Brain screen loads them. */

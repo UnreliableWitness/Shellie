@@ -21,6 +21,7 @@ const row = (path: string, title: string): BrainPageRow => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
 });
 const rows = [
   row('wiki/account.md', 'Acme'),

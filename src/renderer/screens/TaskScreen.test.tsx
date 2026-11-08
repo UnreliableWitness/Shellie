@@ -910,6 +910,7 @@ describe('tabs and focus', () => {
             changedSinceVerified: false,
             sources: [],
             linkedFrom: [],
+            pictures: [],
           },
           {
             path: 'wiki/account.md',
@@ -922,6 +923,7 @@ describe('tabs and focus', () => {
             changedSinceVerified: false,
             sources: [],
             linkedFrom: [],
+            pictures: [],
           },
         ],
         'brain:relevant': () => ['wiki/scope.md'],

@@ -8,6 +8,7 @@ import { readPages, type WikiPage } from './pages';
 const SUMMARY_LENGTH = 160;
 /** Top-level pages in this order of file-name prefix; the rest after, by name. */
 const TYPE_ORDER = [
+  'subject-',
   'account',
   'scope-',
   'component-',

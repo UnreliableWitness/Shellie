@@ -13,7 +13,7 @@ import {
 } from '../../shared/brain';
 import { citedSources, localTarget } from './check';
 import { pageOrder, pageSummary, pageTitle } from './indexPage';
-import { parsePage, readPages, splitFrontmatter } from './pages';
+import { parsePage, readPages, splitFrontmatter, type WikiPage } from './pages';
 import { absPath } from './paths';
 import { parseSourceFrontmatter } from './sourceFile';
 
@@ -28,6 +28,7 @@ export function pageType(pagePath: string): BrainPageType {
   if (name === 'account.md') return 'account';
   if (name === 'glossary.md') return 'glossary';
   for (const t of [
+    'subject',
     'scope',
     'component',
     'decision',
@@ -36,6 +37,18 @@ export function pageType(pagePath: string): BrainPageType {
   ] as const)
     if (name.startsWith(`${t}-`)) return t;
   return 'other';
+}
+
+const PICTURE = /\.(?:png|jpe?g|gif|webp|svg|bmp)$/i;
+
+/** The picture files a page links or embeds, repo-relative, in document order, each once. */
+function pagePictures(page: WikiPage): string[] {
+  const out = new Set<string>();
+  for (const l of page.links) {
+    const rel = localTarget(page.path, l);
+    if (rel && PICTURE.test(rel)) out.add(rel);
+  }
+  return [...out];
 }
 
 /** Every wiki page as a row, in the front page's order: by type, then as the index sorts. */
@@ -72,6 +85,7 @@ export async function pageRows(brainDir: string): Promise<BrainPageRow[]> {
       changedSinceVerified: !!verified && !!updated && updated > verified,
       sources: citedSources(p),
       linkedFrom: [...(linkedFrom.get(p.path) ?? [])].sort(),
+      pictures: pagePictures(p),
     };
   });
   const byPath = new Map(pages.map((p) => [p.path, p]));

@@ -328,6 +328,7 @@ describe('brain handlers', () => {
       ['wiki/account.md', 'account', []],
       ['wiki/component-billing.md', 'component', ['wiki/account.md']],
     ]);
+    expect(await h['brain:book'](v.id)).toBeNull();
     const hits = await h['brain:search'](v.id, 'invoices');
     expect(hits.map((x) => [x.path, x.anchor])).toEqual([
       ['wiki/component-billing.md', 'billing'],

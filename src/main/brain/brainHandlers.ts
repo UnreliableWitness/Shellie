@@ -26,6 +26,7 @@ import type { BrainJobRunner } from './jobs';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
+import { readBook } from './book';
 import { pageRows, relevantPages, searchBrain, taskWords } from './browse';
 import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
@@ -82,6 +83,7 @@ export type BrainChannels =
   | 'brain:updateTemplates'
   | 'brain:openFolder'
   | 'brain:pages'
+  | 'brain:book'
   | 'brain:search'
   | 'brain:relevant'
   | 'brain:openSource'
@@ -719,6 +721,7 @@ export function createBrainHandlers(
       if (error) throw new Error(`Could not open the folder: ${error}`);
     },
     'brain:pages': async (id) => pageRows(brainOf(id).path),
+    'brain:book': async (id) => readBook(brainOf(id).path),
     'brain:search': async (id, query) => searchBrain(brainOf(id).path, query),
     'brain:relevant': async (id, taskId) => {
       const b = brainOf(id);

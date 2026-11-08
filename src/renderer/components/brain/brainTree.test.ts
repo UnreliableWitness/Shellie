@@ -22,6 +22,7 @@ const row = (
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
 });
 const src = (path: string, type: SourceType): BrainSourceRow => ({
   path,
