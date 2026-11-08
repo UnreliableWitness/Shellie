@@ -113,15 +113,12 @@ function Figure({
   ) : null;
 }
 
-/** Prefixes the heading ids, so two views on one screen (a chapter's sections) do not share an id. */
+/** Prefixes every id (headings, footnotes), so two views on one screen (a chapter's sections) do not share an id. */
 function rehypeIdPrefix(prefix: string) {
   return (tree: Root) => {
     if (!prefix) return;
     visit(tree, 'element', (node: Element) => {
-      if (
-        /^h[1-6]$/.test(node.tagName) &&
-        typeof node.properties.id === 'string'
-      )
+      if (typeof node.properties.id === 'string')
         node.properties.id = prefix + node.properties.id;
     });
   };
