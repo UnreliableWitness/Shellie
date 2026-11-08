@@ -1,0 +1,79 @@
+<style>
+  .win { container-type: inline-size; background:#201f1e; color:rgba(255,255,255,.9); font-family:"Segoe UI",system-ui,sans-serif; }
+  .win-in { font-size:.82cqw; height:44cqw; display:grid; grid-template-columns:19.3em minmax(0,1fr); overflow:hidden; line-height:1.55; text-align:left; }
+  .toc { border-right:1px solid rgba(255,255,255,.08); padding:1.2em 1em; background:#1b1a19; }
+  .toc .t { font-size:.8em; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,.55); margin:.2em 0 .6em; }
+  .toc .c { display:flex; gap:.7em; padding:.3em .6em; border-radius:4px; }
+  .toc .c b { font-weight:400; color:rgba(255,255,255,.45); width:1em; }
+  .toc .b { display:flex; justify-content:space-between; padding:.22em .6em; color:rgba(255,255,255,.62); }
+  .toc hr { border:0; border-top:1px solid rgba(255,255,255,.08); margin:1em 0; }
+  .read { padding:1.8em 2.6em; min-width:0; }
+  .read h1 { font-size:2.5em; line-height:1.2; margin:0 0 .25em; font-weight:600; color:#fff; }
+  .intro { font-size:1.22em; color:rgba(255,255,255,.75); margin:0 0 1em; max-width:62em; }
+  .cont { display:inline-flex; gap:.6em; align-items:baseline; background:rgba(0,120,212,.18); border:1px solid rgba(92,169,242,.4); border-radius:6px; padding:.45em .9em; margin-bottom:1.5em; }
+  .cont span { color:rgba(255,255,255,.6); }
+  .cont b { font-weight:500; color:#fff; }
+  .h { font-size:.82em; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,.5); margin:0 0 .7em; }
+  .ch { display:grid; grid-template-columns:2.2em minmax(0,1fr) auto; padding:.62em 0; border-top:1px solid rgba(255,255,255,.08); align-items:baseline; }
+  .ch .n { font-size:1.35em; color:rgba(255,255,255,.4); }
+  .ch .ti { font-size:1.22em; font-weight:500; color:#fff; }
+  .ch .su { color:rgba(255,255,255,.62); }
+  .ch .m { color:rgba(255,255,255,.45); font-size:.9em; white-space:nowrap; }
+  .ch.gap .ti { color:rgba(255,255,255,.55); }
+  .ch.gap .su { color:#f7b955; }
+  .two { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); column-gap:3.5em; }
+  .map { background:#252423; border:1px solid rgba(255,255,255,.08); border-radius:6px; padding:.5em; }
+  .map svg { display:block; width:100%; height:auto; }
+  .plain { color:#5ca9f2; margin-top:1em; }
+  .card-body h3 { margin-bottom:.2rem; }
+</style>
+
+<h2>What should you land on when you open a brain?</h2>
+<p class="subtitle">Made-up content again, with option C's bigger type. The amber line shows a chapter the brain has nothing on yet. Click one and tell me what you'd change.</p>
+
+<div class="cards" style="grid-template-columns:1fr;gap:1.5rem">
+
+  <div class="card" data-choice="contents-and-map" onclick="toggleSelect(this)">
+    <div class="card-body"><h3>1. Contents beside the map (my pick)</h3><p>A short introduction, then the chapters on the left and the graph you already have on the right, so the wide screen is used and the graph stays in view.</p></div>
+    <div class="win"><div class="win-in">
+      <nav class="toc"><div class="t">The book</div><div class="c"><b>1</b>The project</div><div class="c"><b>2</b>Who's on board</div><div class="c"><b>3</b>The customer's business</div><div class="c"><b>4</b>Architecture</div><div class="c"><b>5</b>How we work</div><div class="c"><b>6</b>Risks and open questions</div><hr><div class="t">Back of the book</div><div class="b"><span>Decisions</span><span>14</span></div><div class="b"><span>Meetings</span><span>22</span></div><div class="b"><span>Weekly digests</span><span>6</span></div><div class="b"><span>Glossary</span></div><div class="b"><span>Sources</span><span>31</span></div><hr><div class="b"><span>Recent changes</span></div></nav>
+      <div class="read">
+        <h1>Order platform renewal</h1>
+        <p class="intro">Replacing the customer's two order systems with one platform before the 2027 season. This book collects what the team has captured so far.</p>
+        <div class="cont"><span>Continue reading</span><b>4 · Architecture › Order flow</b></div>
+        <div class="two"><div>
+          <div class="h">Contents</div>
+          <div class="ch"><span class="n">1</span><div><div class="ti">The project</div><div class="su">Mission, goals and what is out of scope</div></div><span class="m">3 sections</span></div>
+          <div class="ch"><span class="n">2</span><div><div class="ti">Who's on board</div><div class="su">Our team, the customer's people, who decides what</div></div><span class="m">2 sections</span></div>
+          <div class="ch"><span class="n">3</span><div><div class="ti">The customer's business</div><div class="su">What they sell, how orders reach them, the season</div></div><span class="m">4 sections</span></div>
+          <div class="ch"><span class="n">4</span><div><div class="ti">Architecture</div><div class="su">The platform, the order flow and integrations</div></div><span class="m">3 sections</span></div>
+          <div class="ch"><span class="n">5</span><div><div class="ti">How we work</div><div class="su">Releases, support and the agreed rhythm</div></div><span class="m">2 sections</span></div>
+          <div class="ch gap"><span class="n">6</span><div><div class="ti">Risks and open questions</div><div class="su">Nothing captured on this yet</div></div><span class="m"></span></div>
+        </div><div>
+          <div class="h">How the pages link</div>
+          <div class="map"><svg viewBox="0 0 520 330"><g stroke="#fff" stroke-opacity=".22" stroke-width="1.2"><path d="M260 165L150 90M260 165L380 80M260 165L420 200M260 165L300 280M260 165L130 240M150 90L70 50M150 90L60 150M380 80L470 50M420 200L490 260M300 280L390 300M130 240L60 290M380 80L420 200M150 90L130 240"/></g><g><circle cx="260" cy="165" r="15" fill="#2b88d8"/><circle cx="150" cy="90" r="11" fill="#a083e0"/><circle cx="380" cy="80" r="11" fill="#6ccb5f"/><circle cx="420" cy="200" r="10" fill="#f2c94c"/><circle cx="300" cy="280" r="9" fill="#a083e0"/><circle cx="130" cy="240" r="9" fill="#6cb8f6"/><circle cx="70" cy="50" r="6" fill="#6cb8f6"/><circle cx="60" cy="150" r="6" fill="#f08c4f"/><circle cx="470" cy="50" r="6" fill="#6ccb5f"/><circle cx="490" cy="260" r="6" fill="#f2c94c"/><circle cx="390" cy="300" r="6" fill="#a083e0"/><circle cx="60" cy="290" r="6" fill="#6cb8f6"/></g><g fill="#fff" fill-opacity=".8" font-size="13" text-anchor="middle"><text x="260" y="197">Orders</text><text x="150" y="68">Scope</text><text x="380" y="58">Billing</text></g></svg></div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card" data-choice="contents-only" onclick="toggleSelect(this)">
+    <div class="card-body"><h3>2. Contents only, the map one click away</h3><p>The front page is purely the book's contents, with each chapter given more room. The graph moves behind a "Map of the pages" link.</p></div>
+    <div class="win"><div class="win-in">
+      <nav class="toc"><div class="t">The book</div><div class="c"><b>1</b>The project</div><div class="c"><b>2</b>Who's on board</div><div class="c"><b>3</b>The customer's business</div><div class="c"><b>4</b>Architecture</div><div class="c"><b>5</b>How we work</div><div class="c"><b>6</b>Risks and open questions</div><hr><div class="t">Back of the book</div><div class="b"><span>Decisions</span><span>14</span></div><div class="b"><span>Meetings</span><span>22</span></div><div class="b"><span>Weekly digests</span><span>6</span></div><div class="b"><span>Glossary</span></div><div class="b"><span>Sources</span><span>31</span></div><hr><div class="b"><span>Map of the pages</span></div><div class="b"><span>Recent changes</span></div></nav>
+      <div class="read">
+        <h1>Order platform renewal</h1>
+        <p class="intro">Replacing the customer's two order systems with one platform before the 2027 season. This book collects what the team has captured so far.</p>
+        <div class="cont"><span>Continue reading</span><b>4 · Architecture › Order flow</b></div>
+        <div class="h">Contents</div>
+        <div class="ch"><span class="n">1</span><div><div class="ti">The project</div><div class="su">Mission, goals and what is out of scope. Sections: Why this project, Goals for the 2027 season, Out of scope</div></div><span class="m">3 sections</span></div>
+        <div class="ch"><span class="n">2</span><div><div class="ti">Who's on board</div><div class="su">Our team, the customer's people, who decides what. Sections: The team, Stakeholders</div></div><span class="m">2 sections</span></div>
+        <div class="ch"><span class="n">3</span><div><div class="ti">The customer's business</div><div class="su">What they sell, how orders reach them, the season. Sections: Products, Channels, The season, Finance</div></div><span class="m">4 sections</span></div>
+        <div class="ch"><span class="n">4</span><div><div class="ti">Architecture</div><div class="su">The platform, the order flow and integrations. Sections: Overview, Order flow, Integrations</div></div><span class="m">3 sections</span></div>
+        <div class="ch"><span class="n">5</span><div><div class="ti">How we work</div><div class="su">Releases, support and the agreed rhythm. Sections: Releases, Support</div></div><span class="m">2 sections</span></div>
+        <div class="ch gap"><span class="n">6</span><div><div class="ti">Risks and open questions</div><div class="su">Nothing captured on this yet</div></div><span class="m"></span></div>
+      </div>
+    </div></div>
+  </div>
+
+</div>

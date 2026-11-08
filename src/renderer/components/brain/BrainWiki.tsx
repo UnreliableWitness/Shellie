@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
+import type {
+  BrainBook,
+  BrainPageRow,
+  BrainSourceRow,
+} from '../../../shared/brain';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { isAfter, shortDay, type RecentEntry } from './recent';
@@ -9,13 +13,23 @@ export function useBrainPages(brainId: string): BrainPages {
   const [rows, setRows] = useState<BrainPageRow[]>([]);
   const [sources, setSources] = useState<BrainSourceRow[]>([]);
   const [log, setLog] = useState('');
-  /** Whether `brain:pages` has answered once, so an empty list means an empty brain. */
+  const [book, setBook] = useState<BrainBook | null>(null);
+  /** Whether `brain:pages` and `brain:book` have answered once, so an empty list means an empty brain. */
   const [loaded, setLoaded] = useState(false);
   const load = useCallback(() => {
-    api()
-      .invoke('brain:pages', brainId)
-      .then(setRows, () => undefined)
-      .finally(() => setLoaded(true));
+    // Set together: pages known before the book would flash today's tree and landing for a brain that has a book.
+    void Promise.all([
+      api()
+        .invoke('brain:pages', brainId)
+        .catch(() => undefined),
+      api()
+        .invoke('brain:book', brainId)
+        .catch(() => null),
+    ]).then(([r, b]) => {
+      if (r) setRows(r);
+      setBook(b);
+      setLoaded(true);
+    });
     api()
       .invoke('brain:sources', brainId)
       .then(setSources, () => undefined);
@@ -28,15 +42,17 @@ export function useBrainPages(brainId: string): BrainPages {
   }, [brainId]);
   useEffect(load, [load]);
   useBrainChanged(brainId, load);
-  return { rows, sources, log, loaded };
+  return { rows, sources, log, book, loaded };
 }
 
-/** A brain's pages, sources and log, as useBrainPages loads them. */
+/** A brain's pages, sources, log and book, as useBrainPages loads them. */
 export type BrainPages = {
   rows: BrainPageRow[];
   sources: BrainSourceRow[];
   log: string;
-  /** Whether `brain:pages` has answered once, so an empty list means an empty brain. */
+  /** The brain's book (its chapters), or null without one or when it cannot be read. */
+  book: BrainBook | null;
+  /** Whether `brain:pages` and `brain:book` have answered once, so an empty list means an empty brain. */
   loaded: boolean;
 };
 

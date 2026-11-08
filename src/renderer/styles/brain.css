@@ -509,11 +509,36 @@
 .brain-page-body .doc-md img {
   cursor: zoom-in;
 }
+/* In the Read view the page uses the width, from the same left edge as its titles, and its type grows with it (headings in em follow). */
+.with-rail .brain-page-body {
+  padding: 0;
+}
+.with-rail .brain-page-body .doc-md {
+  max-width: none;
+  font-size: var(--read-size);
+}
+.with-rail .brain-page-body .doc-md h1 {
+  font-size: 1.43em;
+}
+.with-rail .brain-page-body .doc-md h2 {
+  font-size: 1.14em;
+}
+.with-rail .brain-page-body .doc-md h3,
+.with-rail .brain-page-body .doc-md h4 {
+  font-size: 1em;
+}
+.with-rail > .brain-page-head h2 {
+  font-size: calc(var(--read-size) * 1.3);
+  line-height: 1.25;
+}
+.with-rail > .brain-page-head .brain-page-lead {
+  font-size: var(--read-size);
+}
 
 /* The Read view's page: the body at reading width, a rail beside it (outline, backlinks, sources, verified). */
 .brain-page.with-rail {
   display: grid;
-  grid-template-columns: minmax(0, 72ch) 240px;
+  grid-template-columns: minmax(0, 1fr) 240px;
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
     'bar rail'
@@ -582,9 +607,45 @@
   padding: 0;
   border-bottom: 0;
 }
+.brain-rail-outline.is-current {
+  color: var(--text);
+  font-weight: 600;
+  border-left-color: var(--accent);
+}
+/* A chapter: its pages one after another, each under its own title and tags. */
+.brain-chapter > .brain-page-head .brain-page-body .doc-md {
+  color: var(--muted);
+  padding: 0;
+}
+.brain-chapter-section {
+  padding: 20px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.brain-chapter-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.brain-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brain-section-head h2 {
+  margin: 0;
+  font-size: calc(var(--read-size) * 1.3);
+  line-height: 1.25;
+}
+.brain-chapter-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
 /* A source page has no rail: the body keeps the whole reading width. */
 .brain-page.with-rail.no-rail {
-  grid-template-columns: minmax(0, 72ch);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'bar'
     'head'
@@ -635,14 +696,19 @@
   overflow: auto;
   padding: 12px 0 32px 32px;
 }
-.brain-read-main > .brain-page.with-rail {
-  justify-content: center;
+/* The page's type grows with the reading column: 14px up to 860px wide, then 1.7px per 100px, to 22px (about 18px in a 1700px window). */
+.brain-read-main > * {
+  --read-size: clamp(14px, calc(14px + (100cqw - 860px) * 0.017), 22px);
 }
 .brain-read-landing {
   display: flex;
   flex-direction: column;
   gap: 12px;
   max-width: 960px;
+}
+/* The front page of a book uses the whole reading width. */
+.brain-read-landing.is-front {
+  max-width: none;
 }
 .brain-tree,
 .brain-tree-list {
@@ -688,6 +754,145 @@
 .brain-tree-count {
   margin-left: auto;
   font-weight: 400;
+}
+/* The book in the tree: numbered chapters, and the headings of its sections. */
+.brain-tree-heading {
+  margin: 10px 0 2px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-tree-book {
+  padding-left: 0;
+}
+.brain-tree-chapter {
+  align-items: baseline;
+}
+.brain-tree-chapter.is-empty {
+  cursor: default;
+}
+.brain-tree-num {
+  flex: none;
+  width: 1em;
+  color: var(--muted);
+}
+
+/* The front page of a book: title and introduction, Continue reading, then the contents beside the graph. */
+.brain-front {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.brain-front h2 {
+  margin: 0;
+  font-size: calc(var(--read-size) * 1.8);
+  line-height: 1.2;
+}
+.brain-front-intro {
+  margin: 0;
+  max-width: 62em;
+  font-size: calc(var(--read-size) * 1.2);
+  line-height: 1.4;
+  color: var(--muted);
+}
+.brain-front-continue {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+  color: inherit;
+  font: inherit;
+  font-size: var(--read-size);
+  text-align: left;
+  cursor: pointer;
+}
+.brain-front-continue span {
+  color: var(--muted);
+}
+.brain-front-continue b {
+  font-weight: 500;
+}
+.brain-front-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px 48px;
+  align-items: start;
+}
+.brain-front-heading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-front-chapters {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-front-chapter {
+  display: grid;
+  grid-template-columns: 2em minmax(0, 1fr) auto;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--read-size);
+  text-align: left;
+}
+button.brain-front-chapter {
+  cursor: pointer;
+}
+button.brain-front-chapter:hover {
+  background: var(--bg-hover);
+}
+.brain-front-num {
+  font-size: 1.3em;
+  color: var(--muted);
+}
+.brain-front-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.brain-front-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2em;
+  font-weight: 500;
+}
+.brain-front-chapter.is-empty .brain-front-title {
+  color: var(--muted);
+}
+.brain-front-chapter.is-empty .brain-front-summary {
+  color: var(--warn);
+}
+.brain-front-summary {
+  color: var(--muted);
+}
+.brain-front-count {
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+/* A narrow reading column: the contents above the graph. */
+@container brain-reading (max-width: 820px) {
+  .brain-front-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .brain-dot {
   width: 6px;
@@ -860,6 +1065,9 @@
 .brain-graph-node,
 .brain-graph-swatch {
   --type-color: var(--muted);
+}
+.brain-graph [data-type='subject'] {
+  --type-color: var(--accent);
 }
 .brain-graph [data-type='account'] {
   --type-color: var(--repo-1);

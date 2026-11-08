@@ -1,5 +1,9 @@
 import { type ReactNode, useState } from 'react';
-import type { BrainOptions, BrainView } from '../../../shared/brain';
+import {
+  bookReady,
+  type BrainOptions,
+  type BrainView,
+} from '../../../shared/brain';
 import { plural } from '../../../shared/text';
 import { api, tryInvoke } from '../../api';
 import { eur } from '../../format';
@@ -102,6 +106,11 @@ export function AutoRuns({ brain }: { brain: BrainView }) {
             {plural(pass.total, 'source')} captured before Shellie checked
             pictures. Re-evaluating them in the background, {pass.done.length}{' '}
             of {pass.total} done.
+          </Row>
+        )}
+        {bookReady(brain) && (
+          <Row label="Arrange the brain as a book" tag="auto">
+            once, in the background, when a brain has pages and no book yet
           </Row>
         )}
         <Row label="Daily token cap">

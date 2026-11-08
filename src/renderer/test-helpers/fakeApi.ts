@@ -133,6 +133,7 @@ const defaults: FakeHandlers = {
   'brain:removeSource': () => undefined,
   'brain:scrub': () => ({ files: 0, skipped: 0 }),
   'brain:pages': () => [],
+  'brain:book': () => null,
   'brain:search': () => [],
   'brain:relevant': () => [],
   'brain:openSource': () => undefined,

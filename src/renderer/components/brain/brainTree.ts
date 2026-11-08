@@ -1,6 +1,8 @@
 import {
+  BACK_OF_BOOK_TYPES,
   BRAIN_PAGE_TYPES,
   SourceTypeSchema,
+  type BrainBook,
   type BrainPageRow,
   type BrainPageType,
   type BrainSourceRow,
@@ -16,6 +18,7 @@ export type TreeGroup = {
 };
 
 const TYPE_LABELS: Record<BrainPageType, string> = {
+  subject: 'Subjects',
   account: 'Accounts',
   scope: 'Scope',
   component: 'Components',
@@ -71,4 +74,36 @@ export function sourceGroup(sources: BrainSourceRow[]): TreeGroup | null {
     });
   if (!subgroups.length) return null;
   return { key: 'sources', label: 'Sources', items: [], subgroups };
+}
+
+/** The back of the book's page groups, in reading order; the digests are the weekly ones. */
+const BACK_GROUPS: [BrainPageType, string][] = [
+  ['decision', 'Decisions'],
+  ['meeting', 'Meetings'],
+  ['digest', 'Weekly digests'],
+  ['lesson', 'Lessons'],
+  ['glossary', 'Glossary'],
+];
+
+/** The tree's Back of the book: a group per kind of reference page that has pages, then the sources. */
+export function backOfBook(
+  rows: BrainPageRow[],
+  sources: BrainSourceRow[],
+): TreeGroup[] {
+  const groups = BACK_GROUPS.flatMap(([type, label]) => {
+    const items = rows
+      .filter((r) => r.type === type)
+      .map((r) => ({ path: r.path, label: r.title }));
+    return items.length ? [{ key: type, label, items }] : [];
+  });
+  const src = sourceGroup(sources);
+  return src ? [...groups, src] : groups;
+}
+
+/** The pages in no chapter that are not back-of-the-book pages either: the ones the book would otherwise hide. */
+export function unplaced(rows: BrainPageRow[], book: BrainBook): TreeItem[] {
+  const placed = new Set(book.chapters.flatMap((c) => c.pages));
+  return rows
+    .filter((r) => !placed.has(r.path) && !BACK_OF_BOOK_TYPES.has(r.type))
+    .map((r) => ({ path: r.path, label: r.title }));
 }

@@ -3,6 +3,7 @@ import { shortDay } from './recent';
 
 /** The section heading per type, in the front page's order. */
 const TYPE_LABELS: Record<BrainPageType, string> = {
+  subject: 'Subjects',
   account: 'Account',
   scope: 'Scope',
   component: 'Components',

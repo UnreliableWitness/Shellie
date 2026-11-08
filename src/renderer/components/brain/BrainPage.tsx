@@ -11,7 +11,6 @@ import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { MarkdownView } from '../docs/MarkdownView';
 import { trackBrain } from './brainActions';
-import { Lightbox } from './Lightbox';
 import { PageTags } from './PageCards';
 import { PageRail, type RailHeading } from './PageRail';
 import { folderOf, shortDay, sourceLabel } from './recent';
@@ -22,10 +21,11 @@ import {
   SourcePictures,
   useSourcePictures,
 } from './SourcePictures';
+import { usePageMedia } from './usePageMedia';
 import { VerifiedBar } from './VerifiedBar';
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
-const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+const NOTHING_SHOWN: ReadonlySet<string> = new Set();
 
 /**
  * One page or source of the brain, presented: a bar with back and forward, a header from its frontmatter (sources
@@ -71,9 +71,8 @@ export function BrainPage({
   const notify = useStore((s) => s.notify);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [picture, setPicture] = useState<{ src: string; alt: string } | null>(
-    null,
-  );
+  const { asset, openFile, view, onBodyClick, lightbox } =
+    usePageMedia(brainId);
   const body = useRef<HTMLDivElement>(null);
   const rail = layout === 'rail';
   const [headings, setHeadings] = useState<RailHeading[]>([]);
@@ -159,31 +158,6 @@ export function BrainPage({
       ?.querySelector(`[id="${CSS.escape(id)}"]`)
       ?.scrollIntoView?.({ block: 'start' });
 
-  const asset = useCallback(
-    (p: string) => api().invoke('brain:asset', brainId, p),
-    [brainId],
-  );
-  const openFile = (p: string) => {
-    if (IMAGE.test(p)) {
-      asset(p).then(
-        (src) => setPicture({ src, alt: p.split('/').pop() ?? p }),
-        (e: unknown) => notify('error', errorMessage(e)),
-      );
-    } else if (p.startsWith('sources/')) {
-      api()
-        .invoke('brain:openSource', brainId, p)
-        .catch((e: unknown) => notify('error', errorMessage(e)));
-    } else notify('error', `${p} is not a page, a picture or a source file`);
-  };
-  // A picture in the body opens at full size.
-  const onBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const t = e.target as HTMLElement;
-    // A picture that is itself a link follows the link, not the lightbox.
-    if (t.tagName === 'IMG' && !t.closest('a')) {
-      const img = t as HTMLImageElement;
-      if (img.src) setPicture({ src: img.src, alt: img.alt });
-    }
-  };
   const titleOf = (p: string) => rows.find((r) => r.path === p)?.title ?? p;
 
   const top = path.split('/')[0];
@@ -218,7 +192,7 @@ export function BrainPage({
           jobs={jobs}
           skillsReady={skillsReady}
           onOpen={onOpen}
-          onView={(src, alt) => setPicture({ src, alt })}
+          onView={view}
           titleOf={(p) =>
             rows.find((r) => r.path === p)?.title ?? sourceLabel(p)
           }
@@ -245,6 +219,8 @@ export function BrainPage({
             text={text.replace(FRONTMATTER, '')}
             onOpenDoc={onOpen}
             onOpenFile={openFile}
+            // The Read view of a wiki page shows the pictures its text cites; sources and the chips layout do not.
+            figures={rail && row ? { shown: NOTHING_SHOWN } : undefined}
           />
         </div>
       )}
@@ -394,13 +370,7 @@ export function BrainPage({
           verified={verifiedBar}
         />
       )}
-      {picture && (
-        <Lightbox
-          src={picture.src}
-          alt={picture.alt}
-          onClose={() => setPicture(null)}
-        />
-      )}
+      {lightbox}
     </div>
   );
 }

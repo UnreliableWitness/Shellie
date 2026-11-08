@@ -6,6 +6,8 @@ import {
   BrainSchema,
   BrainWikiSchema,
   picturesReady,
+  bookReady,
+  isBookJob,
   SOURCE_JOB_KINDS,
   SourceTypeSchema,
   type AddSourceResult,
@@ -26,6 +28,8 @@ import type { BrainJobRunner } from './jobs';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
+import { readBook } from './book';
+import { PENDING } from './bookPass';
 import { pageRows, relevantPages, searchBrain, taskWords } from './browse';
 import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
@@ -82,6 +86,7 @@ export type BrainChannels =
   | 'brain:updateTemplates'
   | 'brain:openFolder'
   | 'brain:pages'
+  | 'brain:book'
   | 'brain:search'
   | 'brain:relevant'
   | 'brain:openSource'
@@ -155,6 +160,7 @@ const JOB_OUTPUT = [
   'log.md',
   'brain/state.json',
   'brain/pictures-skipped.json',
+  'brain/book.json',
 ];
 
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
@@ -629,7 +635,21 @@ export function createBrainHandlers(
       const b = live(id);
       if (kind === 'pictures' && !picturesReady(b))
         throw new Error('Update skills to re-evaluate pictures');
-      return d.runner.enqueue(id, kind, source ?? null);
+      // A Sync from Run now also arranges a missing book, as its own job: plain /sync leaves the book alone.
+      let arrange =
+        kind === 'sync' &&
+        bookReady(b) &&
+        (await readPages(b.path).catch(() => [])).length > 0 &&
+        !(await readBook(b.path));
+      // Judged last, in the turn that queues: a book job queued while the reads were in flight is seen.
+      if (
+        arrange &&
+        d.runner.jobs(id).some((j) => isBookJob(j) && PENDING.has(j.status))
+      )
+        arrange = false;
+      const job = d.runner.enqueue(id, kind, source ?? null);
+      if (arrange) d.runner.enqueue(id, 'sync', null, { background: true });
+      return job;
     },
     'brain:resumeQueue': async (id) => {
       live(id);
@@ -719,6 +739,7 @@ export function createBrainHandlers(
       if (error) throw new Error(`Could not open the folder: ${error}`);
     },
     'brain:pages': async (id) => pageRows(brainOf(id).path),
+    'brain:book': async (id) => readBook(brainOf(id).path),
     'brain:search': async (id, query) => searchBrain(brainOf(id).path, query),
     'brain:relevant': async (id, taskId) => {
       const b = brainOf(id);

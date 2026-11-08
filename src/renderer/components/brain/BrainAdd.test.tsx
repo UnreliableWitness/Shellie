@@ -45,6 +45,7 @@ const page = (path: string, title: string): BrainPageRow => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
 });
 
 /** BrainAdd with its pages loaded the way the Brain screen loads them. */
@@ -497,6 +498,24 @@ describe('BrainAdd', () => {
       channel: 'brain:run',
       args: ['b1', 'capture', 'sources/2026-11-02-sow.md'],
     });
+  });
+
+  it('offers no Retry on a failed first arrangement of the book', () => {
+    installFakeApi({});
+    const brain = brainView({
+      jobs: [
+        brainJob({
+          id: 'k',
+          kind: 'sync',
+          background: true,
+          status: 'failed',
+          error: 'x',
+        }),
+      ],
+    });
+    render(<BrainAdd brain={brain} onOpenPage={() => undefined} />);
+    expect(screen.getByText('failed')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
   it('offers no Retry on a paused job and shows takeaways of a done one', async () => {
@@ -1152,6 +1171,27 @@ describe('BrainAdd right column', () => {
       />,
     );
     expect(card).not.toHaveTextContent('Picture check');
+  });
+
+  it('the first arrangement of the book is listed for a brain on skills v8 only', () => {
+    installFakeApi({});
+    const { rerender } = render(
+      <BrainAdd
+        brain={{ ...withOptions({}), templatesVersion: 8 }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const card = screen.getByRole('region', { name: 'What runs by itself' });
+    expect(card).toHaveTextContent(
+      'Arrange the brain as a bookautoonce, in the background, when a brain has pages and no book yet',
+    );
+    rerender(
+      <BrainAdd
+        brain={{ ...withOptions({}), templatesVersion: 7 }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    expect(card).not.toHaveTextContent('Arrange the brain as a book');
   });
 
   it('Run now: Open terminal hands the terminal to the caller', async () => {

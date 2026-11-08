@@ -76,6 +76,28 @@ describe('templates v6', () => {
   const content = (p: string) => files.find((f) => f.path === p)?.content ?? '';
   const pictures = '.claude/skills/pictures/SKILL.md';
 
+  it('teach the book: the schema names the file and the subject pages, each skill its part', () => {
+    const schema = content('SCHEMA.md');
+    expect(schema).toContain('brain/book.json');
+    expect(schema).toContain('subject-<topic>.md');
+    expect(schema).toContain('## The book');
+    expect(schema).toContain('"chapters"');
+    const skill = (k: string) => content(`.claude/skills/${k}/SKILL.md`);
+    const sync = skill('sync');
+    expect(sync).toContain('`book`');
+    expect(sync).toContain('first arrangement');
+    expect(sync).toContain('do not write `lastSyncCommit`');
+    expect(sync).toContain('Change no existing page, not even to add a link.');
+    expect(schema).toContain(
+      'so its own frontmatter `summary` must say what the project is',
+    );
+    expect(schema).toContain('except with the `book` argument');
+    expect(skill('capture')).toContain('never create `brain/book.json`');
+    expect(skill('digest')).toContain('brain/book.json');
+    for (const k of ['retract', 'lint', 'ask', 'lessons', 'pictures'])
+      expect(skill(k)).not.toContain('book.json');
+  });
+
   it('make capture and sync cite each picture file or mark it nothing to record', () => {
     expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(6);
     for (const skill of ['capture', 'sync']) {

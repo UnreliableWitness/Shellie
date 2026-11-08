@@ -13,9 +13,12 @@ import Markdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
+import type { Element, Root } from 'hast';
 import remarkGfm from 'remark-gfm';
+import { visit } from 'unist-util-visit';
 import { openWeb, resolveRelative } from '../../docs/linkify';
 import { rehypeLines } from '../../docs/rehypeLines';
+import { remarkFigures } from '../../docs/remarkFigures';
 import { MermaidBlock } from './MermaidBlock';
 
 const schema = {
@@ -27,6 +30,7 @@ const schema = {
       ...(defaultSchema.attributes?.['*'] ?? []),
       'dataLineStart',
       'dataLineEnd',
+      'dataFigure',
     ],
     code: [
       ...(defaultSchema.attributes?.code ?? []),
@@ -80,12 +84,54 @@ function LocalImage({
   );
 }
 
+/** A picture cited by a link, shown under its block with the link text as caption. A picture that fails shows nothing. */
+function Figure({
+  asset,
+  path,
+  alt,
+}: {
+  asset: (path: string) => Promise<string>;
+  path: string;
+  alt: string;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    asset(path).then(
+      (s) => live && setSrc(s),
+      () => live && setSrc(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [asset, path]);
+  return src ? (
+    <span className="doc-figure">
+      <img src={src} alt={alt} />
+      <span className="doc-figure-cap">{alt}</span>
+    </span>
+  ) : null;
+}
+
+/** Prefixes every id (headings, footnotes), so two views on one screen (a chapter's sections) do not share an id. */
+function rehypeIdPrefix(prefix: string) {
+  return (tree: Root) => {
+    if (!prefix) return;
+    visit(tree, 'element', (node: Element) => {
+      if (typeof node.properties.id === 'string')
+        node.properties.id = prefix + node.properties.id;
+    });
+  };
+}
+
 export function MarkdownView({
   asset,
   path,
   text,
   onOpenDoc,
   onOpenFile,
+  figures,
+  idPrefix = '',
 }: {
   /** Loads a relative image as a data URL (a task's `docs:asset`, a brain's `brain:asset`). */
   asset: (path: string) => Promise<string>;
@@ -93,7 +139,12 @@ export function MarkdownView({
   text: string;
   onOpenDoc(path: string, anchor?: string): void;
   onOpenFile(path: string): void;
+  /** Shows the pictures a link cites under its block, except those in `shown`. Absent: no figures. */
+  figures?: { shown: ReadonlySet<string> };
+  /** Prefix for every heading id and the `#x` links within the view; anchors given to `onOpenDoc` stay as written. */
+  idPrefix?: string;
 }) {
+  const shown = figures?.shown;
   const cb = useRef({ onOpenDoc, onOpenFile, asset });
   cb.current = { onOpenDoc, onOpenFile, asset };
   // Callers may pass a new function each render; images must not refetch for that.
@@ -108,8 +159,10 @@ export function MarkdownView({
           if (e.type === 'auxclick' && e.button !== 1) return;
           if (!href) return;
           if (href.startsWith('#')) {
+            const id = decodeAnchor(href.slice(1));
+            // With a prefix only this view's ids count: another section's heading must not catch the link.
             document
-              .getElementById(decodeAnchor(href.slice(1)))
+              .getElementById(idPrefix + id)
               ?.scrollIntoView?.({ block: 'start' });
           } else if (isWeb(href)) {
             openWeb(href);
@@ -129,7 +182,7 @@ export function MarkdownView({
           </a>
         );
       },
-      img: ({ src = '', alt = '' }) => {
+      img: ({ src = '', alt = '', ...rest }) => {
         const s = String(src);
         if (isWeb(s) || hasScheme(s))
           return (
@@ -148,6 +201,10 @@ export function MarkdownView({
             </a>
           );
         const target = resolveRelative(path, s);
+        if ((rest as Record<string, unknown>)['data-figure'] === 'true')
+          return target ? (
+            <Figure asset={loadAsset} path={target} alt={alt} />
+          ) : null;
         return target ? (
           <LocalImage asset={loadAsset} path={target} alt={alt} />
         ) : (
@@ -177,16 +234,19 @@ export function MarkdownView({
         );
       },
     }),
-    [path, loadAsset],
+    [path, loadAsset, idPrefix],
   );
   return (
     <article className="doc-md">
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={
+          shown ? [remarkGfm, [remarkFigures, { path, shown }]] : [remarkGfm]
+        }
         rehypePlugins={[
           rehypeLines,
           [rehypeSanitize, schema],
           rehypeSlug,
+          [rehypeIdPrefix, idPrefix],
           [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
         ]}
         components={components}

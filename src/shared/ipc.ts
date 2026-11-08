@@ -5,6 +5,7 @@ import type {
   BrainAgent,
   BrainJob,
   BrainOptions,
+  BrainBook,
   BrainPageRow,
   BrainSearchHit,
   BrainCounts,
@@ -620,6 +621,8 @@ export type Channels = {
   };
   /** Every wiki page as the front page shows it, in its order. */
   'brain:pages': { args: [brainId: string]; result: BrainPageRow[] };
+  /** The brain's book (`brain/book.json`) read against its pages, or null without a usable one. */
+  'brain:book': { args: [brainId: string]; result: BrainBook | null };
   /** Lines of pages then sources holding the query (2+ characters), capped. */
   'brain:search': {
     args: [brainId: string, query: string];

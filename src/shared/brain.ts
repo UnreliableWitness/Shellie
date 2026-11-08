@@ -90,6 +90,8 @@ export const BrainSchema = z.object({
     })
     .nullable()
     .default(null),
+  /** The pass that writes the brain's book: how many runs it has had. Null until it starts. */
+  bookPass: z.object({ attempts: z.number().int() }).nullable().default(null),
 });
 export type Brain = z.infer<typeof BrainSchema>;
 
@@ -104,6 +106,15 @@ export const OPENCODE_TEMPLATES = 7;
 /** Whether the brain's skills include the OpenCode commands (templates v7 or later). */
 export const opencodeReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= OPENCODE_TEMPLATES;
+
+/** The skills version that has the book skill: the book needs it. */
+export const BOOK_TEMPLATES = 8;
+/** Whether the brain's skills can write the book (templates v8 or later). */
+export const bookReady = (brain: Pick<Brain, 'templatesVersion'>) =>
+  brain.templatesVersion >= BOOK_TEMPLATES;
+/** The job that makes a brain's first book: a sync in the background lane, run with the `book` argument. */
+export const isBookJob = (j: Pick<BrainJob, 'kind' | 'background'>) =>
+  j.kind === 'sync' && j.background;
 
 /** OpenCode session titles of the brain's headless jobs start with this, so the terminal never takes one for its own. */
 export const BRAIN_JOB_TITLE = 'Shellie brain job';
@@ -278,6 +289,7 @@ export type BrainView = Brain & {
 
 /** Page types by file name, in the order the front page shows them. */
 export const BRAIN_PAGE_TYPES = [
+  'subject',
   'account',
   'scope',
   'component',
@@ -289,6 +301,25 @@ export const BRAIN_PAGE_TYPES = [
   'other',
 ] as const;
 export type BrainPageType = (typeof BRAIN_PAGE_TYPES)[number];
+
+/** Page types that stay at the back of the book, outside its chapters. */
+export const BACK_OF_BOOK_TYPES: ReadonlySet<BrainPageType> = new Set([
+  'decision',
+  'meeting',
+  'digest',
+  'lesson',
+  'glossary',
+]);
+
+/** A chapter of the brain's book: a title, a short summary, an intro and the wiki pages it orders. */
+export type BrainChapter = {
+  title: string;
+  summary: string;
+  intro: string;
+  pages: string[];
+};
+/** `brain/book.json`: the wiki pages ordered into chapters. */
+export type BrainBook = { chapters: BrainChapter[] };
 
 /** A wiki page as the front page and the task tab show it, from its frontmatter and links. */
 export type BrainPageRow = {
@@ -307,6 +338,8 @@ export type BrainPageRow = {
   sources: string[];
   /** Pages whose links point here, repo-relative. */
   linkedFrom: string[];
+  /** Picture files the page links or embeds, repo-relative, in document order, each once. */
+  pictures: string[];
 };
 
 /** One line of a page or source matching a search. */

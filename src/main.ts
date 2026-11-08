@@ -31,6 +31,7 @@ import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { createRasterizer } from './main/brain/convert/raster';
+import { createBookHooks } from './main/brain/bookPass';
 import { createPictureHooks } from './main/brain/pictures';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
@@ -887,6 +888,8 @@ async function boot(): Promise<void> {
       git,
       rasterize: createRasterizer({ platform, run: runWithInput }),
     });
+    // The first arrangement of the book: a background sync with the `book` argument, counted when it ends.
+    const bookHooks = createBookHooks({ brains, runner: () => brainRunner });
     const brainRunner = new BrainJobRunner({
       platform,
       run: runWithInput,
@@ -911,7 +914,10 @@ async function boot(): Promise<void> {
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
       promptFor: pictureHooks.promptFor,
-      afterJob: pictureHooks.afterJob,
+      afterJob: (j) => {
+        pictureHooks.afterJob(j);
+        bookHooks.afterJob(j);
+      },
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
         broadcast('brain:changed', { brainId });
@@ -1272,6 +1278,8 @@ async function boot(): Promise<void> {
         running: (id) => brainRunner.running(id),
         picturePass: pictureHooks.picturePass,
         passRunning: pictureHooks.passRunning,
+        bookPass: bookHooks.bookPass,
+        bookPassRunning: bookHooks.passRunning,
       });
       const warnings = [
         loaded.recovered &&

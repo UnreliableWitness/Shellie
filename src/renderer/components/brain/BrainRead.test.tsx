@@ -1,7 +1,11 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  BrainBook,
+  BrainPageRow,
+  BrainSourceRow,
+} from '../../../shared/brain';
 import { installFakeApi, type FakeHandlers } from '../../test-helpers/fakeApi';
 import { BrainRead as BrainReadView } from './BrainRead';
 import { useBrainPages } from './BrainWiki';
@@ -16,6 +20,7 @@ const row = (over: Partial<BrainPageRow> & { path: string }): BrainPageRow => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom: [],
+  pictures: [],
   ...over,
 });
 const rows = [
@@ -383,5 +388,187 @@ describe('BrainRead', () => {
     expect(
       await screen.findByText('No pages yet. Add a source in Add.'),
     ).toBeInTheDocument();
+  });
+
+  describe('with a book', () => {
+    const orphan = row({
+      path: 'wiki/orphan.md',
+      title: 'Orphan',
+      type: 'component',
+    });
+    const book: BrainBook = {
+      chapters: [
+        {
+          title: 'The project',
+          summary: 'Mission',
+          intro: 'About the project.',
+          pages: ['wiki/account.md', 'wiki/scope-platform.md'],
+        },
+        { title: 'Risks', summary: '', intro: '', pages: [] },
+      ],
+    };
+    const withBook = (over: FakeHandlers = {}) =>
+      setup({
+        'brain:pages': () => [...rows, orphan],
+        'brain:book': () => book,
+        ...over,
+      });
+
+    it("shows neither today's tree nor its landing while the book is still on its way", async () => {
+      let release: (b: BrainBook) => void = () => undefined;
+      const late = new Promise<BrainBook>((res) => (release = res));
+      const a = withBook({ 'brain:book': () => late });
+      render(<BrainRead brainId="b1" brainName="Acme brain" since={null} />);
+      await waitFor(() =>
+        expect(a.calls.some((c) => c.channel === 'brain:pages')).toBe(true),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('region', { name: 'Pinned' })).toBeNull();
+      expect(
+        within(tree()).queryByRole('button', { name: 'Hosting' }),
+      ).toBeNull();
+      release(book);
+      expect(
+        await screen.findByRole('heading', { name: 'Acme brain' }),
+      ).toBeInTheDocument();
+    });
+
+    it('lands on the front page, with the tree as the book, the back of the book and not placed yet', async () => {
+      withBook();
+      render(<BrainRead brainId="b1" brainName="Acme brain" since={null} />);
+      expect(
+        await screen.findByRole('heading', { name: 'Acme brain' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Pinned' })).toBeNull();
+      expect(
+        within(tree()).queryByRole('button', { name: /Start here/ }),
+      ).toBeNull();
+      expect(
+        await within(tree()).findByRole('button', { name: /The project/ }),
+      ).toBeInTheDocument();
+      expect(within(tree()).getByText('Risks').closest('button')).toBeNull();
+      expect(
+        within(tree()).getByRole('button', { name: 'Decisions 2' }),
+      ).toBeInTheDocument();
+      expect(
+        within(tree()).getByRole('button', { name: 'Not placed yet 1' }),
+      ).toBeInTheDocument();
+      expect(
+        within(tree()).getByRole('button', { name: 'Recent changes' }),
+      ).toBeInTheDocument();
+    });
+
+    it('a chapter page opens the chapter, its page highlighted in the tree', async () => {
+      withBook();
+      render(<BrainRead brainId="b1" since={null} />);
+      await userEvent.click(
+        await within(tree()).findByRole('button', { name: /The project/ }),
+      );
+      expect(
+        await within(reading()).findByText('About the project.'),
+      ).toBeInTheDocument();
+      const pagesList = await within(tree()).findByRole('list', {
+        name: 'The project',
+      });
+      expect(
+        within(pagesList).getByRole('button', { name: 'Acme' }),
+      ).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('a decision and an unplaced page open alone', async () => {
+      withBook();
+      render(<BrainRead brainId="b1" since={null} />);
+      await userEvent.click(
+        await within(tree()).findByRole('button', { name: 'Hosting' }),
+      );
+      expect(
+        await within(reading()).findByRole('heading', {
+          level: 2,
+          name: 'Hosting',
+        }),
+      ).toBeInTheDocument();
+      expect(within(reading()).queryByText('Chapter 1')).toBeNull();
+      await userEvent.click(
+        within(tree()).getByRole('button', { name: 'Orphan' }),
+      );
+      expect(
+        await within(reading()).findByRole('heading', {
+          level: 2,
+          name: 'Orphan',
+        }),
+      ).toBeInTheDocument();
+      expect(within(reading()).queryByText('Chapter 1')).toBeNull();
+    });
+
+    it('reading a chapter writes the continue key', async () => {
+      withBook();
+      render(<BrainRead brainId="b1" since={null} />);
+      await userEvent.click(
+        await within(tree()).findByRole('button', { name: /The project/ }),
+      );
+      await waitFor(() =>
+        expect(localStorage.getItem('shellie.brain.continue.b1')).toBe(
+          'wiki/account.md',
+        ),
+      );
+    });
+
+    it('a storage failure on writing the continue key is ignored', async () => {
+      withBook();
+      const set = vi
+        .spyOn(Storage.prototype, 'setItem')
+        .mockImplementation(() => {
+          throw new Error('full');
+        });
+      render(<BrainRead brainId="b1" since={null} />);
+      await userEvent.click(
+        await within(tree()).findByRole('button', { name: /The project/ }),
+      );
+      expect(
+        await within(reading()).findByText('About the project.'),
+      ).toBeInTheDocument();
+      set.mockRestore();
+    });
+
+    it('the front page offers Continue reading after a chapter was read', async () => {
+      withBook();
+      localStorage.setItem(
+        'shellie.brain.continue.b1',
+        'wiki/scope-platform.md',
+      );
+      render(<BrainRead brainId="b1" since={null} />);
+      expect(
+        await screen.findByRole('button', { name: /Continue reading/ }),
+      ).toHaveTextContent('1 · The project › Scope: platform');
+    });
+
+    it('keeps Forward on the front page after going back', async () => {
+      withBook();
+      render(<BrainRead brainId="b1" since={null} />);
+      await userEvent.click(
+        await within(tree()).findByRole('button', { name: 'Hosting' }),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+      expect(
+        await screen.findByRole('button', { name: 'Forward ›' }),
+      ).toBeInTheDocument();
+    });
+
+    it("a rejected book falls back to today's tree and landing", async () => {
+      setup({
+        'brain:book': () => {
+          throw new Error('nope');
+        },
+      });
+      render(<BrainRead brainId="b1" since={null} />);
+      expect(
+        await screen.findByRole('region', { name: 'Pinned' }),
+      ).toBeInTheDocument();
+      expect(
+        within(tree()).getByRole('button', { name: /Start here/ }),
+      ).toBeInTheDocument();
+    });
   });
 });

@@ -25,6 +25,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   lastDigestAt: null,
   archived: false,
   picturePass: null,
+  bookPass: null,
   health: {
     state: {
       schemaVersion: 1,

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BRAIN_JOB_TITLE,
   brainTaskId,
+  isBookJob,
   SOURCE_JOB_KINDS,
   type BrainAgent,
   type BrainJob,
@@ -156,7 +157,11 @@ type Lane = {
 };
 
 const prompt = (j: BrainJob) =>
-  j.source ? `/${j.kind} ${j.source}` : `/${j.kind}`;
+  isBookJob(j)
+    ? '/sync book'
+    : j.source
+      ? `/${j.kind} ${j.source}`
+      : `/${j.kind}`;
 
 /** Runs the brain's skills headless, one job at a time per brain (brains in parallel). */
 export class BrainJobRunner {

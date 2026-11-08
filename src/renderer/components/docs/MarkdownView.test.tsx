@@ -218,4 +218,44 @@ describe('MarkdownView', () => {
     expect(fireEvent.click(screen.getByText('img'))).toBe(false);
     expect(api.calls.filter((c) => c.channel === 'links:open')).toEqual([]);
   });
+  it('idPrefix prefixes heading ids and #links scroll to the prefixed heading', async () => {
+    const { container } = render(
+      <MarkdownView
+        asset={(p) => shellie().invoke('docs:asset', 't', p)}
+        path="a.md"
+        text={'## Intro\n\n[up](#intro)\n'}
+        idPrefix="s1-"
+        onOpenDoc={() => {}}
+        onOpenFile={() => {}}
+      />,
+    );
+    const h = container.querySelector('h2') as HTMLElement;
+    expect(h.id).toBe('s1-intro');
+    const scroll = vi.fn();
+    h.scrollIntoView = scroll;
+    await userEvent.click(
+      container.querySelector('a[href="#intro"]') as HTMLElement,
+    );
+    expect(scroll).toHaveBeenCalled();
+  });
+  it('idPrefix prefixes footnote ids and a footnote reference scrolls to its footnote', async () => {
+    const { container } = render(
+      <MarkdownView
+        asset={(p) => shellie().invoke('docs:asset', 't', p)}
+        path="a.md"
+        text={'Claim[^1].\n\n[^1]: The note.\n'}
+        idPrefix="s1-"
+        onOpenDoc={() => {}}
+        onOpenFile={() => {}}
+      />,
+    );
+    const note = container.querySelector('li[id^="s1-"]') as HTMLElement;
+    expect(note.id).toMatch(/^s1-.*fn-1$/);
+    const scroll = vi.fn();
+    note.scrollIntoView = scroll;
+    await userEvent.click(
+      container.querySelector('a[data-footnote-ref]') as HTMLElement,
+    );
+    expect(scroll).toHaveBeenCalled();
+  });
 });

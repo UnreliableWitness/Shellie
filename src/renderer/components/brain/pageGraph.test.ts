@@ -20,6 +20,7 @@ const row = (path: string, linkedFrom: string[] = []): BrainPageRow => ({
   changedSinceVerified: false,
   sources: [],
   linkedFrom,
+  pictures: [],
 });
 
 describe('pageGraph', () => {

@@ -1,0 +1,97 @@
+<style>
+  .win { container-type: inline-size; background:#201f1e; color:rgba(255,255,255,.9); font-family:"Segoe UI",system-ui,sans-serif; }
+  .win-in { font-size:.82cqw; height:44cqw; display:grid; grid-template-columns:19.3em minmax(0,1fr); overflow:hidden; line-height:1.55; text-align:left; }
+  .toc { border-right:1px solid rgba(255,255,255,.08); padding:1.2em 1em; background:#1b1a19; }
+  .toc .t { font-size:.8em; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,.55); margin:.2em 0 .6em; }
+  .toc .c { display:flex; gap:.7em; padding:.3em .6em; border-radius:4px; }
+  .toc .c b { font-weight:400; color:rgba(255,255,255,.45); width:1em; }
+  .toc .c.on { background:rgba(0,120,212,.22); color:#fff; }
+  .toc .s { padding:.16em .6em .16em 2.3em; color:rgba(255,255,255,.62); font-size:.93em; }
+  .toc .s.on { color:#5ca9f2; }
+  .toc .b { display:flex; justify-content:space-between; padding:.22em .6em; color:rgba(255,255,255,.62); }
+  .toc hr { border:0; border-top:1px solid rgba(255,255,255,.08); margin:1em 0; }
+  .read { padding:1.3em 2.2em; min-width:0; }
+  .crumb { color:rgba(255,255,255,.55); font-size:.9em; }
+  .read h1 { font-size:1.9em; line-height:1.25; margin:.15em 0 .3em; font-weight:600; color:#fff; }
+  .lead { color:rgba(255,255,255,.7); margin:0 0 1em; }
+  .read h2 { font-size:1.2em; margin:1.1em 0 .3em; font-weight:600; color:#fff; }
+  .read p { margin:0 0 .8em; }
+  .read a { color:#5ca9f2; text-decoration:none; }
+  .fig { background:#252423; border:1px solid rgba(255,255,255,.08); border-radius:6px; padding:.9em; margin:.9em 0; }
+  .fig svg { display:block; width:100%; height:auto; }
+  .fig .cap { font-size:.86em; color:rgba(255,255,255,.55); margin-top:.5em; }
+  .rail { font-size:.92em; color:rgba(255,255,255,.62); }
+  .rail .h { font-size:.8em; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,.5); margin:0 0 .4em; }
+  .rail div.i { padding:.12em 0; }
+  .rail .i.on { color:#5ca9f2; }
+  .rail section + section { margin-top:1.2em; }
+  .row { display:grid; align-items:start; }
+  .a .row { grid-template-columns:minmax(0,1fr) 15em; column-gap:3em; }
+  .b .row { grid-template-columns:50em minmax(0,1fr); column-gap:3em; }
+  .b .fig { margin:0 0 1em; }
+  .c .row { grid-template-columns:minmax(0,1fr) 15em; column-gap:3em; }
+  .c .text { font-size:1.28em; }
+  .card-body h3 { margin-bottom:.2rem; }
+  .sample { font-size:.8rem; color:var(--text-secondary); }
+</style>
+
+<h2>How should an open page use the width?</h2>
+<p class="subtitle">Each one is drawn to scale for a wide screen, about 1700 pixels across, with made-up content. Click the one that feels right, and tell me in the terminal what you'd change.</p>
+
+<div class="cards" style="grid-template-columns:1fr;gap:1.5rem">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-body"><h3>A. Edge to edge</h3><p>The text runs the full width. No empty space at all, but the lines get very long.</p></div>
+    <div class="win"><div class="win-in a">
+      <nav class="toc"><div class="t">The book</div><div class="c"><b>1</b>The project</div><div class="c"><b>2</b>Who's on board</div><div class="c"><b>3</b>The customer's business</div><div class="c on"><b>4</b>Architecture</div><div class="s on">Overview</div><div class="s">Order flow</div><div class="s">Integrations</div><div class="c"><b>5</b>How we work</div><hr><div class="t">Back of the book</div><div class="b"><span>Decisions</span><span>14</span></div><div class="b"><span>Meetings</span><span>22</span></div><div class="b"><span>Weekly digests</span><span>6</span></div><div class="b"><span>Glossary</span></div><div class="b"><span>Sources</span><span>31</span></div></nav>
+      <div class="read"><div class="crumb">Chapter 4 · Architecture</div><h1>Overview</h1><p class="lead">How an order travels through the platform, and which team owns each part.</p>
+        <div class="row"><div class="text">
+          <p>The platform is built around one order service. Every channel, the web shop as well as the counter application, hands an order to the gateway, which checks the customer's account before anything is accepted. <a>Solution design, p.12</a></p>
+          <div class="fig"><svg viewBox="0 0 900 120"><g fill="#2f2e2d" stroke="#5ca9f2" stroke-width="1.5"><rect x="10" y="35" width="170" height="52" rx="6"/><rect x="250" y="35" width="170" height="52" rx="6"/><rect x="490" y="35" width="170" height="52" rx="6"/><rect x="720" y="35" width="170" height="52" rx="6"/></g><g fill="#fff" font-size="17" text-anchor="middle"><text x="95" y="67">Web shop</text><text x="335" y="67">Gateway</text><text x="575" y="67">Orders</text><text x="805" y="67">Billing</text></g><g stroke="#fff" stroke-opacity=".55" stroke-width="1.5"><path d="M180 61h66M420 61h66M660 61h56"/></g></svg><div class="cap">Original from the solution design deck, slide 4. Click to enlarge.</div></div>
+          <h2>Why one order service</h2>
+          <p>Before the migration each channel kept its own copy of an order, and the two drifted apart within a day. The team chose a single service in the spring, accepting that the counter application depends on it being up. <a>Decision of 12 March</a></p>
+          <h2>Who owns what</h2>
+          <p>The gateway and the order service belong to the platform team. Billing stays with the customer's finance department, who publish the interface and announce changes a month ahead.</p>
+        </div><aside class="rail"><section><div class="h">In this chapter</div><div class="i on">Overview</div><div class="i">Why one order service</div><div class="i">Who owns what</div></section><section><div class="h">Linked from</div><div class="i">Order flow</div><div class="i">Integrations</div></section><section><div class="h">Sources</div><div class="i">Solution design deck</div></section></aside></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-body"><h3>B. Text left, pictures beside it</h3><p>A comfortable text column against the left, and a second column with the pictures next to the passage they belong to. The chapter outline sits at the top of that column.</p></div>
+    <div class="win"><div class="win-in b">
+      <nav class="toc"><div class="t">The book</div><div class="c"><b>1</b>The project</div><div class="c"><b>2</b>Who's on board</div><div class="c"><b>3</b>The customer's business</div><div class="c on"><b>4</b>Architecture</div><div class="s on">Overview</div><div class="s">Order flow</div><div class="s">Integrations</div><div class="c"><b>5</b>How we work</div><hr><div class="t">Back of the book</div><div class="b"><span>Decisions</span><span>14</span></div><div class="b"><span>Meetings</span><span>22</span></div><div class="b"><span>Weekly digests</span><span>6</span></div><div class="b"><span>Glossary</span></div><div class="b"><span>Sources</span><span>31</span></div></nav>
+      <div class="read"><div class="crumb">Chapter 4 · Architecture</div><h1>Overview</h1><p class="lead">How an order travels through the platform, and which team owns each part.</p>
+        <div class="row"><div class="text">
+          <p>The platform is built around one order service. Every channel, the web shop as well as the counter application, hands an order to the gateway, which checks the customer's account before anything is accepted. <a>Solution design, p.12</a></p>
+          <h2>Why one order service</h2>
+          <p>Before the migration each channel kept its own copy of an order, and the two drifted apart within a day. The team chose a single service in the spring, accepting that the counter application depends on it being up. <a>Decision of 12 March</a></p>
+          <h2>Who owns what</h2>
+          <p>The gateway and the order service belong to the platform team. Billing stays with the customer's finance department, who publish the interface and announce changes a month ahead.</p>
+          <p>Support runs on the platform team's rota during office hours. Outside those hours the customer's own operations desk takes the first call and escalates through the agreed channel.</p>
+          <h2>What is still open</h2>
+          <p>Nothing in the sources says who approves a change to the billing interface once the migration project has ended.</p>
+        </div><div>
+          <div class="fig"><svg viewBox="0 0 900 200"><g fill="#2f2e2d" stroke="#5ca9f2" stroke-width="1.5"><rect x="10" y="70" width="170" height="62" rx="6"/><rect x="250" y="70" width="170" height="62" rx="6"/><rect x="490" y="70" width="170" height="62" rx="6"/><rect x="720" y="70" width="170" height="62" rx="6"/></g><g fill="#fff" font-size="19" text-anchor="middle"><text x="95" y="107">Web shop</text><text x="335" y="107">Gateway</text><text x="575" y="107">Orders</text><text x="805" y="107">Billing</text></g><g stroke="#fff" stroke-opacity=".55" stroke-width="1.5"><path d="M180 101h66M420 101h66M660 101h56"/></g></svg><div class="cap">Original from the solution design deck, slide 4. Click to enlarge.</div></div>
+          <aside class="rail"><section><div class="h">In this chapter</div><div class="i on">Overview</div><div class="i">Why one order service</div><div class="i">Who owns what</div></section><section><div class="h">Linked from</div><div class="i">Order flow · Integrations</div></section><section><div class="h">Sources</div><div class="i">Solution design deck</div></section></aside>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-body"><h3>C. Bigger type that grows with the window (my pick)</h3><p>The text fills the room up to the side rail, and the letters get larger on a wide window so the lines stay readable. Pictures run the full width of the text. On a narrow window it falls back to today's size.</p></div>
+    <div class="win"><div class="win-in c">
+      <nav class="toc"><div class="t">The book</div><div class="c"><b>1</b>The project</div><div class="c"><b>2</b>Who's on board</div><div class="c"><b>3</b>The customer's business</div><div class="c on"><b>4</b>Architecture</div><div class="s on">Overview</div><div class="s">Order flow</div><div class="s">Integrations</div><div class="c"><b>5</b>How we work</div><hr><div class="t">Back of the book</div><div class="b"><span>Decisions</span><span>14</span></div><div class="b"><span>Meetings</span><span>22</span></div><div class="b"><span>Weekly digests</span><span>6</span></div><div class="b"><span>Glossary</span></div><div class="b"><span>Sources</span><span>31</span></div></nav>
+      <div class="read"><div class="crumb">Chapter 4 · Architecture</div><h1>Overview</h1><p class="lead">How an order travels through the platform, and which team owns each part.</p>
+        <div class="row"><div class="text">
+          <p>The platform is built around one order service. Every channel, the web shop as well as the counter application, hands an order to the gateway, which checks the customer's account before anything is accepted. <a>Solution design, p.12</a></p>
+          <div class="fig"><svg viewBox="0 0 900 120"><g fill="#2f2e2d" stroke="#5ca9f2" stroke-width="1.5"><rect x="10" y="35" width="170" height="52" rx="6"/><rect x="250" y="35" width="170" height="52" rx="6"/><rect x="490" y="35" width="170" height="52" rx="6"/><rect x="720" y="35" width="170" height="52" rx="6"/></g><g fill="#fff" font-size="17" text-anchor="middle"><text x="95" y="67">Web shop</text><text x="335" y="67">Gateway</text><text x="575" y="67">Orders</text><text x="805" y="67">Billing</text></g><g stroke="#fff" stroke-opacity=".55" stroke-width="1.5"><path d="M180 61h66M420 61h66M660 61h56"/></g></svg><div class="cap">Original from the solution design deck, slide 4. Click to enlarge.</div></div>
+          <h2>Why one order service</h2>
+          <p>Before the migration each channel kept its own copy of an order, and the two drifted apart within a day. The team chose a single service in the spring, accepting that the counter application depends on it being up. <a>Decision of 12 March</a></p>
+        </div><aside class="rail"><section><div class="h">In this chapter</div><div class="i on">Overview</div><div class="i">Why one order service</div><div class="i">Who owns what</div></section><section><div class="h">Linked from</div><div class="i">Order flow</div><div class="i">Integrations</div></section><section><div class="h">Sources</div><div class="i">Solution design deck</div></section></aside></div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
