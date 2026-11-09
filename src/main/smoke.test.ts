@@ -15,6 +15,26 @@ describe('runSmoke', () => {
     expect(ok).toBe(true);
   });
 
+  it('fails when the main process cannot be profiled', async () => {
+    const lines: string[] = [];
+    const ok = await runSmoke({
+      terminals: new TerminalManager(),
+      platform: testPlatform(),
+      log: (l) => lines.push(l),
+      profiler: () => ({
+        start: async () => {
+          throw new Error('no inspector');
+        },
+        stop: async () => {
+          throw new Error('not started');
+        },
+        dispose: () => undefined,
+      }),
+    });
+    expect(ok).toBe(false);
+    expect(lines.join('\n')).toMatch(/smoke failed: profiler/);
+  });
+
   it('fails when the brain canvas cannot be loaded', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
