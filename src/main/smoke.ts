@@ -2,6 +2,7 @@ import os from 'node:os';
 import { withTimeout } from './async';
 import { pdfToMarkdown } from './brain/convert/pdf';
 import { loadCanvas } from './brain/convert/raster';
+import { inspectorProfiler, type Profiler } from './diagnostics/stallWatchdog';
 import type { Platform } from './platform/Platform';
 import { type TerminalManager, UNKNOWN_EXIT } from './services/TerminalManager';
 
@@ -17,6 +18,7 @@ const DRAWING_PDF =
  * within the timeout.
  * Then the brain's canvas (@napi-rs/canvas, external to the bundle like node-pty) must load and encode a PNG,
  * and pdf.js must render a page through it from inside the bundle (where it cannot require the canvas itself).
+ * Last, the stall watchdog's profiler must record samples: the packaged app's fuses must not take the inspector away.
  * Touches no stores, so it is safe to run from CI against a fresh install.
  */
 export async function runSmoke(o: {
@@ -26,8 +28,34 @@ export async function runSmoke(o: {
   timeoutMs?: number;
   /** The canvas package loader (default: the real one); null means it could not load. */
   canvas?: typeof loadCanvas;
+  /** The profiler factory (default: the real one). */
+  profiler?: () => Profiler;
 }): Promise<boolean> {
-  return (await smokePty(o)) && (await smokeCanvas(o));
+  return (
+    (await smokePty(o)) && (await smokeCanvas(o)) && (await smokeProfiler(o))
+  );
+}
+
+async function smokeProfiler(o: {
+  log: (line: string) => void;
+  profiler?: () => Profiler;
+}): Promise<boolean> {
+  const profiler = (o.profiler ?? inspectorProfiler)();
+  try {
+    await profiler.start();
+    await new Promise((r) => setTimeout(r, 200));
+    const profile = await profiler.stop();
+    if (profile.samples.length > 0) return true;
+    o.log('smoke failed: profiler recorded no samples');
+    return false;
+  } catch (e) {
+    o.log(
+      `smoke failed: profiler ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`,
+    );
+    return false;
+  } finally {
+    profiler.dispose();
+  }
 }
 
 async function smokeCanvas(o: {

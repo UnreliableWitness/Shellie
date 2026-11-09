@@ -129,6 +129,10 @@ import {
   timedFetch,
   trackHandlerFailures,
 } from './main/telemetry/helpers';
+import {
+  inspectorProfiler,
+  StallWatchdog,
+} from './main/diagnostics/stallWatchdog';
 import { startHealthReports } from './main/telemetry/health';
 import { reportLoggedErrors } from './main/telemetry/loggedErrors';
 import { hello, sendRecords } from './main/costServer/client';
@@ -174,6 +178,7 @@ const sessionStart = Date.now();
 reportLoggedErrors(() => telemetry);
 /** Timing summaries and the `app.health` snapshot, every 10 minutes from the end of boot and on quit. */
 let health: ReturnType<typeof startHealthReports> | null = null;
+let stallWatchdog: StallWatchdog | null = null;
 
 // Monitor only: Electron's own handling of an uncaught exception (the error dialog) stays as it is.
 process.on('uncaughtExceptionMonitor', (error, origin) => {
@@ -1340,6 +1345,16 @@ async function boot(): Promise<void> {
       appMetrics: () => app.getAppMetrics(),
       terminals: () => terminals.ids().length,
     });
+    if (process.env.SHELLIE_STALL_WATCHDOG !== '0') {
+      const watchdog = new StallWatchdog({
+        profiler: inspectorProfiler(),
+        dir: path.join(app.getPath('userData'), 'diagnostics', 'stalls'),
+      });
+      stallWatchdog = watchdog;
+      void watchdog.start();
+      powerMonitor.on('suspend', () => watchdog.suspend());
+      powerMonitor.on('resume', () => watchdog.resume());
+    }
     updates = startAutoUpdate({
       isPackaged: app.isPackaged,
       platform: process.platform,
@@ -1450,6 +1465,7 @@ app.on('before-quit', () => {
   stopLedger();
   stopBrains();
   updates?.stop();
+  stallWatchdog?.stop();
 });
 
 let quitHeld = false;
