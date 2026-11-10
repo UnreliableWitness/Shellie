@@ -255,6 +255,41 @@ describe('Composer', () => {
     ).toHaveDisplayValue('Sonnet (brain default)');
   });
 
+  it('keeps a file attached and text typed while an add runs, and adds once on a double click', async () => {
+    let finish: (r: AddSourceResult[]) => void = () => undefined;
+    const a = installFakeApi({
+      'brain:addFiles': () =>
+        new Promise<AddSourceResult[]>((r) => (finish = r)),
+    });
+    render(<Host />);
+    attach(file('a.pdf'));
+    await screen.findByText('a.pdf');
+    const add = screen.getByRole('button', { name: 'Add 1 file' });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    attach(file('late.pdf'));
+    await screen.findByText('late.pdf');
+    fireEvent.change(text(), { target: { value: 'typed meanwhile' } });
+    finish([ok('sources/a.pdf')]);
+    await waitFor(() => expect(screen.queryByText('a.pdf')).toBeNull());
+    expect(screen.getByText('late.pdf')).toBeInTheDocument();
+    expect(text()).toHaveValue('typed meanwhile');
+    expect(calls(a, 'brain:addFiles')).toHaveLength(1);
+  });
+
+  it('opening the folded composer puts the cursor in the editor after what was typed', async () => {
+    installFakeApi({ 'brain:addText': () => ok('sources/t.md') });
+    render(<Host />);
+    fireEvent.change(text(), { target: { value: 'first' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Add text' }));
+    const folded = await screen.findByRole('textbox', {
+      name: 'Write or paste',
+    });
+    fireEvent.change(folded, { target: { value: 'n' } });
+    expect(document.activeElement).toBe(text());
+    expect(text()).toHaveValue('n');
+  });
+
   it('a Markdown file opens in the empty editor; the next one is attached', async () => {
     installFakeApi();
     render(<Host />);

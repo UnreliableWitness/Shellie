@@ -94,6 +94,51 @@ describe('MarkdownEditor', () => {
     expect(screen.queryByText('Pasted as Markdown')).toBeNull();
   });
 
+  it('leaves HTML without formatting, and a copy from a code editor, to the text box', () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    paste(text(), {
+      'text/html':
+        '<html><body><p class="MsoNormal"><span>file_name 5*3 [draft]</span></p></body></html>',
+      'text/plain': 'file_name 5*3 [draft]',
+    });
+    paste(text(), {
+      'text/html': '<div><b>## Heading</b></div>',
+      'text/plain': '## Heading',
+      'vscode-editor-data': '{}',
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText('Pasted as Markdown')).toBeNull();
+  });
+
+  it('forgets Paste as plain text once the text changed after the paste', () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    paste(text(), { 'text/html': '<ul><li>a</li></ul>', 'text/plain': 'a' });
+    expect(screen.getByText('Pasted as Markdown')).toBeInTheDocument();
+    fireEvent.change(text(), { target: { value: 'typed above\n- a' } });
+    expect(
+      screen.queryByRole('button', { name: 'Paste as plain text' }),
+    ).toBeNull();
+  });
+
+  it('takes the cursor when asked to, at the end of the text', () => {
+    render(
+      <MarkdownEditor
+        value="abc"
+        onChange={() => undefined}
+        onSubmit={() => undefined}
+        placeholder=""
+        view="write"
+        onView={() => undefined}
+        label="Text"
+        autoFocus
+      />,
+    );
+    expect(document.activeElement).toBe(text());
+    expect(text().selectionStart).toBe(3);
+  });
+
   it('leaves a plain-text paste to the text box', () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);

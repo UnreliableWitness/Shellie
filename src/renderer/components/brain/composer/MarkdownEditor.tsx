@@ -23,7 +23,7 @@ import {
 import { loadMonaco } from '../../../review/loadMonaco';
 import { MarkdownView } from '../../docs/MarkdownView';
 import { trackBrain } from '../brainActions';
-import { htmlToMarkdown } from './htmlToMarkdown';
+import { htmlToMarkdown, isRichHtml } from './htmlToMarkdown';
 import { applyFormat, type Format } from './text';
 
 export type EditorView = 'write' | 'split' | 'preview';
@@ -85,6 +85,7 @@ export function MarkdownEditor({
   view,
   onView,
   label,
+  autoFocus = false,
 }: {
   value: string;
   onChange(v: string): void;
@@ -93,6 +94,8 @@ export function MarkdownEditor({
   view: EditorView;
   onView(v: EditorView): void;
   label: string;
+  /** Take the cursor once mounted, after the text (the composer opening from its folded line). */
+  autoFocus?: boolean;
 }) {
   const [m, setM] = useState<typeof Monaco | null>(null);
   const editor = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -104,7 +107,11 @@ export function MarkdownEditor({
     start: number;
     length: number;
     plain: string;
+    /** The whole text right after the paste: any other change forgets the paste. */
+    after: string;
   } | null>(null);
+  // Monaco takes over from the text box with its cursor when the text box had it.
+  const handOver = useRef<[number, number] | null>(null);
   const latest = useRef({ value, onChange, onSubmit });
   latest.current = { value, onChange, onSubmit };
   // The text box's selection to restore once React has written a value from the toolbar.
@@ -113,7 +120,13 @@ export function MarkdownEditor({
   useEffect(() => {
     let live = true;
     loadMonaco().then(
-      (x) => live && setM(x),
+      (x) => {
+        if (!live) return;
+        const a = area.current;
+        if (a && document.activeElement === a)
+          handOver.current = [a.selectionStart, a.selectionEnd];
+        setM(x);
+      },
       () => undefined,
     );
     return () => {
@@ -147,6 +160,8 @@ export function MarkdownEditor({
       renderLineHighlight: 'none',
       overviewRulerLanes: 0,
       ariaLabel: label,
+      // A copy keeps to plain text, so pasting it back is not taken for rich text.
+      copyWithSyntaxHighlighting: false,
     });
     e.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.Enter, () =>
       latest.current.onSubmit(),
@@ -156,6 +171,15 @@ export function MarkdownEditor({
       if (v !== latest.current.value) latest.current.onChange(v);
     });
     editor.current = e;
+    const model = e.getModel();
+    const at =
+      handOver.current ??
+      (autoFocus ? [model?.getValueLength() ?? 0, 0] : null);
+    handOver.current = null;
+    if (at && model) {
+      e.setPosition(model.getPositionAt(at[0]));
+      e.focus();
+    }
     return () => {
       sub.dispose();
       e.dispose();
@@ -178,6 +202,19 @@ export function MarkdownEditor({
     a.focus();
     a.setSelectionRange(sel[0], sel[1]);
   });
+
+  useEffect(() => {
+    if (autoFocus && area.current) {
+      const a = area.current;
+      a.focus();
+      a.setSelectionRange(a.value.length, a.value.length);
+    }
+    // On mount only.
+  }, []);
+
+  useEffect(() => {
+    if (pasted && value !== pasted.after) setPasted(null);
+  }, [value, pasted]);
 
   useEffect(() => {
     if (!pasted) return;
@@ -263,18 +300,29 @@ export function MarkdownEditor({
     if (!w) return;
     const onPaste = (e: ClipboardEvent) => {
       const data = e.clipboardData;
-      if (!data || !Array.from(data.types ?? []).includes('text/html')) return;
-      const md = htmlToMarkdown(data.getData('text/html'));
+      const types = Array.from(data?.types ?? []);
+      // A copy from a code editor (Monaco, VS Code) is text already; so is HTML without formatting.
+      if (
+        !data ||
+        !types.includes('text/html') ||
+        types.includes('vscode-editor-data')
+      )
+        return;
+      const html = data.getData('text/html');
+      if (!isRichHtml(html)) return;
+      const md = htmlToMarkdown(html);
       if (!md) return;
       e.preventDefault();
       e.stopPropagation();
       const s = surface();
       const [start, end] = s.selection();
+      const v = latest.current.value;
       s.replace(start, end, md, start + md.length, start + md.length);
       setPasted({
         start,
         length: md.length,
         plain: data.getData('text/plain'),
+        after: v.slice(0, start) + md + v.slice(end),
       });
       trackBrain('paste-markdown');
     };
@@ -283,7 +331,7 @@ export function MarkdownEditor({
   });
 
   const pastePlain = () => {
-    if (!pasted) return;
+    if (!pasted || latest.current.value !== pasted.after) return;
     const { start, length, plain } = pasted;
     surface().replace(
       start,

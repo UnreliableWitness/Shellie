@@ -8,12 +8,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  AddSourceResult,
-  BrainPageRow,
-  BrainSourceRow,
-  BrainWiki,
-} from '../../../shared/brain';
+import type { BrainSourceRow, BrainWiki } from '../../../shared/brain';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { brainJob, brainView } from '../../test-helpers/brainFixture';
@@ -37,19 +32,6 @@ const source = (path: string): BrainSourceRow => ({
   original: null,
   contents: null,
   note: null,
-});
-const page = (path: string, title: string): BrainPageRow => ({
-  path,
-  title,
-  summary: '',
-  type: 'other',
-  lastUpdated: null,
-  confidence: null,
-  verified: null,
-  changedSinceVerified: false,
-  sources: [],
-  linkedFrom: [],
-  pictures: [],
 });
 
 /** BrainAdd with its pages loaded the way the Brain screen loads them. */

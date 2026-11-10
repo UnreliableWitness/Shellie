@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type {
   AddSourceResult,
   BrainView,
@@ -8,7 +8,12 @@ import { api, tryInvoke } from '../../../api';
 import { useStore } from '../../../store';
 import { trackBrain, trackBrainAdd } from '../brainActions';
 import { addedOf, guessType, type AddedSource } from '../useBrainDrop';
-import { useComposerDraft, type DraftFile } from './draft';
+import {
+  EMPTY_DRAFT,
+  draftIsEmpty,
+  useComposerDraft,
+  type DraftFile,
+} from './draft';
 import { isEditorText, titleFor } from './text';
 
 /** What the last add brought in: the text's title (null without text), how many files, and per source its lines. */
@@ -43,6 +48,8 @@ export function useComposer(brain: BrainView) {
   const { draft, update, clear, isEmpty } = useComposerDraft(brainId);
   const [problems, setProblems] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
+  // Two clicks before a render must not send the same add twice.
+  const busy = useRef(false);
   const [added, setAdded] = useState<ComposerAdded | null>(null);
 
   /** A Markdown or text file fills an empty editor (the first one only); every other file becomes a chip. */
@@ -105,7 +112,8 @@ export function useComposer(brain: BrainView) {
   const add = async (): Promise<boolean> => {
     const d = draft;
     const text = d.text.trim() ? d.text : null;
-    if ((!text && d.files.length === 0) || adding) return false;
+    if ((!text && d.files.length === 0) || busy.current) return false;
+    busy.current = true;
     const note = d.note.trim() || undefined;
     const model = d.model ?? undefined;
     trackBrainAdd({
@@ -144,6 +152,7 @@ export function useComposer(brain: BrainView) {
         : Promise.resolve([] as AddSourceResult[]),
     ]);
     setAdding(false);
+    busy.current = false;
     const textIn = textResult?.ok === true;
     const textStays = !!text && !textIn;
     const sent = new Set<string>();
@@ -171,20 +180,26 @@ export function useComposer(brain: BrainView) {
         ? { title: textIn ? title : null, files: sent.size, sources }
         : null,
     );
-    if (!textStays && !filesStay) {
-      clear();
-      return true;
-    }
-    update((cur) => ({
-      ...cur,
-      text: textStays ? cur.text : '',
-      title: textStays ? cur.title : '',
-      textType: textStays ? cur.textType : 'note',
-      files: cur.files.filter((f) => !sent.has(f.path)),
-      // Capture with is for one add: once anything went in, the next add starts on the brain's model again.
-      model: textIn || sent.size ? null : cur.model,
-    }));
-    return false;
+    // Only what this add sent leaves the draft: text typed or files attached while it ran stay.
+    const wentIn = textIn || sent.size > 0;
+    update((cur) => {
+      const textGone = textIn && cur.text === d.text;
+      const allIn = !textStays && !filesStay;
+      return {
+        ...cur,
+        text: textGone ? '' : cur.text,
+        title: textGone && cur.title === d.title ? '' : cur.title,
+        textType: textGone ? 'note' : cur.textType,
+        note: allIn && cur.note === d.note ? '' : cur.note,
+        files: cur.files.filter((f) => !sent.has(f.path)),
+        // Capture with is for one add: once anything went in, the next add starts on the brain's model again.
+        model: wentIn ? null : cur.model,
+      };
+    });
+    // The composer folds only when nothing is left in it.
+    return draftIsEmpty(
+      useStore.getState().brainDrafts[brainId] ?? EMPTY_DRAFT,
+    );
   };
 
   const discard = () => {

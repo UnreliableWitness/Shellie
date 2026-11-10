@@ -88,6 +88,12 @@ export function Composer({
   const [view, setView] = useState<EditorView>(readView);
   const [asking, setAsking] = useState(false);
   const [howto, setHowto] = useState(false);
+  // Opened from the folded line: the editor takes the cursor.
+  const [focusEditor, setFocusEditor] = useState(false);
+  const open = () => {
+    setFocusEditor(true);
+    onExpand();
+  };
   const attachRef = useRef<HTMLLabelElement>(null);
   useEffect(() => {
     if (focusAttach) attachRef.current?.focus();
@@ -187,10 +193,10 @@ export function Composer({
             aria-label="Write or paste"
             placeholder="Write or paste, or drop files…"
             value=""
-            onFocus={onExpand}
+            onFocus={open}
             onChange={(e) => {
               c.setText(e.target.value);
-              onExpand();
+              open();
             }}
           />
           {attach}
@@ -254,6 +260,7 @@ export function Composer({
           view={view}
           onView={changeView}
           label="Text"
+          autoFocus={focusEditor}
         />
         <div className="brain-chips">
           {draft.files.map((f) => (

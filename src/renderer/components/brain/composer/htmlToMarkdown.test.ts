@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { htmlToMarkdown } from './htmlToMarkdown';
+import { htmlToMarkdown, isRichHtml } from './htmlToMarkdown';
 
 describe('htmlToMarkdown', () => {
   it('turns headings, lists and bold into Markdown', () => {
@@ -53,5 +53,33 @@ describe('htmlToMarkdown lists', () => {
     expect(
       htmlToMarkdown('<ol><li>a</li><li>b<ul><li>c</li></ul></li></ol>'),
     ).toBe('1. a\n2. b\n   - c');
+  });
+});
+
+describe('htmlToMarkdown escaping', () => {
+  it('leaves underscores, stars and brackets in formatted text alone', () => {
+    expect(
+      htmlToMarkdown(
+        '<p><b>Rename</b> file_name to my_var, cost 5*3 [draft]</p>',
+      ),
+    ).toBe('**Rename** file_name to my_var, cost 5*3 [draft]');
+  });
+});
+
+describe('isRichHtml', () => {
+  it('is rich only with formatting a person would want kept', () => {
+    expect(isRichHtml('<h2>A</h2>')).toBe(true);
+    expect(isRichHtml('<ul><li>a</li></ul>')).toBe(true);
+    expect(isRichHtml('<p>See <a href="https://x">x</a></p>')).toBe(true);
+    expect(isRichHtml('<table><tr><td>a</td></tr></table>')).toBe(true);
+    expect(isRichHtml('<p>x <strong>y</strong></p>')).toBe(true);
+    expect(
+      isRichHtml(
+        '<html><body><p class="MsoNormal"><span style="x">file_name 5*3 [draft]</span></p></body></html>',
+      ),
+    ).toBe(false);
+    expect(
+      isRichHtml('<div><span>## Heading</span><br><span>- item</span></div>'),
+    ).toBe(false);
   });
 });

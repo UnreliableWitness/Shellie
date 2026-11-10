@@ -32,6 +32,8 @@ function turndown(): TurndownService {
     },
   });
   t.remove(['script', 'style', 'meta', 'head', 'title']);
+  // Pasted words stay as written: no backslash before every `_`, `*`, `[` or line-start `-`.
+  t.escape = (s: string) => s;
   service = t;
   return t;
 }
@@ -43,3 +45,9 @@ export function htmlToMarkdown(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+const FORMATTING =
+  /<(?:h[1-6]|strong|b|em|i|u|s|del|ul|ol|li|table|blockquote|pre|code)\b|<a\s[^>]*href/i;
+
+/** Whether pasted HTML carries formatting worth turning into Markdown; a wrapper around plain words does not. */
+export const isRichHtml = (html: string): boolean => FORMATTING.test(html);
