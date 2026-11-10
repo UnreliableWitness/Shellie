@@ -93,6 +93,22 @@ describe('scrubBrain', () => {
     expect(book).toContain('About REDACTED');
   });
 
+  it('redacts what was asked and decided in brain/conflicts.json', async () => {
+    const secret = 'Sup3rSecretValue';
+    await write(
+      'brain/conflicts.json',
+      JSON.stringify({
+        version: 1,
+        conflicts: { c: { parked: { question: `Ask ${secret}?`, at: 'now' } } },
+      }),
+    );
+    await commit('Brain: park conflict');
+    await scrubBrain(git, dir, secret);
+    const f = await read('brain/conflicts.json');
+    expect(f).not.toContain(secret);
+    expect(f).toContain('Ask REDACTED?');
+  });
+
   it("saves a person's uncommitted wiki edit as an outside edit before redacting it", async () => {
     const secret = 'hunter2x!';
     await write('wiki/h.md', 'committed\n');

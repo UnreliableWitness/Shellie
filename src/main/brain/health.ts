@@ -6,9 +6,11 @@ import type {
   PictureCounts,
   SourcePictures,
 } from '../../shared/brain';
+import { CONFLICT_KINDS, conflictIdOf } from '../../shared/brain';
 import type { CostRecord } from '../../shared/ledger';
 import type { GitClient } from '../services/GitClient';
 import { checkBrain, SHELLIE_FINDING_KINDS } from './check';
+import { listConflicts, readConflicts } from './conflicts';
 import { readPages } from './pages';
 import { brainCoverage, pictureFindings } from './pictures';
 import { listSources } from './sources';
@@ -108,6 +110,15 @@ export async function brainHealth(
   queueHeld = false,
 ): Promise<BrainHealth> {
   const { state, error } = await readState(brainDir);
+  // Parked and settled conflicts are not findings to act on; a pending settle's answer is in flight, not uncaptured.
+  const conflicts = listConflicts(
+    state?.findings ?? [],
+    await readConflicts(brainDir),
+    now,
+  );
+  const open = new Set(conflicts.open.map((c) => c.id));
+  const answers = new Set(conflicts.answers);
+  const busy = [...inFlight, ...conflicts.answers];
   const [sources, edits, pages, indexMd] = await Promise.all([
     listSources(brainDir, state).catch(() => []),
     outsideEdits(brainDir, git),
@@ -115,9 +126,10 @@ export async function brainHealth(
     fs.readFile(path.join(brainDir, 'index.md'), 'utf8').catch(() => null),
   ]);
   const [own, pictures] = await Promise.all([
-    checkBrain({ brainDir, pages, sources, indexMd, inFlight }, now).catch(
-      () => [],
-    ),
+    checkBrain(
+      { brainDir, pages, sources, indexMd, inFlight: busy },
+      now,
+    ).catch(() => []),
     // Directory listings and the source texts only: no picture is read.
     // Health only counts: no source is read for alt texts.
     brainCoverage(brainDir, pages, sources, { alt: false }).catch(() => []),
@@ -129,11 +141,16 @@ export async function brainHealth(
     findings: [
       ...own,
       ...pictureFindings(pictures, now.toISOString()),
-      ...lintFindings(state?.findings ?? []),
+      ...lintFindings(state?.findings ?? []).filter(
+        (f) => !CONFLICT_KINDS.has(f.kind) || open.has(conflictIdOf(f)),
+      ),
     ],
     pages: pages.length,
     uncaptured: sources.filter(
-      (s) => !s.captured && !s.path.startsWith('sources/wiki/'),
+      (s) =>
+        !s.captured &&
+        !s.path.startsWith('sources/wiki/') &&
+        !answers.has(s.path),
     ).length,
     mirrorPages: mirror.length,
     outsideEdits: edits,

@@ -7,6 +7,7 @@ import { GitClient } from '../services/GitClient';
 import { brainHealth, ledgerToday } from './health';
 import { scaffoldBrain } from './scaffold';
 import { addSource } from './sources';
+import { updateConflicts } from './conflicts';
 import { writeState } from './state';
 
 describe('brainHealth', () => {
@@ -66,6 +67,80 @@ describe('brainHealth', () => {
     expect(h.uncaptured).toBe(1);
     expect(h.mirrorPages).toBe(1);
     expect(h.queuePaused).toBe('cap');
+  });
+
+  it('leaves out conflicts that are parked or settled, and counts a pending answer as in flight', async () => {
+    const at = '2026-11-10T08:00:00.000Z';
+    const c = (id: string) => ({
+      id,
+      question: 'q',
+      claims: {
+        a: { page: 'wiki/a.md', quote: 'x' },
+        b: { page: 'wiki/b.md', quote: 'y' },
+      },
+    });
+    await writeState(dir, (s) => ({
+      ...s,
+      findings: [
+        {
+          kind: 'contradiction',
+          page: 'wiki/a.md',
+          detail: 'open',
+          at,
+          conflict: c('open'),
+        },
+        {
+          kind: 'contradiction',
+          page: 'wiki/a.md',
+          detail: 'parked',
+          at,
+          conflict: c('parked'),
+        },
+        {
+          kind: 'scope-change',
+          page: 'wiki/s.md',
+          detail: 'settled',
+          at,
+          conflict: c('settled'),
+        },
+      ],
+    }));
+    const r = await addSource(
+      git,
+      dir,
+      { text: 'Yes', title: 'Answer' },
+      'note',
+    );
+    if (!r.ok) throw new Error(r.message);
+    const decision = {
+      id: 'settled',
+      kind: 'scope-change' as const,
+      page: 'wiki/s.md',
+      question: 'q',
+      detail: 'settled',
+      claims: null,
+      choice: 'accept' as const,
+      text: null,
+      why: null,
+      answer: r.path,
+    };
+    await updateConflicts(dir, () => ({
+      version: 1,
+      conflicts: {
+        parked: { parked: { question: 'q', at } },
+        settled: {
+          settled: { at, status: 'pending', decision, page: null, error: null },
+        },
+      },
+    }));
+    const h = await brainHealth(dir, git, today, false);
+    expect(
+      h.findings
+        .filter((f) => f.kind === 'contradiction' || f.kind === 'scope-change')
+        .map((f) => f.detail),
+    ).toEqual(['open']);
+    expect(h.uncaptured).toBe(0);
+    expect(h.findings.some((f) => f.kind === 'uncaptured')).toBe(false);
   });
 
   it('says the queue waits for Update skills when it is held', async () => {

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { updateConflicts } from './conflicts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AdoWikiPage,
@@ -930,6 +931,187 @@ describe('brain handlers', () => {
     expect(released).toEqual([]);
     await h['brain:update'](v.id, { options: { agent: 'opencode' } });
     expect(released).toEqual([v.id]);
+  });
+
+  describe('settling conflicts', () => {
+    const conflict = {
+      id: 'contradiction:wiki/a.md+wiki/b.md:go-live',
+      question: 'When does Acme go live?',
+      claims: {
+        a: { page: 'wiki/a.md', quote: '12 January' },
+        b: { page: 'wiki/b.md', quote: '2 February' },
+      },
+    };
+    const decision = {
+      id: conflict.id,
+      kind: 'contradiction' as const,
+      page: 'wiki/a.md',
+      question: conflict.question,
+      detail: 'go-live differs',
+      claims: null,
+      choice: 'b' as const,
+      text: null,
+      why: 'steerco',
+      answer: null,
+    };
+    const withFinding = async () => {
+      const v = await h['brain:create'](NEW);
+      await fs.writeFile(
+        path.join(v.path, 'brain', 'state.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          findings: [
+            {
+              kind: 'contradiction',
+              page: 'wiki/a.md',
+              detail: 'go-live differs',
+              at: '2026-11-10T08:00:00.000Z',
+              conflict,
+            },
+          ],
+        }),
+      );
+      return v;
+    };
+
+    it('lists open conflicts, then parks one and brings it back', async () => {
+      const v = await withFinding();
+      expect((await h['brain:conflicts'](v.id)).open.map((c) => c.id)).toEqual([
+        conflict.id,
+      ]);
+      await h['brain:park'](v.id, conflict.id, 'Which date?');
+      const parked = await h['brain:conflicts'](v.id);
+      expect(parked.open).toEqual([]);
+      expect(parked.parked[0]).toMatchObject({
+        id: conflict.id,
+        question: 'Which date?',
+      });
+      await h['brain:unpark'](v.id, conflict.id);
+      expect((await h['brain:conflicts'](v.id)).open).toHaveLength(1);
+    });
+
+    it('settle records the decision as pending and queues one settle job for it', async () => {
+      const v = await withFinding();
+      await h['brain:park'](v.id, conflict.id, 'Which date?');
+      broadcasts = [];
+      await h['brain:settle'](v.id, decision);
+      expect(enqueued).toEqual([
+        [v.id, 'settle', null, { conflict: conflict.id }],
+      ]);
+      const c = await h['brain:conflicts'](v.id);
+      expect(c.open).toEqual([]);
+      expect(c.parked).toEqual([]);
+      expect(c.settled[0]).toMatchObject({
+        id: conflict.id,
+        status: 'pending',
+        choice: 'b',
+      });
+      expect(broadcasts).toContainEqual(['brain:changed', { brainId: v.id }]);
+      // A settle already queued for it is not queued twice.
+      pending = [{ ...job(v.id, 'settle', null), conflict: conflict.id }];
+      await h['brain:settle'](v.id, decision);
+      expect(enqueued).toHaveLength(1);
+    });
+
+    it('refuses a settle on skills older than v9, or a decision that is not one', async () => {
+      const v = await withFinding();
+      await brains.patch(v.id, { templatesVersion: 8 });
+      await expect(h['brain:settle'](v.id, decision)).rejects.toThrow(
+        'Update skills to settle conflicts here',
+      );
+      await brains.patch(v.id, { templatesVersion: TEMPLATES_VERSION });
+      await expect(
+        h['brain:settle'](v.id, { ...decision, choice: 'maybe' } as never),
+      ).rejects.toThrow();
+      expect(enqueued).toEqual([]);
+      await expect(h['brain:run'](v.id, 'settle' as never)).rejects.toThrow();
+    });
+
+    it('Retry queues a failed settle again from the decision it kept', async () => {
+      const v = await withFinding();
+      await updateConflicts(v.path, () => ({
+        version: 1,
+        conflicts: {
+          [conflict.id]: {
+            settled: {
+              at: new Date().toISOString(),
+              status: 'failed',
+              decision,
+              page: null,
+              error: 'boom',
+            },
+          },
+        },
+      }));
+      await h['brain:settleRetry'](v.id, conflict.id);
+      expect(enqueued).toEqual([
+        [v.id, 'settle', null, { conflict: conflict.id }],
+      ]);
+      expect((await h['brain:conflicts'](v.id)).settled[0]).toMatchObject({
+        status: 'pending',
+        error: null,
+      });
+    });
+
+    it("keeps someone's answer with its conflict: a source with no capture, the conflict open again with it", async () => {
+      const v = await withFinding();
+      await h['brain:park'](v.id, conflict.id, 'Which date?');
+      const r = await h['brain:answer'](v.id, conflict.id, 'Yes, 2 February.');
+      expect(r.path).toMatch(/^sources\/.*answer-when-does-acme-go-live/);
+      expect(enqueued).toEqual([]);
+      const c = await h['brain:conflicts'](v.id);
+      expect(c.parked).toEqual([]);
+      expect(c.open[0]).toMatchObject({
+        id: conflict.id,
+        answer: { path: r.path, text: 'Yes, 2 February.' },
+      });
+      expect(c.answers).toEqual([r.path]);
+      expect(await fs.readFile(path.join(v.path, r.path), 'utf8')).toContain(
+        'Yes, 2 February.',
+      );
+    });
+
+    it('commits brain/conflicts.json with each park and settle', async () => {
+      const v = await withFinding();
+      await h['brain:park'](v.id, conflict.id, 'Which date?');
+      await h['brain:settle'](v.id, decision);
+      const log = await git.run(v.path, [
+        'log',
+        '--format=%s',
+        '-2',
+        '--',
+        'brain/conflicts.json',
+      ]);
+      expect(log.trim().split('\n')).toEqual([
+        'Brain: settle conflict',
+        'Brain: park conflict',
+      ]);
+      expect(
+        (
+          await git.run(v.path, [
+            'status',
+            '--porcelain',
+            '--',
+            'brain/conflicts.json',
+          ])
+        ).trim(),
+      ).toBe('');
+    });
+
+    it('adds an answer as a source without queuing a capture', async () => {
+      const v = await withFinding();
+      const r = await h['brain:addText'](
+        v.id,
+        'Yes, 2 February.',
+        'Answer: When?',
+        'note',
+        'Answer to a conflict',
+        undefined,
+        { capture: false },
+      );
+      expect(r.ok).toBe(true);
+      expect(enqueued).toEqual([]);
+    });
   });
 
   describe('refresh', () => {

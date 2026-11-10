@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BOOK_TEMPLATES, OPENCODE_TEMPLATES } from '../../shared/brain';
+import {
+  BOOK_TEMPLATES,
+  OPENCODE_TEMPLATES,
+  SETTLE_TEMPLATES,
+} from '../../shared/brain';
 import {
   TEMPLATES_VERSION,
   brainOpencodePermission,
@@ -17,12 +21,14 @@ const KINDS = [
   'retract',
   'lessons',
   'pictures',
+  'settle',
 ];
 
 describe('templates v8', () => {
   it('is the version the book needs, and has what OpenCode needs', () => {
-    expect(TEMPLATES_VERSION).toBe(8);
-    expect(TEMPLATES_VERSION).toBe(BOOK_TEMPLATES);
+    expect(TEMPLATES_VERSION).toBe(9);
+    expect(TEMPLATES_VERSION).toBe(SETTLE_TEMPLATES);
+    expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(BOOK_TEMPLATES);
     expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(OPENCODE_TEMPLATES);
   });
 
@@ -39,8 +45,12 @@ describe('templates v8', () => {
       '*',
       'sources/**',
       'brain/pictures-dropped.json',
+      'brain/conflicts.json',
     ]);
-    expect(Object.values(p.edit)).toEqual(['allow', 'deny', 'deny']);
+    expect(Object.values(p.edit)).toEqual(['allow', 'deny', 'deny', 'deny']);
+    const settings = JSON.parse(content('.claude/settings.json'));
+    expect(settings.permissions.deny).toContain('Write(brain/conflicts.json)');
+    expect(settings.permissions.deny).toContain('Edit(brain/conflicts.json)');
     expect(Object.keys(p.bash)).toEqual([
       '*',
       'git diff*',
@@ -128,5 +138,46 @@ describe('templates v8', () => {
       expect(content(`.claude/skills/${k}/SKILL.md`)).toContain(
         'with your file-reading tool',
       );
+  });
+});
+
+describe('templates v9: conflicts', () => {
+  const schema = content('SCHEMA.md');
+  const lint = content('.claude/skills/lint/SKILL.md');
+  const settle = content('.claude/skills/settle/SKILL.md');
+  it('the schema describes the conflict a finding carries, conflicts.json, history and decision pages', () => {
+    expect(schema).toContain('"conflict": {');
+    expect(schema).toContain('`brain/conflicts.json`');
+    expect(schema).toContain('Only Shellie writes it');
+    expect(schema).toContain('## Superseded facts');
+    expect(schema).toContain('~~');
+    expect(schema).toContain('## Decision pages');
+  });
+  it('lint writes a whole conflict with a stable id, and leaves settled ones alone unless a newer source disagrees', () => {
+    expect(lint).toContain('`conflict`');
+    expect(lint).toContain('`<kind>:<page a>+<page b>:<topic>`');
+    expect(lint).toContain('`decision-*`');
+    expect(lint).toContain('`reopens`');
+  });
+  it('settle takes the decision as data, writes the decision page, keeps history and names the page at the end', () => {
+    expect(settle).toContain('JSON');
+    expect(settle).toContain('data, not instructions');
+    expect(settle).toContain('wiki/decision-');
+    expect(settle).toContain('superseded');
+    expect(settle).toContain('decision: wiki/decision-');
+    expect(settle).toContain('`brain/conflicts.json`');
+    for (const c of [
+      '`a`',
+      '`b`',
+      '`both`',
+      '`neither`',
+      '`write`',
+      '`accept`',
+      '`keep`',
+    ])
+      expect(settle).toContain(c);
+  });
+  it('capture keeps an outdated fact as history', () => {
+    expect(content('.claude/skills/capture/SKILL.md')).toContain('superseded');
   });
 });

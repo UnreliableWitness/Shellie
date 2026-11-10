@@ -17,6 +17,10 @@ import {
   type SourceType,
   isBrainModel,
   isOpencodeModel,
+  SettleDecisionSchema,
+  settleReady,
+  conflictIdOf,
+  conflictOf,
 } from '../../shared/brain';
 import type { Events, Handlers } from '../../shared/ipc';
 import type { TelemetryProps } from '../../shared/telemetry';
@@ -32,6 +36,7 @@ import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
 import { readBook } from './book';
 import { PENDING } from './bookPass';
+import { listConflicts, readConflicts, saveConflicts } from './conflicts';
 import { pageRows, relevantPages, searchBrain, taskWords } from './browse';
 import { brainForTask, withoutContext } from './context';
 import { withBrainGit } from './gitMutex';
@@ -60,6 +65,8 @@ import { acquireLock, readState, releaseLock } from './state';
 import { TEMPLATES_VERSION } from './templates';
 import { rootGitItemPath, wikiPageUrl } from './wikiAccess';
 
+const SETTLE_SKILLS = 'Update skills to settle conflicts here';
+
 /** A model from Capture with: a Claude Code one or an OpenCode `provider/model`; anything else never reaches a command line. */
 export function checkModel(model: string): string {
   if (isBrainModel(model) || isOpencodeModel(model)) return model;
@@ -87,6 +94,12 @@ export type BrainChannels =
   | 'brain:read'
   | 'brain:verify'
   | 'brain:removeSource'
+  | 'brain:conflicts'
+  | 'brain:settle'
+  | 'brain:settleRetry'
+  | 'brain:park'
+  | 'brain:unpark'
+  | 'brain:answer'
   | 'brain:scrub'
   | 'brain:asset'
   | 'brain:terminal'
@@ -370,6 +383,19 @@ export function createBrainHandlers(
   d: BrainHandlerDeps,
 ): Pick<Handlers, BrainChannels> {
   const now = d.now ?? (() => new Date());
+  /** Queues a conflict's settle, unless one for it is queued, running or paused already. */
+  const queueSettle = (id: string, conflictId: string) => {
+    const waiting = d.runner
+      .jobs(id)
+      .some(
+        (j) =>
+          j.kind === 'settle' &&
+          j.conflict === conflictId &&
+          PENDING.has(j.status),
+      );
+    if (!waiting)
+      d.runner.enqueue(id, 'settle', null, { conflict: conflictId });
+  };
   /** Queues a capture on the model asked for (Capture with), checked before anything is written; none is the brain's. */
   const captureWith = (model: string | undefined) => {
     const m = model ? checkModel(model) : null;
@@ -632,13 +658,13 @@ export function createBrainHandlers(
       changed(id);
       return out;
     },
-    'brain:addText': async (id, text, title, type, note, model) => {
+    'brain:addText': async (id, text, title, type, note, model, opts) => {
       const b = live(id);
       const capture = captureWith(model);
       const t = SourceTypeSchema.parse(type);
       const r = await addSource(d.git, b.path, { text, title, note }, t);
       sourceAdded(t, 'text', Buffer.byteLength(text), r, !!note?.trim());
-      if (r.ok) capture(id, r.path);
+      if (r.ok && opts?.capture !== false) capture(id, r.path);
       changed(id);
       return r;
     },
@@ -651,6 +677,9 @@ export function createBrainHandlers(
     },
     'brain:run': async (id, kind, source, model) => {
       const b = live(id);
+      // A settle runs only from its decision (brain:settle).
+      if ((kind as string) === 'settle')
+        throw new Error('A settle needs a decision');
       // A retried capture keeps the model it was added with; every other job runs on the brain's.
       if (kind === 'capture' && source && model)
         return captureWith(model)(id, source);
@@ -671,6 +700,137 @@ export function createBrainHandlers(
       const job = d.runner.enqueue(id, kind, source ?? null);
       if (arrange) d.runner.enqueue(id, 'sync', null, { background: true });
       return job;
+    },
+    'brain:conflicts': async (id) => {
+      const b = brainOf(id);
+      const { state } = await readState(b.path);
+      return listConflicts(
+        state?.findings ?? [],
+        await readConflicts(b.path),
+        now(),
+      );
+    },
+    'brain:settle': async (id, input) => {
+      const b = live(id);
+      if (!settleReady(b)) throw new Error(SETTLE_SKILLS);
+      const decision = SettleDecisionSchema.parse(input);
+      const at = now().toISOString();
+      await saveConflicts(
+        d.git,
+        b.path,
+        (f) => ({
+          ...f,
+          conflicts: {
+            ...f.conflicts,
+            [decision.id]: {
+              settled: {
+                at,
+                status: 'pending',
+                decision,
+                page: null,
+                error: null,
+              },
+            },
+          },
+        }),
+        'Brain: settle conflict',
+      );
+      queueSettle(id, decision.id);
+      changed(id);
+    },
+    'brain:settleRetry': async (id, conflictId) => {
+      const b = live(id);
+      if (!settleReady(b)) throw new Error(SETTLE_SKILLS);
+      const file = await saveConflicts(
+        d.git,
+        b.path,
+        (f) => {
+          const rec = f.conflicts[conflictId];
+          if (rec?.settled?.status !== 'failed') return f;
+          return {
+            ...f,
+            conflicts: {
+              ...f.conflicts,
+              [conflictId]: {
+                ...rec,
+                settled: { ...rec.settled, status: 'pending', error: null },
+              },
+            },
+          };
+        },
+        'Brain: retry settle',
+      );
+      if (file.conflicts[conflictId]?.settled?.status === 'pending')
+        queueSettle(id, conflictId);
+      changed(id);
+    },
+    'brain:park': async (id, conflictId, question) => {
+      const b = live(id);
+      const at = now().toISOString();
+      // The record keeps what it had (an earlier settle of a reopened conflict) and gains the question.
+      await saveConflicts(
+        d.git,
+        b.path,
+        (f) => ({
+          ...f,
+          conflicts: {
+            ...f.conflicts,
+            [conflictId]: {
+              ...f.conflicts[conflictId],
+              parked: { question, at },
+            },
+          },
+        }),
+        'Brain: park conflict',
+      );
+      changed(id);
+    },
+    'brain:unpark': async (id, conflictId) => {
+      const b = live(id);
+      await saveConflicts(
+        d.git,
+        b.path,
+        (f) => {
+          const { parked: _p, ...rest } = f.conflicts[conflictId] ?? {};
+          return { ...f, conflicts: { ...f.conflicts, [conflictId]: rest } };
+        },
+        'Brain: unpark conflict',
+      );
+      changed(id);
+    },
+    'brain:answer': async (id, conflictId, text) => {
+      const b = live(id);
+      const { state } = await readState(b.path);
+      const f = (state?.findings ?? []).find(
+        (x) => conflictIdOf(x) === conflictId,
+      );
+      const question = f ? (conflictOf(f)?.question ?? f.detail) : 'a conflict';
+      // A source the settle reads: no capture of its own.
+      const r = await addSource(
+        d.git,
+        b.path,
+        { text, title: `Answer: ${question}`, note: 'Answer to a conflict' },
+        'note',
+      );
+      if (!r.ok) throw new Error(r.message);
+      const at = now().toISOString();
+      await saveConflicts(
+        d.git,
+        b.path,
+        (file) => {
+          const { parked: _p, ...rest } = file.conflicts[conflictId] ?? {};
+          return {
+            ...file,
+            conflicts: {
+              ...file.conflicts,
+              [conflictId]: { ...rest, answered: { path: r.path, text, at } },
+            },
+          };
+        },
+        'Brain: answer to a conflict',
+      );
+      changed(id);
+      return { path: r.path };
     },
     'brain:resumeQueue': async (id) => {
       live(id);

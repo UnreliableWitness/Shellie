@@ -106,7 +106,13 @@ async function textFiles(brainDir: string): Promise<string[]> {
   const out = (await entries(brainDir))
     .filter((e) => !e.dir && TEXT.has(path.extname(e.rel).toLowerCase()))
     .map((e) => e.rel);
-  for (const f of ['index.md', 'log.md', 'brain/state.json', 'brain/book.json'])
+  for (const f of [
+    'index.md',
+    'log.md',
+    'brain/state.json',
+    'brain/book.json',
+    'brain/conflicts.json',
+  ])
     if (await pathExists(absPath(brainDir, f))) out.push(f);
   return out;
 }

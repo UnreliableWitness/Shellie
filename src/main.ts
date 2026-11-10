@@ -35,6 +35,8 @@ import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { createRasterizer } from './main/brain/convert/raster';
 import { createBookHooks } from './main/brain/bookPass';
+import { saveConflicts } from './main/brain/conflicts';
+import { createSettleHooks } from './main/brain/settleHooks';
 import { createPictureHooks } from './main/brain/pictures';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
@@ -907,6 +909,15 @@ async function boot(): Promise<void> {
     });
     // The first arrangement of the book: a background sync with the `book` argument, counted when it ends.
     const bookHooks = createBookHooks({ brains, runner: () => brainRunner });
+    // Settles: the decision as the job's prompt, its record marked when the job ends, lost ones queued at launch.
+    const settleHooks = createSettleHooks({
+      brainDir: (id) => brains.get(id)?.path ?? null,
+      brains: () => brains.list(),
+      update: (dir, change, message) =>
+        saveConflicts(git, dir, change, message),
+      runner: () => brainRunner,
+      changed: (brainId) => broadcast('brain:changed', { brainId }),
+    });
     const brainRunner = new BrainJobRunner({
       platform,
       run: runWithInput,
@@ -930,10 +941,16 @@ async function boot(): Promise<void> {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
-      promptFor: pictureHooks.promptFor,
+      promptFor: (j) =>
+        j.kind === 'settle'
+          ? settleHooks.promptFor(j)
+          : pictureHooks.promptFor(j),
       afterJob: (j) => {
         pictureHooks.afterJob(j);
         bookHooks.afterJob(j);
+        void settleHooks
+          .afterJob(j)
+          .catch((err) => console.error('[brain] settle record', err));
       },
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
@@ -1298,6 +1315,9 @@ async function boot(): Promise<void> {
         bookPass: bookHooks.bookPass,
         bookPassRunning: bookHooks.passRunning,
       });
+      void settleHooks
+        .resume()
+        .catch((err) => console.error('[brain] settles to resume', err));
       const warnings = [
         loaded.recovered &&
           `state.json was unreadable and was moved to ${path.basename(loaded.backup ?? '')}. Starting empty.`,

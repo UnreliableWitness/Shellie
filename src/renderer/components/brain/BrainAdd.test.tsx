@@ -485,6 +485,70 @@ describe('BrainAdd right column', () => {
     expect(within(finding).queryAllByRole('button')).toEqual([]);
   });
 
+  it('Health: a contradiction or scope change offers Settle; a broken link keeps Resolve in terminal', async () => {
+    installFakeApi({});
+    const brain = withOptions({});
+    const at = '2026-11-07T09:00:00.000Z';
+    brain.health = {
+      ...brain.health!,
+      findings: [
+        {
+          kind: 'contradiction',
+          page: 'wiki/a.md',
+          detail: 'dates differ',
+          at,
+          conflict: {
+            id: 'c1',
+            question: 'When?',
+            claims: {
+              a: { page: 'wiki/a.md', quote: 'x' },
+              b: { page: 'wiki/b.md', quote: 'y' },
+            },
+          },
+        },
+        {
+          kind: 'scope-change',
+          page: 'wiki/scope-x.md',
+          detail: 'CRM asked',
+          at,
+        },
+        {
+          kind: 'broken-link',
+          page: 'wiki/c.md',
+          detail: 'links to wiki/gone.md',
+          at,
+        },
+      ],
+    };
+    const onSettle = vi.fn();
+    render(
+      <BrainHealth
+        brain={brain}
+        onOpen={() => undefined}
+        onSettle={onSettle}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Settle: contradiction on wiki/a.md',
+      }),
+    );
+    expect(onSettle).toHaveBeenCalledWith('c1');
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Settle: scope-change on wiki/scope-x.md',
+      }),
+    );
+    expect(onSettle).toHaveBeenLastCalledWith(
+      'scope-change:wiki/scope-x.md:CRM asked',
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Resolve in terminal: broken-link on wiki/c.md',
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('Health: Open source follows the finding code, not its words', () => {
     installFakeApi({});
     const brain = withOptions({});

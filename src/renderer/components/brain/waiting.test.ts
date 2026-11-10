@@ -89,6 +89,11 @@ describe('waitReason', () => {
 });
 
 describe('badgeCount', () => {
+  it('leaves out an answer whose settle has not run yet', () => {
+    const sources = [src('sources/a.md'), src('sources/answer.md')];
+    expect(badgeCount(sources, [], ['sources/answer.md'])).toBe(1);
+  });
+
   it('counts waiting sources with no queued or running job', () => {
     const sources = [src('sources/a.md'), src('sources/b.md')];
     const jobs = [job({ status: 'running' })];

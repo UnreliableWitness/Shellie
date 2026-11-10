@@ -48,6 +48,7 @@ export const noOverrides = {
 };
 
 const defaults: FakeHandlers = {
+  'brain:conflicts': () => ({ open: [], parked: [], settled: [], answers: [] }),
   'budget:get': (_vendor, monthOffset) => ({
     monthOffset,
     startDay: '2026-10-01',
