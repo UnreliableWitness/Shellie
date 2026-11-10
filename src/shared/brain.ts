@@ -300,7 +300,9 @@ export type BrainJobKind =
   | 'digest'
   | 'retract'
   | 'lessons'
-  | 'pictures';
+  | 'pictures'
+  /** A conflict the person settled: runs `/settle` with the decision kept in brain/conflicts.json. */
+  | 'settle';
 export const SOURCE_JOB_KINDS: ReadonlySet<BrainJobKind> = new Set([
   'capture',
   'retract',
@@ -324,6 +326,8 @@ export type BrainJob = {
   agent: BrainAgent;
   /** The model this one job runs on (a capture added with Capture with); null is the brain's. One for the other agent is ignored. */
   model: string | null;
+  /** A settle job's conflict id. */
+  conflict?: string;
 };
 export type PictureStatus =
   | 'described'

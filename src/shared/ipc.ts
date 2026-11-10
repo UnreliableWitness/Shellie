@@ -3,6 +3,7 @@ import type {
   AdoWiki,
   AdoWikiPage,
   BrainAgent,
+  BrainConflicts,
   BrainJob,
   BrainOptions,
   BrainBook,
@@ -13,6 +14,7 @@ import type {
   BrainView,
   BrainWiki,
   RefreshResult,
+  SettleDecision,
   SourcePictures,
   SourceType,
 } from './brain';
@@ -676,9 +678,26 @@ export type Channels = {
       type: SourceType,
       note?: string,
       model?: string,
+      /** `capture: false` adds the source without queuing its capture (an answer a settle reads). */
+      opts?: { capture?: boolean },
     ];
     result: AddSourceResult;
   };
+  /** The brain's contradictions and scope changes: open, parked and settled (Settle view). */
+  'brain:conflicts': { args: [brainId: string]; result: BrainConflicts };
+  /** Records the decision (pending) and queues `/settle` for it; skills v9 only. */
+  'brain:settle': {
+    args: [brainId: string, decision: SettleDecision];
+    result: void;
+  };
+  /** Queues a failed settle again from the decision it kept. */
+  'brain:settleRetry': { args: [brainId: string, id: string]; result: void };
+  /** Parks a conflict while someone is asked; the question is kept, the name never. */
+  'brain:park': {
+    args: [brainId: string, id: string, question: string];
+    result: void;
+  };
+  'brain:unpark': { args: [brainId: string, id: string]; result: void };
   /** Mirrors the wiki; queues a sync when `syncAfterRefresh` is on and pages changed. */
   'brain:refresh': { args: [brainId: string]; result: RefreshResult };
   'brain:run': {

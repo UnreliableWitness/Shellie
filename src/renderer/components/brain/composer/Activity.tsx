@@ -180,11 +180,19 @@ function ActivityLine({
       return;
     }
     trackBrain('retry');
+    const kind = job.kind;
+    if (kind === 'settle') {
+      void tryInvoke(
+        () => api().invoke('brain:settleRetry', brain.id, job.conflict ?? ''),
+        notify,
+      );
+      return;
+    }
     void tryInvoke(
       () =>
         job.source
-          ? api().invoke('brain:run', brain.id, job.kind, job.source)
-          : api().invoke('brain:run', brain.id, job.kind),
+          ? api().invoke('brain:run', brain.id, kind, job.source)
+          : api().invoke('brain:run', brain.id, kind),
       notify,
     );
   };

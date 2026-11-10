@@ -254,7 +254,7 @@ export class BrainJobRunner {
     brainId: string,
     kind: BrainJobKind,
     source: string | null = null,
-    opts?: { background?: boolean; model?: string | null },
+    opts?: { background?: boolean; model?: string | null; conflict?: string },
   ): BrainJob {
     const withSource = SOURCE_JOB_KINDS.has(kind);
     if (withSource && !source) throw new Error(`A ${kind} needs a source file`);
@@ -266,6 +266,7 @@ export class BrainJobRunner {
       opts?.background ?? false,
       opts?.model ?? null,
     );
+    if (opts?.conflict) job.conflict = opts.conflict;
     // A pictures job queued by hand replaces a background one still waiting for the same source: one run, not two.
     if (kind === 'pictures' && !job.background) {
       const gone = l.queue.filter(
