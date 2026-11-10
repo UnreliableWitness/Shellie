@@ -115,13 +115,14 @@ const footer = (s) =>
 
 /**
  * @param {any} result a validated triage answer
- * @param {{ issue: any, previous: any, lastCommentId: number, tokens: number, now: Date }} ctx
+ * @param {{ issue: any, previous: any, lastCommentId: number, tokens: number, now: Date, owner?: string, bot?: string }} ctx
+ *   `bot`: the agents' login; an issue they opened (the nightly agent's) has no reporter to ask
  * @returns {({ type: 'comment' | 'status', body: string } | { type: 'addLabels' | 'removeLabels', labels: string[] }
  *   | { type: 'close', reason: 'completed' | 'not_planned' })[]}
  */
 export function planActions(
   result,
-  { issue, previous, lastCommentId, tokens, now, owner },
+  { issue, previous, lastCommentId, tokens, now, owner, bot },
 ) {
   const base = {
     ...previous,
@@ -153,6 +154,14 @@ export function planActions(
       decision: 'needs-owner',
       reason: 'Triage thinks this is not a bug a second time',
       question: result.explanation,
+    };
+
+  if (result.decision === 'ask' && bot && issue.user?.login === bot)
+    result = {
+      decision: 'needs-owner',
+      reason:
+        'the agents opened this issue, so there is no reporter to answer these questions',
+      question: result.questions.join('\n> '),
     };
 
   switch (result.decision) {

@@ -97,7 +97,13 @@ export const LABELS = [
   {
     name: 'source:health',
     color: 'bfdadc',
-    description: 'Opened by the health agent from app telemetry',
+    description: 'Opened by the nightly agent from app telemetry',
+  },
+  {
+    name: 'source:simplify',
+    color: 'bfdadc',
+    description:
+      "Opened by the nightly agent from a review of the day's merges",
   },
   {
     name: 'source:gardener',

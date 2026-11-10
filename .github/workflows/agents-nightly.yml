@@ -1,0 +1,92 @@
+# Nightly agent (docs/superpowers/specs/2026-11-10-nightly-agent-design.md, docs/agents.md).
+#   telemetry  fixed App Insights queries after an OIDC Azure login (Monitoring Reader only); no agent, no GitHub token
+#   nightly    the health agent over that telemetry and the simplify agent over the app code merged since the last night;
+#              files at most a few issues (AGENTS_NIGHTLY_MODE=live), which triage picks up like any other
+# Runs on the owner's Claude subscription (CLAUDE_CODE_OAUTH_TOKEN). Never add an ANTHROPIC_API_KEY.
+name: Agents · nightly
+on:
+  # 03:27 UTC: 04:27 in Brussels in winter, far from the 11:00 and 16:00 UTC releases and the owner's working day
+  schedule:
+    - cron: '27 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-nightly
+  cancel-in-progress: false
+
+jobs:
+  telemetry:
+    # needs the owner's Azure setup (docs/agents.md); without it the health pass is skipped
+    if: vars.AGENTS_MODE != '' && vars.AGENTS_MODE != 'off' && vars.AZURE_HEALTH_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Azure login (OIDC)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_HEALTH_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_HEALTH_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Query App Insights
+        env:
+          APPINSIGHTS_CONNECTION_STRING: ${{ vars.APPINSIGHTS_CONNECTION_STRING }}
+        run: node tools/agents/nightly-telemetry.mjs "$RUNNER_TEMP/telemetry.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: telemetry
+          path: ${{ runner.temp }}/telemetry.json
+          retention-days: 7
+
+  nightly:
+    needs: telemetry
+    # a skipped or failed telemetry job only skips the health pass
+    if: always() && vars.AGENTS_MODE != '' && vars.AGENTS_MODE != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm install -g @anthropic-ai/claude-code@2.1.310
+      - uses: actions/download-artifact@v8
+        if: needs.telemetry.result == 'success'
+        with:
+          name: telemetry
+          path: ${{ runner.temp }}/nightly
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.AGENTS_APP_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+      - name: Hand the App token to the script in a file
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: umask 077 && printf '%s' "$TOKEN" > "$RUNNER_TEMP/agents-gh-token"
+      - name: Nightly agent
+        env:
+          AGENTS_MODE: ${{ vars.AGENTS_MODE }}
+          AGENTS_NIGHTLY_MODE: ${{ vars.AGENTS_NIGHTLY_MODE }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          AGENTS_GH_TOKEN_FILE: ${{ runner.temp }}/agents-gh-token
+          NIGHTLY_TELEMETRY_FILE: ${{ runner.temp }}/nightly/telemetry.json
+        run: node tools/agents/nightly.mjs

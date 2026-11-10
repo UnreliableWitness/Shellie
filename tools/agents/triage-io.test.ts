@@ -97,6 +97,23 @@ describe('planActions', () => {
       tokens: 500,
     });
   });
+  it('an ask on an issue the agents opened goes to the owner: there is no reporter to answer', () => {
+    const bot = 'shellie-agents[bot]';
+    const a = planActions(
+      {
+        decision: 'ask',
+        questions: ['Which OS?', 'Since when?'],
+        summary: 's',
+      },
+      { ...ctx, issue: { ...ctx.issue, user: { login: bot } }, bot },
+    );
+    expect(a).toContainEqual({
+      type: 'addLabels',
+      labels: ['agent:needs-owner'],
+    });
+    expect(a.find((x) => x.type === 'comment')!.body).toContain('Since when?');
+    expect(statusOf(a)).toMatchObject({ state: 'needs-owner' });
+  });
   it('ready: posts the spec in the status and labels kind and risk', () => {
     const a = planActions(ready, ctx);
     expect(a).toContainEqual({

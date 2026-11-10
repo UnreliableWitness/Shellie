@@ -22,7 +22,7 @@ Screenshots from the issue and trusted comments, when there are any, are listed 
 2. Find the code involved: Grep, Glob and Read; `git log`, `git show`, `git grep` and `git blame` for history. Locate the cause with `file:line` where you can. Spend your turns on reading code, not on restating the issue.
 3. Check `<possible-duplicates>`: is this the same problem as another issue (open, or closed recently and maybe not fixed)?
 4. Decide one of:
-   - **`ask`**: you cannot write a concrete fix spec without information only the reporter has. 1-3 questions. Each one concrete and answerable, and says briefly why it matters ("Which base branch does that repo use? Shellie picks `main` when …"). A reporter who is not the owner (`UnreliableWitness`) should not need to read code to answer. Never ask what the code or the issue already tells you, and never ask "can you give more details".
+   - **`ask`**: you cannot write a concrete fix spec without information only the reporter has. 1-3 questions. Each one concrete and answerable, and says briefly why it matters ("Which base branch does that repo use? Shellie picks `main` when …"). A reporter who is not the owner (`UnreliableWitness`) should not need to read code to answer. Never ask what the code or the issue already tells you, and never ask "can you give more details". An issue whose author is `shellie-agents[bot]` was opened by the nightly agent (from telemetry or a code review) and has no reporter: never `ask` there; choose `ready`, `needs-owner`, `duplicate` or `not-a-bug`.
    - **`ready`**: you can say what to change. Fill `spec`:
      - `problem`: what the user sees, in one or two sentences.
      - `cause`: why, with `file:line` references.

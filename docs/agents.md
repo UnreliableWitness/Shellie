@@ -8,6 +8,7 @@ Agents triage GitHub issues, implement them as pull requests and review those PR
 | Implement (stage 2) | `agents-implement.yml` | takes one `agent:ready` issue (bugs first) and opens a PR with the fix |
 | PR (stages 2-3) | `agents-pr.yml` | reviews each new commit of an agent PR; then fixes red CI, review findings, your comments and conflicts; merges in `full` mode |
 | Notify (stage 3) | `agents-notify.yml` | every 30 min: tells the reporter which release has the fix |
+| Nightly | `agents-nightly.yml` | once a night (03:27 UTC): files issues for problems in App Insights telemetry and for simpler code in the day's merges ([below](#the-nightly-agent)) |
 
 They run on the owner's **Claude subscription**, never on an API key, and only on free GitHub runners. Nothing they do costs money beyond the subscription.
 
@@ -25,7 +26,18 @@ They run on the owner's **Claude subscription**, never on an API key, and only o
 
 4. **Project token** (for the board, optional): a classic personal access token (https://github.com/settings/tokens/new) with only the scopes **`project`** and **`public_repo`**, saved as repo secret `AGENTS_PROJECT_TOKEN` (`gh secret set AGENTS_PROJECT_TOKEN -R UnreliableWitness/Shellie` in a terminal, not in a chat). A GitHub App cannot change a personal account's projects, so the board sync uses this token; it is used only in the sync and in the implementer's pick (to read the Ready order), never where an agent runs. Draft cards become issues in the token owner's name. Without it, the board is not synced and the implementer keeps its own order.
 
-Later stages add an Azure login for the health agent and branch protection on `main`; their steps will be listed here.
+5. **Azure login for the nightly agent's telemetry** (optional; without it the health pass is skipped). On your Mac, logged in with `az login`:
+   ```sh
+   app=$(az ad app create --display-name shellie-nightly-telemetry --query appId -o tsv)
+   az ad sp create --id "$app"
+   az ad app federated-credential create --id "$app" --parameters '{"name":"agents-nightly-main","issuer":"https://token.actions.githubusercontent.com","subject":"repo:UnreliableWitness/Shellie:ref:refs/heads/main","audiences":["api://AzureADTokenExchange"]}'
+   az role assignment create --assignee "$app" --role "Monitoring Reader" --scope "$(az group show -n shellie-telemetry --query id -o tsv)"
+   gh variable set AZURE_HEALTH_CLIENT_ID -R UnreliableWitness/Shellie --body "$app"
+   gh variable set AZURE_HEALTH_TENANT_ID -R UnreliableWitness/Shellie --body "$(az account show --query tenantId -o tsv)"
+   ```
+   The role is on the resource group, so it covers `shellie-app` and its `shellie-logs` workspace. It can only read telemetry; there is no secret, GitHub's OIDC token is exchanged at each run.
+
+Branch protection on `main` comes in a later stage; its steps will be listed here.
 
 ## Modes (`AGENTS_MODE` repo variable)
 
@@ -47,6 +59,7 @@ Run a poller by hand: Actions › Agents · triage (or · implement, · PR, · n
 | Implement | triage finished; a PR closed (the one agent PR slot may be free) |
 | PR | CI finished on any branch (a new or fixed agent PR, or `main`); a review or comment on a PR (not the agents' own) |
 | Notify | CI finished on `main` |
+| Nightly | only its schedule (and Run workflow) |
 
 The scripts ignore whatever does not concern them, so an extra start costs a minute of free runner time and no Claude usage. Every agent job checks out `main`, whatever the event, so a PR's own code never runs with the App token.
 
@@ -62,6 +75,7 @@ The scripts ignore whatever does not concern them, so an extra start costs a min
 | `agent:needs-owner` | The agent needs your decision; the status comment says what. Comment to have it triaged again. |
 | `agent:stop` | Agents leave this issue alone for good. |
 | `kind:*`, `risk:*` | Triage's call. Features and high-risk changes never merge without your approval. |
+| `source:health`, `source:simplify` | Opened by the nightly agent, from telemetry or from its review of the day's merges. |
 
 The agents keep one **status comment** per issue that they edit in place. Its hidden `<!-- shellie-agent … -->` block is their memory; it is trusted only in comments by the app.
 
@@ -127,6 +141,25 @@ The labels stay the source of truth: a card moved by hand goes back where its la
 - **The order of the Ready column is the implementer's priority**: it takes the top card first; issues not on the board come after, bugs before chores before features, oldest first.
 
 GitHub sends no event when a card moves on a personal account's board, so a move is seen at the next sync (within about 15 minutes).
+
+## The nightly agent
+
+Spec: `docs/superpowers/specs/2026-11-10-nightly-agent-design.md`. Two read-only passes, one Claude run each, at 03:27 UTC:
+
+- **Health** (`sdlc-health`, Sonnet): a separate job logs in to Azure (step 5 above) and runs fixed queries over App Insights `shellie-app` (`tools/agents/nightly-telemetry.mjs`): exceptions grouped by a normalised signature (App Insights' `problemId` changes with every release), crashes and hangs, main-process stalls and memory from `app.health`, `ipc.ms`/`git.ms` per operation, startup and setup times, failure events, renderer long tasks, failing or slow dependencies, each for the last 24 h against the 13 days before. The agent gets only those aggregated rows, reads the code to find the cause, and files at most 3 issues for what is new, rising, a crash, or back after a fix.
+- **Simplify** (`sdlc-simplify`, Opus): the app code (`src/`) merged since the last night's run (or the last 24 h). It looks for reuse, simplification, efficiency and logic in the wrong layer, and files at most 2 issues. No app code merged: no run.
+
+The issues are opened by the app with `source:health` or `source:simplify` and a hidden signature; triage picks them up on its next poll and never asks the bot questions (it goes to `needs-owner` instead). An open issue with the same signature is not filed again; a closed one is filed as "seen again after #n was closed". Both runs count against `maxAgentRunsPerDay`; a usage limit pauses every agent.
+
+**Mode:** besides `AGENTS_MODE`, the repo variable **`AGENTS_NIGHTLY_MODE`**: unset or `shadow` runs both agents and lists the issues it would open in the run's summary (Actions › Agents · nightly › a run), `live` files them, `off` stops it. It starts in shadow even when `AGENTS_MODE` is `full`; set it to `live` once the summaries look right (`gh variable set AGENTS_NIGHTLY_MODE -R UnreliableWitness/Shellie --body live`).
+
+Try it locally (your `gh` and `az` logins, nothing written):
+
+```sh
+APPINSIGHTS_CONNECTION_STRING="$(gh variable get APPINSIGHTS_CONNECTION_STRING -R UnreliableWitness/Shellie)" \
+  node tools/agents/nightly-telemetry.mjs /tmp/telemetry.json
+node tools/agents/nightly.mjs --dry-run /tmp/telemetry.json
+```
 
 ## Limits
 

@@ -21,6 +21,7 @@ const DEFAULTS = {
     review: 'claude-opus-5-5',
     fix: 'claude-sonnet-5-5',
     health: 'claude-sonnet-5-5',
+    simplify: 'claude-opus-5-5',
     garden: 'claude-sonnet-5-5',
   },
   maxTurns: {
@@ -28,10 +29,11 @@ const DEFAULTS = {
     implement: 150,
     review: 40,
     fix: 60,
-    health: 20,
+    health: 30,
+    simplify: 40,
     garden: 30,
   },
-  maxIssuesPerDay: { health: 3 },
+  maxIssuesPerDay: { health: 3, simplify: 2 },
   maxIssuesPerWeek: { gardener: 2 },
 };
 
