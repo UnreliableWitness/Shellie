@@ -45,7 +45,12 @@ export type BrainAction =
   | 'view-add'
   /** Pictures: a re-evaluation queued (source panel or Health), a drop accepted with Fine, I know. */
   | 'reevaluate'
-  | 'accept-drop';
+  | 'accept-drop'
+  /** The composer: rich text pasted as Markdown, then put back as plain text; Write/Split/Preview; a draft discarded. */
+  | 'paste-markdown'
+  | 'paste-plain'
+  | 'editor-view'
+  | 'discard';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>
@@ -105,3 +110,13 @@ export const openBrainTerminal = (
             : api().invoke('brain:terminal', brainId),
     notify,
   );
+
+/** The composer's Add: what went in and on which model kind, as counts and flags only (never names, notes or text). */
+export const trackBrainAdd = (p: {
+  text: boolean;
+  files: number;
+  note: boolean;
+  ownNotes: number;
+  model: 'haiku' | 'sonnet' | 'opus' | 'opencode';
+  overridden: boolean;
+}) => track('brain.screen.action', { action: 'add', ...p });

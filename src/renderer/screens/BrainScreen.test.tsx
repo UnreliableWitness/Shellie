@@ -14,6 +14,9 @@ import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
 import { brainJob, brainView } from '../test-helpers/brainFixture';
 import { BrainScreen } from './BrainScreen';
 
+vi.mock('../review/loadMonaco', () => ({
+  loadMonaco: () => new Promise<never>(() => undefined),
+}));
 vi.mock('../components/TerminalView', () => ({
   TerminalView: (p: { terminalId: string; taskId: string }) => (
     <div data-testid="terminal">{`${p.taskId}/${p.terminalId}`}</div>
@@ -70,7 +73,7 @@ describe('BrainScreen', () => {
     render(<BrainScreen brainId="b1" />);
     expect(await screen.findByText('Acme')).toBeInTheDocument();
     expect(screen.getByText(/2 findings/)).toBeInTheDocument();
-    expect(screen.getByText(/Drop files here/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Note for the agent')).toBeInTheDocument();
     expect(screen.getByText(/3 uncaptured/)).toBeInTheDocument();
     expect(screen.getByText(/12 pages/)).toBeInTheDocument();
   });

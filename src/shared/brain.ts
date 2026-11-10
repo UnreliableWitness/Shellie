@@ -12,6 +12,8 @@ export const brainIdOf = (taskId: string | undefined): string | null =>
 
 const BrainModelSchema = z.enum(['haiku', 'sonnet', 'opus']);
 export type BrainModel = z.infer<typeof BrainModelSchema>;
+export const isBrainModel = (model: string): model is BrainModel =>
+  BrainModelSchema.safeParse(model).success;
 
 export const BrainAgentSchema = z.enum(['claude', 'opencode']);
 export type BrainAgent = z.infer<typeof BrainAgentSchema>;
@@ -208,6 +210,8 @@ export type BrainJob = {
   background: boolean;
   /** The agent that runs this job, taken from the brain when it is queued and again when it starts. */
   agent: BrainAgent;
+  /** The model this one job runs on (a capture added with Capture with); null is the brain's. One for the other agent is ignored. */
+  model: string | null;
 };
 export type PictureStatus =
   | 'described'

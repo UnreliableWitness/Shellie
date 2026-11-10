@@ -76,6 +76,7 @@ describe('brain handlers', () => {
       error: null,
       background: false,
       agent: 'claude',
+      model: null,
     }) satisfies BrainJob;
 
   beforeEach(async () => {
@@ -279,6 +280,55 @@ describe('brain handlers', () => {
         .filter((e) => e[0] === 'brain.source.added')
         .map((e) => (e[1] as { noted: boolean }).noted),
     ).toEqual([true, true]);
+  });
+
+  it('a model given with text, files or a capture run reaches the capture only', async () => {
+    const v = await h['brain:create'](NEW);
+    const t = await h['brain:addText'](
+      v.id,
+      'Notes',
+      'Kick-off',
+      'note',
+      undefined,
+      'opus',
+    );
+    const file = path.join(userData, 'deck.md');
+    await fs.writeFile(file, '# Deck\n\nbody\n');
+    const [f] = await h['brain:addFiles'](
+      v.id,
+      [{ path: file, type: 'deck' }],
+      'haiku',
+    );
+    if (!t.ok || !f.ok) throw new Error('not added');
+    await h['brain:run'](v.id, 'capture', t.path, 'anthropic/claude-opus');
+    await h['brain:run'](v.id, 'lint', undefined, 'opus');
+    expect(enqueued).toEqual([
+      [v.id, 'capture', t.path, { model: 'opus' }],
+      [v.id, 'capture', f.path, { model: 'haiku' }],
+      [v.id, 'capture', t.path, { model: 'anthropic/claude-opus' }],
+      [v.id, 'lint', null],
+    ]);
+  });
+
+  it('refuses a model that is neither a Claude Code nor an OpenCode one, before adding anything', async () => {
+    const v = await h['brain:create'](NEW);
+    await expect(
+      h['brain:addText'](
+        v.id,
+        'Notes',
+        'Kick-off',
+        'note',
+        undefined,
+        'gpt 5; rm',
+      ),
+    ).rejects.toThrow('Unknown model gpt 5; rm');
+    const file = path.join(userData, 'a.md');
+    await fs.writeFile(file, '# A\n');
+    await expect(
+      h['brain:addFiles'](v.id, [{ path: file, type: 'doc' }], 'sonnet 4'),
+    ).rejects.toThrow('Unknown model');
+    expect(enqueued).toEqual([]);
+    expect(await h['brain:sources'](v.id)).toEqual([]);
   });
 
   it('addFiles reports unsupported files without enqueueing', async () => {

@@ -101,5 +101,6 @@ export const brainJob = (over: Partial<BrainJob> = {}): BrainJob => ({
   error: 'claude exited 1',
   background: false,
   agent: 'claude',
+  model: null,
   ...over,
 });

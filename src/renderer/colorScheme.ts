@@ -19,3 +19,6 @@ export function onColorSchemeChange(cb: (s: ColorScheme) => void): () => void {
 export function useColorScheme(): ColorScheme {
   return useSyncExternalStore(onColorSchemeChange, currentColorScheme);
 }
+
+/** The Monaco theme for a scheme (defined in review/monacoSetup.ts). */
+export const monacoTheme = (s: ColorScheme) => `shellie-${s}`;

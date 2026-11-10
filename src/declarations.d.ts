@@ -16,3 +16,8 @@ declare const SPLASH_WINDOW_VITE_NAME: string;
 
 /** App Insights connection string baked in at build time (empty in local builds). */
 declare const __APPINSIGHTS_CONNECTION_STRING__: string;
+
+// turndown-plugin-gfm ships no types: only `gfm` (tables, strikethrough, task lists) is used.
+declare module 'turndown-plugin-gfm' {
+  export const gfm: (service: import('turndown')) => void;
+}

@@ -6,10 +6,11 @@ import type { ReviewSide } from '../../../shared/review';
 import { loadMonaco } from '../../review/loadMonaco';
 import { type LineChange, mapOriginalLine } from '../../review/mapOriginalLine';
 import { errorMessage } from '../../../shared/errors';
-import type { ColorScheme } from '../../../shared/theme';
-import { currentColorScheme, useColorScheme } from '../../colorScheme';
-
-const monacoTheme = (s: ColorScheme) => `shellie-${s}`;
+import {
+  currentColorScheme,
+  monacoTheme,
+  useColorScheme,
+} from '../../colorScheme';
 
 export type DiffZone = {
   id: string;
