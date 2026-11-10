@@ -15,6 +15,8 @@ import {
   type BrainView,
   type RefreshResult,
   type SourceType,
+  isBrainModel,
+  isOpencodeModel,
 } from '../../shared/brain';
 import type { Events, Handlers } from '../../shared/ipc';
 import type { TelemetryProps } from '../../shared/telemetry';
@@ -57,6 +59,12 @@ import { addSource, listSources, removeSource } from './sources';
 import { acquireLock, readState, releaseLock } from './state';
 import { TEMPLATES_VERSION } from './templates';
 import { rootGitItemPath, wikiPageUrl } from './wikiAccess';
+
+/** A model from Capture with: a Claude Code one or an OpenCode `provider/model`; anything else never reaches a command line. */
+export function checkModel(model: string): string {
+  if (isBrainModel(model) || isOpencodeModel(model)) return model;
+  throw new Error(`Unknown model ${model}`);
+}
 
 export type BrainChannels =
   | 'brain:list'
@@ -362,6 +370,14 @@ export function createBrainHandlers(
   d: BrainHandlerDeps,
 ): Pick<Handlers, BrainChannels> {
   const now = d.now ?? (() => new Date());
+  /** Queues a capture on the model asked for (Capture with), checked before anything is written; none is the brain's. */
+  const captureWith = (model: string | undefined) => {
+    const m = model ? checkModel(model) : null;
+    return (id: string, source: string) =>
+      m
+        ? d.runner.enqueue(id, 'capture', source, { model: m })
+        : d.runner.enqueue(id, 'capture', source);
+  };
   const changed = (brainId: string) =>
     d.broadcast('brain:changed', { brainId });
   const brainOf = (id: string): Brain => {
@@ -591,8 +607,9 @@ export function createBrainHandlers(
       d.tracker(connectionId).wikis(project),
     'brain:wikiPages': (connectionId, project, wikiId) =>
       d.tracker(connectionId).wikiPages(project, wikiId),
-    'brain:addFiles': async (id, files) => {
+    'brain:addFiles': async (id, files, model) => {
       const b = live(id);
+      const capture = captureWith(model);
       const out: AddSourceResult[] = [];
       for (const f of files) {
         const type = SourceTypeSchema.parse(f.type);
@@ -609,18 +626,19 @@ export function createBrainHandlers(
           () => 0,
         );
         sourceAdded(type, formatOf(f.path), bytes, r, !!f.note?.trim());
-        if (r.ok) d.runner.enqueue(id, 'capture', r.path);
+        if (r.ok) capture(id, r.path);
         out.push(r);
       }
       changed(id);
       return out;
     },
-    'brain:addText': async (id, text, title, type, note) => {
+    'brain:addText': async (id, text, title, type, note, model) => {
       const b = live(id);
+      const capture = captureWith(model);
       const t = SourceTypeSchema.parse(type);
       const r = await addSource(d.git, b.path, { text, title, note }, t);
       sourceAdded(t, 'text', Buffer.byteLength(text), r, !!note?.trim());
-      if (r.ok) d.runner.enqueue(id, 'capture', r.path);
+      if (r.ok) capture(id, r.path);
       changed(id);
       return r;
     },
@@ -631,8 +649,11 @@ export function createBrainHandlers(
       refreshing.set(id, p);
       return p;
     },
-    'brain:run': async (id, kind, source) => {
+    'brain:run': async (id, kind, source, model) => {
       const b = live(id);
+      // A retried capture keeps the model it was added with; every other job runs on the brain's.
+      if (kind === 'capture' && source && model)
+        return captureWith(model)(id, source);
       if (kind === 'pictures' && !picturesReady(b))
         throw new Error('Update skills to re-evaluate pictures');
       // A Sync from Run now also arranges a missing book, as its own job: plain /sync leaves the book alone.

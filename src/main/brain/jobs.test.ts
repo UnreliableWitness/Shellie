@@ -880,3 +880,44 @@ describe('jobs on the brain agent', () => {
     expect(r.jobs('b1')[0].error).toBe('boom');
   });
 });
+
+describe('a model of its own', () => {
+  it("runs a capture on the model it was queued with, and the lint after it on the brain's", async () => {
+    const r = runner();
+    r.enqueue('b1', 'capture', 'sources/a.md', { model: 'opus' });
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    await idle(r, 'b1');
+    expect(calls[0].cmd.args).toContain('opus');
+    expect(calls[0].cmd.args).not.toContain('sonnet');
+    expect(calls[1].cmd.args).toContain('sonnet');
+    const jobs = r.jobs('b1');
+    expect(jobs.find((j) => j.kind === 'capture')?.model).toBe('opus');
+    expect(jobs.find((j) => j.kind === 'lint')?.model).toBeNull();
+  });
+
+  it('drops a model meant for the other agent', async () => {
+    const claude = runner();
+    claude.enqueue('b1', 'capture', 'sources/a.md', { model: 'openai/gpt-5' });
+    await idle(claude, 'b1');
+    expect(calls[0].cmd.args).toContain('sonnet');
+    calls = [];
+    run = async () => oc('DONE');
+    const open = runner({
+      agent: () => 'opencode',
+      opencodeModel: () => 'opencode/big-pickle',
+    });
+    open.enqueue('b2', 'capture', 'sources/a.md', { model: 'opus' });
+    await idle(open, 'b2');
+    expect(calls[0].cmd.args).toEqual(
+      opencodeJobArgs('capture', 'opencode/big-pickle'),
+    );
+    calls = [];
+    open.enqueue('b2', 'capture', 'sources/b.md', {
+      model: 'anthropic/claude-opus',
+    });
+    await idle(open, 'b2');
+    expect(calls[0].cmd.args).toEqual(
+      opencodeJobArgs('capture', 'anthropic/claude-opus'),
+    );
+  });
+});

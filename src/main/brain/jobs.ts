@@ -8,6 +8,7 @@ import {
   type BrainJob,
   type BrainJobKind,
   type BrainModel,
+  isBrainModel,
   opencodeModelArg,
 } from '../../shared/brain';
 import type { Platform } from '../platform/Platform';
@@ -195,6 +196,7 @@ export class BrainJobRunner {
     kind: BrainJobKind,
     source: string | null,
     background = false,
+    model: string | null = null,
   ): BrainJob {
     return {
       id: `${brainId}:${randomUUID()}:${++this.seq}`,
@@ -209,6 +211,7 @@ export class BrainJobRunner {
       error: null,
       background,
       agent: this.agentOf(brainId),
+      model,
     };
   }
 
@@ -251,7 +254,7 @@ export class BrainJobRunner {
     brainId: string,
     kind: BrainJobKind,
     source: string | null = null,
-    opts?: { background?: boolean },
+    opts?: { background?: boolean; model?: string | null },
   ): BrainJob {
     const withSource = SOURCE_JOB_KINDS.has(kind);
     if (withSource && !source) throw new Error(`A ${kind} needs a source file`);
@@ -261,6 +264,7 @@ export class BrainJobRunner {
       kind,
       withSource ? source : null,
       opts?.background ?? false,
+      opts?.model ?? null,
     );
     // A pictures job queued by hand replaces a background one still waiting for the same source: one run, not two.
     if (kind === 'pictures' && !job.background) {
@@ -474,7 +478,10 @@ export class BrainJobRunner {
         .run(
           d.platform.opencodeCommand(
             undefined,
-            opencodeJobArgs(job.kind, d.opencodeModel(brainId)),
+            opencodeJobArgs(
+              job.kind,
+              opencodeModelArg(job.model) ?? d.opencodeModel(brainId),
+            ),
           ),
           {
             cwd: dir,
@@ -489,7 +496,12 @@ export class BrainJobRunner {
       ({ result, sessionId } = opencodeResultWithSession(stdout));
     } else {
       const stdout = await d.run(
-        d.platform.claudeCommand(null, brainJobFlags(d.model(brainId))),
+        d.platform.claudeCommand(
+          null,
+          brainJobFlags(
+            job.model && isBrainModel(job.model) ? job.model : d.model(brainId),
+          ),
+        ),
         { cwd: dir, input, timeoutMs, env: d.env(brainId) },
       );
       ({ result, sessionId } = claudeResultWithSession(stdout));

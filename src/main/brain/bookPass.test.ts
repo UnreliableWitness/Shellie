@@ -59,6 +59,7 @@ describe('createBookHooks', () => {
     error: null,
     background: true,
     agent: 'claude',
+    model: null,
     ...over,
   });
   const page = () =>

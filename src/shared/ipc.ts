@@ -663,6 +663,8 @@ export type Channels = {
     args: [
       brainId: string,
       files: { path: string; type: SourceType; note?: string }[],
+      /** Capture with: the model for these captures only; none is the brain's. */
+      model?: string,
     ];
     result: AddSourceResult[];
   };
@@ -673,6 +675,7 @@ export type Channels = {
       title: string,
       type: SourceType,
       note?: string,
+      model?: string,
     ];
     result: AddSourceResult;
   };
@@ -690,6 +693,8 @@ export type Channels = {
         | 'lessons'
         | 'pictures',
       source?: string,
+      /** A capture's own model (a Retry keeps it); ignored for the other kinds. */
+      model?: string,
     ];
     result: BrainJob;
   };
