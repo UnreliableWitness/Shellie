@@ -14,6 +14,11 @@ import type {
 import { taskConnectionId } from '../shared/workspaces';
 import { api, onSettingsSaved } from './api';
 import { firstScreen } from './onboardingState';
+import {
+  restoreDraft,
+  saveDraft,
+  type ComposerDraft,
+} from './components/brain/composer/draftStorage';
 import type { RepoFold } from './review/repoGroups';
 import { track, trackScreen } from './telemetry';
 import {
@@ -160,6 +165,12 @@ type Store = {
     brainId: string,
     update: (files: BrainPendingFile[]) => BrainPendingFile[],
   ): void;
+  /** The Add view's composer per brain (text, files, note, model) until Add or Discard; mirrored to local storage. */
+  brainDrafts: Record<string, ComposerDraft>;
+  setBrainDraft(
+    brainId: string,
+    update: (draft: ComposerDraft) => ComposerDraft,
+  ): void;
   focus: boolean;
   navCollapsed: boolean;
   /** The left nav's width in px when not collapsed (#160). */
@@ -262,6 +273,13 @@ export const useStore = create<Store>((set, get) => ({
         [brainId]: update(s.brainPending[brainId] ?? []),
       },
     })),
+  brainDrafts: {},
+  setBrainDraft: (brainId, update) =>
+    set((s) => {
+      const draft = update(s.brainDrafts[brainId] ?? restoreDraft(brainId));
+      saveDraft(brainId, draft);
+      return { brainDrafts: { ...s.brainDrafts, [brainId]: draft } };
+    }),
   discardTaskId: null,
   askDiscard: (taskId) => {
     get().select(taskId);
