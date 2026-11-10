@@ -52,7 +52,11 @@ export function waitReason(
 export function badgeCount(
   sources: BrainSourceRow[],
   jobs: BrainJob[],
+  /** Answer sources a settle will read: in flight, not waiting. */
+  exclude: string[] = [],
 ): number {
-  return waitingSources(sources).filter((s) => !captureInFlight(s.path, jobs))
-    .length;
+  const skip = new Set(exclude);
+  return waitingSources(sources).filter(
+    (s) => !skip.has(s.path) && !captureInFlight(s.path, jobs),
+  ).length;
 }

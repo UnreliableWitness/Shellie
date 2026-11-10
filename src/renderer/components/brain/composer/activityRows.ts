@@ -55,7 +55,13 @@ export function activityRows(
   jobs: BrainJob[],
   sources: BrainSourceRow[],
   queuePaused: 'cap' | null,
+  /** Answer sources a settle will read: not waiting for a capture. */
+  exclude: string[] = [],
 ): ActivityRow[] {
+  if (exclude.length) {
+    const skip = new Set(exclude);
+    sources = sources.filter((s) => !skip.has(s.path));
+  }
   const shown = jobs
     .filter(
       (j) => !j.background || j.status === 'running' || j.status === 'failed',

@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import {
+  CONFLICT_KINDS,
+  conflictIdOf,
   picturesReady,
   type BrainView,
   type PictureCounts,
@@ -39,11 +41,14 @@ export function BrainHealth({
   brain,
   onTerminal,
   onOpen,
+  onSettle,
 }: {
   brain: BrainView;
   onTerminal?: (def: TerminalDef) => void;
   /** Opens a source in Read (a picture finding's Open source). */
   onOpen?: (path: string) => void;
+  /** Opens the Settle view at a contradiction or scope change. */
+  onSettle?: (conflictId: string) => void;
 }) {
   const notify = useStore((s) => s.notify);
   const h = brain.health;
@@ -183,6 +188,15 @@ export function BrainHealth({
                     </button>
                   )}
                 </>
+              ) : CONFLICT_KINDS.has(f.kind) && onSettle ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  aria-label={`Settle: ${f.kind} on ${f.page}`}
+                  onClick={() => onSettle(conflictIdOf(f))}
+                >
+                  Settle
+                </button>
               ) : f.kind === 'uncaptured' ? (
                 <button
                   type="button"

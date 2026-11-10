@@ -168,6 +168,56 @@ describe('BrainRead', () => {
     });
   });
 
+  it('says when the open page is in an open conflict, with Settle', async () => {
+    setup();
+    const onSettle = vi.fn();
+    render(
+      <BrainRead
+        brainId="b1"
+        since={null}
+        onSettle={onSettle}
+        conflicts={[
+          {
+            id: 'c1',
+            kind: 'contradiction',
+            page: 'wiki/account.md',
+            detail: 'd',
+            at: '2026-11-10T08:00:00.000Z',
+            conflict: {
+              id: 'c1',
+              question: 'Who owns hosting?',
+              claims: {
+                a: {
+                  page: 'wiki/account.md',
+                  quote: 'x',
+                  source: null,
+                  date: null,
+                },
+                b: {
+                  page: 'wiki/decision-2026-11-03-db.md',
+                  quote: 'y',
+                  source: null,
+                  date: null,
+                },
+              },
+              suggestion: null,
+              reopens: null,
+            },
+          },
+        ]}
+      />,
+    );
+    await userEvent.click(
+      await within(tree()).findByRole('button', { name: /Database/ }),
+    );
+    const line = await screen.findByRole('status', {
+      name: 'Conflict on this page',
+    });
+    expect(line).toHaveTextContent('This page disagrees with Acme');
+    await userEvent.click(within(line).getByRole('button', { name: 'Settle' }));
+    expect(onSettle).toHaveBeenCalledWith('c1');
+  });
+
   it('the tree starts with Start here, then a group per type with its count; a click opens the page and marks it current', async () => {
     setup();
     render(<BrainRead brainId="b1" since={null} />);

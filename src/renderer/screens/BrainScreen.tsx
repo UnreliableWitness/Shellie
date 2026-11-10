@@ -5,8 +5,10 @@ import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainAdd } from '../components/brain/BrainAdd';
 import { BrainRead } from '../components/brain/BrainRead';
-import { trackBrain } from '../components/brain/brainActions';
+import { trackBrain, trackSettleOpen } from '../components/brain/brainActions';
 import { useBrainPages } from '../components/brain/BrainWiki';
+import { SettleView } from '../components/brain/settle/SettleView';
+import { useBrainConflicts } from '../components/brain/settle/useBrainConflicts';
 import { badgeCount } from '../components/brain/waiting';
 import { PageHeader, PopupMenu } from '../components/ui';
 import { TerminalView } from '../components/TerminalView';
@@ -66,6 +68,9 @@ export function BrainScreen({
   const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
   const since = useLastOpened(brainId);
   const pages = useBrainPages(brainId);
+  const { conflicts } = useBrainConflicts(brainId);
+  // The Settle view, shown in place of Add: at one conflict (target) or its list (null).
+  const [settle, setSettle] = useState<{ target: string | null } | null>(null);
 
   if (!brain)
     return (
@@ -96,7 +101,17 @@ export function BrainScreen({
     setTerminal(null);
     await tryInvoke(() => api().invoke('terminals:kill', id), notify);
   };
-  const waiting = badgeCount(pages.sources, brain.jobs);
+  const openSettle = (
+    target: string | null,
+    from: 'add' | 'health' | 'read',
+  ) => {
+    trackSettleOpen(from);
+    setSettle({ target });
+    choose('add');
+  };
+  const waiting =
+    badgeCount(pages.sources, brain.jobs, conflicts.answers) +
+    conflicts.open.length;
 
   return (
     <div className="page brain-page">
@@ -111,7 +126,10 @@ export function BrainScreen({
                 role="tab"
                 aria-selected={view === 'read'}
                 className={view === 'read' ? 'is-on' : undefined}
-                onClick={() => choose('read')}
+                onClick={() => {
+                  setSettle(null);
+                  choose('read');
+                }}
               >
                 Read
               </button>
@@ -121,7 +139,10 @@ export function BrainScreen({
                 aria-selected={view === 'add'}
                 aria-label={waiting > 0 ? `Add, ${waiting} waiting` : 'Add'}
                 className={view === 'add' ? 'is-on' : undefined}
-                onClick={() => choose('add')}
+                onClick={() => {
+                  setSettle(null);
+                  choose('add');
+                }}
               >
                 Add
                 {waiting > 0 && (
@@ -203,16 +224,34 @@ export function BrainScreen({
             active={view === 'read'}
             jobs={brain.jobs}
             skillsReady={picturesReady(brain)}
+            conflicts={conflicts.open}
+            onSettle={(id) => openSettle(id, 'read')}
           />
         </div>
         <div className="brain-view brain-view-add" hidden={view !== 'add'}>
-          <BrainAdd
-            brain={brain}
-            pages={pages}
-            onTerminal={setTerminal}
-            onOpenPage={openPage}
-            focusChoose={focus === 'drop'}
-          />
+          {settle && (
+            <SettleView
+              brain={brain}
+              conflicts={conflicts}
+              rows={pages.rows}
+              target={settle.target}
+              onTarget={(target) => setSettle({ target })}
+              onBack={() => setSettle(null)}
+              onOpenPage={openPage}
+            />
+          )}
+          {/* Add stays mounted under the Settle view, so its draft and drop state survive. */}
+          <div className="brain-view-add-body" hidden={settle !== null}>
+            <BrainAdd
+              brain={brain}
+              pages={pages}
+              onTerminal={setTerminal}
+              onOpenPage={openPage}
+              focusChoose={focus === 'drop'}
+              conflicts={conflicts}
+              onSettle={(id, from) => openSettle(id, from)}
+            />
+          </div>
         </div>
         {terminal && (
           <div className="brain-terminal">

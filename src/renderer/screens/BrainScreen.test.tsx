@@ -78,6 +78,44 @@ describe('BrainScreen', () => {
     expect(screen.getByText(/12 pages/)).toBeInTheDocument();
   });
 
+  it('counts open conflicts in the Add badge and settles them from Add', async () => {
+    const conflicts = {
+      open: [
+        {
+          id: 'c1',
+          kind: 'contradiction' as const,
+          page: 'wiki/a.md',
+          detail: 'dates differ',
+          at: '2026-11-10T08:00:00.000Z',
+          conflict: null,
+        },
+      ],
+      parked: [],
+      settled: [],
+      answers: [],
+    };
+    setup(brainView({ templatesVersion: 9 }), {
+      'brain:conflicts': () => conflicts,
+      'brain:sources': () => [],
+    });
+    render(<BrainScreen brainId="b1" />);
+    const add = await screen.findByRole('tab', { name: /^Add/ });
+    await waitFor(() => expect(add).toHaveTextContent('1'));
+    await userEvent.click(add);
+    const needs = await screen.findByRole('list', { name: 'Needs you' });
+    await userEvent.click(
+      within(needs).getByRole('button', { name: 'Settle' }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Settle conflicts' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('dates differ')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '← Add' }));
+    expect(
+      screen.queryByRole('heading', { name: 'Settle conflicts' }),
+    ).toBeNull();
+  });
+
   it('Lint button queues a lint', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);

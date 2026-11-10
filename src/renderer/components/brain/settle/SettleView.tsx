@@ -41,7 +41,8 @@ function Parked({
           'brain:addText',
           brain.id,
           text.trim(),
-          `Answer: ${row.question}`,
+          // The conflict's own question names the file; the asked one may be long.
+          `Answer: ${row.conflict?.question ?? row.detail}`,
           'note',
           'Answer to a conflict',
           undefined,

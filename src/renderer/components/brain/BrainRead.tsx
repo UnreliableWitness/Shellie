@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BrainJob } from '../../../shared/brain';
+import type {
+  BrainConflictRow,
+  BrainJob,
+  BrainPageRow,
+} from '../../../shared/brain';
+import { trackSettleOpen } from './brainActions';
 import { chapterOf } from './book';
 import { BrainChapter } from './BrainChapter';
 import { BrainFront } from './BrainFront';
@@ -33,6 +38,56 @@ function readContinue(brainId: string): { path: string } | null {
   }
 }
 
+/** One line above a page that an open conflict involves: what it disagrees with, and Settle. */
+function ConflictLine({
+  path,
+  conflicts,
+  rows,
+  onSettle,
+}: {
+  path: string;
+  conflicts: BrainConflictRow[];
+  rows: BrainPageRow[];
+  onSettle: (conflictId: string) => void;
+}) {
+  const hit = conflicts.find((c) =>
+    c.conflict
+      ? c.conflict.claims.a.page === path || c.conflict.claims.b.page === path
+      : c.page === path,
+  );
+  if (!hit) return null;
+  const claims = hit.conflict?.claims;
+  const other = claims
+    ? claims.a.page === path
+      ? claims.b.page
+      : claims.a.page
+    : null;
+  const title = (p: string) => rows.find((r) => r.path === p)?.title ?? p;
+  return (
+    <div
+      className="brain-conflict-line small"
+      role="status"
+      aria-label="Conflict on this page"
+    >
+      <span className="grow">
+        {other
+          ? `This page disagrees with ${title(other)}`
+          : `Lint found a conflict here: ${hit.detail}`}
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => {
+          trackSettleOpen('read');
+          onSettle(hit.id);
+        }}
+      >
+        Settle
+      </button>
+    </div>
+  );
+}
+
 /**
  * The brain's Read view: a tree on the left (search on top), the open page in the middle with its rail, or Recent
  * changes, the log, or a landing of how the pages link, the pinned pages and what changed. Pages touched in the log after `since` get a dot.
@@ -47,6 +102,8 @@ export function BrainRead({
   active,
   jobs,
   skillsReady,
+  conflicts = [],
+  onSettle,
 }: {
   brainId: string;
   /** The brain's name, the front page's title. */
@@ -61,6 +118,9 @@ export function BrainRead({
   jobs?: BrainJob[];
   /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
   skillsReady?: boolean;
+  /** Open conflicts: a page in one says so above it, with Settle. */
+  conflicts?: BrainConflictRow[];
+  onSettle?: (conflictId: string) => void;
 }) {
   const { rows, sources, log, book, loaded } = pages;
   const nav = useBrainNav();
@@ -183,6 +243,14 @@ export function BrainRead({
         )}
       </nav>
       <section className="brain-read-main" aria-label="Reading">
+        {nav.current && onSettle && (
+          <ConflictLine
+            path={nav.current.path}
+            conflicts={conflicts}
+            rows={rows}
+            onSettle={onSettle}
+          />
+        )}
         {nav.current && book && openChapter >= 0 ? (
           <BrainChapter
             brainId={brainId}

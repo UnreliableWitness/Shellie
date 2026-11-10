@@ -483,7 +483,7 @@ describe('SettleView: the list', () => {
         [
           'b1',
           'Yes, CRM is in phase 1.',
-          'Answer: Is CRM in?',
+          'Answer: Is the CRM sync part of phase 1?',
           'note',
           'Answer to a conflict',
           undefined,

@@ -35,6 +35,10 @@ export function Activity({
   log,
   onTerminal,
   onOpenPage,
+  conflicts = 0,
+  parkedConflicts = 0,
+  answers = [],
+  onSettle,
 }: {
   brain: BrainView;
   sources: BrainSourceRow[];
@@ -42,6 +46,14 @@ export function Activity({
   log: string;
   onTerminal?: (def: TerminalDef) => void;
   onOpenPage: (path: string) => void;
+  /** Open conflicts to settle: one row under Needs you. */
+  conflicts?: number;
+  /** Conflicts waiting on someone: the row stays (to come back with the answer) but they are not counted. */
+  parkedConflicts?: number;
+  /** Answer sources a settle will read: not waiting for a capture. */
+  answers?: string[];
+  /** Opens the Settle view. */
+  onSettle?: () => void;
 }) {
   const notify = useStore((s) => s.notify);
   const [filter, setFilter] = useState<Filter>('all');
@@ -49,10 +61,12 @@ export function Activity({
     brain.jobs,
     sources,
     brain.health?.queuePaused ?? null,
+    answers,
   );
   const count = (g: ActivityRow['group']) =>
     rows.filter((r) => r.group === g).length;
-  const needs = count('needs');
+  const settleRow = conflicts + parkedConflicts > 0 && onSettle !== undefined;
+  const needs = count('needs') + (settleRow ? conflicts : 0);
   const running = count('running');
 
   const capture = (path: string, model: string | null) =>
@@ -86,7 +100,7 @@ export function Activity({
         <h2 id="brain-activity-h">Activity</h2>
         {needs > 0 && <span className="brain-count">Needs you · {needs}</span>}
         <span className="grow" />
-        {rows.length > 0 && (
+        {(rows.length > 0 || settleRow) && (
           <div
             className="brain-filters"
             role="tablist"
@@ -107,16 +121,19 @@ export function Activity({
           </div>
         )}
       </div>
-      {rows.length === 0 && <p className="muted small">Nothing added yet.</p>}
+      {rows.length === 0 && !settleRow && (
+        <p className="muted small">Nothing added yet.</p>
+      )}
       {GROUPS.filter((g) => filter === 'all' || filter === g.filter).map(
         (g) => {
           const list = rows.filter((r) => r.group === g.group);
-          if (list.length === 0) return null;
+          const withSettle = g.group === 'needs' && settleRow;
+          if (list.length === 0 && !withSettle) return null;
           return (
             <div key={g.group} className="brain-activity-group">
               <div className="brain-activity-group-head">
                 <h3 id={`brain-activity-${g.group}`}>{g.title}</h3>
-                {g.group === 'needs' && (
+                {g.group === 'needs' && list.length > 0 && (
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -130,6 +147,25 @@ export function Activity({
                 className="list brain-jobs"
                 aria-labelledby={`brain-activity-${g.group}`}
               >
+                {withSettle && (
+                  <li className="list-row brain-job">
+                    <span className="brain-status small">conflicts</span>
+                    <span className="grow">
+                      {conflicts > 0
+                        ? `Conflicts to settle · ${conflicts}`
+                        : `Conflicts waiting on someone · ${parkedConflicts}`}
+                    </span>
+                    <button
+                      type="button"
+                      className={
+                        conflicts > 0 ? 'btn btn-sm btn-primary' : 'btn btn-sm'
+                      }
+                      onClick={onSettle}
+                    >
+                      {conflicts > 0 ? 'Settle' : 'Open'}
+                    </button>
+                  </li>
+                )}
                 {list.map((r) => (
                   <ActivityLine
                     key={r.key}

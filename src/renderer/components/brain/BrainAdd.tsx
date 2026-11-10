@@ -1,5 +1,5 @@
 import { type DragEvent, useState } from 'react';
-import type { BrainView } from '../../../shared/brain';
+import type { BrainConflicts, BrainView } from '../../../shared/brain';
 import type { TerminalDef } from '../../../shared/types';
 import { AutoRuns } from './AutoRuns';
 import { BrainHealth } from './BrainHealth';
@@ -8,6 +8,7 @@ import { Activity } from './composer/Activity';
 import { Composer } from './composer/Composer';
 import { useComposer } from './composer/useComposer';
 import { RunNow } from './RunNow';
+import { NO_CONFLICTS } from './settle/useBrainConflicts';
 
 const hasFiles = (e: DragEvent) =>
   Array.from(e.dataTransfer?.types ?? []).includes('Files');
@@ -22,6 +23,8 @@ export function BrainAdd({
   onOpenPage,
   pages,
   focusChoose = false,
+  conflicts = NO_CONFLICTS,
+  onSettle,
 }: {
   brain: BrainView;
   /** The brain's pages, sources and log, loaded once by the screen. */
@@ -31,6 +34,10 @@ export function BrainAdd({
   onOpenPage: (path: string) => void;
   /** Put the cursor on Attach files once mounted (a deep link to adding files). */
   focusChoose?: boolean;
+  /** The brain's conflicts: a Needs you row, and answers kept out of the waiting sources. */
+  conflicts?: BrainConflicts;
+  /** Opens the Settle view, at one conflict or its list. */
+  onSettle?: (id: string | null, from: 'add' | 'health') => void;
 }) {
   const composer = useComposer(brain);
   const [expanded, setExpanded] = useState(true);
@@ -74,6 +81,10 @@ export function BrainAdd({
           log={log}
           onTerminal={onTerminal}
           onOpenPage={onOpenPage}
+          conflicts={conflicts.open.length}
+          parkedConflicts={conflicts.parked.length}
+          answers={conflicts.answers}
+          onSettle={onSettle ? () => onSettle(null, 'add') : undefined}
         />
       </div>
       <div className="brain-add-side">
@@ -83,6 +94,7 @@ export function BrainAdd({
           brain={brain}
           onTerminal={onTerminal}
           onOpen={onOpenPage}
+          onSettle={onSettle ? (id) => onSettle(id, 'health') : undefined}
         />
       </div>
     </div>

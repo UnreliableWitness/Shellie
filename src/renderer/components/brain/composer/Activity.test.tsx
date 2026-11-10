@@ -362,6 +362,57 @@ describe('Activity', () => {
     );
   });
 
+  it('lists conflicts to settle under Needs you, and an answer source waiting for its settle is not one', async () => {
+    installFakeApi();
+    const onSettle = vi.fn();
+    render(
+      <Activity
+        brain={brainView()}
+        sources={[source('sources/answer.md')]}
+        rows={[]}
+        log=""
+        conflicts={2}
+        answers={['sources/answer.md']}
+        onSettle={onSettle}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const needs = screen.getByRole('list', { name: 'Needs you' });
+    expect(needs).toHaveTextContent('Conflicts to settle · 2');
+    expect(needs).not.toHaveTextContent('answer.md');
+    expect(
+      screen.getByText('Needs you · 2', { selector: '.brain-count' }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(needs).getByRole('button', { name: 'Settle' }),
+    );
+    expect(onSettle).toHaveBeenCalled();
+  });
+
+  it('keeps a way to conflicts that only wait on someone, without counting them', async () => {
+    installFakeApi();
+    const onSettle = vi.fn();
+    render(
+      <Activity
+        brain={brainView()}
+        sources={[]}
+        rows={[]}
+        log=""
+        conflicts={0}
+        parkedConflicts={1}
+        onSettle={onSettle}
+        onOpenPage={() => undefined}
+      />,
+    );
+    const needs = screen.getByRole('list', { name: 'Needs you' });
+    expect(needs).toHaveTextContent('Conflicts waiting on someone · 1');
+    expect(
+      screen.queryByText(/Needs you · /, { selector: '.brain-count' }),
+    ).toBeNull();
+    await userEvent.click(within(needs).getByRole('button', { name: 'Open' }));
+    expect(onSettle).toHaveBeenCalled();
+  });
+
   it('says so when nothing happened yet', () => {
     installFakeApi();
     show(brainView({ jobs: [] }));

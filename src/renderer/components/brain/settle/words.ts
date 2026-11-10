@@ -72,7 +72,11 @@ export function newerOf(a: ConflictClaim, b: ConflictClaim): 'a' | 'b' | null {
 }
 
 const said = (c: ConflictClaim, titleOf: (p: string) => string) => {
-  const where = [c.source ? fileName(c.source) : null, c.date].filter(Boolean);
+  // A claim taken from a source names the source once.
+  const where = [
+    c.source && c.source !== c.page ? fileName(c.source) : null,
+    c.date,
+  ].filter(Boolean);
   return `${titleOf(c.page)}${where.length ? ` (${where.join(', ')})` : ''} says "${c.quote}"`;
 };
 
