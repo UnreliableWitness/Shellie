@@ -13,6 +13,7 @@ import {
   nativeImage,
   nativeTheme,
   Notification,
+  net,
   powerMonitor,
   protocol,
   safeStorage,
@@ -139,6 +140,7 @@ import { hello, sendRecords } from './main/costServer/client';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
 import {
   type AutoUpdate,
+  fetchFeedState,
   needsMoveToApplications,
   startAutoUpdate,
 } from './main/autoUpdate';
@@ -1364,6 +1366,14 @@ async function boot(): Promise<void> {
       enabled: settings.get().autoUpdate,
       inApplicationsFolder: inApplicationsFolder(),
       updater: autoUpdater,
+      probeFeed:
+        process.platform === 'win32'
+          ? (url) =>
+              fetchFeedState(
+                (u) => net.fetch(u, { signal: AbortSignal.timeout(20_000) }),
+                url,
+              )
+          : undefined,
       onReady: (version) => {
         pendingUpdate = { version };
         telemetry.event('update.ready');

@@ -16,6 +16,10 @@
  * reports the newer version and the restart starts that one. Before #126 the checks stopped at the first
  * download, so an app left open (Later) never saw the releases after it.
  *
+ * On Windows Electron starts Squirrel's Update.exe for every check, and that start blocks the main process (10 to
+ * 22 s measured), freezing the whole window. So `probeFeed` asks the feed first, and Update.exe starts only when
+ * there is something to fetch. Whenever the answer is unclear the full check runs, so a bad answer cannot stop updates.
+ *
  * Everything Electron-specific is injected, so this module is testable without Electron.
  */
 
@@ -58,6 +62,9 @@ export type UpdaterLike = {
   ): unknown;
 };
 
+/** What the feed offers this version; `version` is null when it is current or the release's name cannot be read. */
+export type FeedState = { upToDate: boolean; version: string | null };
+
 export type Timers = {
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
@@ -78,6 +85,8 @@ export type AutoUpdateDeps = {
   updater: UpdaterLike;
   /** A downloaded update is ready; `version` is parsed from the release name, null when it has none. */
   onReady(version: string | null): void;
+  /** Asks the feed what it offers before a check; without it (macOS) every check goes to the updater. */
+  probeFeed?(feedUrl: string): Promise<FeedState>;
   /** The first failed check of this launch (later ones are only logged). */
   onCheckFailed?(): void;
   log(message: string, error?: unknown): void;
@@ -111,6 +120,20 @@ export function updateFeedUrl(
   version: string,
 ): string {
   return `${UPDATE_SERVER}/${UPDATE_REPO}/${platform}-${arch}/${version}`;
+}
+
+/** The feed answers 204 when this version is current and 200 with the release's details when a newer one exists. */
+export async function fetchFeedState(
+  fetchFeed: (url: string) => Promise<Response>,
+  feedUrl: string,
+): Promise<FeedState> {
+  const res = await fetchFeed(feedUrl);
+  if (res.status === 204) return { upToDate: true, version: null };
+  if (res.status !== 200) throw new Error(`The feed answered ${res.status}`);
+  const body = (await res.json().catch(() => null)) as {
+    name?: string;
+  } | null;
+  return { upToDate: false, version: releaseVersion(body?.name) };
 }
 
 type UpdateGate = Pick<
@@ -150,8 +173,9 @@ export function startAutoUpdate(d: AutoUpdateDeps): AutoUpdate | null {
   let runningSince: number | null = null;
   let lastCheckAt = -Infinity;
 
+  const feedUrl = updateFeedUrl(d.platform, d.arch, d.version);
   try {
-    d.updater.setFeedURL({ url: updateFeedUrl(d.platform, d.arch, d.version) });
+    d.updater.setFeedURL({ url: feedUrl });
   } catch (e) {
     d.log('[update] could not set the feed URL', e);
     return null;
@@ -178,6 +202,17 @@ export function startAutoUpdate(d: AutoUpdateDeps): AutoUpdate | null {
     d.onReady(version);
   });
 
+  const startUpdater = () => {
+    if (stopped) return;
+    try {
+      // Electron's checkForUpdates is async and reports failures through 'error'.
+      d.updater.checkForUpdates();
+    } catch (e) {
+      finished();
+      d.log('[update] check failed', e);
+    }
+  };
+
   const check = () => {
     if (stopped) return;
     const at = now();
@@ -187,13 +222,23 @@ export function startAutoUpdate(d: AutoUpdateDeps): AutoUpdate | null {
     }
     runningSince = at;
     lastCheckAt = at;
-    try {
-      // Electron's checkForUpdates is async and reports failures through 'error'.
-      d.updater.checkForUpdates();
-    } catch (e) {
-      finished();
-      d.log('[update] check failed', e);
+    if (!d.probeFeed) {
+      startUpdater();
+      return;
     }
+    d.probeFeed(feedUrl).then(
+      (state) => {
+        const nothingNew =
+          state.upToDate ||
+          (state.version !== null && state.version === readyVersion);
+        if (nothingNew) finished();
+        else startUpdater();
+      },
+      (e) => {
+        d.log('[update] could not ask the feed; checking anyway', e);
+        startUpdater();
+      },
+    );
   };
 
   const firstRun = d.argv.includes(SQUIRREL_FIRSTRUN);
