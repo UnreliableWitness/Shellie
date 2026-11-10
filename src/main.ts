@@ -8,6 +8,7 @@ import {
   app,
   autoUpdater,
   BrowserWindow,
+  crashReporter,
   dialog,
   ipcMain,
   Menu,
@@ -136,6 +137,7 @@ import {
   inspectorProfiler,
   StallWatchdog,
 } from './main/diagnostics/stallWatchdog';
+import { startLocalCrashDumps } from './main/diagnostics/crashDumps';
 import { startHealthReports } from './main/telemetry/health';
 import { reportLoggedErrors } from './main/telemetry/loggedErrors';
 import { hello, sendRecords } from './main/costServer/client';
@@ -167,6 +169,9 @@ if (started) app.quit();
 // set before anything reads it.
 const userDataDir = userDataOverride(process.env, app.isPackaged);
 if (userDataDir) app.setPath('userData', userDataDir);
+startLocalCrashDumps(crashReporter, (e) =>
+  console.warn('[crash] could not start the crash reporter', e),
+);
 
 // HTML files opened in a tab load from shellie-view: (registered before ready, as Electron requires).
 // Not CORS-enabled and no CSP bypass: the pages run in a sandboxed iframe with an opaque origin.
