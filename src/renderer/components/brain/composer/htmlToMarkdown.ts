@@ -27,7 +27,7 @@ function turndown(): TurndownService {
         .replace(/\n+$/, '\n')
         .replace(/\n/gm, `\n${' '.repeat(marker.length)}`);
       return (
-        marker + body + (node.nextSibling && !/\n$/.test(body) ? '\n' : '')
+        marker + body + (node.nextSibling && !body.endsWith('\n') ? '\n' : '')
       );
     },
   });
