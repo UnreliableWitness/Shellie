@@ -28,6 +28,50 @@ describe('state', () => {
     expect(r.error).toContain('state.json');
   });
 
+  it("keeps each finding's conflict as lint wrote it, valid or not, when Shellie writes the state", async () => {
+    const conflict = {
+      id: 'contradiction:wiki/a.md+wiki/b.md:go-live',
+      question: 'When?',
+      claims: {
+        a: { page: 'wiki/a.md', quote: 'x' },
+        b: { page: 'wiki/b.md', quote: 'y' },
+      },
+      extra: [1, 2],
+    };
+    await writeFile(
+      path.join(dir, 'brain', 'state.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        findings: [
+          {
+            kind: 'contradiction',
+            page: 'wiki/a.md',
+            detail: 'd',
+            at: 'now',
+            conflict,
+          },
+          {
+            kind: 'scope-change',
+            page: 'wiki/s.md',
+            detail: 'e',
+            at: 'now',
+            conflict: 42,
+          },
+        ],
+      }),
+    );
+    expect((await readState(dir)).state?.findings).toHaveLength(2);
+    await writeState(dir, (s) => ({
+      ...s,
+      captured: { 'sources/x.md': { at: 'now', sessionId: null } },
+    }));
+    const raw = JSON.parse(
+      await readFile(path.join(dir, 'brain', 'state.json'), 'utf8'),
+    );
+    expect(raw.findings[0].conflict).toEqual(conflict);
+    expect(raw.findings[1].conflict).toBe(42);
+  });
+
   it('keeps fields it does not know when writing', async () => {
     await writeFile(
       path.join(dir, 'brain', 'state.json'),

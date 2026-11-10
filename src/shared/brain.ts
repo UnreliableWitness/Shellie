@@ -114,6 +114,11 @@ export const BOOK_TEMPLATES = 8;
 /** Whether the brain's skills can write the book (templates v8 or later). */
 export const bookReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= BOOK_TEMPLATES;
+/** The skills version that writes whole conflicts and has `/settle`: the Settle view's actions need it. */
+export const SETTLE_TEMPLATES = 9;
+/** Whether the brain's skills can settle conflicts (templates v9 or later). */
+export const settleReady = (brain: Pick<Brain, 'templatesVersion'>) =>
+  brain.templatesVersion >= SETTLE_TEMPLATES;
 /** The job that makes a brain's first book: a sync in the background lane, run with the `book` argument. */
 export const isBookJob = (j: Pick<BrainJob, 'kind' | 'background'>) =>
   j.kind === 'sync' && j.background;
@@ -163,8 +168,115 @@ const BrainFindingSchema = z.object({
   /** What the finding is about, for the UI to act on (never its words): pictures that never reached the agent. */
   code: z.enum(['pictures-dropped']).optional(),
   at: z.string(),
+  /** A contradiction or scope change as `/lint` (skills v9) writes it, kept as written: `conflictOf` reads it. */
+  conflict: z.unknown().optional(),
 });
 export type BrainFinding = z.infer<typeof BrainFindingSchema>;
+
+/** The findings a person settles in the Settle view; Shellie's own kinds have their own buttons. */
+export const CONFLICT_KINDS: ReadonlySet<BrainFinding['kind']> = new Set([
+  'contradiction',
+  'scope-change',
+]);
+export type ConflictKind = 'contradiction' | 'scope-change';
+
+const ConflictClaimSchema = z.object({
+  page: z.string().min(1),
+  quote: z.string(),
+  source: z.string().nullable().default(null),
+  date: z.string().nullable().default(null),
+});
+export type ConflictClaim = z.infer<typeof ConflictClaimSchema>;
+
+/** Two claims that disagree, as one question: for a scope change, `a` is the agreed scope and `b` the new source. */
+export const ConflictSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  claims: z.object({ a: ConflictClaimSchema, b: ConflictClaimSchema }),
+  suggestion: z
+    .object({
+      pick: z.enum(['a', 'b', 'both', 'neither']).nullable().default(null),
+      reason: z.string().default(''),
+    })
+    .nullable()
+    .default(null),
+  /** The decision page a newer source disagrees with again: shown as open despite that settle. */
+  reopens: z.string().nullable().default(null),
+});
+export type Conflict = z.infer<typeof ConflictSchema>;
+
+/** The finding's conflict when lint wrote a whole one; null for an older or malformed finding. */
+export function conflictOf(f: BrainFinding): Conflict | null {
+  const r = ConflictSchema.safeParse(f.conflict);
+  return r.success ? r.data : null;
+}
+
+/** The finding's conflict id, or for an older finding its kind, page and words. */
+export const conflictIdOf = (f: BrainFinding): string =>
+  conflictOf(f)?.id ?? `${f.kind}:${f.page}:${f.detail}`;
+
+/** What the person chose: a/b/both/neither for a contradiction, accept/keep for a scope change, write for an older finding. */
+export const SettleChoiceSchema = z.enum([
+  'a',
+  'b',
+  'both',
+  'neither',
+  'accept',
+  'keep',
+  'write',
+]);
+export type SettleChoice = z.infer<typeof SettleChoiceSchema>;
+
+/** Everything the `/settle` skill needs, kept until the settle is done so it can run again. */
+export const SettleDecisionSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(['contradiction', 'scope-change']),
+  page: z.string(),
+  question: z.string(),
+  detail: z.string(),
+  claims: z
+    .object({ a: ConflictClaimSchema, b: ConflictClaimSchema })
+    .nullable(),
+  choice: SettleChoiceSchema,
+  /** How both fit, or what is true (both, neither, write). */
+  text: z.string().nullable(),
+  why: z.string().nullable(),
+  /** The source holding someone's answer, when the conflict was parked and answered. */
+  answer: z.string().nullable(),
+});
+export type SettleDecision = z.infer<typeof SettleDecisionSchema>;
+
+/** An open or parked conflict for the Settle view; `conflict` is null for an older finding (detail only). */
+export type BrainConflictRow = {
+  id: string;
+  kind: ConflictKind;
+  page: string;
+  detail: string;
+  at: string;
+  conflict: Conflict | null;
+};
+export type ParkedConflictRow = BrainConflictRow & {
+  question: string;
+  parkedAt: string;
+};
+export type SettledConflictRow = {
+  id: string;
+  question: string;
+  choice: SettleChoice;
+  text: string | null;
+  at: string;
+  status: 'pending' | 'done' | 'failed';
+  /** The decision page the settle wrote, once done. */
+  page: string | null;
+  error: string | null;
+};
+/** `answers`: the answer sources of pending or failed settles, which count as in flight rather than uncaptured. */
+export type BrainConflicts = {
+  open: BrainConflictRow[];
+  parked: ParkedConflictRow[];
+  settled: SettledConflictRow[];
+  answers: string[];
+};
 
 export const BrainStateSchema = z.object({
   schemaVersion: z.literal(1).default(1),
