@@ -45,7 +45,12 @@ export type BrainAction =
   | 'view-add'
   /** Pictures: a re-evaluation queued (source panel or Health), a drop accepted with Fine, I know. */
   | 'reevaluate'
-  | 'accept-drop';
+  | 'accept-drop'
+  /** The composer: rich text pasted as Markdown, then put back as plain text; Write/Split/Preview; a draft discarded. */
+  | 'paste-markdown'
+  | 'paste-plain'
+  | 'editor-view'
+  | 'discard';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>
