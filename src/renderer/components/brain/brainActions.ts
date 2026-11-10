@@ -50,7 +50,14 @@ export type BrainAction =
   | 'paste-markdown'
   | 'paste-plain'
   | 'editor-view'
-  | 'discard';
+  | 'discard'
+  /** Settling conflicts: the view opened, a conflict parked, its question copied, an answer added, one skipped, a re-check. */
+  | 'settle-open'
+  | 'park'
+  | 'copy-question'
+  | 'answer'
+  | 'skip'
+  | 'recheck';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>
@@ -120,3 +127,16 @@ export const trackBrainAdd = (p: {
   model: 'haiku' | 'sonnet' | 'opus' | 'opencode';
   overridden: boolean;
 }) => track('brain.screen.action', { action: 'add', ...p });
+
+/** A conflict settled: its kind, the choice, whether it was the agent's suggestion, and whether a why or an answer came with it. */
+export const trackSettle = (p: {
+  kind: 'contradiction' | 'scope-change';
+  choice: string;
+  suggested: boolean;
+  why: boolean;
+  answered: boolean;
+}) => track('brain.screen.action', { action: 'settle', ...p });
+
+/** Where the Settle view was opened from. */
+export const trackSettleOpen = (from: 'add' | 'health' | 'read') =>
+  track('brain.screen.action', { action: 'settle-open', from });
