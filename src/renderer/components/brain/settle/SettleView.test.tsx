@@ -448,17 +448,9 @@ describe('SettleView: the list', () => {
     expect(calls(a, 'brain:settleRetry')).toEqual([['b1', 's2']]);
   });
 
-  it('Got an answer adds it as a source without a capture, unparks, and settles with the answer', async () => {
+  it('Got an answer hands the reply to main, then the conflict opens with the answer it keeps', async () => {
     const a = installFakeApi({
-      'brain:addText': () => ({
-        ok: true,
-        path: 'sources/2026-11-10-answer.md',
-        images: 0,
-        dropped: 0,
-        warnings: [],
-        contents: '',
-      }),
-      'brain:unpark': () => undefined,
+      'brain:answer': () => ({ path: 'sources/2026-11-10-answer.md' }),
       'brain:settle': () => undefined,
     });
     const parked = {
@@ -479,25 +471,34 @@ describe('SettleView: the list', () => {
       screen.getByRole('button', { name: 'Add answer and settle' }),
     );
     await waitFor(() =>
-      expect(calls(a, 'brain:addText')).toEqual([
-        [
-          'b1',
-          'Yes, CRM is in phase 1.',
-          'Answer: Is the CRM sync part of phase 1?',
-          'note',
-          'Answer to a conflict',
-          undefined,
-          { capture: false },
-        ],
+      expect(calls(a, 'brain:answer')).toEqual([
+        ['b1', 'c-crm', 'Yes, CRM is in phase 1.'],
       ]),
     );
-    expect(calls(a, 'brain:unpark')).toEqual([['b1', 'c-crm']]);
-    // Main moves it back to open; the card shows the answer.
-    rerender(<Host conflicts={{ ...none, open: [crm] }} initial="c-crm" />);
     await waitFor(() =>
       expect(screen.getByTestId('target')).toHaveTextContent('c-crm'),
     );
-    expect(screen.getByText('Yes, CRM is in phase 1.')).toBeInTheDocument();
+    // Main keeps the answer on the conflict, so it is there however the view was left and opened again.
+    rerender(
+      <Host
+        conflicts={{
+          ...none,
+          open: [
+            {
+              ...crm,
+              answer: {
+                path: 'sources/2026-11-10-answer.md',
+                text: 'Yes, CRM is in phase 1.',
+              },
+            },
+          ],
+        }}
+        initial="c-crm"
+      />,
+    );
+    expect(
+      await screen.findByText('Yes, CRM is in phase 1.'),
+    ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole('radio', { name: /Accept: this is the new scope/ }),
     );

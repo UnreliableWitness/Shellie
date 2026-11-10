@@ -25,7 +25,7 @@ function Parked({
 }: {
   brain: BrainView;
   row: ParkedConflictRow;
-  onAnswered(answer: { path: string; text: string }): void;
+  onAnswered(): void;
 }) {
   const notify = useStore((s) => s.notify);
   const [open, setOpen] = useState(false);
@@ -36,32 +36,13 @@ function Parked({
     trackBrain('answer');
     setBusy(true);
     const r = await tryInvoke(
-      () =>
-        api().invoke(
-          'brain:addText',
-          brain.id,
-          text.trim(),
-          // The conflict's own question names the file; the asked one may be long.
-          `Answer: ${row.conflict?.question ?? row.detail}`,
-          'note',
-          'Answer to a conflict',
-          undefined,
-          { capture: false },
-        ),
+      () => api().invoke('brain:answer', brain.id, row.id, text.trim()),
       notify,
     );
-    if (!r?.ok) {
-      setBusy(false);
-      if (r && !r.ok) notify('error', r.message);
-      return;
-    }
-    await tryInvoke(
-      () => api().invoke('brain:unpark', brain.id, row.id),
-      notify,
-    );
-    forgetAsked(brain.id, row.id);
     setBusy(false);
-    onAnswered({ path: r.path, text: text.trim() });
+    if (!r) return;
+    forgetAsked(brain.id, row.id);
+    onAnswered();
   };
   return (
     <li className="list-row brain-settle-row">
@@ -160,10 +141,6 @@ export function SettleView({
   onOpenPage(path: string): void;
 }) {
   const notify = useStore((s) => s.notify);
-  // Answers added this session, by conflict id, until it is settled.
-  const [answers, setAnswers] = useState<
-    Record<string, { path: string; text: string }>
-  >({});
   const titles = new Map(rows.map((r) => [r.path, r.title]));
   const titleOf = (p: string) =>
     titles.get(p) ?? p.replace(/^(wiki|sources)\//, '').replace(/\.md$/, '');
@@ -199,7 +176,7 @@ export function SettleView({
           brain={brain}
           row={row}
           position={{ index, total: open.length }}
-          answer={answers[row.id] ?? null}
+          answer={row.answer ?? null}
           titleOf={titleOf}
           onPrev={index > 0 ? () => onTarget(open[index - 1].id) : undefined}
           onNext={
@@ -279,10 +256,7 @@ export function SettleView({
                 key={p.id}
                 brain={brain}
                 row={p}
-                onAnswered={(a) => {
-                  setAnswers((all) => ({ ...all, [p.id]: a }));
-                  onTarget(p.id);
-                }}
+                onAnswered={() => onTarget(p.id)}
               />
             ))}
           </ul>

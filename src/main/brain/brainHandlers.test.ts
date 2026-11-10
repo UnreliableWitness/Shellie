@@ -1053,6 +1053,51 @@ describe('brain handlers', () => {
       });
     });
 
+    it("keeps someone's answer with its conflict: a source with no capture, the conflict open again with it", async () => {
+      const v = await withFinding();
+      await h['brain:park'](v.id, conflict.id, 'Which date?');
+      const r = await h['brain:answer'](v.id, conflict.id, 'Yes, 2 February.');
+      expect(r.path).toMatch(/^sources\/.*answer-when-does-acme-go-live/);
+      expect(enqueued).toEqual([]);
+      const c = await h['brain:conflicts'](v.id);
+      expect(c.parked).toEqual([]);
+      expect(c.open[0]).toMatchObject({
+        id: conflict.id,
+        answer: { path: r.path, text: 'Yes, 2 February.' },
+      });
+      expect(c.answers).toEqual([r.path]);
+      expect(await fs.readFile(path.join(v.path, r.path), 'utf8')).toContain(
+        'Yes, 2 February.',
+      );
+    });
+
+    it('commits brain/conflicts.json with each park and settle', async () => {
+      const v = await withFinding();
+      await h['brain:park'](v.id, conflict.id, 'Which date?');
+      await h['brain:settle'](v.id, decision);
+      const log = await git.run(v.path, [
+        'log',
+        '--format=%s',
+        '-2',
+        '--',
+        'brain/conflicts.json',
+      ]);
+      expect(log.trim().split('\n')).toEqual([
+        'Brain: settle conflict',
+        'Brain: park conflict',
+      ]);
+      expect(
+        (
+          await git.run(v.path, [
+            'status',
+            '--porcelain',
+            '--',
+            'brain/conflicts.json',
+          ])
+        ).trim(),
+      ).toBe('');
+    });
+
     it('adds an answer as a source without queuing a capture', async () => {
       const v = await withFinding();
       const r = await h['brain:addText'](

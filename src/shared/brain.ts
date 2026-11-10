@@ -254,6 +254,8 @@ export type BrainConflictRow = {
   detail: string;
   at: string;
   conflict: Conflict | null;
+  /** Someone's reply to the question asked, kept as a source for the settle to read. */
+  answer?: { path: string; text: string } | null;
 };
 export type ParkedConflictRow = BrainConflictRow & {
   question: string;

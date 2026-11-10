@@ -35,6 +35,7 @@ import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { createRasterizer } from './main/brain/convert/raster';
 import { createBookHooks } from './main/brain/bookPass';
+import { saveConflicts } from './main/brain/conflicts';
 import { createSettleHooks } from './main/brain/settleHooks';
 import { createPictureHooks } from './main/brain/pictures';
 import { startBrainScheduler } from './main/brain/scheduler';
@@ -911,7 +912,9 @@ async function boot(): Promise<void> {
     // Settles: the decision as the job's prompt, its record marked when the job ends, lost ones queued at launch.
     const settleHooks = createSettleHooks({
       brainDir: (id) => brains.get(id)?.path ?? null,
-      brainIds: () => brains.list().map((b) => b.id),
+      brains: () => brains.list(),
+      update: (dir, change, message) =>
+        saveConflicts(git, dir, change, message),
       runner: () => brainRunner,
       changed: (brainId) => broadcast('brain:changed', { brainId }),
     });

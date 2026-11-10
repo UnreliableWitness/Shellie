@@ -698,6 +698,11 @@ export type Channels = {
     result: void;
   };
   'brain:unpark': { args: [brainId: string, id: string]; result: void };
+  /** Someone's reply: added as a source (no capture), kept with the conflict, which is open again. */
+  'brain:answer': {
+    args: [brainId: string, id: string, text: string];
+    result: { path: string };
+  };
   /** Mirrors the wiki; queues a sync when `syncAfterRefresh` is on and pages changed. */
   'brain:refresh': { args: [brainId: string]; result: RefreshResult };
   'brain:run': {

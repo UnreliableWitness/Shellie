@@ -1,9 +1,14 @@
 import type { BrainJob } from '../../shared/brain';
 import { PENDING } from './bookPass';
-import { readConflicts, updateConflicts } from './conflicts';
+import {
+  readConflicts,
+  updateConflicts,
+  type ConflictsFile,
+} from './conflicts';
 import type { BrainJobRunner } from './jobs';
 import { writeState } from './state';
 
+const NO_DECISION = 'The settle wrote no decision page';
 const DECISION_PAGE = /^decision: (wiki\/decision-[^\s]+\.md)\s*$/m;
 
 /**
@@ -14,12 +19,20 @@ const DECISION_PAGE = /^decision: (wiki\/decision-[^\s]+\.md)\s*$/m;
  */
 export function createSettleHooks(d: {
   brainDir: (brainId: string) => string | null;
-  brainIds: () => string[];
+  /** Archived brains run nothing at launch. */
+  brains: () => { id: string; archived: boolean }[];
   runner: () => Pick<BrainJobRunner, 'enqueue' | 'jobs'>;
   changed: (brainId: string) => void;
+  /** How the conflicts file is changed (main commits it); plain `updateConflicts` by default. */
+  update?: (
+    dir: string,
+    change: (f: ConflictsFile) => ConflictsFile,
+    message: string,
+  ) => Promise<ConflictsFile>;
   now?: () => Date;
 }) {
   const now = d.now ?? (() => new Date());
+  const update = d.update ?? ((dir, change) => updateConflicts(dir, change));
   return {
     promptFor: async (job: BrainJob): Promise<string | null | undefined> => {
       if (job.kind !== 'settle') return undefined;
@@ -35,28 +48,37 @@ export function createSettleHooks(d: {
       const dir = d.brainDir(job.brainId);
       if (!dir) return;
       const id = job.conflict;
-      const done = job.status === 'done';
-      const file = await updateConflicts(dir, (f) => {
-        const rec = f.conflicts[id];
-        if (!rec?.settled) return f;
-        return {
-          ...f,
-          conflicts: {
-            ...f.conflicts,
-            [id]: {
-              ...rec,
-              settled: {
-                ...rec.settled,
-                status: done ? 'done' : 'failed',
-                page: done
-                  ? (DECISION_PAGE.exec(job.result ?? '')?.[1] ?? null)
-                  : rec.settled.page,
-                error: done ? null : (job.error ?? 'failed'),
+      const page = DECISION_PAGE.exec(job.result ?? '')?.[1] ?? null;
+      // A run that names no decision page did not settle anything: failed, so the conflict is not hidden for nothing.
+      const done = job.status === 'done' && page !== null;
+      const error = done
+        ? null
+        : job.status === 'done'
+          ? NO_DECISION
+          : (job.error ?? 'failed');
+      const file = await update(
+        dir,
+        (f) => {
+          const rec = f.conflicts[id];
+          if (!rec?.settled) return f;
+          return {
+            ...f,
+            conflicts: {
+              ...f.conflicts,
+              [id]: {
+                ...rec,
+                settled: {
+                  ...rec.settled,
+                  status: done ? 'done' : 'failed',
+                  page: done ? page : rec.settled.page,
+                  error,
+                },
               },
             },
-          },
-        };
-      });
+          };
+        },
+        done ? 'Brain: conflict settled' : 'Brain: settle failed',
+      );
       // The settle read the answer: it is folded in, not left for a capture.
       const answer = file.conflicts[id]?.settled?.decision.answer;
       if (done && answer) {
@@ -73,7 +95,8 @@ export function createSettleHooks(d: {
     },
 
     resume: async (): Promise<void> => {
-      for (const brainId of d.brainIds()) {
+      for (const { id: brainId, archived } of d.brains()) {
+        if (archived) continue;
         const dir = d.brainDir(brainId);
         if (!dir) continue;
         const inRunner = new Set(

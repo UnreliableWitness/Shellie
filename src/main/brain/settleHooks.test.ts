@@ -12,6 +12,7 @@ let dir: string;
 let jobs: BrainJob[];
 let enqueued: unknown[][];
 let changed: string[];
+let brains: { id: string; archived: boolean }[];
 const decision = (over: Partial<SettleDecision> = {}): SettleDecision => ({
   id: 'c1',
   kind: 'contradiction',
@@ -44,7 +45,7 @@ const pendingRecord = (d: SettleDecision) =>
 const hooks = () =>
   createSettleHooks({
     brainDir: () => dir,
-    brainIds: () => ['b1'],
+    brains: () => brains,
     runner: () => ({
       jobs: () => jobs,
       enqueue: (...a: unknown[]) => {
@@ -74,6 +75,7 @@ beforeEach(async () => {
   jobs = [];
   enqueued = [];
   changed = [];
+  brains = [{ id: 'b1', archived: false }];
 });
 afterEach(() => rm(dir, { recursive: true, force: true }));
 
@@ -111,6 +113,15 @@ describe('settle hooks', () => {
     expect(changed).toEqual(['b1']);
   });
 
+  it('counts a settle that names no decision page as failed, so the conflict is not hidden for nothing', async () => {
+    await pendingRecord(decision());
+    await hooks().afterJob(settle({ result: 'I could not find the pages.' }));
+    expect((await readConflicts(dir)).conflicts.c1.settled).toMatchObject({
+      status: 'failed',
+      error: 'The settle wrote no decision page',
+    });
+  });
+
   it('marks a failed settle with its error and keeps the decision', async () => {
     await pendingRecord(decision({ answer: 'sources/answer.md' }));
     await hooks().afterJob(
@@ -131,6 +142,13 @@ describe('settle hooks', () => {
     jobs = [settle({ conflict: 'c2', status: 'queued' })];
     await hooks().resume();
     expect(enqueued).toEqual([['b1', 'settle', null, { conflict: 'c1' }]]);
+  });
+
+  it('runs nothing at launch for an archived brain', async () => {
+    await pendingRecord(decision());
+    brains = [{ id: 'b1', archived: true }];
+    await hooks().resume();
+    expect(enqueued).toEqual([]);
   });
 
   it('ignores other jobs', async () => {

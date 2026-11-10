@@ -161,6 +161,46 @@ describe('listConflicts', () => {
     ]);
   });
 
+  it('carries an answer given for a conflict on its open row, as an answer in flight', () => {
+    const r = listConflicts(
+      [finding({ conflict: conflict('c1') })],
+      file({
+        c1: {
+          answered: {
+            path: 'sources/answer.md',
+            text: 'Yes',
+            at: '2026-11-10T10:00:00.000Z',
+          },
+        },
+      }),
+      NOW,
+    );
+    expect(r.open[0]).toMatchObject({
+      id: 'c1',
+      answer: { path: 'sources/answer.md', text: 'Yes' },
+    });
+    expect(r.answers).toEqual(['sources/answer.md']);
+  });
+
+  it('keeps failed and pending settles listed however old, so Retry stays', () => {
+    const r = listConflicts(
+      [],
+      file({
+        f: {
+          settled: {
+            at: '2026-08-01T09:00:00.000Z',
+            status: 'failed',
+            decision: decision('f'),
+            page: null,
+            error: 'x',
+          },
+        },
+      }),
+      NOW,
+    );
+    expect(r.settled.map((s) => s.id)).toEqual(['f']);
+  });
+
   it('lists settles of the last 30 days with their state, and the answers of pending or failed ones', () => {
     const r = listConflicts(
       [],

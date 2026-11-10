@@ -12,6 +12,8 @@ import {
   type ConflictKind,
 } from '../../shared/brain';
 import { writeAtomic } from '../fsRetry';
+import type { GitClient } from '../services/GitClient';
+import { withBrainGit } from './gitMutex';
 
 const ConflictsFileSchema = z.object({
   version: z.literal(1),
@@ -19,6 +21,10 @@ const ConflictsFileSchema = z.object({
     z.string(),
     z.object({
       parked: z.object({ question: z.string(), at: z.string() }).optional(),
+      /** Someone's reply, added as a source: the conflict is open again and its settle reads it. */
+      answered: z
+        .object({ path: z.string(), text: z.string(), at: z.string() })
+        .optional(),
       settled: z
         .object({
           at: z.string(),
@@ -39,6 +45,7 @@ export const EMPTY_CONFLICTS: ConflictsFile = { version: 1, conflicts: {} };
 /** Settles shown in the list for this long. */
 const SETTLED_DAYS = 30;
 
+export const CONFLICTS_FILE = 'brain/conflicts.json';
 const fileOf = (dir: string) => path.join(dir, 'brain', 'conflicts.json');
 
 /** The brain's conflicts file; missing or unreadable reads as empty (nothing parked or settled). */
@@ -97,6 +104,7 @@ export function listConflicts(
     if (seen.has(id)) continue;
     seen.add(id);
     const conflict = conflictOf(f);
+    const rec = file.conflicts[id];
     const row: BrainConflictRow = {
       id,
       kind: f.kind as ConflictKind,
@@ -104,8 +112,10 @@ export function listConflicts(
       detail: f.detail,
       at: f.at,
       conflict,
+      answer: rec?.answered
+        ? { path: rec.answered.path, text: rec.answered.text }
+        : null,
     };
-    const rec = file.conflicts[id];
     if (rec?.settled && !conflict?.reopens) continue;
     if (rec?.parked)
       parked.push({
@@ -123,7 +133,8 @@ export function listConflicts(
     open,
     parked,
     settled: settledRecs
-      .filter(({ s }) => Date.parse(s.at) >= since)
+      // A settle not done yet stays listed however old, with its Retry.
+      .filter(({ s }) => s.status !== 'done' || Date.parse(s.at) >= since)
       .map(({ id, s }) => ({
         id,
         question: s.decision.question,
@@ -134,8 +145,36 @@ export function listConflicts(
         page: s.page,
         error: s.error,
       })),
-    answers: settledRecs.flatMap(({ s }) =>
-      s.status !== 'done' && s.decision.answer ? [s.decision.answer] : [],
-    ),
+    answers: [
+      ...Object.values(file.conflicts).flatMap((r) =>
+        r.answered && !r.settled ? [r.answered.path] : [],
+      ),
+      ...settledRecs.flatMap(({ s }) =>
+        s.status !== 'done' && s.decision.answer ? [s.decision.answer] : [],
+      ),
+    ],
   };
+}
+
+/** Changes the conflicts file and commits it alone, under the brain's git lock, as `message`. */
+export function saveConflicts(
+  git: GitClient,
+  dir: string,
+  change: (f: ConflictsFile) => ConflictsFile,
+  message: string,
+): Promise<ConflictsFile> {
+  return withBrainGit(dir, async () => {
+    const next = await updateConflicts(dir, change);
+    await git.run(dir, ['add', '--', CONFLICTS_FILE]);
+    // Nothing staged (the same record written again): no commit.
+    const staged = await git
+      .run(dir, ['diff', '--cached', '--quiet', '--', CONFLICTS_FILE])
+      .then(
+        () => false,
+        () => true,
+      );
+    if (staged)
+      await git.run(dir, ['commit', '-q', '-m', message, '--', CONFLICTS_FILE]);
+    return next;
+  });
 }
