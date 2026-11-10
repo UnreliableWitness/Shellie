@@ -201,6 +201,8 @@ export function MarkdownEditor({
           const p = (o: number) => model.getPositionAt(o);
           const s = p(start);
           const f = p(end);
+          // Each toolbar edit, paste and Paste as plain text is its own undo step.
+          e.pushUndoStop();
           e.executeEdits('composer', [
             {
               range: new m.Range(
@@ -212,6 +214,7 @@ export function MarkdownEditor({
               text,
             },
           ]);
+          e.pushUndoStop();
           const a = p(selStart);
           const b = p(selEnd);
           e.setSelection(
@@ -363,7 +366,7 @@ export function MarkdownEditor({
           )}
         </div>
         {view !== 'write' && (
-          <div className="brain-editor-preview doc-body" aria-label="Preview">
+          <div className="brain-editor-preview" aria-label="Preview">
             {value.trim() ? (
               <MarkdownView
                 asset={noAsset}

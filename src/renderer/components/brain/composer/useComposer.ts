@@ -153,7 +153,14 @@ export function useComposer(brain: BrainView) {
     const filesStay = d.files.some((f) => !sent.has(f.path));
     const failed: string[] = [];
     if (textResult && !textResult.ok) failed.push(textResult.message);
-    for (const r of fileResults ?? []) if (!r.ok) failed.push(r.message);
+    // A refusal names its file, so it is clear which chip stayed and why.
+    (fileResults ?? []).forEach((r, i) => {
+      if (r.ok) return;
+      const name = d.files[i]?.name;
+      failed.push(
+        name && !r.message.includes(name) ? `${name}: ${r.message}` : r.message,
+      );
+    });
     setProblems(failed);
     const sources = addedOf([
       ...(textResult ? [textResult] : []),
@@ -174,6 +181,8 @@ export function useComposer(brain: BrainView) {
       title: textStays ? cur.title : '',
       textType: textStays ? cur.textType : 'note',
       files: cur.files.filter((f) => !sent.has(f.path)),
+      // Capture with is for one add: once anything went in, the next add starts on the brain's model again.
+      model: textIn || sent.size ? null : cur.model,
     }));
     return false;
   };

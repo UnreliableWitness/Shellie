@@ -21,7 +21,7 @@ export const NOTE_HINT =
 export const FORMATS =
   'PDF, Word, PowerPoint, Excel, draw.io, VTT, Markdown, text, pictures';
 const PLACEHOLDER =
-  'Write or paste here. Markdown works: # heading, - list, [link](url), tables.\nPaste an email, a Teams thread or a web page and it turns into Markdown.\nDrop files anywhere on this page.';
+  'Write or paste here. Markdown works.\nRich text pastes as Markdown.\nDrop files anywhere on this page.';
 
 const VIEW_KEY = 'shellie.brain.editorView';
 /** Discard asks first above this many words of text, or with a file attached. */

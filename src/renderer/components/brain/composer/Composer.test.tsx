@@ -233,6 +233,28 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox', { name: 'Text' })).toBeInTheDocument();
   });
 
+  it('after a partial add the model is back on the brain default, and a refusal names its file', async () => {
+    installFakeApi({
+      'brain:addFiles': () => [
+        ok('sources/a.pdf'),
+        { ok: false, reason: 'error', message: 'Not a valid .pdf file' },
+      ],
+    });
+    render(<Host />);
+    attach(file('a.pdf'), file('b.pdf'));
+    await screen.findByText('b.pdf');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Capture with' }), {
+      target: { value: 'opus' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Add 2 files' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'b.pdf: Not a valid .pdf file',
+    );
+    expect(
+      screen.getByRole('combobox', { name: 'Capture with' }),
+    ).toHaveDisplayValue('Sonnet (brain default)');
+  });
+
   it('a Markdown file opens in the empty editor; the next one is attached', async () => {
     installFakeApi();
     render(<Host />);
