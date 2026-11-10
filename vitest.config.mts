@@ -21,6 +21,15 @@ export default defineConfig({
           // so are the hooks that build their repos (a scaffold is five git calls), which kept vitest's 10 s default
           testTimeout: process.platform === 'win32' ? 60000 : 20000,
           hookTimeout: process.platform === 'win32' ? 60000 : 20000,
+          // No background git maintenance in test repos: once a repo has 100 loose objects a commit starts one, which
+          // writes into .git/objects/pack while the test removes the folder (ENOTEMPTY in afterEach).
+          env: {
+            GIT_CONFIG_COUNT: '2',
+            GIT_CONFIG_KEY_0: 'maintenance.auto',
+            GIT_CONFIG_VALUE_0: 'false',
+            GIT_CONFIG_KEY_1: 'gc.auto',
+            GIT_CONFIG_VALUE_1: '0',
+          },
         },
       },
       {
