@@ -159,6 +159,15 @@ describe('BudgetService', () => {
     ).toEqual([['Claude Haiku 4.5', 2]]);
   });
 
+  it('waits for an OpenCode read that answers later', async () => {
+    const { svc, store } = await setup([rec('cc:a')], 4.33);
+    (svc as unknown as { d: { openCode: { read: unknown } } }).d.openCode = {
+      read: async () => ({ records: [], cursor: 42, found: true }),
+    };
+    await svc.pass();
+    expect(store.value.openCodeCursor).toBe(42);
+  });
+
   it('alerts per vendor', async () => {
     // 1M input at $4 = €3.68 → 85% of €4.33; Copilot spends nothing of €10.
     const { svc, notify, telemetry } = await setup([rec('cc:a')], 4.33, {

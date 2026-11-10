@@ -18,6 +18,7 @@ const DRAWING_PDF =
  * within the timeout.
  * Then the brain's canvas (@napi-rs/canvas, external to the bundle like node-pty) must load and encode a PNG,
  * and pdf.js must render a page through it from inside the bundle (where it cannot require the canvas itself).
+ * Then the OpenCode worker must load from the package and answer a read.
  * Last, the stall watchdog's profiler must record samples: the packaged app's fuses must not take the inspector away.
  * Touches no stores, so it is safe to run from CI against a fresh install.
  */
@@ -30,10 +31,37 @@ export async function runSmoke(o: {
   canvas?: typeof loadCanvas;
   /** The profiler factory (default: the real one). */
   profiler?: () => Profiler;
+  /** The OpenCode worker's reader; the check needs its answer, not any data. Skipped when absent. */
+  openCode?: { read(cursor: number): Promise<unknown> };
 }): Promise<boolean> {
   return (
-    (await smokePty(o)) && (await smokeCanvas(o)) && (await smokeProfiler(o))
+    (await smokePty(o)) &&
+    (await smokeCanvas(o)) &&
+    (await smokeProfiler(o)) &&
+    (await smokeOpenCode(o))
   );
+}
+
+async function smokeOpenCode(o: {
+  log: (line: string) => void;
+  openCode?: { read(cursor: number): Promise<unknown> };
+}): Promise<boolean> {
+  if (!o.openCode) return true;
+  try {
+    const answer = await withTimeout(
+      o.openCode.read(0),
+      10_000,
+      () => 'timeout' as const,
+    );
+    if (answer !== 'timeout') return true;
+    o.log('smoke failed: OpenCode worker timed out');
+    return false;
+  } catch (e) {
+    o.log(
+      `smoke failed: OpenCode worker ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`,
+    );
+    return false;
+  }
 }
 
 async function smokeProfiler(o: {
