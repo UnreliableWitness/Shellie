@@ -110,3 +110,13 @@ export const openBrainTerminal = (
             : api().invoke('brain:terminal', brainId),
     notify,
   );
+
+/** The composer's Add: what went in and on which model kind, as counts and flags only (never names, notes or text). */
+export const trackBrainAdd = (p: {
+  text: boolean;
+  files: number;
+  note: boolean;
+  ownNotes: number;
+  model: 'haiku' | 'sonnet' | 'opus' | 'opencode';
+  overridden: boolean;
+}) => track('brain.screen.action', { action: 'add', ...p });

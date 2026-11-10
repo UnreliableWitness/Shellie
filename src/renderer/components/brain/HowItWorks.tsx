@@ -3,7 +3,7 @@ import { local } from '../../localStorage';
 
 const HIDDEN_KEY = 'shellie.brain.howto.hidden';
 
-const STEPS: { title: string; text: string }[] = [
+export const STEPS: { title: string; text: string }[] = [
   {
     title: '1 · You add',
     text: 'Drop a file or paste text. It is stored untouched under sources/.',
