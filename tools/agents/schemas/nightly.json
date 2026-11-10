@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "description": "What the nightly look found: the issues worth filing, most important first. An empty list is a fine answer.",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "two or three plain sentences for the owner: what you looked at, what stands out, what you left out and why"
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "signature": {
+            "type": "string",
+            "description": "a stable id for this problem, lowercase letters, digits and : . _ - only, the same every night and across app versions (reuse a known issue's signature for the same problem)"
+          },
+          "title": {
+            "type": "string",
+            "description": "the issue title: what is wrong, in under 80 characters"
+          },
+          "problem": {
+            "type": "string",
+            "description": "what users see or what is wrong in the code, one or two sentences"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "the numbers (query, sessions, versions, before vs last 24 h) or the commits and file:line it comes from"
+          },
+          "cause": {
+            "type": "string",
+            "description": "the likely cause with file:line references, and how sure you are"
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "the change you would make, specific enough for triage to write a fix spec"
+          },
+          "regressionOf": {
+            "type": "integer",
+            "description": "a closed known issue this is the same problem as, when it is back after being closed"
+          }
+        },
+        "required": [
+          "signature",
+          "title",
+          "problem",
+          "evidence",
+          "cause",
+          "suggestion"
+        ]
+      }
+    }
+  },
+  "required": ["summary", "issues"]
+}

@@ -11,6 +11,7 @@ on:
         'Agents · implement',
         'Agents · PR',
         'Agents · notify',
+        'Agents · nightly',
       ]
     types: [completed]
   # GitHub has no event for a card moved on a personal account's board: the poll picks those up
