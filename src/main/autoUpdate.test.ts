@@ -5,6 +5,7 @@ import {
   MIN_WAKE_GAP_MS,
   STUCK_CHECK_MS,
   canAutoUpdate,
+  fetchFeedState,
   needsMoveToApplications,
   releaseVersion,
   startAutoUpdate,
@@ -363,5 +364,120 @@ describe('releaseVersion', () => {
     expect(releaseVersion('1.2.0-beta.1')).toBe('1.2.0-beta.1');
     expect(releaseVersion('')).toBeNull();
     expect(releaseVersion(undefined)).toBeNull();
+  });
+});
+
+describe('the feed check before Update.exe (Windows)', () => {
+  const checks = (updater: { checkForUpdates: unknown }) =>
+    (updater.checkForUpdates as ReturnType<typeof vi.fn>).mock.calls.length;
+  const launch = (probeFeed: AutoUpdateDeps['probeFeed']) => {
+    const s = setup({ probeFeed });
+    return s;
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('asks the feed for this version and does not start Update.exe when it is current', async () => {
+    const probeFeed = vi.fn(async () => ({ upToDate: true, version: null }));
+    const { updater, tick } = launch(probeFeed);
+    tick();
+    await settle();
+    expect(probeFeed).toHaveBeenCalledWith(
+      updateFeedUrl('win32', 'x64', '1.2.3'),
+    );
+    expect(checks(updater)).toBe(0);
+  });
+
+  it('checks again on the next tick after a current answer', async () => {
+    const probeFeed = vi.fn(async () => ({ upToDate: true, version: null }));
+    const { tick } = launch(probeFeed);
+    tick();
+    await settle();
+    tick();
+    await settle();
+    expect(probeFeed).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts Update.exe when the feed offers a newer version', async () => {
+    const { updater, tick } = launch(async () => ({
+      upToDate: false,
+      version: '1.3.0',
+    }));
+    tick();
+    await settle();
+    expect(checks(updater)).toBe(1);
+  });
+
+  it('does not start Update.exe for the version already downloaded', async () => {
+    const { updater, tick, emit } = launch(async () => ({
+      upToDate: false,
+      version: '1.3.0',
+    }));
+    emit('update-downloaded', {}, '', 'Shellie v1.3.0 (unsigned)');
+    tick();
+    await settle();
+    expect(checks(updater)).toBe(0);
+  });
+
+  it('starts Update.exe for a version newer than the one downloaded', async () => {
+    const { updater, tick, emit } = launch(async () => ({
+      upToDate: false,
+      version: '1.4.0',
+    }));
+    emit('update-downloaded', {}, '', 'Shellie v1.3.0 (unsigned)');
+    tick();
+    await settle();
+    expect(checks(updater)).toBe(1);
+  });
+
+  it('falls back to the full check when the feed cannot be asked', async () => {
+    const { updater, tick } = launch(async () => {
+      throw new Error('offline');
+    });
+    tick();
+    await settle();
+    expect(checks(updater)).toBe(1);
+  });
+
+  it('starts nothing when stopped during the feed check', async () => {
+    const { updater, tick, handle } = launch(async () => ({
+      upToDate: false,
+      version: '1.3.0',
+    }));
+    tick();
+    handle!.stop();
+    await settle();
+    expect(checks(updater)).toBe(0);
+  });
+});
+
+describe('fetchFeedState', () => {
+  const answer = (status: number, body?: string) => async () =>
+    new Response(body ?? null, { status });
+
+  it('reads 204 as up to date', async () => {
+    await expect(fetchFeedState(answer(204), 'u')).resolves.toEqual({
+      upToDate: true,
+      version: null,
+    });
+  });
+
+  it('reads the version of a newer release from its name', async () => {
+    await expect(
+      fetchFeedState(
+        answer(200, JSON.stringify({ name: 'Shellie v1.3.0 (unsigned)' })),
+        'u',
+      ),
+    ).resolves.toEqual({ upToDate: false, version: '1.3.0' });
+  });
+
+  it('gives no version for a body it cannot read', async () => {
+    await expect(fetchFeedState(answer(200, 'nope'), 'u')).resolves.toEqual({
+      upToDate: false,
+      version: null,
+    });
+  });
+
+  it('rejects any other status, so the caller falls back', async () => {
+    await expect(fetchFeedState(answer(503), 'u')).rejects.toThrow();
   });
 });
