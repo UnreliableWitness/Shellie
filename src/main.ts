@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import {
   app,
   autoUpdater,
@@ -77,6 +78,7 @@ import { BudgetStore } from './main/budget/BudgetStore';
 import { budgetRecordsFromUsage } from './main/budget/usageRecords';
 import { ClaudeTranscriptReader } from './main/budget/claudeTranscripts';
 import { OpenCodeReader, openCodeDbPath } from './main/budget/openCode';
+import { OpenCodeRemote, type WorkerLike } from './main/budget/openCodeRemote';
 import { CostSender } from './main/costServer/CostSender';
 import { CostServerStore } from './main/costServer/CostServerStore';
 import { attributionContext } from './main/ledger/attribute';
@@ -179,6 +181,9 @@ reportLoggedErrors(() => telemetry);
 /** Timing summaries and the `app.health` snapshot, every 10 minutes from the end of boot and on quit. */
 let health: ReturnType<typeof startHealthReports> | null = null;
 let stallWatchdog: StallWatchdog | null = null;
+const openCodeRemote = new OpenCodeRemote(
+  () => new Worker(path.join(__dirname, 'openCodeWorker.cjs')) as WorkerLike,
+);
 
 // Monitor only: Electron's own handling of an uncaught exception (the error dialog) stays as it is.
 process.on('uncaughtExceptionMonitor', (error, origin) => {
@@ -771,7 +776,7 @@ async function boot(): Promise<void> {
       claude: new ClaudeTranscriptReader(claudeProjectsDir(), {
         since: budgetSince,
       }),
-      openCode: new OpenCodeReader(openCodeDbPath(), { since: budgetSince }),
+      openCode: openCodeRemote.reader(openCodeDbPath(), { since: budgetSince }),
       settings: budgetSettings,
       extra: () => budgetRecordsFromUsage(usage.allRecords()),
       inShellie: inShellieFor(
@@ -829,7 +834,7 @@ async function boot(): Promise<void> {
     const ledger = new LedgerService({
       store: ledgerStore,
       claude: new ClaudeTranscriptReader(claudeProjectsDir()),
-      openCode: new OpenCodeReader(openCodeDbPath()),
+      openCode: openCodeRemote.reader(openCodeDbPath()),
       usageRecords: () => usage.allRecords(),
       context: () =>
         attributionContext(
@@ -1400,6 +1405,7 @@ if (process.env.SHELLIE_SMOKE === '1') {
         terminals,
         platform: createPlatform(),
         log: (line) => console.error(line),
+        openCode: openCodeRemote.reader(openCodeDbPath()),
       }),
     )
     .then((ok) => {
@@ -1466,6 +1472,7 @@ app.on('before-quit', () => {
   stopBrains();
   updates?.stop();
   stallWatchdog?.stop();
+  openCodeRemote.stop();
 });
 
 let quitHeld = false;

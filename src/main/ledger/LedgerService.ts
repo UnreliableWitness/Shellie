@@ -6,7 +6,7 @@ import type { CostRecord } from '../../shared/ledger';
 import type { UsageEvent, UsageRecord } from '../../shared/usage';
 import type { FileCursor } from '../budget/claudeTranscripts';
 import type { ClaudeTranscriptReader } from '../budget/claudeTranscripts';
-import type { OpenCodeReader } from '../budget/openCode';
+import type { OpenCodeRead } from '../budget/openCodeRemote';
 import { budgetRecordsFromUsage } from '../budget/usageRecords';
 import { tick } from '../async';
 import { writeAtomic } from '../fsRetry';
@@ -26,7 +26,7 @@ import { priceRecord } from './price';
 export type LedgerServiceDeps = {
   store: LedgerStore;
   claude: { read: ClaudeTranscriptReader['read'] };
-  openCode: { read: OpenCodeReader['read'] };
+  openCode: { read: OpenCodeRead };
   /** The usage store's records: Copilot CLI requests and PR-summary runs enter the ledger from here. */
   usageRecords: () => UsageRecord[];
   context: () => AttributionContext;
@@ -191,7 +191,7 @@ export class LedgerService {
     let next = cursor;
     let after: { t: number; id: string } | undefined;
     for (;;) {
-      const page = this.d.openCode.read(cursor, {
+      const page = await this.d.openCode.read(cursor, {
         limit: OPENCODE_CHUNK,
         after,
       });

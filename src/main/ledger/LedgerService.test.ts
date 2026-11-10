@@ -573,6 +573,19 @@ describe('LedgerService', () => {
     expect(s.store.all()).toHaveLength(2500);
   });
 
+  it('waits for an OpenCode read that answers later', async () => {
+    const s = setup();
+    (s.svc as unknown as { d: { openCode: { read: unknown } } }).d.openCode = {
+      read: async (cursor: number) => ({
+        records: [rec({ id: 'oc:later', tool: 'opencode' })],
+        cursor: cursor + 1,
+        found: true,
+      }),
+    };
+    await s.svc.pass();
+    expect(s.store.all().map((r) => r.id)).toContain('oc:later');
+  });
+
   it('reports record counts once a day, no amounts', async () => {
     let day = new Date(2026, 9, 12, 10);
     const s = setup({

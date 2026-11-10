@@ -35,6 +35,22 @@ describe('runSmoke', () => {
     expect(lines.join('\n')).toMatch(/smoke failed: profiler/);
   });
 
+  it('fails when the OpenCode worker does not answer', async () => {
+    const lines: string[] = [];
+    const ok = await runSmoke({
+      terminals: new TerminalManager(),
+      platform: testPlatform(),
+      log: (l) => lines.push(l),
+      openCode: {
+        read: async () => {
+          throw new Error('no worker');
+        },
+      },
+    });
+    expect(ok).toBe(false);
+    expect(lines.join('\n')).toMatch(/smoke failed: OpenCode worker/);
+  });
+
   it('fails when the brain canvas cannot be loaded', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({

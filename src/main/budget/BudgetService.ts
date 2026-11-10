@@ -14,7 +14,7 @@ import { OFFICIAL_RATES } from '../pricing/officialRates';
 import { modelLabeler } from '../pricing/RateTable';
 import type { BudgetStore } from './BudgetStore';
 import type { ClaudeTranscriptReader } from './claudeTranscripts';
-import type { OpenCodeReader } from './openCode';
+import type { OpenCodeRead } from './openCodeRemote';
 
 const VENDOR_NAME: Record<Vendor, string> = {
   claude: 'Claude',
@@ -29,7 +29,7 @@ const ALERT_TEXT: Record<AlertKind, string> = {
 export type BudgetServiceDeps = {
   store: BudgetStore;
   claude: { read: ClaudeTranscriptReader['read'] };
-  openCode: { read: OpenCodeReader['read'] };
+  openCode: { read: OpenCodeRead };
   settings: (v: Vendor) => BudgetSettings;
   /** Records from Shellie's own usage store: Copilot CLI requests and PR-summary runs. */
   extra: () => BudgetRecord[];
@@ -74,7 +74,7 @@ export class BudgetService {
     const claude = await this.d.claude.read(f.claudeCursors);
     let oc: { records: BudgetRecord[]; cursor: number; found: boolean };
     try {
-      oc = this.d.openCode.read(f.openCodeCursor);
+      oc = await this.d.openCode.read(f.openCodeCursor);
     } catch (err) {
       console.warn('[budget] OpenCode database not readable this pass', err);
       oc = { records: [], cursor: f.openCodeCursor, found: f.sources.openCode };
