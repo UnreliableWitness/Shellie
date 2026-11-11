@@ -17,6 +17,7 @@ import {
   seal,
   secretFromLink,
   unseal,
+  upNext,
   type ReaderLetter,
   type ReaderMarkSet,
   type ReaderRead,
@@ -282,5 +283,79 @@ describe('readingList', () => {
       { 'reads/two.md': mark('h1') },
     );
     expect(paths(list.work)).toEqual(['reads/one.md']);
+  });
+
+  it('keeps a long read for the work out of later, and in its place in the book', () => {
+    const work = [{ id: 412, title: 'Partial returns' }];
+    const reads = [
+      read({ path: 'reads/one.md', chapter: 'One', work }),
+      read({ path: 'reads/topic.md', topic: 'credit notes', work }),
+      read({ path: 'reads/other.md', topic: 'pallets' }),
+    ];
+    const list = readingList(shelf({ reads }), {});
+    expect(paths(list.work)).toEqual(['reads/one.md', 'reads/topic.md']);
+    expect(paths(list.foundations)).toEqual(['reads/one.md']);
+    expect(paths(list.later)).toEqual(['reads/other.md']);
+    // once read it is no longer for the work, and waits under later like any other
+    const after = readingList(shelf({ reads }), {
+      'reads/topic.md': mark('h1'),
+    });
+    expect(paths(after.later)).toEqual(['reads/topic.md', 'reads/other.md']);
+  });
+
+  describe('upNext', () => {
+    const three = [
+      read({ path: 'reads/one.md', chapter: 'One' }),
+      read({ path: 'reads/two.md', chapter: 'Two' }),
+      read({ path: 'reads/three.md', chapter: 'Three' }),
+    ];
+    const next = (s: ReaderShelf, marks: ReaderMarkSet, limit?: number) =>
+      upNext(readingList(s, marks), limit).map(
+        (n) => `${n.why} ${paths([n.entry])[0]}`,
+      );
+
+    it('is the work, then what changed, then the one next foundation', () => {
+      const s = shelf({
+        reads: [
+          ...three,
+          read({
+            path: 'reads/topic.md',
+            topic: 't',
+            work: [{ id: 412, title: 'Return flow' }],
+          }),
+        ],
+        letters: [letter({ read: 'reads/one.md' })],
+      });
+      expect(next(s, { 'reads/one.md': mark('old') })).toEqual([
+        'work reads/topic.md',
+        'changed reads/letters/2026-11-11-a.md',
+        'next reads/two.md',
+      ]);
+    });
+
+    it('never lists the pile: one foundation, and nothing from later', () => {
+      const s = shelf({
+        reads: [...three, read({ path: 'reads/topic.md', topic: 't' })],
+      });
+      expect(next(s, {})).toEqual(['next reads/one.md']);
+      expect(next(s, { 'reads/one.md': mark('h1') })).toEqual([
+        'next reads/two.md',
+      ]);
+      const all = Object.fromEntries(three.map((r) => [r.path, mark('h1')]));
+      expect(next(s, all)).toEqual([]);
+    });
+
+    it('lists a long read once, for the work, and stops at the limit', () => {
+      const work = [{ id: 1, title: 'w' }];
+      const s = shelf({
+        reads: three.map((r) => ({ ...r, work })),
+      });
+      expect(next(s, {})).toEqual([
+        'work reads/one.md',
+        'work reads/two.md',
+        'work reads/three.md',
+      ]);
+      expect(next(s, {}, 2)).toHaveLength(2);
+    });
   });
 });

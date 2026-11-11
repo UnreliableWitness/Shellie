@@ -3,6 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { Band } from '../components/home/Band';
 import { GetStartedBand } from '../components/home/GetStartedBand';
 import { PrBand } from '../components/home/PrBand';
+import { ReadingBand } from '../components/reading/ReadingBand';
 import { SprintsBand } from '../components/home/SprintsBand';
 import { BudgetBand } from '../components/home/BudgetBand';
 import { StatsBand } from '../components/home/StatsBand';
@@ -111,6 +112,7 @@ export function HomeScreen() {
         <WhatsNewBand />
         <GetStartedBand />
         <TasksBand snapshot={snapshot} />
+        <ReadingBand />
         {connections.length > 0 && (
           <>
             {snapshot ? (

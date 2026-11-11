@@ -696,7 +696,7 @@ describe('BrainRead', () => {
         );
         await userEvent.click(
           within(
-            within(reading()).getByRole('region', { name: 'By chapter' }),
+            within(reading()).getByRole('region', { name: 'Foundations' }),
           ).getByRole('button', { name: /What the project is for/ }),
         );
         const read = await within(reading()).findByRole('region', {
@@ -806,7 +806,7 @@ describe('BrainRead', () => {
         await userEvent.click(await frontLine());
         await userEvent.click(
           within(
-            within(reading()).getByRole('region', { name: 'By chapter' }),
+            within(reading()).getByRole('region', { name: 'Foundations' }),
           ).getByRole('button', { name: /What the project is for/ }),
         );
         const read = await within(reading()).findByRole('region', {

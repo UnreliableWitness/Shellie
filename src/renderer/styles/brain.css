@@ -1918,3 +1918,75 @@ button.brain-reads-row:hover {
   color: var(--muted);
   text-decoration: line-through;
 }
+/* The reading list: how far the reader is, and the work a long read bears on. */
+.brain-reads-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brain-reads-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.brain-reads-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.brain-reads-count {
+  margin-left: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.brain-reads-work {
+  color: var(--link);
+}
+/* "Before you start": the long reads a task's work item bears on. */
+.reading-before {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.reading-before-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.reading-before-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.reading-before-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.reading-before-row:hover {
+  background: var(--bg-hover);
+}
+.reading-before-name {
+  font-weight: 600;
+}

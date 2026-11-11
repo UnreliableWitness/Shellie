@@ -113,6 +113,7 @@ describe('App', () => {
         'attention:view',
         'brain:list',
         'connections:list',
+        'reading:get',
         'repos:list',
         'settings:get',
         'tasks:list',

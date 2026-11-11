@@ -82,6 +82,7 @@ import type { Vendor } from './budget';
 import type { BudgetView } from './budgetView';
 import type { CostServerStatus } from './costServer';
 import type { ReaderMarkSet, ReaderStatus } from './reader';
+import type { ReadingBrain } from './reading';
 import type { HomePeriod, HomeSnapshot, HomeStats } from './home';
 import type {
   FileContent,
@@ -557,6 +558,8 @@ export type Channels = {
     args: [brainId: string, marks: ReaderMarkSet];
     result: ReaderMarkSet;
   };
+  /** The reading list's data: every brain with a long read or a letter, the reader's marks and the work links. */
+  'reading:get': { args: []; result: ReadingBrain[] };
   'usage:task': { args: [taskId: string]; result: TaskUsage };
   /** Billable EUR per task id; tasks without usage are absent. */
   'usage:costs': { args: [taskIds: string[]]; result: Record<string, number> };

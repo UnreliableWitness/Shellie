@@ -123,6 +123,11 @@ import {
 } from '../reader/readerHandlers';
 import { type CostServerStatus, validServerUrl } from '../../shared/costServer';
 import { HomeService } from '../home/HomeService';
+import {
+  ReadingService,
+  type ReadingWorkItem,
+} from '../reading/ReadingService';
+import { stateCategory } from '../../shared/home';
 import { billableEurByTask, homeStats } from '../home/homeStats';
 import { DocsWatcher } from '../docs/DocsWatcher';
 import { GitDirWatcher } from '../review/GitDirWatcher';
@@ -355,6 +360,11 @@ export type Services = {
    * every few minutes; tests capture it.
    */
   onCleanupRetry?: (retryAll: () => Promise<void>) => void;
+  /**
+   * Hands out the reading list's work links and its "this brain changed": main gives the first to the phone's push
+   * and calls the second when a brain's files change; tests capture them.
+   */
+  onReading?: (reading: Pick<ReadingService, 'work' | 'brainChanged'>) => void;
   /** How long Finish waits after closing terminals so the last telemetry batch arrives (main 2500, tests 0). */
   finishFlushMs: number;
   /** App telemetry (usage, errors, timings); see docs/telemetry.md. Defaults to sending nothing. */
@@ -838,6 +848,47 @@ export function createHandlers(s: Services): Handlers {
     ledgerToday: () => ({ tokens: 0, costEur: 0 }),
     userData: s.usageDir,
   };
+  const reading = new ReadingService({
+    brains: () => brain.store.list(),
+    marks: (brainId) => s.reader?.knownMarks(brainId) ?? {},
+    workItems: async () => {
+      const out: ReadingWorkItem[] = [];
+      // Open tasks first: their names add words to the item's own.
+      const repos = s.repos.list();
+      for (const t of s.store.state.tasks) {
+        if (t.status === 'done' || !t.workItem) continue;
+        const connectionId = taskConnectionId(t, repos);
+        if (!connectionId) continue;
+        const project =
+          t.workItem.project || s.connections.find(connectionId)?.project;
+        if (project)
+          out.push({
+            connectionId,
+            project,
+            id: t.workItem.id,
+            title: t.workItem.title,
+            name: t.name,
+          });
+      }
+      const snapshot = await home.get().catch(() => null);
+      for (const c of snapshot?.connections ?? [])
+        for (const sprint of c.sprints)
+          for (const item of sprint.items) {
+            // By the state's name: the type's metadata is not kept here.
+            const category = stateCategory(null, item.state);
+            if (category === 'Completed' || category === 'Removed') continue;
+            out.push({
+              connectionId: c.connectionId,
+              project: item.project ?? c.project,
+              id: item.id,
+              title: item.title,
+            });
+          }
+      return out;
+    },
+  });
+  s.onReading?.(reading);
+
   const brainHandlers = createBrainHandlers({
     brains: brain.store,
     rasterize: createRasterizer({ platform: s.platform, run: runWithInput }),
@@ -4557,6 +4608,7 @@ export function createHandlers(s: Services): Handlers {
       s.broadcast('costServer:changed', st);
       return st;
     },
+    'reading:get': () => reading.list(),
     'home:get': () => home.get(),
     'home:refresh': () => home.refresh(),
     'home:stats': async (period) =>

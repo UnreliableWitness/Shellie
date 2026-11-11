@@ -245,6 +245,20 @@ button.projecttile:hover {
   color: var(--link);
   flex: none;
 }
+/* Something waits behind the item (a brain with something to read). */
+.navitem-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.is-rail .navitem-dot {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+}
 .leftnav-scroll {
   flex: 1;
   min-height: 0;

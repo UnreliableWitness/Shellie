@@ -3,6 +3,7 @@ import type { SetupEvent, SetupState } from '../../shared/types';
 import { isReopening } from '../../shared/workspaces';
 import { api, tryInvoke } from '../api';
 import { GitAuthNotice } from '../components/GitAuthNotice';
+import { BeforeYouStart } from '../components/reading/BeforeYouStart';
 import { StepList } from '../components/StepList';
 import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { TaskTypeIcon } from '../components/TaskTypeIcon';
@@ -197,6 +198,7 @@ export function SetupScreen({ taskId }: { taskId: string }) {
             <div className="muted">Loading...</div>
           )}
           {authHint && <GitAuthNotice hint={authHint} />}
+          {!reopening && <BeforeYouStart taskId={task.id} />}
           <div className="actions" style={{ justifyContent: 'flex-start' }}>
             <button type="button" className="btn" onClick={back}>
               Back to Sprint

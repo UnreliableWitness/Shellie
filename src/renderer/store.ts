@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
+import type { ReadingBrain } from '../shared/reading';
 import type { AppSettings } from '../shared/usage';
 import type {
   Connection,
@@ -14,6 +15,7 @@ import type {
 import { taskConnectionId } from '../shared/workspaces';
 import { api, onSettingsSaved } from './api';
 import { firstScreen } from './onboardingState';
+import type { ReadingNudge } from './readingFeed';
 import {
   restoreDraft,
   saveDraft,
@@ -104,6 +106,8 @@ export type Screen =
       brainId: string;
       /** Where the page puts the cursor on open: the Ask box, the Wiki tab or the drop zone. */
       focus?: 'ask' | 'wiki' | 'drop';
+      /** A page, long read or letter to open in the Read view; another `n` opens it again. */
+      open?: { path: string; n: number };
     }
   | { kind: 'task' }
   | {
@@ -166,6 +170,14 @@ type Store = {
   sprints: Record<string, { at: number; sprint: Sprint }>;
   setSprint(connectionId: string, sprint: Sprint): void;
   notices: Notice[];
+  /** Every brain's reading list data, from main (`useReadingFeed`). */
+  reading: ReadingBrain[];
+  setReading(reading: ReadingBrain[]): void;
+  /** What a brain's build brought to read, shown as a notice until read, closed or left alone for a while. */
+  readingNudge: ReadingNudge | null;
+  setReadingNudge(nudge: ReadingNudge | null): void;
+  /** Opens a brain's Read view on a page, long read or letter. */
+  openInBrain(brainId: string, path: string): void;
   tabByTask: Record<string, string>;
   /** A document a terminal link asked the Docs tab to open; the nonce makes repeats count. */
   docTarget: Record<
@@ -233,6 +245,7 @@ type Store = {
 };
 
 let noticeSeq = 0;
+let openSeq = 0;
 let viewSeq = 0;
 
 const fileName = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) ?? p;
@@ -287,6 +300,14 @@ export const useStore = create<Store>((set, get) => ({
   sprintName: null,
   sprints: {},
   notices: [],
+  reading: [],
+  setReading: (reading) => {
+    if (!sameJson(get().reading, reading)) set({ reading });
+  },
+  readingNudge: null,
+  setReadingNudge: (readingNudge) => set({ readingNudge }),
+  openInBrain: (brainId, path) =>
+    get().go({ kind: 'brain', brainId, open: { path, n: ++openSeq } }),
   tabByTask: {},
   docTarget: {},
   reviewByTask: {},

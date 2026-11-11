@@ -20,6 +20,7 @@ const reader = () => ({
     ...local,
     'reads/phone.md': mark,
   })),
+  knownMarks: vi.fn(() => ({})),
 });
 
 describe('reader handlers', () => {

@@ -34,7 +34,9 @@ import {
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { useBrains } from '../hooks/useBrains';
+import { useReading, useReadingNudges } from '../hooks/useReadingFeed';
 import { useTaskCosts } from '../hooks/useTaskCosts';
+import { hasEvent } from '../readingFeed';
 import {
   activeConnection,
   taskOnScreen,
@@ -297,25 +299,30 @@ function NavItem({
   label,
   current,
   rail,
+  note,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   current: boolean;
   rail: boolean;
+  /** Something waits behind this item: a dot, with these words for a screen reader and the tooltip. */
+  note?: string;
   onClick: () => void;
 }) {
+  const named = note ? `${label}, ${note}` : label;
   return (
     <button
       type="button"
       className="navitem"
       aria-current={current ? 'page' : undefined}
-      aria-label={rail ? label : undefined}
-      title={rail ? label : undefined}
+      aria-label={rail || note ? named : undefined}
+      title={rail ? named : note}
       onClick={onClick}
     >
       {icon}
       {!rail && <span>{label}</span>}
+      {note && <span className="navitem-dot" aria-hidden="true" />}
     </button>
   );
 }
@@ -529,6 +536,12 @@ export function TaskNav() {
   const brains = useBrains().filter(
     (b) => b.connectionId === connection?.id && !b.archived,
   );
+  const nudges = useReadingNudges();
+  const reading = useReading();
+  // A dot for an event (a long read for your work, a change in one you read), never for the pile of unread ones.
+  const toRead = new Set(
+    nudges ? reading.filter(hasEvent).map((r) => r.brain.brainId) : [],
+  );
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }
     : connection.status === 'ok'
@@ -580,6 +593,7 @@ export function TaskNav() {
           label={b.name}
           rail={rail}
           current={screen.kind === 'brain' && screen.brainId === b.id}
+          note={toRead.has(b.id) ? 'something to read' : undefined}
           onClick={() => go({ kind: 'brain', brainId: b.id })}
         />
       ))}

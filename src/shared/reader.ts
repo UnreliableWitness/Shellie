@@ -203,7 +203,7 @@ export const ReaderReadSchema = z.object({
   hash: z.string(),
   /** Pages under it changed since it was written. */
   stale: z.boolean(),
-  /** The work items of the sprint it bears on. Nothing sets it yet (project 2). */
+  /** The work items in front of the reader (their sprint, their open tasks) it bears on. */
   work: z.array(z.object({ id: z.number(), title: z.string() })).optional(),
 });
 export type ReaderRead = z.infer<typeof ReaderReadSchema>;
@@ -278,30 +278,46 @@ type Marked = { path: string; hash: string };
 export const isMarkedRead = (marks: ReaderMarkSet, piece: Marked) =>
   marks[piece.path]?.read === true && marks[piece.path].hash === piece.hash;
 
-export type ListEntry =
+/** What the list needs of a long read and of a letter: the phone's shelf and Shellie's own rows both have it. */
+export type ListRead = Pick<
+  ReaderRead,
+  'path' | 'title' | 'chapter' | 'written' | 'minutes' | 'hash' | 'work'
+>;
+export type ListLetter = Pick<
+  ReaderLetter,
+  'path' | 'title' | 'read' | 'written' | 'minutes' | 'hash'
+>;
+
+export type ListEntry<
+  R extends ListRead = ReaderRead,
+  L extends ListLetter = ReaderLetter,
+> =
   | {
       kind: 'read';
-      read: ReaderRead;
+      read: R;
       done: boolean;
       /** Its text changed since the reader's mark and no letter says how. */
       changed: boolean;
     }
   | {
       kind: 'letter';
-      letter: ReaderLetter;
+      letter: L;
       /** The title of the long read it is about. */
       about: string;
       done: boolean;
     };
-export type ReadingList = {
+export type ReadingList<
+  R extends ListRead = ReaderRead,
+  L extends ListLetter = ReaderLetter,
+> = {
   /** Unread pieces that bear on the sprint's work. */
-  work: ListEntry[];
+  work: ListEntry<R, L>[];
   /** What changed in things the reader already read. */
-  changed: ListEntry[];
+  changed: ListEntry<R, L>[];
   /** The chapters' long reads, in book order, read ones included. */
-  foundations: ListEntry[];
-  /** Long reads on a topic and those whose chapter left the book. */
-  later: ListEntry[];
+  foundations: ListEntry<R, L>[];
+  /** Long reads on a topic and those whose chapter left the book, except the unread ones under `work`. */
+  later: ListEntry<R, L>[];
   /** Long reads plus what is listed under `changed`. */
   total: number;
   done: number;
@@ -316,12 +332,13 @@ export type ReadingList = {
  * (those written since the mark and not yet read), or by the long read itself when no letter was written. A letter
  * about a long read that was never read is not listed: the long read says what holds now.
  */
-export function readingList(
-  shelf: ReaderShelf,
+export function readingList<R extends ListRead, L extends ListLetter>(
+  shelf: { chapters: string[]; reads: R[]; letters: L[] },
   marks: ReaderMarkSet,
-): ReadingList {
-  const everRead = (r: ReaderRead) => marks[r.path]?.read === true;
-  const changed: ListEntry[] = [];
+): ReadingList<R, L> {
+  type Entry = ListEntry<R, L>;
+  const everRead = (r: R) => marks[r.path]?.read === true;
+  const changed: Entry[] = [];
   for (const read of shelf.reads) {
     const mark = marks[read.path];
     if (!mark?.read || mark.hash === read.hash) continue;
@@ -336,29 +353,29 @@ export function readingList(
     if (!since.length)
       changed.push({ kind: 'read', read, done: false, changed: true });
   }
-  const when = (e: ListEntry) =>
+  const when = (e: Entry) =>
     (e.kind === 'letter' ? e.letter.written : e.read.written) ?? '';
   changed.sort((a, b) => when(b).localeCompare(when(a)));
 
-  const entry = (read: ReaderRead): ListEntry => ({
+  const entry = (read: R): Entry => ({
     kind: 'read',
     read,
     done: everRead(read),
     changed: false,
   });
   const order = new Map(shelf.chapters.map((c, i) => [c, i]));
-  const inBook = (r: ReaderRead) => r.chapter !== null && order.has(r.chapter);
+  const inBook = (r: R) => r.chapter !== null && order.has(r.chapter);
   const foundations = shelf.reads
     .filter(inBook)
     .sort((a, b) => order.get(a.chapter!)! - order.get(b.chapter!)!)
     .map(entry);
-  const later = shelf.reads.filter((r) => !inBook(r)).map(entry);
-  const work = shelf.reads
-    .filter((r) => r.work?.length && !everRead(r))
-    .map(entry);
+  const forWork = (r: R) => !!r.work?.length && !everRead(r);
+  // A long read for the sprint's work is not for later; in the book it keeps its place, the book being the map.
+  const later = shelf.reads.filter((r) => !inBook(r) && !forWork(r)).map(entry);
+  const work = shelf.reads.filter(forWork).map(entry);
 
   const done = shelf.reads.filter(everRead).length;
-  const minutes = (e: ListEntry) =>
+  const minutes = (e: Entry) =>
     e.kind === 'letter' ? e.letter.minutes : e.read.minutes;
   return {
     work,
@@ -373,6 +390,45 @@ export function readingList(
         .reduce((n, r) => n + r.minutes, 0) +
       changed.reduce((n, e) => n + minutes(e), 0),
   };
+}
+
+/** Why a piece is up next: it bears on the sprint's work, it changed since it was read, or it is next in the book. */
+export type UpNextWhy = 'work' | 'changed' | 'next';
+export type UpNext<
+  R extends ListRead = ReaderRead,
+  L extends ListLetter = ReaderLetter,
+> = { why: UpNextWhy; entry: ListEntry<R, L> };
+
+export const entryPath = <R extends ListRead, L extends ListLetter>(
+  e: ListEntry<R, L>,
+) => (e.kind === 'letter' ? e.letter.path : e.read.path);
+
+/**
+ * The handful to read next: unread long reads for the sprint's work, then what changed in things already read, then
+ * the one next unread foundation in book order. "Later" is never up next: it waits until asked for.
+ */
+export function upNext<R extends ListRead, L extends ListLetter>(
+  list: ReadingList<R, L>,
+  limit = 3,
+): UpNext<R, L>[] {
+  const out: UpNext<R, L>[] = [];
+  const seen = new Set<string>();
+  const add = (why: UpNextWhy, entries: ListEntry<R, L>[]) => {
+    for (const entry of entries) {
+      const path = entryPath(entry);
+      if (entry.done || seen.has(path)) continue;
+      seen.add(path);
+      out.push({ why, entry });
+    }
+  };
+  add('work', list.work);
+  add('changed', list.changed);
+  const before = out.length;
+  for (const entry of list.foundations) {
+    if (out.length > before) break;
+    add('next', [entry]);
+  }
+  return out.slice(0, limit);
 }
 
 /** The connection as the renderer may know it: never the secret, except as the link it asks for. */

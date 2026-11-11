@@ -1505,6 +1505,30 @@ describe('handlers: the brain at setup', () => {
     await hx.terminals.killAllForTask(t.id);
   });
 
+  it("reading:get names the open task's work item on the long read it bears on", async () => {
+    const { b, c, create, hx } = await brainSetup();
+    expect(await hx.h['reading:get']()).toEqual([]);
+    const brain = await b.add({
+      connectionId: c.id,
+      project: 'Acme Project',
+    });
+    mkdirSync(path.join(brain.path, 'reads'), { recursive: true });
+    writeFileSync(
+      path.join(brain.path, 'reads', 'delivery.md'),
+      '---\ntitle: The estimated delivery date\nsummary: Where the date comes from.\nwritten: 2026-11-09\n---\n\n# The estimated delivery date\n\nA promise.\n',
+    );
+    const { t } = await create();
+    const list = await hx.h['reading:get']();
+    expect(list.map((r) => r.brainId)).toEqual([brain.id]);
+    expect(list[0].reads.map((r) => [r.path, r.work])).toEqual([
+      [
+        'reads/delivery.md',
+        [{ id: 48231, title: 'Show estimated delivery date' }],
+      ],
+    ]);
+    await hx.terminals.killAllForTask(t.id);
+  });
+
   it('leaves out what the brain options turn off', async () => {
     const { b, c, calls, create, hx } = await brainSetup();
     await b.add({

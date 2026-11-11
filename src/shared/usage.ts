@@ -86,6 +86,11 @@ export const AppSettingsSchema = z.object({
   showSplash: z.boolean().default(true),
   /** Notify when an agent finishes its turn (blocked agents always notify). */
   notifyOnDone: z.boolean().default(true),
+  /**
+   * Say what there is to read in a brain: Home's Reading band, the dot on a brain in the nav, "Before you start" on
+   * a task and the notice when a build brings something. The reading list itself stays.
+   */
+  readingNudges: z.boolean().default(true),
   /** Light or dark look; `system` follows the OS appearance (sets nativeTheme.themeSource). */
   theme: z.enum(THEMES).default('system'),
   /** The developer's monthly Claude budget (Home's Claude budget band). */

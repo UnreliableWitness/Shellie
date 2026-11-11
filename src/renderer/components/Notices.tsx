@@ -4,6 +4,7 @@ import type { PendingUpdate } from '../../shared/ipc';
 import { api, tryInvoke } from '../api';
 import { useStore } from '../store';
 import { track } from '../telemetry';
+import { ReadingNotice } from './reading/ReadingNotice';
 
 /** A downloaded update, offered once per launch in the notice corner: no dialog, nothing to click unless wanted. */
 function UpdateNotice() {
@@ -204,6 +205,7 @@ export function Notices() {
       {notices.map((n) => (
         <NoticeItem key={n.id} notice={n} />
       ))}
+      <ReadingNotice />
       <UpdateNotice />
       <MoveNotice />
     </div>

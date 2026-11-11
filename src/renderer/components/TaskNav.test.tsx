@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi } from '../test-helpers/fakeApi';
+import { readingBrain, readingRead } from '../test-helpers/readingFixture';
 import { groupTasks, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
@@ -175,6 +176,8 @@ beforeEach(() => {
   localStorage.clear();
   useStore.setState({
     attention: {},
+    reading: [],
+    settings: null,
     navCollapsed: false,
     navWidth: 240,
     repos,
@@ -252,6 +255,37 @@ describe('brains', () => {
       'aria-current',
       'page',
     );
+  });
+
+  it('marks a brain with something for the work or a change to read, unless the nudges are off', async () => {
+    installFakeApi({
+      'brain:list': () => [
+        listedBrain(),
+        listedBrain({ id: 'b2', name: 'Globex' }),
+      ],
+    });
+    useStore.setState({
+      connections: [conn('c1', 'Shellie')],
+      reading: [
+        readingBrain({
+          reads: [readingRead({ work: [{ id: 412, title: 'Return flow' }] })],
+        }),
+        // Unread foundations are the pile, not an event.
+        readingBrain({
+          brainId: 'b2',
+          reads: [readingRead({ chapter: 'Orders' })],
+        }),
+      ],
+    });
+    render(<TaskNav />);
+    expect(
+      await screen.findByRole('button', { name: 'Acme, something to read' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Globex' })).toBeInTheDocument();
+    act(() =>
+      useStore.setState({ settings: { readingNudges: false } as never }),
+    );
+    expect(screen.getByRole('button', { name: 'Acme' })).toBeInTheDocument();
   });
 
   it('shows only the active project’s brains (#229)', async () => {

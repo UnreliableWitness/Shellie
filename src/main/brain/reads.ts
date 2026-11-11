@@ -316,11 +316,17 @@ async function load(brainDir: string): Promise<Loaded> {
   };
 }
 
-/** The brain's long reads (by title) and letters (newest first), each long read with what made it out of date. */
-export async function brainReads(brainDir: string): Promise<BrainReads> {
+/**
+ * The brain's long reads (by title) and letters (newest first), each long read with what made it out of date; and
+ * per long read the pages it was written from (its own list, the record's, and its chapter's as the book has it now).
+ */
+export async function brainReadsAndPages(
+  brainDir: string,
+): Promise<BrainReads & { under: Record<string, string[]> }> {
   const l = await load(brainDir);
   const hash = pageHasher(brainDir);
   const rows: BrainReadRow[] = [];
+  const under: Record<string, string[]> = {};
   for (const r of l.reads) {
     const n = l.chapters.get(r.path);
     const chapter = n === undefined ? null : l.book!.chapters[n];
@@ -328,6 +334,7 @@ export async function brainReads(brainDir: string): Promise<BrainReads> {
     const pages = [...Object.keys(rec?.pages ?? {}), ...(chapter?.pages ?? [])];
     const hashes = new Map<string, string | null>();
     for (const p of pages) hashes.set(p, await hash(p));
+    under[r.path] = [...new Set([...r.pages, ...pages])];
     rows.push({
       path: r.path,
       title: r.title,
@@ -347,7 +354,13 @@ export async function brainReads(brainDir: string): Promise<BrainReads> {
         (b.written ?? '').localeCompare(a.written ?? '') ||
         b.path.localeCompare(a.path),
     ),
+    under,
   };
+}
+
+export async function brainReads(brainDir: string): Promise<BrainReads> {
+  const { reads, letters } = await brainReadsAndPages(brainDir);
+  return { reads, letters };
 }
 
 /**

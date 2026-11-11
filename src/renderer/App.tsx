@@ -11,6 +11,7 @@ import { AddRepoScreen } from './screens/AddRepoScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
 import { BrainNewScreen } from './screens/BrainNewScreen';
 import { BrainScreen } from './screens/BrainScreen';
+import { useReadingFeed } from './hooks/useReadingFeed';
 import { ConnectScreen } from './screens/ConnectScreen';
 import { FinishScreen } from './screens/FinishScreen';
 import { GetStartedScreen } from './screens/GetStartedScreen';
@@ -47,6 +48,7 @@ function Page() {
           key={`${screen.brainId}:${screen.focus ?? ''}`}
           brainId={screen.brainId}
           focus={screen.focus}
+          open={screen.open}
         />
       );
     case 'task':
@@ -109,6 +111,7 @@ export function App() {
   const notify = useStore((s) => s.notify);
   useTimeFocus();
   useAttention();
+  useReadingFeed();
 
   useEffect(() => {
     void load().catch((e: Error) => notify('error', e.message));

@@ -13,6 +13,7 @@ import {
   type ReaderPiece,
   type ReaderShelf,
 } from '../../shared/reader';
+import type { ReadWork } from '../../shared/reading';
 import { readBook } from '../brain/book';
 import {
   linkTargets,
@@ -90,6 +91,8 @@ const read = async (brainDir: string, rel: string): Promise<string | null> => {
 export async function buildBrain(
   brain: { id: string; name: string; path: string },
   keys: Pick<ReaderKeys, 'ids'>,
+  /** Long read path → the work in front of the reader it bears on. */
+  work: ReadWork = {},
 ): Promise<BuiltBrain> {
   const [rows, book] = await Promise.all([
     brainReads(brain.path),
@@ -142,6 +145,7 @@ export async function buildBrain(
         chapter: row.chapter,
         topic: row.topic,
         stale: row.stale.length > 0,
+        ...(work[row.path]?.length ? { work: work[row.path] } : {}),
       });
   }
   for (const rel of [...cited].sort()) {
