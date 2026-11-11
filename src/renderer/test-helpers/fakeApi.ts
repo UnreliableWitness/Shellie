@@ -89,6 +89,7 @@ const defaults: FakeHandlers = {
     refused: false,
   }),
   'reader:marks': (_brainId, marks) => marks,
+  'reading:get': () => [],
   // Finish asks for a PR description when a PR is ticked; tests that care give their own.
   'tasks:prSummary': () => ({ text: null, error: 'not in tests' }),
   'home:refresh': () => ({
@@ -172,6 +173,7 @@ const defaults: FakeHandlers = {
     workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
     showSplash: true,
     notifyOnDone: true,
+    readingNudges: true,
     theme: 'system',
     claudeBudget: {
       monthlyEur: null,

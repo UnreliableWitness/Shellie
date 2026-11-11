@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { SetupState, TaskView } from '../../shared/types';
 import { useStore } from '../store';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
+import { readingBrain, readingRead } from '../test-helpers/readingFixture';
 import { SetupScreen } from './SetupScreen';
 
 const task: TaskView = {
@@ -103,6 +105,7 @@ beforeEach(() =>
       },
     ],
     tasks: [task],
+    reading: [],
     connections: [],
     notices: [],
     screen: { kind: 'setup', taskId: 't1' },
@@ -110,6 +113,33 @@ beforeEach(() =>
 );
 
 describe('SetupScreen', () => {
+  it('says what to read before starting, when a long read bears on the work item', async () => {
+    installFakeApi({
+      'tasks:setupState': () => state,
+      'brain:forTask': () => listedBrain({ connectionId: 'c1' }),
+    });
+    useStore.setState({
+      reading: [
+        readingBrain({
+          reads: [
+            readingRead({
+              work: [{ id: 48231, title: 'Show estimated delivery date' }],
+            }),
+          ],
+        }),
+      ],
+    });
+    render(<SetupScreen taskId="t1" />);
+    const before = await screen.findByRole('region', {
+      name: 'Before you start',
+    });
+    expect(
+      within(before).getByRole('button', {
+        name: /How a return becomes a credit/,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('shows the steps and log from the current state, then applies live events', async () => {
     const { emit } = installFakeApi({ 'tasks:setupState': () => state });
     render(<SetupScreen taskId="t1" />);

@@ -312,3 +312,62 @@
   gap: 12px;
   margin-top: 8px;
 }
+/* Home › Reading: per brain, how far the reader is and the handful to read next. */
+.home-reading {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 8px;
+}
+.home-reading-brain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.home-reading-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.home-reading-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.home-reading-name:hover {
+  text-decoration: underline;
+}
+.home-reading-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-reading-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: calc(100% + 12px);
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.home-reading-row:hover {
+  background: var(--bg-hover);
+}
+.home-reading-title {
+  font-weight: 500;
+}

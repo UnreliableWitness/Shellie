@@ -27,6 +27,7 @@ const settings = {
   workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
   showSplash: true,
   notifyOnDone: true,
+  readingNudges: true,
   theme: 'system' as const,
   claudeBudget: {
     monthlyEur: null,
@@ -116,6 +117,7 @@ describe('CostSection', () => {
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
       notifyOnDone: true,
+      readingNudges: true,
       theme: 'system',
       claudeBudget: {
         monthlyEur: null,

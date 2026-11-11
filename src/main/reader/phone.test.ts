@@ -21,6 +21,7 @@ import {
   readingList,
   secretFromLink,
 } from '../../shared/reader';
+import type { ReadWork } from '../../shared/reading';
 import { ReaderStore } from './ReaderStore';
 import { ReaderSync } from './ReaderSync';
 
@@ -52,7 +53,7 @@ const longRead = (body: string) =>
 
 afterEach(cleanUp);
 
-async function setUp() {
+async function setUp(work?: ReadWork) {
   const server = await start();
   const dir = await tempDir();
   const write = async (rel: string, text: string) => {
@@ -95,6 +96,7 @@ async function setUp() {
     status: () => undefined,
     marksChanged: (id) => told.push(id),
     telemetry: () => undefined,
+    work: work ? async () => work : undefined,
   });
   expect((await shellie.connect(server.url, INVITE)).connected).toBe(true);
 
@@ -197,4 +199,20 @@ it('tells the phone it is no longer connected once Shellie disconnects', async (
   expect((await shellie.disconnect(false)).connected).toBe(false);
   await phone.sync();
   expect(phone.getState().gone).toBe(true);
+});
+
+it('puts a long read for the work in front of the reader first on the phone', async () => {
+  const { shellie, phone } = await setUp({
+    [READ]: [{ id: 412, title: 'Invoice an order twice' }],
+  });
+  await shellie.sendNow();
+  await phone.sync();
+  await phone.settled();
+  const [shelf] = phone.getState().library?.shelves ?? [];
+  expect(shelf.reads[0].work).toEqual([
+    { id: 412, title: 'Invoice an order twice' },
+  ]);
+  const list = readingList(shelf, {});
+  expect(list.work).toMatchObject([{ kind: 'read', read: { path: READ } }]);
+  expect(list.foundations).toMatchObject([{ kind: 'read', done: false }]);
 });

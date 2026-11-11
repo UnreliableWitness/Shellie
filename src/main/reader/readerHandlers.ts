@@ -13,7 +13,13 @@ export type ReaderChannels =
 
 export type ReaderHandlerDeps = Pick<
   ReaderSync,
-  'status' | 'connect' | 'disconnect' | 'link' | 'sendNow' | 'marks'
+  | 'status'
+  | 'connect'
+  | 'disconnect'
+  | 'link'
+  | 'sendNow'
+  | 'marks'
+  | 'knownMarks'
 >;
 
 const NOT_CONNECTED: ReaderStatus = {

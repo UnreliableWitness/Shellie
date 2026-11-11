@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
 import { brainTaskId, picturesReady, writeReady } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
@@ -51,18 +51,31 @@ function initialView(brainId: string, focus?: 'ask' | 'wiki' | 'drop'): View {
 export function BrainScreen({
   brainId,
   focus,
+  open,
 }: {
   brainId: string;
   focus?: 'ask' | 'wiki' | 'drop';
+  /** A page, long read or letter the route asks the Read view to open; another `n` opens it again. */
+  open?: { path: string; n: number };
 }) {
   const brain = useBrain(brainId);
   const notify = useStore((s) => s.notify);
   const go = useStore((s) => s.go);
-  const [view, setView] = useState<View>(() => initialView(brainId, focus));
+  const [view, setView] = useState<View>(() =>
+    open ? 'read' : initialView(brainId, focus),
+  );
   const [openRequest, setOpenRequest] = useState<{
     path: string;
     n: number;
-  } | null>(null);
+  } | null>(open ? { path: open.path, n: 1 } : null);
+  // The route asks again while the screen is up (a notice, clicked on this brain's page).
+  const asked = useRef(open?.n);
+  useEffect(() => {
+    if (!open || asked.current === open.n) return;
+    asked.current = open.n;
+    setView('read');
+    setOpenRequest((r) => ({ path: open.path, n: (r?.n ?? 0) + 1 }));
+  }, [open]);
   const [terminal, setTerminal] = useState<TerminalDef | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);

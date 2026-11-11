@@ -4,6 +4,7 @@ import type { TerminalDef } from '../../../shared/types';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { useStore } from '../../store';
+import { BeforeYouStart } from '../reading/BeforeYouStart';
 import { AskBox } from './AskBox';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
@@ -66,6 +67,7 @@ export function BrainTab({
         </button>
         <span className="muted small">Drop files here to add them</span>
       </div>
+      {!nav.current && <BeforeYouStart taskId={taskId} />}
       <PendingFiles drop={drop} />
       {problems.length > 0 && (
         <ul className="brain-problems small" role="alert">

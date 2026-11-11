@@ -437,6 +437,20 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(box).not.toBeChecked());
   });
 
+  it('turns the reading nudges off', async () => {
+    const { calls } = installFakeApi({ 'settings:save': (next) => next });
+    render(<SettingsScreen />);
+    const box = await screen.findByRole('checkbox', {
+      name: 'Say what there is to read in a brain',
+    });
+    await waitFor(() => expect(box).toBeChecked());
+    await userEvent.click(box);
+    expect(
+      calls.find((c) => c.channel === 'settings:save')?.args[0],
+    ).toMatchObject({ readingNudges: false });
+    await waitFor(() => expect(box).not.toBeChecked());
+  });
+
   it('picks the theme, starting at System', async () => {
     const { calls } = installFakeApi({ 'settings:save': (next) => next });
     render(<SettingsScreen />);
@@ -457,6 +471,7 @@ describe('SettingsScreen', () => {
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
       notifyOnDone: true,
+      readingNudges: true,
       theme: 'light',
       claudeBudget: {
         monthlyEur: null,
@@ -515,6 +530,7 @@ describe('SettingsScreen', () => {
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: false,
       notifyOnDone: true,
+      readingNudges: true,
       theme: 'system',
       claudeBudget: {
         monthlyEur: null,
@@ -553,6 +569,7 @@ describe('SettingsScreen', () => {
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: true,
       notifyOnDone: true,
+      readingNudges: true,
       theme: 'system',
       claudeBudget: {
         monthlyEur: null,
@@ -612,6 +629,7 @@ describe('SettingsScreen', () => {
       workHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
       showSplash: false,
       notifyOnDone: true,
+      readingNudges: true,
       theme: 'system',
       claudeBudget: {
         monthlyEur: null,

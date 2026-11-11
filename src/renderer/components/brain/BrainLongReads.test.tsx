@@ -1,9 +1,11 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainBook, BrainReads } from '../../../shared/brain';
 import { brainJob } from '../../test-helpers/brainFixture';
+import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
+import { readingBrain } from '../../test-helpers/readingFixture';
 import { BrainLongReads } from './BrainLongReads';
 import { shortDay } from './recent';
 
@@ -78,7 +80,99 @@ function show(over: Partial<React.ComponentProps<typeof BrainLongReads>> = {}) {
 }
 const section = (name: string) => screen.getByRole('region', { name });
 
+beforeEach(() => useStore.setState({ reading: [] }));
+
 describe('BrainLongReads', () => {
+  it('says how far the reader is, and counts the book’s long reads', () => {
+    show({
+      marks: {
+        'reads/order-to-invoice.md': {
+          hash: 'h1',
+          at: '2026-11-11T09:00:00Z',
+          read: true,
+        },
+      },
+    });
+    expect(
+      screen.getByText('1 of 2 read · about 5 min left'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('progressbar', { name: 'Long reads read' }),
+    ).toHaveAttribute('aria-valuenow', '1');
+    expect(section('Foundations')).toHaveTextContent('1 of 1 read');
+    expect(
+      screen.queryByRole('region', { name: 'For your work this sprint' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: 'Changed since you read it' }),
+    ).toBeNull();
+  });
+
+  it('puts the long read for the reader’s work first, naming the work', async () => {
+    useStore.setState({
+      reading: [
+        readingBrain({
+          reads: [
+            {
+              ...reads.reads[1],
+              work: [{ id: 412, title: 'Return flow' }],
+            },
+          ],
+        }),
+      ],
+    });
+    const { onOpen, tracked } = show();
+    const row = within(section('For your work this sprint')).getByRole(
+      'button',
+      { name: /Credit notes/ },
+    );
+    expect(row).toHaveTextContent('#412 Return flow');
+    // A long read for the work is not for later.
+    expect(
+      within(section('Later')).queryByRole('button', { name: /Credit notes/ }),
+    ).toBeNull();
+    await userEvent.click(row);
+    expect(onOpen).toHaveBeenCalledWith('reads/credit-notes.md');
+    expect(tracked).toContainEqual({
+      type: 'event',
+      name: 'reading.open',
+      props: { from: 'list', why: 'work', kind: 'read' },
+    });
+  });
+
+  it('lists what changed in a long read that was read: its letter, not under Letters again', async () => {
+    const { onOpen, tracked } = show({
+      marks: {
+        'reads/order-to-invoice.md': {
+          hash: 'h0',
+          at: '2026-11-09T09:00:00Z',
+          read: true,
+        },
+      },
+    });
+    const changed = section('Changed since you read it');
+    const letter = within(changed).getByRole('button', {
+      name: /The credit check moved/,
+    });
+    expect(letter).toHaveTextContent('About Order to invoice');
+    expect(screen.queryByRole('region', { name: 'Letters' })).toBeNull();
+    // In the book the long read still counts as read, and its row says why it has a dot again.
+    expect(
+      within(section('Foundations')).getByRole('button', {
+        name: /Order to invoice/,
+      }),
+    ).toHaveTextContent('read, changed since');
+    await userEvent.click(letter);
+    expect(onOpen).toHaveBeenCalledWith(
+      'reads/letters/2026-11-10-order-to-invoice.md',
+    );
+    expect(tracked).toContainEqual({
+      type: 'event',
+      name: 'reading.open',
+      props: { from: 'list', why: 'changed', kind: 'letter' },
+    });
+  });
+
   it('lists the letters, a line per chapter with pages, and the long reads on a topic', async () => {
     const { onOpen } = show({
       marks: {
@@ -93,7 +187,7 @@ describe('BrainLongReads', () => {
     expect(
       within(letters).getByRole('button', { name: /The credit check moved/ }),
     ).toHaveTextContent('About Order to invoice');
-    const chapters = section('By chapter');
+    const chapters = section('Foundations');
     const orders = within(chapters).getByRole('button', {
       name: /Order to invoice/,
     });
@@ -106,7 +200,7 @@ describe('BrainLongReads', () => {
     ).toBeInTheDocument();
     expect(within(chapters).getByText('No long read yet')).toBeInTheDocument();
     expect(within(chapters).queryByText('Empty')).toBeNull();
-    const topic = within(section('On a topic')).getByRole('button', {
+    const topic = within(section('Later')).getByRole('button', {
       name: /Credit notes/,
     });
     expect(topic).toHaveTextContent(
@@ -141,7 +235,9 @@ describe('BrainLongReads', () => {
     'a chapter being written (%s) says so, without Write',
     (status, text) => {
       show({ jobs: [write('chapter:Returns', status)] });
-      expect(within(section('By chapter')).getByText(text)).toBeInTheDocument();
+      expect(
+        within(section('Foundations')).getByText(text),
+      ).toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: 'Write a long read on Returns' }),
       ).toBeNull();
@@ -151,7 +247,7 @@ describe('BrainLongReads', () => {
   it('a chapter whose last try failed says so, and can be tried again', () => {
     show({ jobs: [write('chapter:Returns', 'failed')] });
     expect(
-      within(section('By chapter')).getByText(
+      within(section('Foundations')).getByText(
         'The last try failed, see Activity in Add',
       ),
     ).toBeInTheDocument();
@@ -164,7 +260,7 @@ describe('BrainLongReads', () => {
     const { calls, tracked } = show({
       jobs: [write('topic:Stock counts', 'running')],
     });
-    const topics = section('On a topic');
+    const topics = section('Later');
     expect(within(topics).getByText('Stock counts')).toBeInTheDocument();
     expect(within(topics).getByText('Writing…')).toBeInTheDocument();
     const field = within(topics).getByRole('textbox', {
@@ -195,7 +291,7 @@ describe('BrainLongReads', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
     // What was written stays readable.
     expect(
-      within(section('By chapter')).getByRole('button', {
+      within(section('Foundations')).getByRole('button', {
         name: /Order to invoice/,
       }),
     ).toBeInTheDocument();
@@ -203,7 +299,7 @@ describe('BrainLongReads', () => {
 
   it('a topic whose last try failed stays in the list, and can be tried again', async () => {
     const { calls } = show({ jobs: [write('topic:Stock counts', 'failed')] });
-    const topics = section('On a topic');
+    const topics = section('Later');
     expect(within(topics).getByText('Stock counts')).toBeInTheDocument();
     expect(
       within(topics).getByText('The last try failed, see Activity in Add'),
@@ -222,7 +318,7 @@ describe('BrainLongReads', () => {
   it('a brain without a book or long reads shows only the topic field', () => {
     show({ book: null, reads: { reads: [], letters: [] } });
     expect(screen.queryByRole('region', { name: 'Letters' })).toBeNull();
-    expect(screen.queryByRole('region', { name: 'By chapter' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Foundations' })).toBeNull();
     expect(
       screen.getByRole('textbox', { name: 'Topic for a long read' }),
     ).toBeInTheDocument();

@@ -364,6 +364,40 @@ describe('BrainScreen', () => {
     });
   });
 
+  it('a route that names a piece opens it in Read, also when Add was the view, and again on another ask', async () => {
+    setup(brainView(), {
+      'brain:pages': () => [
+        page('wiki/a.md', 'Page A'),
+        page('wiki/b.md', 'B'),
+      ],
+      'brain:read': (_id, rel) => ({
+        text:
+          rel === 'wiki/b.md'
+            ? '---\ntitle: B\n---\n\n# B\n\nBody of B.'
+            : '---\ntitle: Page A\n---\n\n# Page A\n\nBody of A.',
+      }),
+    });
+    const { rerender } = render(
+      <BrainScreen
+        brainId="b1"
+        focus="drop"
+        open={{ path: 'wiki/a.md', n: 1 }}
+      />,
+    );
+    expect(await screen.findByRole('tab', { name: 'Read' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await screen.findByText('Body of A.')).toBeVisible();
+    await openAdd();
+    rerender(<BrainScreen brainId="b1" open={{ path: 'wiki/b.md', n: 2 }} />);
+    expect(await screen.findByText('Body of B.')).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Read' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
   it('focus drop opens on Add; the chosen view is remembered across remounts', async () => {
     setup();
     const first = render(<BrainScreen brainId="b1" focus="drop" />);

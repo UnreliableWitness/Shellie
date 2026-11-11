@@ -18,6 +18,7 @@ import {
   type ReaderShelf,
   type ReaderStatus,
 } from '../../shared/reader';
+import type { ReadWork } from '../../shared/reading';
 import type { TelemetryProps } from '../../shared/telemetry';
 import { errorMessage } from '../../shared/errors';
 import { buildBrain } from './build';
@@ -67,6 +68,8 @@ export type ReaderSyncDeps = {
   /** A brain's marks changed from the phone's side. */
   marksChanged: (brainId: string) => void;
   telemetry: (event: string, props?: TelemetryProps) => void;
+  /** Long read path → the work in front of the reader it bears on (the reading list's); none without it. */
+  work?: (brain: Brain) => Promise<ReadWork>;
   fetch?: typeof fetch;
   now?: () => Date;
 };
@@ -269,7 +272,9 @@ export class ReaderSync {
       const listed = await listItems(c, this.fetch);
       const keep = new Set<string>();
       for (const brain of wanted) {
-        const built = await buildBrain(brain, keys);
+        // The work links are an extra: a push goes without them when they cannot be worked out.
+        const work = (await this.d.work?.(brain).catch(() => undefined)) ?? {};
+        const built = await buildBrain(brain, keys, work);
         const before = store.sent(brain.id);
         // What is known to be on the server, kept as the push goes: a push that stops halfway is picked up there.
         const after: Record<string, string> = {};
@@ -411,6 +416,11 @@ export class ReaderSync {
           throw err;
       }
     }
+  }
+
+  /** The marks as kept here, without asking the phone's side. */
+  knownMarks(brainId: string): ReaderMarkSet {
+    return this.d.store.marks(brainId);
   }
 
   /**

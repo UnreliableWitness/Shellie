@@ -9,10 +9,13 @@ import {
 import { useStore } from '../../store';
 
 type AppearancePatch = Partial<
-  Pick<AppSettings, 'showSplash' | 'sendTelemetry' | 'notifyOnDone' | 'theme'>
+  Pick<
+    AppSettings,
+    'showSplash' | 'sendTelemetry' | 'notifyOnDone' | 'readingNudges' | 'theme'
+  >
 >;
 
-/** User › Appearance: theme, splash, the agent-done notice and anonymous telemetry, each saved at once. */
+/** User › Appearance: theme, splash, the agent-done notice, the reading nudges and anonymous telemetry, each saved at once. */
 export function AppearanceCategory() {
   const notify = useStore((s) => s.notify);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -40,7 +43,7 @@ export function AppearanceCategory() {
   });
 
   const checkbox = (
-    key: 'showSplash' | 'sendTelemetry' | 'notifyOnDone',
+    key: 'showSplash' | 'sendTelemetry' | 'notifyOnDone' | 'readingNudges',
     label: string,
   ) => (
     <label className="checkbox">
@@ -93,6 +96,23 @@ export function AppearanceCategory() {
         {...row('notifyOnDone')}
       >
         {checkbox('notifyOnDone', 'Notify when an agent finishes its turn')}
+      </SettingRow>
+      <SettingRow
+        id="user-appearance-reading"
+        category="Appearance"
+        title="Reading nudges"
+        description="Home's Reading band, the dot on a brain, Before you start on a task and the notice when a build brings something to read. Each one points at something that happened; the reading list in a brain stays either way."
+        keywords={[
+          'Say what there is to read in a brain',
+          'long reads',
+          'letters',
+          'reading list',
+          'nudge',
+          'brain',
+        ]}
+        {...row('readingNudges')}
+      >
+        {checkbox('readingNudges', 'Say what there is to read in a brain')}
       </SettingRow>
       <SettingRow
         id="user-appearance-telemetry"
