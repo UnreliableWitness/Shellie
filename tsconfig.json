@@ -13,5 +13,6 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src/**/*", "*.ts", "*.mts"]
+  "include": ["src/**/*", "reader/**/*", "*.ts", "*.mts"],
+  "exclude": ["reader/dist"]
 }

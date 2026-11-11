@@ -157,3 +157,6 @@ Thumbs.db
 
 # screenshots the agent scripts download for the agents (tools/agents/images.mjs)
 .agent-images/
+
+# the phone reading site and its server, built (tools/reader/build.mjs)
+reader/dist

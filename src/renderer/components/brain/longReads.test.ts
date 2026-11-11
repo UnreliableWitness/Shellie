@@ -241,7 +241,7 @@ describe('read marks', () => {
 
   it('are kept per brain, and a mark is for one text', () => {
     saveMarks('b1', {
-      'reads/a.md': { hash: 'h1', at: '2026-11-11T09:00:00Z' },
+      'reads/a.md': { hash: 'h1', at: '2026-11-11T09:00:00Z', read: true },
     });
     expect(loadMarks('b2')).toEqual({});
     const marks = loadMarks('b1');
@@ -249,6 +249,24 @@ describe('read marks', () => {
     expect(isRead(marks, { ...reads.reads[0], hash: 'h2' })).toBe(false);
     expect(unreadCount(reads, marks)).toBe(2);
     expect(unreadCount(reads, {})).toBe(3);
+  });
+
+  it('a mark from before the phone counts as read, and "Mark unread" is a mark that says so', () => {
+    localStorage.setItem(
+      'shellie.brain.reads.b1',
+      JSON.stringify({
+        'reads/a.md': { hash: 'h1', at: '2026-11-11T09:00:00Z' },
+      }),
+    );
+    const old = loadMarks('b1');
+    expect(old['reads/a.md'].read).toBe(true);
+    expect(isRead(old, reads.reads[0])).toBe(true);
+    const unread = {
+      'reads/a.md': { hash: 'h1', at: '2026-11-11T10:00:00Z', read: false },
+    };
+    saveMarks('b1', unread);
+    expect(isRead(loadMarks('b1'), reads.reads[0])).toBe(false);
+    expect(unreadCount(reads, loadMarks('b1'))).toBe(3);
   });
 
   it('a stored value that is not marks counts as none', () => {

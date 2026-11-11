@@ -1401,3 +1401,29 @@
   display: flex;
   margin-top: 4px;
 }
+.phone-connected {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.phone-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.phone-link-text {
+  flex: 1 1 220px;
+  display: grid;
+  gap: 8px;
+}
+.phone-link-text p {
+  margin: 0;
+}
+.phone-qr {
+  width: 208px;
+  height: 208px;
+  flex: none;
+  border-radius: 8px;
+}

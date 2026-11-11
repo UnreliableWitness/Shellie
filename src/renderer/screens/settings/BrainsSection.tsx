@@ -16,6 +16,7 @@ import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { defaultBrainAgent } from '../../brainAgent';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
+import { useReaderStatus } from '../../components/PhoneSection';
 import { useBrains } from '../../hooks/useBrains';
 import { useStore } from '../../store';
 import { track } from '../../telemetry';
@@ -57,6 +58,10 @@ const TOGGLES: {
   {
     key: 'writeLongReads',
     label: 'Write long reads in the background, at most two a day',
+  },
+  {
+    key: 'sendToPhone',
+    label: 'Send long reads and letters to my phone',
   },
   {
     key: 'openBrainTerminalOnStart',
@@ -320,6 +325,7 @@ function OpenCodeModelControl({
 }
 
 function BrainCard({ brain }: { brain: BrainView }) {
+  const [phone] = useReaderStatus();
   const id = useId();
   const [error, setError] = useState<string | null>(null);
   const [cap, setCap] = useState<string | null>(null);
@@ -382,8 +388,13 @@ function BrainCard({ brain }: { brain: BrainView }) {
           : 'No wiki'}
       </div>
       {TOGGLES.filter(
-        // A switch that does nothing until the skills are updated is not offered.
-        (t) => t.key !== 'writeLongReads' || writeReady(brain),
+        // A switch that does nothing is not offered: until the skills are updated, or without a phone connected
+        // (one that is on stays, so it can be switched off).
+        (t) =>
+          (t.key !== 'writeLongReads' || writeReady(brain)) &&
+          (t.key !== 'sendToPhone' ||
+            phone?.connected === true ||
+            brain.options.sendToPhone),
       ).map((t) => (
         <label key={t.key} className="row small">
           <input

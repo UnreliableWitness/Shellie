@@ -144,6 +144,8 @@ import { startLocalCrashDumps } from './main/diagnostics/crashDumps';
 import { rendererMemoryMb, startHealthReports } from './main/telemetry/health';
 import { reportLoggedErrors } from './main/telemetry/loggedErrors';
 import { hello, sendRecords } from './main/costServer/client';
+import { ReaderStore } from './main/reader/ReaderStore';
+import { ReaderSync } from './main/reader/ReaderSync';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
 import {
   type AutoUpdate,
@@ -275,6 +277,9 @@ let stopBudget: () => void = () => {};
 let stopLedger: () => void = () => {};
 /** Stops the brains' scheduler and job queue (on quit). */
 let stopBrains: () => void = () => {};
+/** The phone reader's push: asked for whenever a brain changes, stopped on quit. */
+let readerBrainChanged: () => void = () => {};
+let stopReader: () => void = () => {};
 /** The brain's own Claude terminal; set where the brains are wired. Its terminal counts as a Claude tab. */
 let brainTerminals: ReturnType<typeof createBrainTerminals> | undefined =
   undefined;
@@ -315,6 +320,8 @@ const isSplashPage = appUrlMatcher({
 const openLink = (url: string) => shell.openExternal(url);
 
 function broadcast<K extends keyof Events>(event: K, payload: Events[K]): void {
+  // Every brain change passes here (jobs, options, files, removal): the phone gets what differs a little later.
+  if (event === 'brain:changed') readerBrainChanged();
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send(`${EVENT_PREFIX}${event}`, payload);
 }
@@ -1004,6 +1011,22 @@ async function boot(): Promise<void> {
         broadcast('brain:changed', { brainId });
       },
     });
+    // The phone reading site: this install's account on a reader server, and the push that keeps it up to date.
+    // Its requests are not recorded as dependencies (a first push is hundreds of them, and a missing item is an
+    // ordinary answer); `reader.push` and `reader.connect` say how it went.
+    const readerStore = new ReaderStore(
+      path.join(userData, 'reader.json'),
+      safeCrypto,
+    );
+    await readerStore.load();
+    const readerSync = new ReaderSync({
+      store: readerStore,
+      brains: () => brains.list(),
+      status: (st) => broadcast('reader:changed', st),
+      marksChanged: (brainId) => broadcast('reader:marksChanged', { brainId }),
+      telemetry: (event, props) => telemetry.event(event, props),
+    });
+    readerBrainChanged = () => readerSync.brainChanged();
     // The scheduler starts with the window; the runner stops on quit either way.
     let stopBrainScheduler = () => {};
     stopBrains = () => {
@@ -1085,6 +1108,7 @@ async function boot(): Promise<void> {
         sender,
         ledgerPass: () => ledger.freshPass(),
       },
+      reader: readerSync,
       applyTheme: (theme) => {
         nativeTheme.themeSource = theme;
       },
@@ -1347,6 +1371,7 @@ async function boot(): Promise<void> {
       budget.start();
       ledger.start();
       sender.start();
+      stopReader = readerSync.start();
       stopBrainScheduler = startBrainScheduler({
         brains: () => brains.list(),
         refresh: (id) => handlers['brain:refresh'](id),
@@ -1557,6 +1582,7 @@ app.on('before-quit', () => {
   stopBudget();
   stopLedger();
   stopBrains();
+  stopReader();
   updates?.stop();
   stallWatchdog?.stop();
   openCodeRemote.stop();

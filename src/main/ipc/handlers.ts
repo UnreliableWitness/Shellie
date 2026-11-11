@@ -117,6 +117,10 @@ import {
 } from '../costServer/client';
 import type { CostSender } from '../costServer/CostSender';
 import type { CostServerStore } from '../costServer/CostServerStore';
+import {
+  createReaderHandlers,
+  type ReaderHandlerDeps,
+} from '../reader/readerHandlers';
 import { type CostServerStatus, validServerUrl } from '../../shared/costServer';
 import { HomeService } from '../home/HomeService';
 import { billableEurByTask, homeStats } from '../home/homeStats';
@@ -344,6 +348,8 @@ export type Services = {
     /** A fresh ledger pass, so stored records carry the saved email before the sender starts over. */
     ledgerPass?: () => Promise<void>;
   };
+  /** Settings › User › Phone: the phone reading site's connection and push; absent in tests that don't care. */
+  reader?: ReaderHandlerDeps;
   /**
    * Registers the retry of finished tasks' leftover worktree folders (#115): main runs it shortly after launch and
    * every few minutes; tests capture it.
@@ -3106,6 +3112,7 @@ export function createHandlers(s: Services): Handlers {
 
   return {
     ...brainHandlers,
+    ...createReaderHandlers(s.reader),
     ...createDocsHandlers({
       taskById,
       git: s.git,

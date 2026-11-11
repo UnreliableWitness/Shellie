@@ -44,6 +44,7 @@ describe('brain shared types', () => {
       syncAfterRefresh: false,
       weeklyDigest: false,
       writeLongReads: false,
+      sendToPhone: false,
       dailyTokenCap: 500000,
       openBrainTerminalOnStart: false,
       model: 'sonnet',

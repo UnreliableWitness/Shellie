@@ -10,7 +10,10 @@ const NOT_APP = [
   /^\.claude\//,
   /^docs\//,
   /^design\//,
-  /^tools\/(agents|art|ado|telemetry|release)\//,
+  // the phone reading site and its server are deployed apart from the app (docs/deploy-aktse.md)
+  /^reader\//,
+  /^deploy\//,
+  /^tools\/(agents|art|ado|telemetry|release|reader)\//,
   /^tools\/budget-check\.mjs$/,
   /^[^/]+\.md$/,
   /^assets\/ART\.md$/,

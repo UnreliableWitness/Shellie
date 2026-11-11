@@ -81,6 +81,7 @@ import type { AttentionSnapshot, AttentionView } from './attention';
 import type { Vendor } from './budget';
 import type { BudgetView } from './budgetView';
 import type { CostServerStatus } from './costServer';
+import type { ReaderMarkSet, ReaderStatus } from './reader';
 import type { HomePeriod, HomeSnapshot, HomeStats } from './home';
 import type {
   FileContent,
@@ -532,6 +533,30 @@ export type Channels = {
   };
   /** Forgets the server and its key and stops sending; the ledger stays. */
   'costServer:disconnect': { args: []; result: CostServerStatus };
+  /** The phone reading site's connection and what was last sent. Never carries the secret. */
+  'reader:status': { args: []; result: ReaderStatus };
+  /** Makes this install's account on a reader server and saves the connection; `error` says what went wrong. */
+  'reader:connect': {
+    args: [address: string, invite: string];
+    result: ReaderStatus;
+  };
+  /**
+   * Removes the account and everything on the server, then forgets the connection. A server that cannot be reached
+   * answers with `error` and keeps the connection, unless `anyway`.
+   */
+  'reader:disconnect': { args: [anyway: boolean]; result: ReaderStatus };
+  /** The link the phone opens (the QR code's content); it holds the secret, so it is asked for only when shown. */
+  'reader:link': { args: []; result: string | null };
+  /** Pushes now and answers when it is done. */
+  'reader:send': { args: []; result: ReaderStatus };
+  /**
+   * The Read view's marks for a brain, merged with what main keeps and, for a brain that goes to the phone, with the
+   * phone's. Answers with the merged set.
+   */
+  'reader:marks': {
+    args: [brainId: string, marks: ReaderMarkSet];
+    result: ReaderMarkSet;
+  };
   'usage:task': { args: [taskId: string]; result: TaskUsage };
   /** Billable EUR per task id; tasks without usage are absent. */
   'usage:costs': { args: [taskIds: string[]]; result: Record<string, number> };
@@ -812,6 +837,10 @@ export type Events = {
   'budget:changed': Record<string, never>;
   /** The cost server connection or its sending status changed. */
   'costServer:changed': CostServerStatus;
+  /** The phone reading site's connection or its sending status changed. */
+  'reader:changed': ReaderStatus;
+  /** The phone marked something in this brain; the Read view asks `reader:marks` again. */
+  'reader:marksChanged': { brainId: string };
   /** A budget notification was clicked; the renderer opens the budget view. */
   'budget:open': Record<string, never>;
   /** The main window entered or left full screen (also sent on every load). */

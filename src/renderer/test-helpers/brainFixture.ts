@@ -14,6 +14,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     syncAfterRefresh: false,
     weeklyDigest: false,
     writeLongReads: false,
+    sendToPhone: false,
     dailyTokenCap: 500_000,
     openBrainTerminalOnStart: false,
     model: 'sonnet',

@@ -12,6 +12,7 @@ export default defineConfig({
           include: [
             'src/main/**/*.test.ts',
             'src/shared/**/*.test.ts',
+            'reader/server/**/*.test.ts',
             'tools/art/*.test.ts',
             'tools/forge/*.test.ts',
             'tools/release/*.test.ts',
@@ -40,6 +41,16 @@ export default defineConfig({
           include: ['src/renderer/**/*.test.{ts,tsx}'],
           setupFiles: ['src/renderer/test-setup.ts'],
           // waitFor allows 5 s per check (test-setup.ts), so a test with a few checks needs more than the default 5 s
+          testTimeout: 20000,
+        },
+      },
+      {
+        plugins: [react()],
+        test: {
+          name: 'reader-site',
+          environment: 'jsdom',
+          include: ['reader/site/**/*.test.{ts,tsx}'],
+          setupFiles: ['reader/site/test-setup.ts'],
           testTimeout: 20000,
         },
       },

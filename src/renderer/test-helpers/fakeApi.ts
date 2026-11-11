@@ -82,6 +82,13 @@ const defaults: FakeHandlers = {
     error: null,
     budgets: null,
   }),
+  'reader:status': () => ({
+    connected: false,
+    url: null,
+    lastPush: null,
+    refused: false,
+  }),
+  'reader:marks': (_brainId, marks) => marks,
   // Finish asks for a PR description when a PR is ticked; tests that care give their own.
   'tasks:prSummary': () => ({ text: null, error: 'not in tests' }),
   'home:refresh': () => ({

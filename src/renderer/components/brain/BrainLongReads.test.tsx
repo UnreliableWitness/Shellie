@@ -82,7 +82,11 @@ describe('BrainLongReads', () => {
   it('lists the letters, a line per chapter with pages, and the long reads on a topic', async () => {
     const { onOpen } = show({
       marks: {
-        'reads/credit-notes.md': { hash: 'h2', at: '2026-11-11T09:00:00Z' },
+        'reads/credit-notes.md': {
+          hash: 'h2',
+          at: '2026-11-11T09:00:00Z',
+          read: true,
+        },
       },
     });
     const letters = section('Letters');
