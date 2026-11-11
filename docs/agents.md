@@ -30,12 +30,14 @@ They run on the owner's **Claude subscription**, never on an API key, and only o
    ```sh
    app=$(az ad app create --display-name shellie-nightly-telemetry --query appId -o tsv)
    az ad sp create --id "$app"
-   az ad app federated-credential create --id "$app" --parameters '{"name":"agents-nightly-main","issuer":"https://token.actions.githubusercontent.com","subject":"repo:UnreliableWitness/Shellie:ref:refs/heads/main","audiences":["api://AzureADTokenExchange"]}'
+   # This repo's OIDC subjects carry owner and repo ids (repo:UnreliableWitness@1764189/Shellie@1418599084:...), not just the names.
+   sub=$(gh api repos/UnreliableWitness/Shellie/actions/oidc/customization/sub -q .sub_claim_prefix)
+   az ad app federated-credential create --id "$app" --parameters "{\"name\":\"agents-nightly-main\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"subject\":\"${sub}:ref:refs/heads/main\",\"audiences\":[\"api://AzureADTokenExchange\"]}"
    az role assignment create --assignee "$app" --role "Monitoring Reader" --scope "$(az group show -n shellie-telemetry --query id -o tsv)"
    gh variable set AZURE_HEALTH_CLIENT_ID -R UnreliableWitness/Shellie --body "$app"
    gh variable set AZURE_HEALTH_TENANT_ID -R UnreliableWitness/Shellie --body "$(az account show --query tenantId -o tsv)"
    ```
-   The role is on the resource group, so it covers `shellie-app` and its `shellie-logs` workspace. It can only read telemetry; there is no secret, GitHub's OIDC token is exchanged at each run.
+   Done on 2026-11-11 (app `shellie-nightly-telemetry`). The role is on the resource group, so it covers `shellie-app` and its `shellie-logs` workspace. It can only read telemetry; there is no secret, GitHub's OIDC token is exchanged at each run.
 
 Branch protection on `main` comes in a later stage; its steps will be listed here.
 
@@ -151,7 +153,7 @@ Spec: `docs/superpowers/specs/2026-11-10-nightly-agent-design.md`. Two read-only
 
 The issues are opened by the app with `source:health` or `source:simplify` and a hidden signature; triage picks them up on its next poll and never asks the bot questions (it goes to `needs-owner` instead). An open issue with the same signature is not filed again; a closed one is filed as "seen again after #n was closed". Both runs count against `maxAgentRunsPerDay`; a usage limit pauses every agent.
 
-**Mode:** besides `AGENTS_MODE`, the repo variable **`AGENTS_NIGHTLY_MODE`**: unset or `shadow` runs both agents and lists the issues it would open in the run's summary (Actions › Agents · nightly › a run), `live` files them, `off` stops it. It starts in shadow even when `AGENTS_MODE` is `full`; set it to `live` once the summaries look right (`gh variable set AGENTS_NIGHTLY_MODE -R UnreliableWitness/Shellie --body live`).
+**Mode:** besides `AGENTS_MODE`, the repo variable **`AGENTS_NIGHTLY_MODE`**: unset or `shadow` runs both agents and lists the issues it would open in the run's summary (Actions › Agents · nightly › a run), `live` files them, `off` stops it. It starts in shadow even when `AGENTS_MODE` is `full`; set it to `live` once the summaries look right (`gh variable set AGENTS_NIGHTLY_MODE -R UnreliableWitness/Shellie --body live`). It has been `live` since 2026-11-11.
 
 Try it locally (your `gh` and `az` logins, nothing written):
 
