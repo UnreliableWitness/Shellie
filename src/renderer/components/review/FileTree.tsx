@@ -393,13 +393,7 @@ export function FileTree({
             onDiscard={onDiscard && (() => onDiscard(r, f))}
           />
         );
-        const files = ({
-          list,
-          tree,
-        }: {
-          list: ReviewFile[];
-          tree: TreeDir;
-        }) =>
+        const files = ({ list, tree }: { list: ReviewFile[]; tree: TreeDir }) =>
           view === 'list' ? (
             list.map((f) => row(f))
           ) : (
