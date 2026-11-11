@@ -4,7 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { api as shellie } from '../../api';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import mermaid from 'mermaid';
+import { rehypeLines } from '../../docs/rehypeLines';
 import { MarkdownView } from './MarkdownView';
+
+vi.mock('../../docs/rehypeLines', async (orig) => {
+  const real = await orig<typeof import('../../docs/rehypeLines')>();
+  // Counts parses: react-markdown runs this plugin once per parse.
+  return { rehypeLines: vi.fn(real.rehypeLines) };
+});
 
 vi.mock('mermaid', () => ({
   default: {
@@ -257,5 +264,30 @@ describe('MarkdownView', () => {
       container.querySelector('a[data-footnote-ref]') as HTMLElement,
     );
     expect(scroll).toHaveBeenCalled();
+  });
+  it('does not parse again when only the callbacks change', () => {
+    const props = {
+      asset: async () => '',
+      path: 'a.md',
+      text: '# Title\n\nBody.\n',
+    };
+    const { rerender } = render(
+      <MarkdownView {...props} onOpenDoc={() => {}} onOpenFile={() => {}} />,
+    );
+    const parses = vi.mocked(rehypeLines).mock.calls.length;
+    rerender(
+      <MarkdownView {...props} onOpenDoc={() => {}} onOpenFile={() => {}} />,
+    );
+    expect(vi.mocked(rehypeLines).mock.calls.length).toBe(parses);
+    rerender(
+      <MarkdownView
+        {...props}
+        text={'# Other\n'}
+        onOpenDoc={() => {}}
+        onOpenFile={() => {}}
+      />,
+    );
+    expect(vi.mocked(rehypeLines).mock.calls.length).toBeGreaterThan(parses);
+    expect(screen.getByRole('heading').textContent).toBe('Other');
   });
 });

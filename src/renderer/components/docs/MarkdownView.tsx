@@ -236,8 +236,11 @@ export function MarkdownView({
     }),
     [path, loadAsset, idPrefix],
   );
-  return (
-    <article className="doc-md">
+  // Callers re-render for unrelated state (a filter keystroke, a poll); parse only when what is shown changes.
+  // `shown` is compared by content: a chapter builds a new set each render.
+  const shownKey = shown ? [...shown].join('\n') : null;
+  const body = useMemo(
+    () => (
       <Markdown
         remarkPlugins={
           shown ? [remarkGfm, [remarkFigures, { path, shown }]] : [remarkGfm]
@@ -253,6 +256,9 @@ export function MarkdownView({
       >
         {text}
       </Markdown>
-    </article>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `shown` by content, through shownKey
+    [text, path, shownKey, idPrefix, components],
   );
+  return <article className="doc-md">{body}</article>;
 }

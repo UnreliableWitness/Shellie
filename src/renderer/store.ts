@@ -38,6 +38,22 @@ const VIEW_PREFIX = 'view:';
 /** Tabs that are not a terminal: always valid. */
 const FIXED_TABS = new Set([USAGE_TAB, DOCS_TAB, CHANGES_TAB, BRAIN_TAB]);
 
+/** Values from IPC are plain JSON, so equal JSON means nothing changed. */
+const sameJson = (a: unknown, b: unknown) =>
+  a === b || JSON.stringify(a) === JSON.stringify(b);
+
+/** `next`, reusing the objects of `prev` that did not change, so a component given one skips its render. */
+function keepUnchanged(prev: TaskView[], next: TaskView[]): TaskView[] {
+  const byId = new Map(prev.map((t) => [t.id, t]));
+  const kept = next.map((t) => {
+    const old = byId.get(t.id);
+    return old && sameJson(old, t) ? old : t;
+  });
+  return kept.length === prev.length && kept.every((t, i) => t === prev[i])
+    ? prev
+    : kept;
+}
+
 /** An HTML file shown in a tab of the task (in memory only, gone after a relaunch). */
 export type HtmlView = {
   id: string;
@@ -257,7 +273,17 @@ export const useStore = create<Store>((set, get) => ({
   connectionId: null,
   selectedTaskId: null,
   attention: {},
-  setAttention: (attention) => set({ attention }),
+  setAttention: (attention) => {
+    const prev = get().attention;
+    set({
+      attention: Object.fromEntries(
+        Object.entries(attention).map(([id, e]) => [
+          id,
+          sameJson(prev[id], e) ? prev[id] : e,
+        ]),
+      ),
+    });
+  },
   sprintName: null,
   sprints: {},
   notices: [],
@@ -337,7 +363,10 @@ export const useStore = create<Store>((set, get) => ({
     // No auto-select: the app opens on Home and only the user picks a task.
     const selected = get().selectedTaskId;
     const stillThere = tasks.some((t) => t.id === selected);
-    set({ tasks, selectedTaskId: stillThere ? selected : null });
+    set({
+      tasks: keepUnchanged(get().tasks, tasks),
+      selectedTaskId: stillThere ? selected : null,
+    });
   },
   notify: (level, message) => {
     // Main scrubs the message (paths, repo and work item names) before it is sent.
