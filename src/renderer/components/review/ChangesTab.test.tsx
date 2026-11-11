@@ -25,6 +25,7 @@ import { ChangesTab } from './ChangesTab';
 // view keeps each zone's node across rebuilds (DiffView.test.tsx), and the draft must survive either way.
 // Every reveal the view carries out, like the real one: on a new seq or a new file.
 const reveals = vi.hoisted(() => [] as { path: string; line: number }[]);
+const diffRenders = vi.hoisted(() => ({ count: 0 }));
 vi.mock('./DiffView', () => ({
   DiffView: (p: {
     uriKey: string;
@@ -36,6 +37,7 @@ vi.mock('./DiffView', () => ({
     reveal?: { side: 'before' | 'after'; line: number; seq: number };
     onRevealed?: () => void;
   }) => {
+    diffRenders.count++;
     useEffect(() => {
       if (!p.reveal) return;
       reveals.push({ path: p.uriKey, line: p.reveal.line });
@@ -433,6 +435,19 @@ describe('ChangesTab comments', () => {
     expect(screen.queryByTestId('zone-draft')).toBeNull();
     expect(screen.getByLabelText('1 comment')).toBeTruthy();
     expect(screen.getByText('1 open comment')).toBeTruthy();
+  });
+
+  it('does not render the diff again for each keystroke in a comment', async () => {
+    mount();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'add on line 2' }),
+    );
+    const box = screen.getByRole('textbox', { name: 'Comment' });
+    await userEvent.type(box, 'a');
+    const before = diffRenders.count;
+    await userEvent.type(box, 'bcdefgh');
+    expect(diffRenders.count).toBe(before);
+    expect((box as HTMLTextAreaElement).value).toBe('abcdefgh');
   });
 
   it('keeps a draft across a refresh', async () => {

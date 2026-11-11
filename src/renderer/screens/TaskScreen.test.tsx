@@ -198,7 +198,7 @@ describe('TaskScreen', () => {
     );
   });
 
-  it('does not render the terminals again for another task\'s attention or an unchanged task list', async () => {
+  it("does not render the terminals again for another task's attention or an unchanged task list", async () => {
     installFakeApi({ 'repos:config': () => config });
     render(<Shell />);
     await screen.findByTestId('term-c1');

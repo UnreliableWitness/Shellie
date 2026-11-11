@@ -48,6 +48,7 @@ import {
   useStore,
 } from '../../store';
 import { track } from '../../telemetry';
+import { useShallow } from 'zustand/react/shallow';
 import { ConfirmBar, PopupMenu } from '../ui';
 import { CommentBox, CommentCard } from './CommentCard';
 import { CommentsList } from './CommentsList';
@@ -83,6 +84,43 @@ function useViewField<K extends keyof ReviewView>(
           : v,
     }));
   return [value, set];
+}
+
+const draftOf = (
+  s: { reviewByTask: Record<string, ReviewView> },
+  taskId: string,
+) => (s.reviewByTask[taskId] ?? DEFAULT_REVIEW_VIEW).draft;
+
+/**
+ * The draft comment's box. It alone follows the text, so a keystroke renders this box, not the whole tab
+ * with its diff; the text stays in the store, so a rebuilt zone or leaving the tab loses nothing.
+ */
+function DraftBox({
+  taskId,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  taskId: string;
+  busy: boolean;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const text = useStore((s) => draftOf(s, taskId)?.text ?? '');
+  const setView = useStore((s) => s.setReviewView);
+  return (
+    <CommentBox
+      value={text}
+      busy={busy}
+      onChange={(t) =>
+        setView(taskId, (v) => ({
+          draft: v.draft ? { ...v.draft, text: t } : v.draft,
+        }))
+      }
+      onSave={onSave}
+      onCancel={onCancel}
+    />
+  );
 }
 
 /** Scroll and cursor per file, per task: kept for the app's lifetime, like the rest of the view. */
@@ -137,7 +175,17 @@ export function ChangesTab({ task }: { task: TaskView }) {
     content: FileContent | null;
   } | null>(null);
   const [prefs, setPrefs] = useState<ReviewPrefs>(() => readReviewPrefs());
-  const [draft, setDraft] = useViewField(task.id, 'draft');
+  // Where the draft is, without its text: DraftBox follows the text.
+  const draft = useStore(
+    useShallow((s) => {
+      const d = draftOf(s, task.id);
+      if (!d) return null;
+      const { text: _text, ...where } = d;
+      return where;
+    }),
+  );
+  const setView = useStore((s) => s.setReviewView);
+  const setDraft = (d: ReviewDraft | null) => setView(task.id, { draft: d });
   const [panel, setPanel] = useState<'files' | 'comments'>('files');
   // A save of the draft is on its way: a second submit is ignored.
   const [saving, setSaving] = useState(false);
@@ -351,7 +399,7 @@ export function ChangesTab({ task }: { task: TaskView }) {
   ) => {
     if (!canComment || !current) return;
     // A draft with text is never thrown away by another + or c.
-    if (draft?.text.trim()) {
+    if (draftOf(useStore.getState(), task.id)?.text.trim()) {
       notify('info', 'Finish or cancel the open comment first');
       return;
     }
@@ -377,11 +425,10 @@ export function ChangesTab({ task }: { task: TaskView }) {
     if (!draft || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
-    const { text: _typed, ...where } = draft;
     try {
       if (
         await apply(() =>
-          api().invoke('review:addComment', task.id, { ...where, text }),
+          api().invoke('review:addComment', task.id, { ...draft, text }),
         )
       )
         setDraft(null);
@@ -437,12 +484,9 @@ export function ChangesTab({ task }: { task: TaskView }) {
                 side: draft.side,
                 afterLine: draft.endLine,
                 node: (
-                  <CommentBox
-                    value={draft.text}
+                  <DraftBox
+                    taskId={task.id}
                     busy={saving}
-                    onChange={(text) =>
-                      setDraft((d) => (d ? { ...d, text } : d))
-                    }
                     onSave={(t) => void saveDraft(t)}
                     onCancel={() => setDraft(null)}
                   />
