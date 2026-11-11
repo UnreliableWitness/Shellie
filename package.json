@@ -22,7 +22,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "node scripts/fix-node-pty-perms.mjs",
-    "icons": "node tools/art/build-icons.mjs"
+    "icons": "node tools/art/build-icons.mjs",
+    "reader:build": "node tools/reader/build.mjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",
@@ -70,6 +71,7 @@
     "monaco-editor": "^0.57.0",
     "node-pty": "1.2.0-beta.18",
     "pdfjs-dist": "^6.5.438",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

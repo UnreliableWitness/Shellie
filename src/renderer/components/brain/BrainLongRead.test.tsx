@@ -295,7 +295,7 @@ describe('BrainLongRead', () => {
 
   it('a read one says when, and can be unmarked', async () => {
     const at = '2026-11-11T09:00:00.000Z';
-    const first = show({ marks: { [READ]: { hash: 'h1', at } } });
+    const first = show({ marks: { [READ]: { hash: 'h1', at, read: true } } });
     const read = await article('Order to invoice');
     expect(
       within(read).getByText(`Read on ${shortDay('2026-11-11')}`),
@@ -311,7 +311,9 @@ describe('BrainLongRead', () => {
 
   it('a mark for an older text of the long read does not count', async () => {
     show({
-      marks: { [READ]: { hash: 'old', at: '2026-11-08T09:00:00.000Z' } },
+      marks: {
+        [READ]: { hash: 'old', at: '2026-11-08T09:00:00.000Z', read: true },
+      },
     });
     expect(
       await screen.findByRole('button', { name: 'Mark as read' }),

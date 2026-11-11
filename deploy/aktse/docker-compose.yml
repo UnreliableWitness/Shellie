@@ -1,0 +1,41 @@
+# The phone reading site and its server (docs/deploy-aktse.md).
+# Lives on aktse as /opt/shellie-reader/docker-compose.yml; keep both the same.
+services:
+  shellie-reader:
+    image: node:24-alpine
+    command: ['node', '/app/server.mjs']
+    user: '1000:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    volumes:
+      # the contents of reader/dist: server.mjs and public/
+      - ./app:/app:ro
+      # the accounts; must belong to user 1000
+      - ./data:/data
+    environment:
+      - READER_INVITE=${READER_INVITE}
+      - READER_DATA=/data
+      - READER_PUBLIC=/app/public
+      - PORT=8080
+    ports:
+      - '127.0.0.1:8091:8080'
+    cpus: 0.5
+    mem_limit: 256m
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks: [adem_default]
+
+networks:
+  # shared with cloudflared (the adem project), which reaches shellie-reader:8080
+  adem_default:
+    external: true

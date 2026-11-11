@@ -547,6 +547,42 @@ describe('archiving', () => {
     );
   });
 
+  it('offers "Send to my phone" only with a phone connected, or to switch it off', async () => {
+    const label = 'Send long reads and letters to my phone';
+    const sending = {
+      ...brain,
+      id: 'b2',
+      path: '/data/brains/b2',
+      options: { ...brain.options, sendToPhone: true },
+    };
+    installFakeApi({ 'brain:list': () => [brain, sending] });
+    const first = render(<BrainsForConnection connection={conn} />);
+    await screen.findByText('/data/brains/b2');
+    // Not connected: only the brain that has it on shows the switch.
+    expect(screen.getAllByLabelText(label)).toHaveLength(1);
+    expect(screen.getByLabelText(label)).toBeChecked();
+    first.unmount();
+
+    const { calls } = installFakeApi({
+      'brain:list': () => [brain],
+      'brain:update': () => brain,
+      'reader:status': () => ({
+        connected: true,
+        url: 'https://reader.example',
+        lastPush: null,
+        refused: false,
+      }),
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.click(await screen.findByLabelText(label));
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'brain:update')?.args).toEqual([
+        'b1',
+        { options: { sendToPhone: true } },
+      ]),
+    );
+  });
+
   it('hints "Update skills first" for an OpenCode brain below skills version 7', async () => {
     installFakeApi({
       'brain:list': () => [onOpenCode({ templatesVersion: 6 })],

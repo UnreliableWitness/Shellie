@@ -39,6 +39,9 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `costServer.connected`, `costServer.disconnected` | Settings › Cost server saved or forgot a connection; none (never the address, email or key) |
 | `costServer.connectFailed` | Settings › Cost server's test of a connection failed; `kind` (`network`, `auth`, `server`, `rejected`) |
 | `costServer.sendFailed` | sending ledger records (or the hourly hello) to the cost server failed; `kind` (as above), `status` (HTTP status, 0 without one) |
+| `reader.connect` | Settings › Phone tried to connect to a reader server; `ok`; when it failed, `kind` (`network`, `invite`, `auth`, `busy`, `server`, `rejected`). Never the address, the invitation code or anything of the account |
+| `reader.disconnect` | Settings › Phone forgot its connection; `removed` (whether the account on the server was removed too) |
+| `reader.push` | a push to the phone reading site that sent or removed something (`ok: true`; measurements `sent`, `removed` (items), `brains` (brains that go to the phone)), or one that failed (`ok: false`; `kind`: as `reader.connect`, or `full`, `conflict`, `local` when a brain's files could not be read; `sent`, `removed` up to then; once per kind until a push works again). Never a title, path, item id or address. The requests themselves are not recorded as dependencies |
 | `ledger.records` | the cost ledger's record counts, at most once per local day; `claudeCode`, `opencode`, `copilotCli` (by tool), `task`, `repo`, `brain`, `none` (by attribution); counts only, no amounts or names |
 | `onboarding.shown` | the Get started page opened; none |
 | `onboarding.dismissed` | Skip for now on Get started, or Dismiss on its Home band; `repos`, `connections` (counts) |

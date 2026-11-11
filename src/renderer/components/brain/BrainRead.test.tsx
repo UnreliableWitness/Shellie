@@ -756,6 +756,80 @@ describe('BrainRead', () => {
         ).toBeNull();
       });
 
+      it('exchanges the marks with main, which keeps them for the phone', async () => {
+        // The phone read the letter; this machine read the long read.
+        const fromPhone = {
+          [LETTER]: {
+            hash: 'l1',
+            at: '2026-11-11T08:00:00.000Z',
+            read: true,
+          },
+        };
+        let theirs: Record<
+          string,
+          { hash: string; at: string; read: boolean }
+        > = {};
+        const a = withReads({
+          'reader:marks': (_id, mine) => ({ ...mine, ...theirs }),
+        });
+        localStorage.setItem(
+          'shellie.brain.reads.b1',
+          JSON.stringify({
+            [READ]: { hash: 'h1', at: '2026-11-10T09:00:00.000Z' },
+          }),
+        );
+        render(<BrainRead brainId="b1" since={null} canWrite />);
+        expect(await frontLine()).toHaveTextContent('1 unread');
+        // What was known here went to main, as marks that say read.
+        expect(a.calls.find((c) => c.channel === 'reader:marks')?.args).toEqual(
+          [
+            'b1',
+            {
+              [READ]: {
+                hash: 'h1',
+                at: '2026-11-10T09:00:00.000Z',
+                read: true,
+              },
+            },
+          ],
+        );
+        theirs = fromPhone;
+        act(() => a.emit('reader:marksChanged', { brainId: 'other' }));
+        act(() => a.emit('reader:marksChanged', { brainId: 'b1' }));
+        await waitFor(async () =>
+          expect(await frontLine()).not.toHaveTextContent('unread'),
+        );
+        expect(
+          JSON.parse(localStorage.getItem('shellie.brain.reads.b1') ?? '{}'),
+        ).toMatchObject(fromPhone);
+        // "Mark unread" is a mark too: it must win over the phone's older "read".
+        await userEvent.click(await frontLine());
+        await userEvent.click(
+          within(
+            within(reading()).getByRole('region', { name: 'By chapter' }),
+          ).getByRole('button', { name: /What the project is for/ }),
+        );
+        const read = await within(reading()).findByRole('region', {
+          name: 'What the project is for',
+        });
+        await userEvent.click(
+          within(read).getByRole('button', { name: 'Mark unread' }),
+        );
+        await waitFor(() =>
+          expect(
+            a.calls.filter((c) => c.channel === 'reader:marks').at(-1)?.args,
+          ).toEqual([
+            'b1',
+            expect.objectContaining({
+              [READ]: expect.objectContaining({ hash: 'h1', read: false }),
+            }),
+          ]),
+        );
+        expect(
+          within(read).getByRole('button', { name: 'Mark as read' }),
+        ).toBeInTheDocument();
+      });
+
       it('a brain that cannot write and has none shows no line on the front page', async () => {
         withBook();
         render(<BrainRead brainId="b1" brainName="Acme brain" since={null} />);

@@ -41,6 +41,10 @@ describe('needsRelease', () => {
         'src/main/test-helpers/gitRepo.ts',
         'src/main/ipc/handlersHarness.ts',
         'vitest.config.mts',
+        'reader/server/server.ts',
+        'reader/site/src/App.tsx',
+        'deploy/aktse/docker-compose.yml',
+        'tools/reader/build.mjs',
       ]),
     ).toBe(false);
   });

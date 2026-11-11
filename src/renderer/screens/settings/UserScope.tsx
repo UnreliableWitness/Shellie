@@ -5,6 +5,7 @@ import { ConnectionsSection } from '../../components/ConnectionsSection';
 import { CostSection } from '../../components/CostSection';
 import { CostServerSection } from '../../components/CostServerSection';
 import { EditorSection } from '../../components/EditorSection';
+import { PhoneSection } from '../../components/PhoneSection';
 import { TimeSection } from '../../components/TimeSection';
 import { AboutCategory } from './AboutCategory';
 import { AppearanceCategory } from './AppearanceCategory';
@@ -22,6 +23,7 @@ export const USER_CATEGORIES: SettingsCategoryInfo[] = [
   { id: 'time', title: 'Time tracking' },
   { id: 'budgets', title: 'Budgets' },
   { id: 'cost-server', title: 'Cost server' },
+  { id: 'phone', title: 'Phone' },
   { id: 'appearance', title: 'Appearance' },
   { id: 'about', title: 'About' },
 ];
@@ -35,6 +37,7 @@ const SECTIONS: Record<string, () => ReactNode> = {
   time: () => <TimeSection />,
   budgets: () => <BudgetSection />,
   'cost-server': () => <CostServerSection />,
+  phone: () => <PhoneSection />,
   appearance: () => <AppearanceCategory />,
   about: () => <AboutCategory />,
 };

@@ -23,7 +23,8 @@ import {
   unplaced as unplacedPages,
 } from './brainTree';
 import { local } from '../../localStorage';
-import { loadMarks, saveMarks, unreadCount, type ReadMarks } from './longReads';
+import { unreadCount } from './longReads';
+import { useReadMarks } from './useReadMarks';
 import { RecentList, type BrainPages } from './BrainWiki';
 import { PageCard } from './PageCards';
 import { isAfter, recentEntries } from './recent';
@@ -185,19 +186,7 @@ export function BrainRead({
     },
     [nav],
   );
-  const [marks, setMarks] = useState<ReadMarks>(() => loadMarks(brainId));
-  useEffect(() => setMarks(loadMarks(brainId)), [brainId]);
-  const onMark = useCallback(
-    (row: { path: string; hash: string }, read: boolean) => {
-      const next = { ...loadMarks(brainId) };
-      if (read)
-        next[row.path] = { hash: row.hash, at: new Date().toISOString() };
-      else delete next[row.path];
-      saveMarks(brainId, next);
-      setMarks(next);
-    },
-    [brainId],
-  );
+  const [marks, onMark] = useReadMarks(brainId);
   const unreadReads = useMemo(() => unreadCount(reads, marks), [reads, marks]);
   const openReads = useCallback(() => {
     trackBrain('reads-open');

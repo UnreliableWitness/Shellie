@@ -29,6 +29,8 @@ export const BrainOptionsSchema = z.object({
   weeklyDigest: z.boolean().default(false),
   /** Long reads are written and brought up to date in the background, a few a day (skills v10). */
   writeLongReads: z.boolean().default(false),
+  /** Its long reads, letters and what they cite go to the person's phone reading site, encrypted (src/main/reader). */
+  sendToPhone: z.boolean().default(false),
   dailyTokenCap: z.number().int().positive().default(500_000),
   openBrainTerminalOnStart: z.boolean().default(false),
   model: BrainModelSchema.default('sonnet'),
