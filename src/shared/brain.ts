@@ -27,6 +27,8 @@ export const BrainOptionsSchema = z.object({
   addDirForClaude: z.boolean().default(true),
   syncAfterRefresh: z.boolean().default(false),
   weeklyDigest: z.boolean().default(false),
+  /** Long reads are written and brought up to date in the background, a few a day (skills v10). */
+  writeLongReads: z.boolean().default(false),
   dailyTokenCap: z.number().int().positive().default(500_000),
   openBrainTerminalOnStart: z.boolean().default(false),
   model: BrainModelSchema.default('sonnet'),
@@ -94,6 +96,23 @@ export const BrainSchema = z.object({
     .default(null),
   /** The pass that writes the brain's book: how many runs it has had. Null until it starts. */
   bookPass: z.object({ attempts: z.number().int() }).nullable().default(null),
+  /**
+   * Long reads written by themselves (`writeLongReads`): failed runs per target with the day of the last one, and
+   * how many were started on `day` (days are local `yyyy-mm-dd`). Null until the first one.
+   */
+  readsPass: z
+    .object({
+      failures: z
+        .record(
+          z.string(),
+          z.object({ count: z.number().int(), day: z.string() }),
+        )
+        .default({}),
+      day: z.string().nullable().default(null),
+      started: z.number().int().default(0),
+    })
+    .nullable()
+    .default(null),
 });
 export type Brain = z.infer<typeof BrainSchema>;
 
@@ -119,6 +138,11 @@ export const SETTLE_TEMPLATES = 9;
 /** Whether the brain's skills can settle conflicts (templates v9 or later). */
 export const settleReady = (brain: Pick<Brain, 'templatesVersion'>) =>
   brain.templatesVersion >= SETTLE_TEMPLATES;
+/** The skills version that has `/write`: long reads and letters need it. */
+export const WRITE_TEMPLATES = 10;
+/** Whether the brain's skills can write long reads (templates v10 or later). */
+export const writeReady = (brain: Pick<Brain, 'templatesVersion'>) =>
+  brain.templatesVersion >= WRITE_TEMPLATES;
 /** The job that makes a brain's first book: a sync in the background lane, run with the `book` argument. */
 export const isBookJob = (j: Pick<BrainJob, 'kind' | 'background'>) =>
   j.kind === 'sync' && j.background;
@@ -304,7 +328,9 @@ export type BrainJobKind =
   | 'lessons'
   | 'pictures'
   /** A conflict the person settled: runs `/settle` with the decision kept in brain/conflicts.json. */
-  | 'settle';
+  | 'settle'
+  /** A long read written or brought up to date: runs `/write` on the job's `target`. */
+  | 'write';
 export const SOURCE_JOB_KINDS: ReadonlySet<BrainJobKind> = new Set([
   'capture',
   'retract',
@@ -330,7 +356,63 @@ export type BrainJob = {
   model: string | null;
   /** A settle job's conflict id. */
   conflict?: string;
+  /** What a write job writes (`writeTarget`): a chapter, a topic, or the long read it brings up to date. */
+  target?: string;
 };
+
+/** Whether the path is a long read (`reads/<name>.md`), not a letter. No backslash: on Windows it is a separator. */
+export const isLongRead = (p: string) => /^reads\/[^/\\]+\.md$/.test(p);
+/** Whether the path is a letter about a long read (`reads/letters/<name>.md`). */
+export const isLetter = (p: string) => /^reads\/letters\/[^/\\]+\.md$/.test(p);
+/** A topic for a long read is one line a person typed. */
+export const MAX_TOPIC = 200;
+/** What a `write` job is for: a long read on a chapter of the book, on a topic, or an existing one brought up to date. */
+export type WriteTarget =
+  | { chapter: string }
+  | { topic: string }
+  | { update: string };
+/** A target as a job carries it: `chapter:<title>`, `topic:<text>`, or the long read's path for an update. */
+export const writeTarget = (t: WriteTarget): string =>
+  'chapter' in t
+    ? `chapter:${t.chapter}`
+    : 'topic' in t
+      ? `topic:${t.topic}`
+      : t.update;
+/** The target a job carries, or null when it is none of the three. */
+export function parseWriteTarget(target: string): WriteTarget | null {
+  if (target.startsWith('chapter:')) return { chapter: target.slice(8) };
+  if (target.startsWith('topic:')) return { topic: target.slice(6) };
+  return isLongRead(target) ? { update: target } : null;
+}
+
+/** A long read as the Read view lists it. */
+export type BrainReadRow = {
+  path: string;
+  title: string;
+  summary: string;
+  /** The book chapter it is the long read of, as the book titles it now; null for a topic or a chapter that is gone. */
+  chapter: string | null;
+  /** What the person asked for, for a read on a topic. */
+  topic: string | null;
+  /** The day it was written or last brought up to date, as written. */
+  written: string | null;
+  minutes: number;
+  /** A hash of the file: a reader's mark is for this text. */
+  hash: string;
+  /** Pages changed, gone or new since it was written; empty when it is up to date. */
+  stale: string[];
+};
+/** A letter about what changed in a long read. */
+export type BrainLetterRow = {
+  path: string;
+  title: string;
+  /** The long read it is about. */
+  read: string;
+  written: string | null;
+  minutes: number;
+  hash: string;
+};
+export type BrainReads = { reads: BrainReadRow[]; letters: BrainLetterRow[] };
 export type PictureStatus =
   | 'described'
   | 'skipped'

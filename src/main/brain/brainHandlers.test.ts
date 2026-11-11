@@ -51,7 +51,7 @@ describe('brain handlers', () => {
     string,
     BrainJobKind,
     string | null,
-    { background?: boolean }?,
+    { background?: boolean; target?: string }?,
   ][];
   let pending: BrainJob[];
   let released: string[];
@@ -931,6 +931,124 @@ describe('brain handlers', () => {
     expect(released).toEqual([]);
     await h['brain:update'](v.id, { options: { agent: 'opencode' } });
     expect(released).toEqual([v.id]);
+  });
+
+  describe('long reads', () => {
+    const setup = async () => {
+      const v = await h['brain:create'](NEW);
+      await fs.writeFile(
+        path.join(v.path, 'wiki', 'subject-orders.md'),
+        '---\ntitle: Orders\nsummary: s\nsources: [sources/k.md]\n---\n\nAn order.\n',
+      );
+      await fs.writeFile(
+        path.join(v.path, 'brain', 'book.json'),
+        JSON.stringify({
+          chapters: [{ title: 'Orders', pages: ['wiki/subject-orders.md'] }],
+        }),
+      );
+      enqueued.length = 0;
+      return v;
+    };
+    const read =
+      '---\ntitle: Order to invoice\nchapter: Orders\npages:\n  - wiki/subject-orders.md\n---\n\nAn order is a promise.\n';
+
+    it('lists none for a new brain, then the long read with its chapter', async () => {
+      const v = await setup();
+      expect(await h['brain:reads'](v.id)).toEqual({ reads: [], letters: [] });
+      await fs.mkdir(path.join(v.path, 'reads'));
+      await fs.writeFile(path.join(v.path, 'reads', 'order.md'), read);
+      const r = await h['brain:reads'](v.id);
+      expect(r.reads).toHaveLength(1);
+      expect(r.reads[0]).toMatchObject({
+        path: 'reads/order.md',
+        title: 'Order to invoice',
+        chapter: 'Orders',
+        stale: [],
+      });
+    });
+
+    it('queues a write for a chapter, a topic and an update, with the target as the job carries it', async () => {
+      const v = await setup();
+      await fs.mkdir(path.join(v.path, 'reads'));
+      await fs.writeFile(path.join(v.path, 'reads', 'order.md'), read);
+      await h['brain:write'](v.id, 'chapter:orders');
+      await h['brain:write'](v.id, 'topic: Credit notes ');
+      await h['brain:write'](v.id, 'reads/order.md');
+      expect(enqueued).toEqual([
+        [v.id, 'write', null, { target: 'chapter:Orders' }],
+        [v.id, 'write', null, { target: 'topic:Credit notes' }],
+        [v.id, 'write', null, { target: 'reads/order.md' }],
+      ]);
+    });
+
+    it('queues one write per target at a time', async () => {
+      const v = await setup();
+      const waiting = { ...job(v.id, 'write', null), target: 'chapter:Orders' };
+      pending = [waiting];
+      expect(await h['brain:write'](v.id, 'chapter:Orders')).toBe(waiting);
+      expect(enqueued).toEqual([]);
+      pending = [{ ...waiting, status: 'done' }];
+      await h['brain:write'](v.id, 'chapter:Orders');
+      expect(enqueued).toHaveLength(1);
+    });
+
+    it('refuses on old skills, for an archived brain, and for a target that does not hold', async () => {
+      const v = await setup();
+      await expect(h['brain:write'](v.id, 'chapter:Nope')).rejects.toThrow(
+        'The book has no such chapter',
+      );
+      await expect(h['brain:write'](v.id, 'wiki/account.md')).rejects.toThrow(
+        'not something to write a long read on',
+      );
+      await expect(h['brain:write'](v.id, 'reads/nope.md')).rejects.toThrow(
+        'That long read is gone',
+      );
+      await brains.patch(v.id, { templatesVersion: 9 });
+      await expect(h['brain:write'](v.id, 'chapter:Orders')).rejects.toThrow(
+        'Update skills to write long reads',
+      );
+      await brains.patch(v.id, { templatesVersion: 10, archived: true });
+      await expect(h['brain:write'](v.id, 'chapter:Orders')).rejects.toThrow(
+        'archived',
+      );
+      expect(enqueued).toEqual([]);
+    });
+
+    it('Run now never queues a write', async () => {
+      const v = await setup();
+      await expect(h['brain:run'](v.id, 'write' as never)).rejects.toThrow(
+        'A long read needs something to write about',
+      );
+    });
+
+    it("commits a job's long reads and their record with its output", async () => {
+      const v = await setup();
+      await commitJobOutput(git, v.path, 'Brain: sync', v.name);
+      await fs.mkdir(path.join(v.path, 'reads', 'letters'), {
+        recursive: true,
+      });
+      await fs.writeFile(path.join(v.path, 'reads', 'order.md'), read);
+      await fs.writeFile(
+        path.join(v.path, 'reads', 'letters', '2026-11-11-order.md'),
+        '---\nread: reads/order.md\n---\n',
+      );
+      await fs.writeFile(
+        path.join(v.path, 'brain', 'reads.json'),
+        '{ "reads": {} }\n',
+      );
+      await commitJobOutput(git, v.path, 'Brain: write', v.name);
+      expect(
+        (await git.run(v.path, ['show', '--name-only', '--format=%s', 'HEAD']))
+          .trim()
+          .split('\n')
+          .filter(Boolean),
+      ).toEqual([
+        'Brain: write',
+        'brain/reads.json',
+        'reads/letters/2026-11-11-order.md',
+        'reads/order.md',
+      ]);
+    });
   });
 
   describe('settling conflicts', () => {

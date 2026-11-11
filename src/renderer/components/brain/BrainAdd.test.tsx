@@ -264,6 +264,32 @@ describe('BrainAdd right column', () => {
     );
   });
 
+  it('Write long reads is a switch once the skills can write them', async () => {
+    const a = installFakeApi({ 'brain:update': () => brainView() });
+    const { unmount } = render(
+      <BrainAdd brain={withOptions({})} onOpenPage={() => undefined} />,
+    );
+    expect(
+      screen.queryByRole('switch', { name: 'Write long reads' }),
+    ).toBeNull();
+    unmount();
+    render(
+      <BrainAdd
+        brain={{ ...withOptions({}), templatesVersion: 10 }}
+        onOpenPage={() => undefined}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole('switch', { name: 'Write long reads' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:update',
+        args: ['b1', { options: { writeLongReads: true } }],
+      }),
+    );
+  });
+
   it('a paused queue shows paused and Resume on the token cap row', async () => {
     const a = installFakeApi({ 'brain:resumeQueue': () => undefined });
     const brain = withOptions({});

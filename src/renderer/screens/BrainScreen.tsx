@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
-import { brainTaskId, picturesReady } from '../../shared/brain';
+import { brainTaskId, picturesReady, writeReady } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainAdd } from '../components/brain/BrainAdd';
@@ -224,6 +224,7 @@ export function BrainScreen({
             active={view === 'read'}
             jobs={brain.jobs}
             skillsReady={picturesReady(brain)}
+            canWrite={writeReady(brain)}
             conflicts={conflicts.open}
             onSettle={(id) => openSettle(id, 'read')}
           />

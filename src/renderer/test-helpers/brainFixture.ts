@@ -13,6 +13,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     addDirForClaude: true,
     syncAfterRefresh: false,
     weeklyDigest: false,
+    writeLongReads: false,
     dailyTokenCap: 500_000,
     openBrainTerminalOnStart: false,
     model: 'sonnet',
@@ -26,6 +27,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   archived: false,
   picturePass: null,
   bookPass: null,
+  readsPass: null,
   health: {
     state: {
       schemaVersion: 1,

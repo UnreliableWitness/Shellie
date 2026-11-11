@@ -120,6 +120,26 @@ describe('BrainFront', () => {
     ).toBeNull();
   });
 
+  it('leads to the long reads when told about them', async () => {
+    const onReads = vi.fn();
+    show({
+      longReads: { written: 1, chapters: 3, unread: 2, onOpen: onReads },
+    });
+    const line = screen.getByRole('button', { name: /^Long reads/ });
+    expect(line).toHaveTextContent('1 of 3 chapters · 2 unread');
+    await userEvent.click(line);
+    expect(onReads).toHaveBeenCalled();
+  });
+
+  it('says nothing of unread long reads when all are read, and has no line without them', () => {
+    show({
+      longReads: { written: 3, chapters: 3, unread: 0, onOpen: vi.fn() },
+    });
+    expect(
+      screen.getByRole('button', { name: /^Long reads/ }),
+    ).toHaveTextContent(/3 of 3 chapters$/);
+  });
+
   it('renders the graph of the pages', () => {
     show();
     expect(screen.getByLabelText('How pages link')).toBeInTheDocument();

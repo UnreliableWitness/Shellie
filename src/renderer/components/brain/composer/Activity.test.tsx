@@ -413,6 +413,26 @@ describe('Activity', () => {
     expect(onSettle).toHaveBeenCalled();
   });
 
+  it('a failed write names what it was for, and Retry asks for the same long read', async () => {
+    const a = installFakeApi({
+      'brain:write': () => brainJob({ kind: 'write', status: 'queued' }),
+    });
+    show(
+      brainView({
+        jobs: [
+          brainJob({ kind: 'write', source: null, target: 'chapter:Orders' }),
+        ],
+      }),
+    );
+    expect(screen.getByRole('listitem')).toHaveTextContent('chapter Orders');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(a.calls).toContainEqual({
+      channel: 'brain:write',
+      args: ['b1', 'chapter:Orders'],
+    });
+    expect(runs(a)).toEqual([]);
+  });
+
   it('says so when nothing happened yet', () => {
     installFakeApi();
     show(brainView({ jobs: [] }));

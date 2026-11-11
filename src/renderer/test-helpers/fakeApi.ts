@@ -135,6 +135,7 @@ const defaults: FakeHandlers = {
   'brain:scrub': () => ({ files: 0, skipped: 0 }),
   'brain:pages': () => [],
   'brain:book': () => null,
+  'brain:reads': () => ({ reads: [], letters: [] }),
   'brain:search': () => [],
   'brain:relevant': () => [],
   'brain:openSource': () => undefined,

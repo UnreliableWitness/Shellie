@@ -689,6 +689,50 @@ describe('jobs on the brain agent', () => {
     expect(commits.at(-1)?.[1]).toBe('Brain: sync');
   });
 
+  it('a write job keeps its target, runs on the prompt it is handed, gets twice the time, and its commit gets the job', async () => {
+    const timeouts: (number | undefined)[] = [];
+    run = (async (_cmd: unknown, o: { timeoutMs?: number }) => {
+      timeouts.push(o.timeoutMs);
+      return ok('s');
+    }) as never;
+    const committed: (string | undefined)[] = [];
+    const r = runner({
+      timeoutMs: undefined,
+      promptFor: async (j) =>
+        j.kind === 'write' ? `/write ${j.target}` : undefined,
+      commit: async (_id, message, j) => {
+        committed.push(`${message} <- ${j.target}`);
+      },
+    });
+    const job = r.enqueue('b1', 'write', 'ignored.md', {
+      target: 'chapter:Orders',
+    });
+    expect(job).toMatchObject({ source: null, target: 'chapter:Orders' });
+    r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(calls.map((c) => c.input)).toEqual([
+      '/write chapter:Orders',
+      '/sync',
+    ]);
+    expect(timeouts).toEqual([1_200_000, 600_000]);
+    expect(committed).toEqual([
+      'Brain: write <- chapter:Orders',
+      'Brain: sync <- undefined',
+    ]);
+  });
+
+  it('an OpenCode write job gets its prompt without the command as its arguments', async () => {
+    run = async () => oc('ok');
+    const r = runner({
+      agent: () => 'opencode',
+      promptFor: async () => '/write chapter Orders',
+    });
+    r.enqueue('b1', 'write', null, { target: 'chapter:Orders' });
+    await idle(r, 'b1');
+    expect(calls.map((c) => c.input)).toEqual(['chapter Orders']);
+    expect(calls[0].cmd.args).toEqual(opencodeJobArgs('write', null));
+  });
+
   it('an OpenCode background sync gets book as its arguments, a normal one none', async () => {
     run = async () => oc('ok');
     const r = runner({ agent: () => 'opencode' });

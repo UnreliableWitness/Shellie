@@ -48,7 +48,8 @@ export function splitFrontmatter(text: string): {
   return { data: null, body: text.slice(m[0].length) };
 }
 
-const str = (v: unknown): string | null =>
+/** A frontmatter field as a string that says something, or null. */
+export const str = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null;
 
 const pad = (n: number) => String(n).padStart(2, '0');

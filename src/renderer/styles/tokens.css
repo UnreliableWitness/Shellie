@@ -62,6 +62,8 @@
     sans-serif;
   --font-code:
     'Cascadia Mono', 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
+  /* Long reads: a serif the system has, made for reading on a screen (Sitka on Windows, Iowan on macOS). */
+  --font-read: 'Sitka Text', 'Iowan Old Style', Georgia, Cambria, serif;
   --radius: 2px;
   --radius-card: 4px;
 }

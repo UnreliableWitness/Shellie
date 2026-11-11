@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitClient } from '../services/GitClient';
 import { brainHealth } from './health';
+import { brainReads, readRecord, stampReads } from './reads';
 import { scaffoldBrain } from './scaffold';
 import { OUTSIDE_EDIT_MESSAGE, scrubBrain, scrubVariants } from './scrub';
 import { readState, writeState } from './state';
@@ -107,6 +108,60 @@ describe('scrubBrain', () => {
     const f = await read('brain/conflicts.json');
     expect(f).not.toContain(secret);
     expect(f).toContain('Ask REDACTED?');
+  });
+
+  it('redacts long reads and letters, their file names, and the record that names them', async () => {
+    const secret = 'Sup3rSecretValue';
+    await write(`reads/${secret}.md`, `# About ${secret}\n`);
+    await write(
+      'reads/letters/2026-11-10-x.md',
+      `---\nread: reads/${secret}.md\n---\nIt was ${secret}.\n`,
+    );
+    await write(
+      'brain/reads.json',
+      JSON.stringify({
+        reads: { [`reads/${secret}.md`]: { at: 't', commit: 'c', pages: {} } },
+      }),
+    );
+    await commit('Brain: write');
+    await scrubBrain(git, dir, secret);
+    expect(await read('reads/REDACTED.md')).toBe('# About REDACTED\n');
+    expect(await read('reads/letters/2026-11-10-x.md')).toBe(
+      '---\nread: reads/REDACTED.md\n---\nIt was REDACTED.\n',
+    );
+    expect(await read('brain/reads.json')).toContain('reads/REDACTED.md');
+    expect(await git.run(dir, ['status', '--porcelain'])).toBe('');
+  });
+
+  it('does not put a long read out of date, and keeps the pages it was already behind on', async () => {
+    const secret = 'Sup3rSecretValue';
+    const pageOf = (body: string) => `---\ntitle: T\n---\n\n${body}\n`;
+    await write('wiki/subject-orders.md', pageOf(`The key is ${secret}.`));
+    await write('wiki/subject-returns.md', pageOf('A return.'));
+    await commit('Brain: capture');
+    await write(
+      'reads/orders.md',
+      '---\ntitle: Orders\ntopic: Orders\npages:\n  - wiki/subject-orders.md\n  - wiki/subject-returns.md\n---\n\nAn order.\n',
+    );
+    await stampReads(git, dir, 'topic:Orders', new Date());
+    await commit('Brain: write');
+    const written = (await git.run(dir, ['rev-parse', 'HEAD'])).trim();
+    await write('wiki/subject-returns.md', pageOf('A return, now refused.'));
+    await commit('Brain: capture');
+    const stale = async () => (await brainReads(dir)).reads[0].stale;
+    expect(await stale()).toEqual(['wiki/subject-returns.md']);
+
+    await scrubBrain(git, dir, secret);
+    expect(await read('wiki/subject-orders.md')).toContain('REDACTED');
+    expect(await stale()).toEqual(['wiki/subject-returns.md']);
+    // An update compares from the scrub on: a diff across it would show the value again.
+    const record = (await readRecord(dir)).reads['reads/orders.md'];
+    expect(record.commit).not.toBe(written);
+    expect(record.commit).toBe(
+      (await git.run(dir, ['rev-parse', 'HEAD~1'])).trim(),
+    );
+    expect(await subjects(2)).toEqual(['Brain: scrub', 'Brain: scrub']);
+    expect(await git.run(dir, ['status', '--porcelain'])).toBe('');
   });
 
   it("saves a person's uncommitted wiki edit as an outside edit before redacting it", async () => {
