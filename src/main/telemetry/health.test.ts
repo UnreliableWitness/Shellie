@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { NoopTelemetry, type Telemetry } from './AppInsightsClient';
-import { healthMeasurements, startHealthReports } from './health';
+import {
+  healthMeasurements,
+  rendererMemoryMb,
+  startHealthReports,
+} from './health';
 import { PerfStats } from './perf';
 
 const metrics = [
@@ -36,6 +40,31 @@ describe('healthMeasurements', () => {
       terminals: 3,
     });
     expect(m.mainRssMb).toBeGreaterThan(0);
+  });
+
+  it('adds the renderer heap in MB when known', () => {
+    const loop = { p50: 1, p99: 12, max: 40 };
+    const m = healthMeasurements(metrics, loop, 3, 250.4 * 1024 * 1024);
+    expect(m.rendererHeapMb).toBe(250);
+    expect(healthMeasurements(metrics, loop, 3)).not.toHaveProperty(
+      'rendererHeapMb',
+    );
+  });
+});
+
+describe('rendererMemoryMb', () => {
+  it('sums only the renderer (Tab) processes, in MB', () => {
+    expect(
+      rendererMemoryMb([
+        ...metrics,
+        {
+          type: 'Tab',
+          cpu: { percentCPUUsage: 0 },
+          memory: { workingSetSize: 50 * 1024 },
+        },
+      ]),
+    ).toBe(350);
+    expect(rendererMemoryMb([])).toBe(0);
   });
 });
 

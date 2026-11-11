@@ -14,6 +14,8 @@ export type HealthDeps = {
   telemetry: () => Telemetry;
   appMetrics: () => ProcessMetric[];
   terminals: () => number;
+  /** The renderer's last known JS heap in bytes; undefined when it has not answered. */
+  rendererHeap?: () => number | undefined;
   stats?: PerfStats;
   intervalMs?: number;
 };
@@ -21,24 +23,39 @@ export type HealthDeps = {
 const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
 const ms = (ns: number) => Math.round(ns / 1e6);
 
-/** One `app.health` event: memory and CPU of every process, main's event loop delay, open terminals. */
+/** Working set of the given process types (all when null), in MB. */
+function memoryMb(metrics: ProcessMetric[], types: string[] | null): number {
+  const kb = metrics
+    .filter((m) => types === null || types.includes(m.type))
+    .reduce((n, m) => n + m.memory.workingSetSize, 0);
+  // workingSetSize is in KB.
+  return Math.round(kb / 1024);
+}
+
+/** Working set of the renderer (`Tab`) processes, in MB. */
+export const rendererMemoryMb = (metrics: ProcessMetric[]): number =>
+  memoryMb(metrics, ['Tab']);
+
+/**
+ * One `app.health` event: memory and CPU of every process, main's event loop delay, open
+ * terminals, and the renderer's JS heap when it is known.
+ */
 export function healthMeasurements(
   metrics: ProcessMetric[],
   loop: { p50: number; p99: number; max: number },
   terminals: number,
+  rendererHeapBytes?: number,
 ): Record<string, number> {
-  const kb = (types: string[] | null) =>
-    metrics
-      .filter((m) => types === null || types.includes(m.type))
-      .reduce((n, m) => n + m.memory.workingSetSize, 0);
   const mem = process.memoryUsage();
   return {
     mainRssMb: mb(mem.rss),
     mainHeapMb: mb(mem.heapUsed),
-    // workingSetSize is in KB.
-    appMemoryMb: Math.round(kb(null) / 1024),
-    rendererMemoryMb: Math.round(kb(['Tab']) / 1024),
-    gpuMemoryMb: Math.round(kb(['GPU']) / 1024),
+    appMemoryMb: memoryMb(metrics, null),
+    rendererMemoryMb: rendererMemoryMb(metrics),
+    ...(rendererHeapBytes === undefined
+      ? {}
+      : { rendererHeapMb: mb(rendererHeapBytes) }),
+    gpuMemoryMb: memoryMb(metrics, ['GPU']),
     cpuPercent: Math.round(
       metrics.reduce((n, m) => n + m.cpu.percentCPUUsage, 0),
     ),
@@ -77,6 +94,7 @@ export function startHealthReports(d: HealthDeps): {
             max: ms(loop.max),
           },
           d.terminals(),
+          d.rendererHeap?.(),
         ),
       );
     } catch {

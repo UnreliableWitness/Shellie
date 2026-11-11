@@ -140,7 +140,7 @@ import {
   StallWatchdog,
 } from './main/diagnostics/stallWatchdog';
 import { startLocalCrashDumps } from './main/diagnostics/crashDumps';
-import { startHealthReports } from './main/telemetry/health';
+import { rendererMemoryMb, startHealthReports } from './main/telemetry/health';
 import { reportLoggedErrors } from './main/telemetry/loggedErrors';
 import { hello, sendRecords } from './main/costServer/client';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
@@ -189,6 +189,39 @@ const sessionStart = Date.now();
 reportLoggedErrors(() => telemetry);
 /** Timing summaries and the `app.health` snapshot, every 10 minutes from the end of boot and on quit. */
 let health: ReturnType<typeof startHealthReports> | null = null;
+/** The renderer's JS heap in bytes, read once a minute; a hung renderer keeps the last value. */
+let rendererHeap: number | undefined;
+let rendererHeapPending = false;
+function sampleRendererHeap(): void {
+  const win = mainWindow;
+  // A read still pending means the renderer has not answered: no second one behind it.
+  if (!win || win.isDestroyed() || rendererHeapPending) return;
+  rendererHeapPending = true;
+  win.webContents
+    .executeJavaScript('performance.memory?.usedJSHeapSize')
+    .then((v: unknown) => {
+      rendererHeap = typeof v === 'number' ? v : undefined;
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      rendererHeapPending = false;
+    });
+}
+/** What was open and how large the renderer was, for `window.unresponsive` and `window.responsive`. */
+function hangMeasurements(): Record<string, number> {
+  try {
+    return {
+      rendererMemoryMb: rendererMemoryMb(app.getAppMetrics()),
+      terminals: terminals.ids().length,
+      ...(rendererHeap === undefined
+        ? {}
+        : { rendererHeapMb: Math.round(rendererHeap / 1024 / 1024) }),
+    };
+  } catch {
+    // A failed read never holds back the event itself.
+    return {};
+  }
+}
 let stallWatchdog: StallWatchdog | null = null;
 const openCodeRemote = new OpenCodeRemote(
   () => new Worker(path.join(__dirname, 'openCodeWorker.cjs')) as WorkerLike,
@@ -339,13 +372,14 @@ function createWindow(): BrowserWindow {
   let hungAt: number | null = null;
   win.on('unresponsive', () => {
     hungAt = performance.now();
-    telemetry.event('window.unresponsive');
+    telemetry.event('window.unresponsive', undefined, hangMeasurements());
     void telemetry.flush();
   });
   win.on('responsive', () => {
     if (hungAt === null) return;
     telemetry.event('window.responsive', undefined, {
       ms: performance.now() - hungAt,
+      ...hangMeasurements(),
     });
     hungAt = null;
   });
@@ -1376,7 +1410,10 @@ async function boot(): Promise<void> {
       telemetry: () => telemetry,
       appMetrics: () => app.getAppMetrics(),
       terminals: () => terminals.ids().length,
+      rendererHeap: () => rendererHeap,
     });
+    sampleRendererHeap();
+    setInterval(sampleRendererHeap, 60_000).unref();
     if (process.env.SHELLIE_STALL_WATCHDOG !== '0') {
       const watchdog = new StallWatchdog({
         profiler: inspectorProfiler(),
