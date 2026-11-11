@@ -80,4 +80,5 @@
 
 - [x] One test with the real server, Shellie's push and the site's code: read back, marks both ways, a changed long read, disconnect.
 - [x] The dev app against a server on this machine; the site in a headless browser at a phone's size.
-- [ ] Deploy to aktse; the owner adds the public hostname and scans the code with a real phone.
+- [x] Deploy to aktse (`/opt/shellie-reader`, healthy; a throwaway account made, used and removed there).
+- [ ] The owner adds the public hostname and scans the code with a real phone.

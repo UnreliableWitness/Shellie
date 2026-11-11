@@ -44,8 +44,11 @@ In the running dev app (`SHELLIE_USER_DATA=<scratch> npm start -- -- --remote-de
 
 The site alone, on a larger sample brain, in the same browser: setup and a refused link, the list with all four sections, switching brain, a place kept at 40% and found again, the letter, dark, 320 px (nothing wider than the screen), the service worker and a reload without a network ("Offline: showing what was kept", a kept long read opened). The browser reported no error apart from the fetch that failed offline, and asked no origin but the site's own.
 
+On aktse (`/opt/shellie-reader`, deployed 2026-11-11 as `docs/deploy-aktse.md` says, with the invitation code made there and shown nowhere): `/health` and the site answer 200 on `127.0.0.1:8091`; a wrong invitation code is refused (403); a throwaway account signed up with the real one, wrote an item, read the same bytes back, and was removed again (its folder gone, its token then refused with 401). The log lines of all that hold no id.
+
 ## Known gaps
 
+- **No public address yet.** The container runs on aktse, reachable there only. The owner adds the hostname to the Cloudflare tunnel (`docs/deploy-aktse.md`), then connects Shellie with that address and the invitation code from `/opt/shellie-reader/.env`.
 - **Not tried on a real phone.** Everything above ran in a desktop browser at a phone's size. Scanning the code with a camera, "Add to Home Screen" on iOS and Android, and how long iOS keeps the site's storage are the owner's first check. A site added to the home screen on iOS has its own storage: the link is pasted there once.
 - **Not run on Windows**, where the owner's brain lives; unit tests only (CI runs them there).
 - The site's code comes from the server, so whoever controls the server could serve code that sends the secret away. The encryption protects against a copied disk, a backup and a curious look, not against the server's owner. The server can also hold back a newer item; the site would not notice.

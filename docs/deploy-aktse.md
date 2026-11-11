@@ -56,7 +56,7 @@ rsync -a --delete reader/dist/ dries@aktse.local:/opt/shellie-reader/app/
 ssh dries@aktse.local 'cd /opt/shellie-reader && docker compose up -d && docker compose restart shellie-reader'
 ```
 
-Without rsync:
+Without rsync (aktse had none on 2026-11-11, so this is the one that works today):
 
 ```sh
 tar -C reader/dist -czf - . | ssh dries@aktse.local 'tar -C /opt/shellie-reader/app -xzf -'
