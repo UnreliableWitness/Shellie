@@ -79,6 +79,18 @@ describe('handlers: after a relaunch', () => {
     expect(fresh.runningCount(t.id)).toBe(1);
     expect(typeof (await h2['terminals:buffer'](shellId))).toBe('string');
     expect(await h2['terminals:buffer']('nope')).toBeNull();
+    // A tab still open for a terminal main dropped keeps sizing and typing (#269).
+    const typed = vi.fn();
+    const h3 = createHandlers({
+      ...services,
+      terminals: fresh,
+      onTerminalInput: typed,
+    });
+    await expect(
+      h3['terminals:resize']('nope', 80, 24),
+    ).resolves.toBeUndefined();
+    await expect(h3['terminals:write']('nope', 'x')).resolves.toBeUndefined();
+    expect(typed).not.toHaveBeenCalled();
     await expect(h2['terminals:restart']('nope')).rejects.toThrow();
   });
 });

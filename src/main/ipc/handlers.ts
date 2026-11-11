@@ -3915,11 +3915,14 @@ export function createHandlers(s: Services): Handlers {
     'terminals:write': async (id, data) => {
       // Paused after a Production value showed up: nothing reaches the agent until Resume.
       if (leakWatch.isPaused(id)) return;
+      // A tab can outlive its terminal (after a relaunch or exit): nothing to type into (#269).
+      if (!s.terminals.has(id)) return;
       s.terminals.write(id, data);
       s.onTerminalInput?.(id, data);
     },
-    'terminals:resize': async (id, cols, rows) =>
-      s.terminals.resize(id, cols, rows),
+    'terminals:resize': async (id, cols, rows) => {
+      if (s.terminals.has(id)) s.terminals.resize(id, cols, rows);
+    },
     'terminals:kill': async (id) => {
       if (await s.brainTerminals?.kill(id)) {
         leakWatch.forget(id);

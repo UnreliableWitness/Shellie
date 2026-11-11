@@ -6,6 +6,7 @@ import { TerminalView } from './TerminalView';
 const xterm = vi.hoisted(() => ({
   terminals: [] as { write: (d: string) => void; refresh: () => void }[],
   webgl: [] as { dispose: () => void }[],
+  typed: [] as ((data: string) => void)[],
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -26,7 +27,8 @@ vi.mock('@xterm/xterm', () => ({
     paste() {}
     attachCustomKeyEventHandler() {}
     dispose() {}
-    onData() {
+    onData(listener: (data: string) => void) {
+      xterm.typed.push(listener);
       return { dispose() {} };
     }
     registerLinkProvider() {
@@ -205,6 +207,43 @@ describe('TerminalView sizing', () => {
       render(<TerminalView terminalId="t1" taskId="a" active />);
       await waitFor(() => expect(resizes(calls)).toBeGreaterThan(0));
     } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+});
+
+describe('TerminalView for a terminal main dropped (#269)', () => {
+  it('does not leave a rejected resize or write unhandled', async () => {
+    const { calls } = installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => true,
+      'terminals:resize': () => {
+        throw new Error('Unknown terminal t1');
+      },
+      'terminals:write': () => {
+        throw new Error('Unknown terminal t1');
+      },
+    });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const width = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(800);
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(600);
+    try {
+      render(<TerminalView terminalId="t1" taskId="a" active />);
+      await waitFor(() =>
+        expect(calls.some((c) => c.channel === 'terminals:resize')).toBe(true),
+      );
+      xterm.typed[xterm.typed.length - 1]('x');
+      expect(calls.some((c) => c.channel === 'terminals:write')).toBe(true);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
       width.mockRestore();
       height.mockRestore();
     }

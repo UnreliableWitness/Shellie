@@ -137,7 +137,9 @@ export function TerminalView({
         const size = `${t.cols}x${t.rows}`;
         if (!force && size === lastSize) return;
         lastSize = size;
-        void api().invoke('terminals:resize', terminalId, t.cols, t.rows);
+        void api()
+          .invoke('terminals:resize', terminalId, t.cols, t.rows)
+          .catch(() => undefined);
       } catch {
         /* not opened yet */
       }
@@ -197,7 +199,9 @@ export function TerminalView({
       })
       .catch(() => undefined);
     const onData = t.onData((data) => {
-      void api().invoke('terminals:write', terminalId, data);
+      void api()
+        .invoke('terminals:write', terminalId, data)
+        .catch(() => undefined);
     });
     const observer = new ResizeObserver(() => sendSize.current());
     // Open once the ConPTY build is known. Output written before that is buffered by xterm.
