@@ -3,6 +3,7 @@ import {
   BOOK_TEMPLATES,
   OPENCODE_TEMPLATES,
   SETTLE_TEMPLATES,
+  WRITE_TEMPLATES,
 } from '../../shared/brain';
 import {
   TEMPLATES_VERSION,
@@ -22,12 +23,14 @@ const KINDS = [
   'lessons',
   'pictures',
   'settle',
+  'write',
 ];
 
 describe('templates v8', () => {
   it('is the version the book needs, and has what OpenCode needs', () => {
-    expect(TEMPLATES_VERSION).toBe(9);
-    expect(TEMPLATES_VERSION).toBe(SETTLE_TEMPLATES);
+    expect(TEMPLATES_VERSION).toBe(10);
+    expect(TEMPLATES_VERSION).toBe(WRITE_TEMPLATES);
+    expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(SETTLE_TEMPLATES);
     expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(BOOK_TEMPLATES);
     expect(TEMPLATES_VERSION).toBeGreaterThanOrEqual(OPENCODE_TEMPLATES);
   });
@@ -46,11 +49,20 @@ describe('templates v8', () => {
       'sources/**',
       'brain/pictures-dropped.json',
       'brain/conflicts.json',
+      'brain/reads.json',
     ]);
-    expect(Object.values(p.edit)).toEqual(['allow', 'deny', 'deny', 'deny']);
+    expect(Object.values(p.edit)).toEqual([
+      'allow',
+      'deny',
+      'deny',
+      'deny',
+      'deny',
+    ]);
     const settings = JSON.parse(content('.claude/settings.json'));
     expect(settings.permissions.deny).toContain('Write(brain/conflicts.json)');
     expect(settings.permissions.deny).toContain('Edit(brain/conflicts.json)');
+    expect(settings.permissions.deny).toContain('Write(brain/reads.json)');
+    expect(settings.permissions.deny).toContain('Edit(brain/reads.json)');
     expect(Object.keys(p.bash)).toEqual([
       '*',
       'git diff*',
@@ -179,5 +191,50 @@ describe('templates v9: conflicts', () => {
   });
   it('capture keeps an outdated fact as history', () => {
     expect(content('.claude/skills/capture/SKILL.md')).toContain('superseded');
+  });
+});
+
+describe('templates v10: long reads', () => {
+  const schema = content('SCHEMA.md');
+  const write = content('.claude/skills/write/SKILL.md');
+  it('the schema keeps long reads out of the evidence and describes both shapes', () => {
+    expect(schema).toContain('`reads/`');
+    expect(schema).toContain('They are never evidence');
+    expect(schema).toContain('`brain/reads.json`');
+    expect(schema).toContain('## Long reads and letters');
+    expect(schema).toContain('> **Before you read on**');
+    expect(schema).toContain('## What the writer was missing');
+    for (const h of [
+      '## What you read',
+      '## What holds now',
+      '## Why it changed',
+      '## What follows',
+    ])
+      expect(schema).toContain(h);
+  });
+  it('write takes a chapter, a topic or an update with the changed pages', () => {
+    expect(write).toContain('`chapter <title>`');
+    expect(write).toContain('`topic <text>`');
+    expect(write).toContain(
+      '`update reads/<slug>.md since <commit> changed: <pages>`',
+    );
+    expect(write).toContain('git diff <commit> HEAD');
+  });
+  it('write never invents a reason and says what it lacked', () => {
+    expect(write).toContain('The sources do not say why. My reading is');
+    expect(write).toContain('Never fill a gap from memory');
+    expect(write).toContain('general industry knowledge');
+    expect(write).toContain('## What the writer was missing');
+  });
+  it('an update that changes nothing prints No change, and a second one on a day adds to the letter', () => {
+    expect(write).toContain('`No change`');
+    expect(write).toContain('reads/letters/<today>-<slug>.md');
+    expect(write).toContain('a second update on one day');
+  });
+  it('write edits nothing but its own files and the log', () => {
+    expect(write).toContain('Edit nothing else');
+    expect(content('.opencode/command/write.md')).toContain(
+      'Load the `write` skill',
+    );
   });
 });

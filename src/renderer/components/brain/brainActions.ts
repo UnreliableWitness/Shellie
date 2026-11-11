@@ -57,7 +57,12 @@ export type BrainAction =
   | 'copy-question'
   | 'answer'
   | 'skip'
-  | 'recheck';
+  | 'recheck'
+  /** Long reads: the list opened, one brought up to date, a question's answer shown, one marked as read. */
+  | 'reads-open'
+  | 'read-update'
+  | 'read-answer'
+  | 'read-mark';
 
 /** One click on the Brain page, counted without names or content. */
 export const trackBrain = (action: BrainAction) =>
@@ -140,3 +145,11 @@ export const trackSettle = (p: {
 /** Where the Settle view was opened from. */
 export const trackSettleOpen = (from: 'add' | 'health' | 'read') =>
   track('brain.screen.action', { action: 'settle-open', from });
+
+/** A long read or a letter opened in the reader. */
+export const trackReadOpen = (kind: 'read' | 'letter') =>
+  track('brain.screen.action', { action: 'read-open', kind });
+
+/** A long read asked for by hand: for a chapter of the book, or on a topic (never the title or the topic itself). */
+export const trackReadWrite = (target: 'chapter' | 'topic') =>
+  track('brain.screen.action', { action: 'read-write', target });

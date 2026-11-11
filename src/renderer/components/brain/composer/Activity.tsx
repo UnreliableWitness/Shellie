@@ -9,6 +9,7 @@ import type { TerminalDef } from '../../../../shared/types';
 import { api, tryInvoke } from '../../../api';
 import { useStore } from '../../../store';
 import { openBrainTerminal, trackBrain } from '../brainActions';
+import { writeLabel } from '../longReads';
 import { pagesChangedBy } from '../recent';
 import { activityRows, type ActivityRow } from './activityRows';
 import { modelLabel } from './ModelPicker';
@@ -224,6 +225,14 @@ function ActivityLine({
       );
       return;
     }
+    // A write runs again on what it was for: its chapter, its topic or the long read it updates.
+    if (kind === 'write') {
+      void tryInvoke(
+        () => api().invoke('brain:write', brain.id, job.target ?? ''),
+        notify,
+      );
+      return;
+    }
     void tryInvoke(
       () =>
         job.source
@@ -256,6 +265,9 @@ function ActivityLine({
           {source ? fileName(source) : <strong>{job?.kind}</strong>}
           {source && job && job.kind !== 'capture' && (
             <span className="muted"> · {job.kind}</span>
+          )}
+          {job?.kind === 'write' && job.target && (
+            <span className="muted"> · {writeLabel(job.target)}</span>
           )}
           {sourceRow && (
             <span className="muted small"> · {sourceRow.type}</span>

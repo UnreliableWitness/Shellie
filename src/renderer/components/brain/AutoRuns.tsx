@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import {
   bookReady,
+  writeReady,
   type BrainOptions,
   type BrainView,
 } from '../../../shared/brain';
@@ -12,7 +13,7 @@ import { trackBrain } from './brainActions';
 
 type Switchable = Extract<
   keyof BrainOptions,
-  'syncAfterRefresh' | 'weeklyDigest'
+  'syncAfterRefresh' | 'weeklyDigest' | 'writeLongReads'
 >;
 
 /** One line of the card: what runs, its tag, and when (or a switch). */
@@ -46,7 +47,7 @@ function Row({
   );
 }
 
-/** What runs without a click, each line matching what the code does; the two optional runs switch in place. */
+/** What runs without a click, each line matching what the code does; the optional runs switch in place. */
 export function AutoRuns({ brain }: { brain: BrainView }) {
   const notify = useStore((s) => s.notify);
   const [busy, setBusy] = useState(false);
@@ -113,6 +114,7 @@ export function AutoRuns({ brain }: { brain: BrainView }) {
             once, in the background, when a brain has pages and no book yet
           </Row>
         )}
+        {writeReady(brain) && toggleRow('writeLongReads', 'Write long reads')}
         <Row label="Daily token cap">
           {h
             ? `${h.tokensToday.toLocaleString('en-US')} of ${o.dailyTokenCap.toLocaleString('en-US')} tokens · ${eur(h.costEurToday)} today`

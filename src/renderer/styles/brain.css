@@ -1666,3 +1666,255 @@ button.brain-front-chapter:hover {
     flex-direction: column;
   }
 }
+
+/* Long reads: the front page's line to them, their list, and the reader (a serif column, the question and the writer's gaps in boxes, a letter's labelled sections). */
+.brain-front-reads {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--read-size);
+  cursor: pointer;
+}
+.brain-front-reads span {
+  color: var(--muted);
+}
+.brain-front-reads b {
+  font-weight: 500;
+  color: var(--link);
+}
+.brain-front-reads:hover b {
+  text-decoration: underline;
+}
+.brain-reads {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 780px;
+  font-size: var(--read-size);
+}
+.brain-reads h2 {
+  margin: 0;
+  font-size: 1.5em;
+  line-height: 1.2;
+}
+.brain-reads-intro {
+  margin: 0;
+}
+.brain-reads-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-reads-list > li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.brain-reads-chapter {
+  padding: 0 6px;
+}
+.brain-reads-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+}
+button.brain-reads-row {
+  cursor: pointer;
+}
+button.brain-reads-row:hover {
+  background: var(--bg-hover);
+}
+.brain-reads-row.is-empty {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+}
+.brain-reads-row.is-empty .brain-reads-title {
+  color: var(--muted);
+}
+.brain-reads-row.is-empty .brain-reads-meta {
+  flex: 1;
+}
+.brain-reads-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1em;
+  font-weight: 500;
+}
+.brain-reads-summary {
+  color: var(--muted);
+}
+.brain-reads-ask {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.brain-reads-ask .field {
+  flex: 1;
+}
+.brain-read-column {
+  max-width: 40em;
+  padding: 4px 12px 32px 0;
+  font-family: var(--font-read);
+  font-size: clamp(16px, calc(var(--read-size) * 1.2), 21px);
+  line-height: 1.55;
+}
+.brain-read-column .link {
+  font: inherit;
+}
+.brain-read-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-read-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.brain-read-head h2 {
+  margin: 0;
+  font-size: 1.65em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.brain-read-lead {
+  margin: 0;
+  font-size: 1.1em;
+  color: var(--muted);
+}
+.brain-read-meta {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.brain-read-stale {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-card);
+  background: var(--warn-bg);
+  font-family: var(--font-ui);
+}
+.brain-read-body .doc-md {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+.brain-read-body .doc-md h1 {
+  font-size: 1.35em;
+}
+.brain-read-body .doc-md h2 {
+  font-size: 1.2em;
+}
+.brain-read-body .doc-md h3,
+.brain-read-body .doc-md h4 {
+  font-size: 1em;
+}
+.brain-read-body .doc-md img {
+  cursor: zoom-in;
+}
+.brain-read-question {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 1.4em 0;
+  padding: 14px 18px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+}
+.brain-read-question > .brain-read-label {
+  color: var(--link);
+}
+.brain-read-question > .btn {
+  font-family: var(--font-ui);
+}
+.brain-read-answer {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+/* Focused by script when it appears, so the keyboard reads on from it: not a control. */
+.brain-read-answer:focus {
+  outline: none;
+}
+.brain-read-missing {
+  margin: 2em 0 0;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+.brain-read-missing summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.brain-read-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2em;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.brain-read-foot .link {
+  font: inherit;
+}
+.brain-letter-change h3 {
+  margin: 1.6em 0 0.4em;
+  font-size: 1.2em;
+}
+.brain-letter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 1.2em 0;
+}
+.brain-letter-section .doc-md > :first-child {
+  margin-top: 0;
+}
+/* What the reader read before: no longer true, so struck through. */
+.brain-letter-section.is-read .doc-md {
+  color: var(--muted);
+  text-decoration: line-through;
+}

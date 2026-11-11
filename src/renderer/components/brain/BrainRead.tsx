@@ -4,12 +4,14 @@ import type {
   BrainJob,
   BrainPageRow,
 } from '../../../shared/brain';
-import { trackSettleOpen } from './brainActions';
+import { trackBrain, trackSettleOpen } from './brainActions';
 import { chapterOf } from './book';
 import { BrainChapter } from './BrainChapter';
 import { BrainFront } from './BrainFront';
 import { BrainGraph } from './BrainGraph';
 import { BrainLog } from './BrainLog';
+import { BrainLongRead } from './BrainLongRead';
+import { BrainLongReads } from './BrainLongReads';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
 import { BrainTree, type TreeSpecial } from './BrainTreeView';
@@ -21,6 +23,7 @@ import {
   unplaced as unplacedPages,
 } from './brainTree';
 import { local } from '../../localStorage';
+import { loadMarks, saveMarks, unreadCount, type ReadMarks } from './longReads';
 import { RecentList, type BrainPages } from './BrainWiki';
 import { PageCard } from './PageCards';
 import { isAfter, recentEntries } from './recent';
@@ -91,7 +94,8 @@ function ConflictLine({
 /**
  * The brain's Read view: a tree on the left (search on top), the open page in the middle with its rail, or Recent
  * changes, the log, or a landing of how the pages link, the pinned pages and what changed. Pages touched in the log after `since` get a dot.
- * A new `openRequest` (another `n`) opens its page, as a link from the Add view does.
+ * A new `openRequest` (another `n`) opens its page, as a link from the Add view does. Long reads has its own entry:
+ * the list, and a reader for a long read or a letter; what is read is the reader's own mark, kept per brain.
  */
 export function BrainRead({
   brainId,
@@ -102,6 +106,7 @@ export function BrainRead({
   active,
   jobs,
   skillsReady,
+  canWrite = false,
   conflicts = [],
   onSettle,
 }: {
@@ -118,11 +123,13 @@ export function BrainRead({
   jobs?: BrainJob[];
   /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
   skillsReady?: boolean;
+  /** Whether the brain's skills can write long reads (`writeReady`). */
+  canWrite?: boolean;
   /** Open conflicts: a page in one says so above it, with Settle. */
   conflicts?: BrainConflictRow[];
   onSettle?: (conflictId: string) => void;
 }) {
-  const { rows, sources, log, book, loaded } = pages;
+  const { rows, sources, log, book, reads, loaded } = pages;
   const nav = useBrainNav();
   const [special, setSpecial] = useState<TreeSpecial | null>(null);
   const [searching, setSearching] = useState(false);
@@ -178,7 +185,26 @@ export function BrainRead({
     },
     [nav],
   );
+  const [marks, setMarks] = useState<ReadMarks>(() => loadMarks(brainId));
+  useEffect(() => setMarks(loadMarks(brainId)), [brainId]);
+  const onMark = useCallback(
+    (row: { path: string; hash: string }, read: boolean) => {
+      const next = { ...loadMarks(brainId) };
+      if (read)
+        next[row.path] = { hash: row.hash, at: new Date().toISOString() };
+      else delete next[row.path];
+      saveMarks(brainId, next);
+      setMarks(next);
+    },
+    [brainId],
+  );
+  const unreadReads = useMemo(() => unreadCount(reads, marks), [reads, marks]);
+  const openReads = useCallback(() => {
+    trackBrain('reads-open');
+    openSpecial('reads');
+  }, [openSpecial]);
   const shown = nav.current?.path;
+  const longRead = shown?.startsWith('reads/') ?? false;
   const openChapter = book && shown ? chapterOf(book, shown) : -1;
   // The highlighted page follows the section being read, while the chapter shown is the one it belongs to.
   const highlight =
@@ -188,7 +214,7 @@ export function BrainRead({
     chapterOf(book, reading) === openChapter
       ? reading
       : shown;
-  const current = highlight ?? special;
+  const current = longRead ? 'reads' : (highlight ?? special);
   const treeBook = book && {
     chapters: book.chapters,
     openChapter,
@@ -235,7 +261,10 @@ export function BrainRead({
             current={current}
             newPaths={newPaths}
             onOpen={open}
-            onOpenSpecial={openSpecial}
+            onOpenSpecial={(which) =>
+              which === 'reads' ? openReads() : openSpecial(which)
+            }
+            unreadReads={unreadReads}
             collapsedKey={`shellie.brain.tree.${brainId}`}
             book={treeBook ?? undefined}
             unplaced={unplaced}
@@ -251,7 +280,25 @@ export function BrainRead({
             onSettle={onSettle}
           />
         )}
-        {nav.current && book && openChapter >= 0 ? (
+        {nav.current && longRead ? (
+          <BrainLongRead
+            brainId={brainId}
+            path={nav.current.path}
+            anchor={nav.current.anchor}
+            reads={reads}
+            rows={rows}
+            marks={marks}
+            onMark={onMark}
+            jobs={jobs ?? []}
+            canWrite={canWrite}
+            canBack={nav.canBack}
+            canForward={nav.canForward}
+            onOpen={open}
+            onBack={nav.back}
+            onForward={nav.forward}
+            onList={openReads}
+          />
+        ) : nav.current && book && openChapter >= 0 ? (
           <BrainChapter
             brainId={brainId}
             book={book}
@@ -292,6 +339,16 @@ export function BrainRead({
           )
         ) : special === 'log' ? (
           <BrainLog brainId={brainId} />
+        ) : special === 'reads' ? (
+          <BrainLongReads
+            brainId={brainId}
+            reads={reads}
+            book={book}
+            jobs={jobs ?? []}
+            canWrite={canWrite}
+            marks={marks}
+            onOpen={open}
+          />
         ) : book ? (
           <div className="brain-read-landing is-front">
             {nav.canForward && (
@@ -310,6 +367,21 @@ export function BrainRead({
               newPaths={newPaths}
               continueAt={readContinue(brainId)}
               onOpen={open}
+              longReads={
+                canWrite || reads.reads.length > 0
+                  ? {
+                      written: book.chapters.filter(
+                        (c) =>
+                          c.pages.length &&
+                          reads.reads.some((r) => r.chapter === c.title),
+                      ).length,
+                      chapters: book.chapters.filter((c) => c.pages.length)
+                        .length,
+                      unread: unreadReads,
+                      onOpen: openReads,
+                    }
+                  : undefined
+              }
             />
           </div>
         ) : (

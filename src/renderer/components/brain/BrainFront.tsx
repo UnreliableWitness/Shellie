@@ -1,4 +1,5 @@
 import type { BrainBook, BrainPageRow } from '../../../shared/brain';
+import { plural } from '../../../shared/text';
 import { BrainGraph } from './BrainGraph';
 import { trackBrain } from './brainActions';
 import { chapterOf } from './book';
@@ -6,7 +7,8 @@ import { chapterOf } from './book';
 /**
  * The front page of a brain with a book: its name and introduction (the summary of the first chapter's first page),
  * Continue reading when a page last read is still in the book, then the contents beside the graph of how the pages
- * link. A chapter row opens the chapter's first page; a chapter with no pages says so and is no button.
+ * link. A chapter row opens the chapter's first page; a chapter with no pages says so and is no button. With
+ * `longReads`, a line under the introduction leads to them.
  */
 export function BrainFront({
   brainName,
@@ -15,6 +17,7 @@ export function BrainFront({
   newPaths,
   continueAt,
   onOpen,
+  longReads,
 }: {
   brainName: string;
   book: BrainBook;
@@ -24,6 +27,13 @@ export function BrainFront({
   /** The page last read in this brain, if any. */
   continueAt: { path: string } | null;
   onOpen: (path: string) => void;
+  /** The line to the long reads: how many chapters have one, how many reads and letters are unread. Absent: no line. */
+  longReads?: {
+    written: number;
+    chapters: number;
+    unread: number;
+    onOpen: () => void;
+  };
 }) {
   const rowOf = (path: string) => rows.find((r) => r.path === path);
   const intro = rowOf(book.chapters[0]?.pages[0] ?? '')?.summary;
@@ -45,6 +55,19 @@ export function BrainFront({
           <b>
             {at + 1} · {book.chapters[at].title} ›{' '}
             {rowOf(continueAt.path)?.title ?? continueAt.path}
+          </b>
+        </button>
+      )}
+      {longReads && (
+        <button
+          type="button"
+          className="brain-front-reads"
+          onClick={longReads.onOpen}
+        >
+          <span>Long reads</span>
+          <b>
+            {longReads.written} of {plural(longReads.chapters, 'chapter')}
+            {longReads.unread > 0 && ` · ${longReads.unread} unread`}
           </b>
         </button>
       )}

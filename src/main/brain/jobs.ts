@@ -22,6 +22,9 @@ import { acquireLock, releaseLock, writeState } from './state';
 import { brainOpencodePermission } from './templates';
 
 const MAX_JOBS = 50;
+const JOB_TIMEOUT_MS = 600_000;
+/** A long read is read from many pages and written in one go: it gets twice the time of another job. */
+const WRITE_TIMEOUT_MS = 1_200_000;
 
 function brainJobFlags(model: BrainModel): string[] {
   return [
@@ -123,7 +126,7 @@ export type BrainJobDeps = {
   ready: (brainId: string) => boolean;
   onChange: (brainId: string, jobs: BrainJob[]) => void;
   /** Commits the job's output (wiki/, index.md, log.md, state); a throw fails the job. */
-  commit: (brainId: string, message: string) => Promise<void>;
+  commit: (brainId: string, message: string, job: BrainJob) => Promise<void>;
   /**
    * Runs with the lock held, before the skill: commits edits made outside a job (so the job's commit never sweeps
    * them in). A throw fails the job.
@@ -254,7 +257,13 @@ export class BrainJobRunner {
     brainId: string,
     kind: BrainJobKind,
     source: string | null = null,
-    opts?: { background?: boolean; model?: string | null; conflict?: string },
+    opts?: {
+      background?: boolean;
+      model?: string | null;
+      conflict?: string;
+      /** What a write job writes about (`writeTarget`). */
+      target?: string;
+    },
   ): BrainJob {
     const withSource = SOURCE_JOB_KINDS.has(kind);
     if (withSource && !source) throw new Error(`A ${kind} needs a source file`);
@@ -267,6 +276,7 @@ export class BrainJobRunner {
       opts?.model ?? null,
     );
     if (opts?.conflict) job.conflict = opts.conflict;
+    if (opts?.target) job.target = opts.target;
     // A pictures job queued by hand replaces a background one still waiting for the same source: one run, not two.
     if (kind === 'pictures' && !job.background) {
       const gone = l.queue.filter(
@@ -471,7 +481,8 @@ export class BrainJobRunner {
     input: string,
   ): Promise<void> {
     const d = this.deps;
-    const timeoutMs = d.timeoutMs ?? 600_000;
+    const timeoutMs =
+      d.timeoutMs ?? (job.kind === 'write' ? WRITE_TIMEOUT_MS : JOB_TIMEOUT_MS);
     let result: string;
     let sessionId: string | null;
     if (job.agent === 'opencode') {
@@ -521,6 +532,7 @@ export class BrainJobRunner {
     await d.commit(
       brainId,
       `Brain: ${job.kind}${job.source ? ` ${job.source}` : ''}`,
+      job,
     );
   }
 }

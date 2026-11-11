@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   BrainBook,
   BrainPageRow,
+  BrainReads,
   BrainSourceRow,
 } from '../../../shared/brain';
 import { installFakeApi, type FakeHandlers } from '../../test-helpers/fakeApi';
@@ -297,6 +298,18 @@ describe('BrainRead', () => {
     expect(
       within(tree()).getByRole('button', { name: 'Decisions 2' }),
     ).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('Long reads opens in the reading column for a brain without a book too', async () => {
+    setup();
+    render(<BrainRead brainId="b1" since={null} canWrite />);
+    await userEvent.click(
+      await within(tree()).findByRole('button', { name: 'Long reads' }),
+    );
+    expect(screen.queryByRole('region', { name: 'Pinned' })).toBeNull();
+    expect(
+      within(reading()).getByRole('textbox', { name: 'Topic for a long read' }),
+    ).toBeInTheDocument();
   });
 
   it('Recent changes and Log open in the reading column', async () => {
@@ -604,6 +617,162 @@ describe('BrainRead', () => {
       expect(
         await screen.findByRole('button', { name: 'Forward ›' }),
       ).toBeInTheDocument();
+    });
+
+    describe('long reads', () => {
+      const READ = 'reads/the-project.md';
+      const LETTER = 'reads/letters/2026-11-10-the-project.md';
+      const longReads: BrainReads = {
+        reads: [
+          {
+            path: READ,
+            title: 'What the project is for',
+            summary: 'Why Acme pays for it.',
+            chapter: 'The project',
+            topic: null,
+            written: '2026-11-09',
+            minutes: 6,
+            hash: 'h1',
+            stale: [],
+          },
+        ],
+        letters: [
+          {
+            path: LETTER,
+            title: 'The scope shrank',
+            read: READ,
+            written: '2026-11-10',
+            minutes: 2,
+            hash: 'l1',
+          },
+        ],
+      };
+      const withReads = (over: FakeHandlers = {}) =>
+        withBook({
+          'brain:reads': () => longReads,
+          'brain:read': (_id, rel) => ({
+            text:
+              rel === READ
+                ? '---\ntitle: What the project is for\n---\n\nAcme sells, see [the scope](../wiki/scope-platform.md).\n'
+                : pageText(rel),
+          }),
+          ...over,
+        });
+      const frontLine = () =>
+        within(reading()).findByRole('button', { name: /^Long reads/ });
+
+      it('the front page says how many chapters have one and how many are unread, and leads to the list', async () => {
+        const a = withReads();
+        render(<BrainRead brainId="b1" since={null} canWrite />);
+        expect(await frontLine()).toHaveTextContent(
+          '1 of 1 chapter · 2 unread',
+        );
+        expect(
+          within(
+            within(tree()).getByRole('button', { name: /^Long reads/ }),
+          ).getByRole('img', { name: 'unread' }),
+        ).toBeInTheDocument();
+        await userEvent.click(
+          within(reading()).getByRole('button', { name: /^Long reads/ }),
+        );
+        expect(
+          within(reading()).getByRole('heading', { name: 'Long reads' }),
+        ).toBeInTheDocument();
+        expect(
+          within(tree()).getByRole('button', { name: /^Long reads/ }),
+        ).toHaveAttribute('aria-current', 'page');
+        expect(a.tracked).toContainEqual({
+          type: 'event',
+          name: 'brain.screen.action',
+          props: { action: 'reads-open' },
+        });
+      });
+
+      it('opens a long read from the list, marks it read, and its links lead back into the book', async () => {
+        withReads();
+        render(<BrainRead brainId="b1" since={null} canWrite />);
+        await userEvent.click(
+          await within(tree()).findByRole('button', { name: /^Long reads/ }),
+        );
+        await userEvent.click(
+          within(
+            within(reading()).getByRole('region', { name: 'By chapter' }),
+          ).getByRole('button', { name: /What the project is for/ }),
+        );
+        const read = await within(reading()).findByRole('region', {
+          name: 'What the project is for',
+        });
+        // The tree keeps Long reads as where the reader is.
+        expect(
+          within(tree()).getByRole('button', { name: /^Long reads/ }),
+        ).toHaveAttribute('aria-current', 'page');
+        await userEvent.click(
+          within(read).getByRole('button', { name: 'Mark as read' }),
+        );
+        expect(
+          within(read).getByRole('button', { name: 'Mark unread' }),
+        ).toBeInTheDocument();
+        expect(
+          JSON.parse(localStorage.getItem('shellie.brain.reads.b1') ?? '{}'),
+        ).toMatchObject({ [READ]: { hash: 'h1' } });
+        await userEvent.click(
+          within(read).getByRole('link', { name: 'the scope' }),
+        );
+        expect(
+          await within(reading()).findByText('About the project.'),
+        ).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+        expect(
+          await within(reading()).findByRole('region', {
+            name: 'What the project is for',
+          }),
+        ).toBeInTheDocument();
+        // Its location line goes back to the list.
+        await userEvent.click(
+          within(reading()).getByRole('button', { name: 'Long reads' }),
+        );
+        expect(
+          within(reading()).getByRole('heading', { name: 'Long reads' }),
+        ).toBeInTheDocument();
+      });
+
+      it('what was read has no dot, on the front page or in the tree', async () => {
+        withReads();
+        localStorage.setItem(
+          'shellie.brain.reads.b1',
+          JSON.stringify({
+            [READ]: { hash: 'h1', at: '2026-11-10T09:00:00.000Z' },
+            [LETTER]: { hash: 'l1', at: '2026-11-10T09:00:00.000Z' },
+          }),
+        );
+        render(<BrainRead brainId="b1" since={null} canWrite />);
+        const line = await frontLine();
+        expect(line).toHaveTextContent('1 of 1 chapter');
+        expect(line).not.toHaveTextContent('unread');
+        expect(
+          within(
+            within(tree()).getByRole('button', { name: /^Long reads/ }),
+          ).queryByRole('img', { name: 'unread' }),
+        ).toBeNull();
+      });
+
+      it('a brain that cannot write and has none shows no line on the front page', async () => {
+        withBook();
+        render(<BrainRead brainId="b1" brainName="Acme brain" since={null} />);
+        expect(
+          await screen.findByRole('heading', { name: 'Acme brain' }),
+        ).toBeInTheDocument();
+        expect(
+          within(reading()).queryByRole('button', { name: /^Long reads/ }),
+        ).toBeNull();
+        // The list is still there, and says what is needed.
+        await userEvent.click(
+          within(tree()).getByRole('button', { name: 'Long reads' }),
+        );
+        expect(within(reading()).getByRole('status')).toHaveTextContent(
+          'Update skills to write long reads',
+        );
+      });
     });
 
     it("a rejected book falls back to today's tree and landing", async () => {

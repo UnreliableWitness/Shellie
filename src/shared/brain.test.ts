@@ -10,9 +10,19 @@ import {
   isOpencodeModel,
   opencodeModelArg,
   opencodeReady,
+  isLetter,
+  isLongRead,
 } from './brain';
 
 describe('brain shared types', () => {
+  it('a long read or a letter is one file name deep, with forward slashes only', () => {
+    expect(isLongRead('reads/order-to-invoice.md')).toBe(true);
+    expect(isLongRead('reads/letters/2026-11-10-x.md')).toBe(false);
+    expect(isLetter('reads/letters/2026-11-10-x.md')).toBe(true);
+    // On Windows a backslash is a separator: `..\` would leave the folder.
+    expect(isLongRead('reads/..\\wiki\\a.md')).toBe(false);
+    expect(isLetter('reads/letters/..\\..\\a.md')).toBe(false);
+  });
   it('brainIdOf reads the prefix', () => {
     expect(brainIdOf('brain:abc')).toBe('abc');
     expect(brainIdOf('task-1')).toBeNull();
@@ -33,6 +43,7 @@ describe('brain shared types', () => {
       addDirForClaude: true,
       syncAfterRefresh: false,
       weeklyDigest: false,
+      writeLongReads: false,
       dailyTokenCap: 500000,
       openBrainTerminalOnStart: false,
       model: 'sonnet',

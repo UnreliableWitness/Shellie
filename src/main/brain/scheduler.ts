@@ -1,4 +1,9 @@
-import { bookReady, picturesReady, type Brain } from '../../shared/brain';
+import {
+  bookReady,
+  picturesReady,
+  writeReady,
+  type Brain,
+} from '../../shared/brain';
 import { MAX_BOOK_ATTEMPTS } from './bookPass';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -20,6 +25,8 @@ function lastMonday(now: Date): Date {
  * second check on.
  * A brain on templates v8 with pages and no book gets its first arrangement queued the same way, until two attempts
  * have failed.
+ * A brain on templates v10 with `writeLongReads` on gets its next long read looked for the same way (the pass itself
+ * decides whether one is due).
  * Checks at once and then every tick (default 15 min); returns the stop function.
  */
 export function startBrainScheduler(d: {
@@ -35,6 +42,10 @@ export function startBrainScheduler(d: {
   bookPass: (id: string) => Promise<unknown>;
   /** Whether the brain's first arrangement is queued, running or paused, or its attempt not saved yet. */
   bookPassRunning: (id: string) => boolean;
+  /** Queues the brain's next long read when one is due; settles once queued or skipped. */
+  readsPass: (id: string) => Promise<unknown>;
+  /** Whether an automatic write of the brain is queued, running or paused, or its result not saved yet. */
+  readsPassRunning: (id: string) => boolean;
   now?: () => Date;
   tick?: number;
 }): () => void {
@@ -46,6 +57,7 @@ export function startBrainScheduler(d: {
   const digested = new Map<string, number>();
   const passing = new Set<string>();
   const bookPassing = new Set<string>();
+  const readsPassing = new Set<string>();
   // The picture pass converts originals again, and both passes read every page: they wait one tick, so they never weigh on the launch.
   let firstCheck = true;
 
@@ -118,6 +130,19 @@ export function startBrainScheduler(d: {
           .bookPass(b.id)
           .catch((e) => console.error('[brain] book pass failed', e))
           .finally(() => bookPassing.delete(b.id));
+      }
+      if (
+        !launch &&
+        b.options.writeLongReads &&
+        writeReady(b) &&
+        !readsPassing.has(b.id) &&
+        !d.readsPassRunning(b.id)
+      ) {
+        readsPassing.add(b.id);
+        void d
+          .readsPass(b.id)
+          .catch((e) => console.error('[brain] reads pass failed', e))
+          .finally(() => readsPassing.delete(b.id));
       }
     }
   };

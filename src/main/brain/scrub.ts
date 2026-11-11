@@ -4,6 +4,7 @@ import { pathExists } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
 import { absPath } from './paths';
+import { brainReads, READS_RECORD, restampAfterScrub } from './reads';
 
 /** Shorter than this would redact half the brain by accident. */
 const SCRUB_MIN_LENGTH = 6;
@@ -39,7 +40,7 @@ export function scrubVariants(value: string): string[] {
   return out;
 }
 
-/** Every file and folder under sources/ and wiki/ (dot entries left out), repo-relative, with whether it is a folder. */
+/** Every file and folder under sources/, wiki/ and reads/ (dot entries left out), repo-relative, with whether it is a folder. */
 async function entries(
   brainDir: string,
 ): Promise<{ rel: string; dir: boolean }[]> {
@@ -62,6 +63,7 @@ async function entries(
   };
   await walk('sources');
   await walk('wiki');
+  await walk('reads');
   return out;
 }
 
@@ -112,6 +114,7 @@ async function textFiles(brainDir: string): Promise<string[]> {
     'brain/state.json',
     'brain/book.json',
     'brain/conflicts.json',
+    'brain/reads.json',
   ])
     if (await pathExists(absPath(brainDir, f))) out.push(f);
   return out;
@@ -169,7 +172,8 @@ async function dirtyWiki(
  * every file and folder whose name holds it, and commits only those paths as `Brain: scrub`. A wiki page a person
  * edited and did not commit is committed first as an outside edit, so Health and /sync still see the edit. Returns
  * how many files changed and how many were too large to scan. The value is never written anywhere, not even
- * the commit message. Git history keeps the old text.
+ * the commit message. Git history keeps the old text. A long read does not go out of date over it: the record of
+ * what it was written from moves to the scrub's commit.
  */
 export async function scrubBrain(
   git: GitClient,
@@ -183,6 +187,10 @@ export async function scrubBrain(
   return withBrainGit(brainDir, async () => {
     // What a person changed under wiki/ and did not commit, before anything here moves.
     const dirty = await dirtyWiki(git, brainDir);
+    // The pages each long read was already behind on: those stay changed, the scrub's own rewrites must not count.
+    const behind = (await brainReads(brainDir)).reads.map(
+      (r) => [r.path, r.stale] as const,
+    );
     const renames = await renameAll(brainDir, v);
     const planned: { rel: string; next: string }[] = [];
     let skipped = 0;
@@ -274,16 +282,33 @@ export async function scrubBrain(
       '--',
       ...paths,
     ]);
-    if (status.trim())
-      await git.run(brainDir, [
-        '--literal-pathspecs',
-        'commit',
-        '-q',
-        '-m',
-        'Brain: scrub',
-        '--',
-        ...paths,
-      ]);
+    if (status.trim()) {
+      const commit = (extra: string[]) =>
+        git.run(brainDir, [
+          '--literal-pathspecs',
+          'commit',
+          '-q',
+          '-m',
+          'Brain: scrub',
+          '--',
+          ...extra,
+        ]);
+      await commit(paths);
+      // A name as the scrub left it: in a path the value became the token, as in the record's own text.
+      const now = (p: string) => moved(p).split(v).join(REDACTED);
+      const stale = new Map(
+        behind.map(([read, pages]) => [now(read), new Set(pages.map(now))]),
+      );
+      if (await restampAfterScrub(git, brainDir, stale)) {
+        await git.run(brainDir, [
+          '--literal-pathspecs',
+          'add',
+          '--',
+          READS_RECORD,
+        ]);
+        await commit([READS_RECORD]);
+      }
+    }
     return { files: changed.size, skipped };
   });
 }

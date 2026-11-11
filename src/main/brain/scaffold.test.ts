@@ -186,7 +186,7 @@ describe('brain scaffold', () => {
   it('keeps each skill short, describes when to use it and ignores lock and mirror', () => {
     const files = templateFiles('Acme');
     const skills = files.filter((f) => f.path.endsWith('SKILL.md'));
-    expect(skills).toHaveLength(9);
+    expect(skills).toHaveLength(10);
     for (const s of skills) {
       expect(s.content.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
       expect(s.content).toMatch(

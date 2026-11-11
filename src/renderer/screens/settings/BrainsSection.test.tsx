@@ -521,6 +521,32 @@ describe('archiving', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('offers "Write long reads" only once the skills can write them', async () => {
+    const label = 'Write long reads in the background, at most two a day';
+    const { calls } = installFakeApi({
+      'brain:list': () => [
+        brain,
+        {
+          ...brain,
+          id: 'b2',
+          path: '/data/brains/b2',
+          templatesVersion: 10,
+          options: { ...brain.options, writeLongReads: false },
+        },
+      ],
+      'brain:update': () => brain,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await screen.findByText('/data/brains/b2');
+    await userEvent.click(screen.getByLabelText(label));
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'brain:update')?.args).toEqual([
+        'b2',
+        { options: { writeLongReads: true } },
+      ]),
+    );
+  });
+
   it('hints "Update skills first" for an OpenCode brain below skills version 7', async () => {
     installFakeApi({
       'brain:list': () => [onOpenCode({ templatesVersion: 6 })],

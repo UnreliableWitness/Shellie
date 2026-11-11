@@ -21,6 +21,8 @@ import {
   settleReady,
   conflictIdOf,
   conflictOf,
+  writeReady,
+  writeTarget,
 } from '../../shared/brain';
 import type { Events, Handlers } from '../../shared/ipc';
 import type { TelemetryProps } from '../../shared/telemetry';
@@ -43,6 +45,7 @@ import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { rebuildIndex } from './indexPage';
 import { readPages } from './pages';
+import { brainReads, checkWriteTarget } from './reads';
 import { absPath } from './paths';
 import { refreshMirror, type MirrorAuth } from './mirror';
 import {
@@ -108,6 +111,8 @@ export type BrainChannels =
   | 'brain:openFolder'
   | 'brain:pages'
   | 'brain:book'
+  | 'brain:reads'
+  | 'brain:write'
   | 'brain:search'
   | 'brain:relevant'
   | 'brain:openSource'
@@ -182,6 +187,8 @@ const JOB_OUTPUT = [
   'brain/state.json',
   'brain/pictures-skipped.json',
   'brain/book.json',
+  'reads',
+  'brain/reads.json',
 ];
 
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
@@ -680,6 +687,9 @@ export function createBrainHandlers(
       // A settle runs only from its decision (brain:settle).
       if ((kind as string) === 'settle')
         throw new Error('A settle needs a decision');
+      // A long read is written about something (brain:write).
+      if ((kind as string) === 'write')
+        throw new Error('A long read needs something to write about');
       // A retried capture keeps the model it was added with; every other job runs on the brain's.
       if (kind === 'capture' && source && model)
         return captureWith(model)(id, source);
@@ -921,6 +931,19 @@ export function createBrainHandlers(
     },
     'brain:pages': async (id) => pageRows(brainOf(id).path),
     'brain:book': async (id) => readBook(brainOf(id).path),
+    'brain:reads': async (id) => brainReads(brainOf(id).path),
+    'brain:write': async (id, target) => {
+      const b = live(id);
+      if (!writeReady(b)) throw new Error('Update skills to write long reads');
+      const t = writeTarget(await checkWriteTarget(b.path, String(target)));
+      // Judged last, in the turn that queues: one write per target at a time.
+      const waiting = d.runner
+        .jobs(id)
+        .find(
+          (j) => j.kind === 'write' && j.target === t && PENDING.has(j.status),
+        );
+      return waiting ?? d.runner.enqueue(id, 'write', null, { target: t });
+    },
     'brain:search': async (id, query) => searchBrain(brainOf(id).path, query),
     'brain:relevant': async (id, taskId) => {
       const b = brainOf(id);

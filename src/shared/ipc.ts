@@ -7,6 +7,7 @@ import type {
   BrainJob,
   BrainOptions,
   BrainBook,
+  BrainReads,
   BrainPageRow,
   BrainSearchHit,
   BrainCounts,
@@ -625,6 +626,13 @@ export type Channels = {
   'brain:pages': { args: [brainId: string]; result: BrainPageRow[] };
   /** The brain's book (`brain/book.json`) read against its pages, or null without a usable one. */
   'brain:book': { args: [brainId: string]; result: BrainBook | null };
+  /** The brain's long reads and letters; each long read with the pages that made it out of date. */
+  'brain:reads': { args: [brainId: string]; result: BrainReads };
+  /**
+   * Queues a long read: `chapter:<title>`, `topic:<text>`, or the path of a long read to bring up to date. One per
+   * target at a time: the job already waiting is returned.
+   */
+  'brain:write': { args: [brainId: string, target: string]; result: BrainJob };
   /** Lines of pages then sources holding the query (2+ characters), capped. */
   'brain:search': {
     args: [brainId: string, query: string];

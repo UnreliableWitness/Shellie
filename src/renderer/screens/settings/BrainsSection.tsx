@@ -4,6 +4,7 @@ import {
   BRAIN_AGENT_LABELS,
   isOpencodeModel,
   opencodeReady,
+  writeReady,
   type Brain,
   type BrainAgent,
   type BrainOptions,
@@ -52,6 +53,10 @@ const TOGGLES: {
   {
     key: 'weeklyDigest',
     label: 'Write a weekly digest on Mondays while the app is open',
+  },
+  {
+    key: 'writeLongReads',
+    label: 'Write long reads in the background, at most two a day',
   },
   {
     key: 'openBrainTerminalOnStart',
@@ -376,7 +381,10 @@ function BrainCard({ brain }: { brain: BrainView }) {
           ? `${brain.wiki.wikiName}, ${brain.wiki.rootPath === '/' ? 'whole wiki' : brain.wiki.rootPath}`
           : 'No wiki'}
       </div>
-      {TOGGLES.map((t) => (
+      {TOGGLES.filter(
+        // A switch that does nothing until the skills are updated is not offered.
+        (t) => t.key !== 'writeLongReads' || writeReady(brain),
+      ).map((t) => (
         <label key={t.key} className="row small">
           <input
             type="checkbox"

@@ -35,6 +35,7 @@ import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { createRasterizer } from './main/brain/convert/raster';
 import { createBookHooks } from './main/brain/bookPass';
+import { createReadsHooks } from './main/brain/readsHooks';
 import { saveConflicts } from './main/brain/conflicts';
 import { createSettleHooks } from './main/brain/settleHooks';
 import { createPictureHooks } from './main/brain/pictures';
@@ -952,6 +953,13 @@ async function boot(): Promise<void> {
       runner: () => brainRunner,
       changed: (brainId) => broadcast('brain:changed', { brainId }),
     });
+    // Long reads: the write job's prompt and record, and the automatic write when the brain has it on.
+    const readsHooks = createReadsHooks({
+      brains,
+      runner: () => brainRunner,
+      git,
+      tokensToday: (id) => brainToday(id).tokens,
+    });
     const brainRunner = new BrainJobRunner({
       platform,
       run: runWithInput,
@@ -967,8 +975,10 @@ async function boot(): Promise<void> {
         const b = brains.get(id);
         return !b || b.options.agent !== 'opencode' || opencodeReady(b);
       },
-      commit: async (id, message) => {
+      commit: async (id, message, job) => {
         const b = brainOf(id);
+        // Before the commit, so what a long read was written from is part of it.
+        await readsHooks.stamp(job);
         await commitJobOutput(git, b.path, message, b.name);
       },
       beforeJob: async (id) => {
@@ -978,10 +988,13 @@ async function boot(): Promise<void> {
       promptFor: (j) =>
         j.kind === 'settle'
           ? settleHooks.promptFor(j)
-          : pictureHooks.promptFor(j),
+          : j.kind === 'write'
+            ? readsHooks.promptFor(j)
+            : pictureHooks.promptFor(j),
       afterJob: (j) => {
         pictureHooks.afterJob(j);
         bookHooks.afterJob(j);
+        readsHooks.afterJob(j);
         void settleHooks
           .afterJob(j)
           .catch((err) => console.error('[brain] settle record', err));
@@ -1348,6 +1361,8 @@ async function boot(): Promise<void> {
         passRunning: pictureHooks.passRunning,
         bookPass: bookHooks.bookPass,
         bookPassRunning: bookHooks.passRunning,
+        readsPass: readsHooks.readsPass,
+        readsPassRunning: readsHooks.passRunning,
       });
       void settleHooks
         .resume()

@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   BrainBook,
   BrainPageRow,
+  BrainReads,
   BrainSourceRow,
 } from '../../../shared/brain';
 import { api } from '../../api';
 import { useBrainChanged } from '../../hooks/useBrains';
 import { isAfter, shortDay, type RecentEntry } from './recent';
+
+const NO_READS: BrainReads = { reads: [], letters: [] };
 
 /** The rows the Read view and the task tab share, refetched when the brain changes. */
 export function useBrainPages(brainId: string): BrainPages {
@@ -14,6 +17,7 @@ export function useBrainPages(brainId: string): BrainPages {
   const [sources, setSources] = useState<BrainSourceRow[]>([]);
   const [log, setLog] = useState('');
   const [book, setBook] = useState<BrainBook | null>(null);
+  const [reads, setReads] = useState<BrainReads>(NO_READS);
   /** Whether `brain:pages` and `brain:book` have answered once, so an empty list means an empty brain. */
   const [loaded, setLoaded] = useState(false);
   const load = useCallback(() => {
@@ -34,6 +38,9 @@ export function useBrainPages(brainId: string): BrainPages {
       .invoke('brain:sources', brainId)
       .then(setSources, () => undefined);
     api()
+      .invoke('brain:reads', brainId)
+      .then(setReads, () => undefined);
+    api()
       .invoke('brain:read', brainId, 'log.md')
       .then(
         (r) => setLog(r.text),
@@ -42,7 +49,7 @@ export function useBrainPages(brainId: string): BrainPages {
   }, [brainId]);
   useEffect(load, [load]);
   useBrainChanged(brainId, load);
-  return { rows, sources, log, book, loaded };
+  return { rows, sources, log, book, reads, loaded };
 }
 
 /** A brain's pages, sources, log and book, as useBrainPages loads them. */
@@ -52,6 +59,8 @@ export type BrainPages = {
   log: string;
   /** The brain's book (its chapters), or null without one or when it cannot be read. */
   book: BrainBook | null;
+  /** The brain's long reads and letters. */
+  reads: BrainReads;
   /** Whether `brain:pages` and `brain:book` have answered once, so an empty list means an empty brain. */
   loaded: boolean;
 };

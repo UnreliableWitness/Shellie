@@ -7,7 +7,7 @@ import type { BrainChapter } from '../../../shared/brain';
 import { local } from '../../localStorage';
 import type { TreeGroup, TreeItem } from './brainTree';
 
-export type TreeSpecial = 'recent' | 'log';
+export type TreeSpecial = 'recent' | 'log' | 'reads';
 
 /** The book in the tree: its numbered chapters, the open one listing its pages. */
 export type TreeBook = {
@@ -69,12 +69,15 @@ function Item({
   label,
   current,
   isNew,
+  dot = 'new',
   title,
   onClick,
 }: {
   label: string;
   current: boolean;
   isNew?: boolean;
+  /** What the dot says: `new` for a changed page, `unread` for the long reads. */
+  dot?: 'new' | 'unread';
   title?: string;
   onClick: () => void;
 }) {
@@ -88,7 +91,7 @@ function Item({
         onClick={onClick}
       >
         {label}
-        {isNew && <span className="brain-dot" role="img" aria-label="new" />}
+        {isNew && <span className="brain-dot" role="img" aria-label={dot} />}
       </button>
     </li>
   );
@@ -98,7 +101,8 @@ function Item({
  * The Read view's tree: Start here (pinned pages and Recent changes), a collapsible group per page type and the
  * sources, then Log. The collapsed groups are remembered under `collapsedKey`; the group holding `current` opens.
  * With a `book`, Start here is replaced by The book (numbered chapters), then `groups` as Back of the book and Not
- * placed yet when `unplaced` has pages, then Recent changes and Log.
+ * placed yet when `unplaced` has pages, then Recent changes and Log. Long reads comes first in both, with a dot
+ * while one is unread.
  */
 export function BrainTree({
   groups,
@@ -110,6 +114,7 @@ export function BrainTree({
   collapsedKey,
   book,
   unplaced = [],
+  unreadReads = 0,
 }: {
   groups: TreeGroup[];
   start: TreeItem[];
@@ -123,6 +128,8 @@ export function BrainTree({
   book?: TreeBook;
   /** With a book: the pages in no chapter nor at the back of the book. */
   unplaced?: TreeItem[];
+  /** Long reads and letters not read yet. */
+  unreadReads?: number;
 }) {
   const [collapsed, setCollapsed] = useState(() => readCollapsed(collapsedKey));
   const update = (next: Set<string>) => {
@@ -217,9 +224,20 @@ export function BrainTree({
     );
   };
 
+  const longReads = (
+    <Item
+      label="Long reads"
+      current={current === 'reads'}
+      isNew={unreadReads > 0}
+      dot="unread"
+      onClick={() => onOpenSpecial('reads')}
+    />
+  );
+
   if (book)
     return (
       <ul className="brain-tree">
+        {longReads}
         <li>
           <h3 className="brain-tree-heading">The book</h3>
           <ul className="brain-tree-list brain-tree-book">
@@ -279,6 +297,7 @@ export function BrainTree({
 
   return (
     <ul className="brain-tree">
+      {longReads}
       {group(
         START,
         'Start here',
