@@ -17,7 +17,7 @@ import { Shell } from '../App';
 import { invalidateRepoConfig } from '../hooks/useRepoConfig';
 import { brainTerminalOpenedOnStart } from '../components/TerminalTabs';
 
-const mounts = vi.hoisted(() => ({ count: 0 }));
+const mounts = vi.hoisted(() => ({ count: 0, renders: 0 }));
 
 vi.mock('../components/TerminalView', async () => {
   const { useEffect } = await import('react');
@@ -31,6 +31,7 @@ vi.mock('../components/TerminalView', async () => {
       taskId?: string;
       active: boolean;
     }) => {
+      mounts.renders++;
       useEffect(() => {
         mounts.count++;
       }, []);
@@ -145,6 +146,7 @@ beforeEach(() =>
       },
     ],
     tasks: [task],
+    attention: {},
     connections: [],
     notices: [],
     screen: { kind: 'task' },
@@ -194,6 +196,25 @@ describe('TaskScreen', () => {
       'data-active',
       'true',
     );
+  });
+
+  it('does not render the terminals again for another task\'s attention or an unchanged task list', async () => {
+    installFakeApi({ 'repos:config': () => config });
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    await act(async () => {});
+    const before = mounts.renders;
+    act(() => {
+      useStore
+        .getState()
+        .setAttention({ elsewhere: { reason: 'done', since: 1 } });
+      useStore.getState().setTasks([{ ...task }]);
+    });
+    expect(mounts.renders).toBe(before);
+    act(() => {
+      useStore.getState().setAttention({ c1: { reason: 'blocked', since: 2 } });
+    });
+    expect(mounts.renders).toBeGreaterThan(before);
   });
 
   it('opens run commands from .shellie.yml as new terminals', async () => {

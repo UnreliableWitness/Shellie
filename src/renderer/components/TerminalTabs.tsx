@@ -12,7 +12,8 @@ import {
   FullScreenMinimize16Regular,
   Globe16Regular,
 } from '@fluentui/react-icons';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { Events } from '../../shared/ipc';
 import { brainTaskId } from '../../shared/brain';
 import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
@@ -210,7 +211,8 @@ function ClosableTab({
 }
 
 /** The 36 px task row: pivots per terminal and Usage on the left, git state and task commands on the right. */
-export function TerminalTabs({
+// Memo: TaskTerminals re-renders all running tasks for any change to one of them.
+export const TerminalTabs = memo(function TerminalTabs({
   task,
   visible = true,
 }: {
@@ -243,7 +245,16 @@ export function TerminalTabs({
         ? (task.terminals[0]?.id ?? USAGE_TAB)
         : stored;
   const setTab = useStore((s) => s.setTab);
-  const attention = useStore((s) => s.attention);
+  // Only this task's terminals: an agent in another task must not re-render this one.
+  const attention = useStore(
+    useShallow((s) =>
+      Object.fromEntries(
+        task.terminals.flatMap((t) =>
+          s.attention[t.id] ? [[t.id, s.attention[t.id]]] : [],
+        ),
+      ),
+    ),
+  );
   // Same rule as the shell: Focus chrome only for a ready task.
   const ready = task.status === 'ready';
   const inFocus = useStore((s) => s.focus) && ready;
@@ -615,4 +626,4 @@ export function TerminalTabs({
       </div>
     </>
   );
-}
+});

@@ -231,6 +231,40 @@ describe('navigation', () => {
   });
 });
 
+describe('unchanged objects stay the same (renders skip them)', () => {
+  it('setTasks keeps a task that did not change and replaces one that did', () => {
+    useStore.getState().setTasks([task('a', ['t1']), task('b', [])]);
+    const [a, b] = useStore.getState().tasks;
+    useStore
+      .getState()
+      .setTasks([task('a', ['t1']), { ...task('b', []), name: 'B' }]);
+    const [a2, b2] = useStore.getState().tasks;
+    expect(a2).toBe(a);
+    expect(b2).not.toBe(b);
+    expect(b2.name).toBe('B');
+  });
+  it('setTasks keeps the list itself when nothing changed', () => {
+    useStore.getState().setTasks([task('a', [])]);
+    const list = useStore.getState().tasks;
+    useStore.getState().setTasks([task('a', [])]);
+    expect(useStore.getState().tasks).toBe(list);
+  });
+  it('setAttention keeps an entry that did not change', () => {
+    const entry = { reason: 'done' as const, since: 1 };
+    useStore.getState().setAttention({ t1: entry, t2: { ...entry } });
+    const before = useStore.getState().attention;
+    useStore.getState().setAttention({
+      t1: { ...entry },
+      t2: { reason: 'blocked', since: 2 },
+    });
+    expect(useStore.getState().attention.t1).toBe(before.t1);
+    expect(useStore.getState().attention.t2).toEqual({
+      reason: 'blocked',
+      since: 2,
+    });
+  });
+});
+
 describe('activeConnection', () => {
   const conn = (id: string) => ({
     id,
