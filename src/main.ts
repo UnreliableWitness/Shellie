@@ -33,6 +33,7 @@ import { BrainStore } from './main/brain/BrainStore';
 import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
 import { ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
+import { broadcastEvent, jobEvents } from './main/brain/brainEvents';
 import { createRasterizer } from './main/brain/convert/raster';
 import { createBookHooks } from './main/brain/bookPass';
 import { createReadsHooks } from './main/brain/readsHooks';
@@ -324,14 +325,20 @@ const isSplashPage = appUrlMatcher({
 });
 const openLink = (url: string) => shell.openExternal(url);
 
-function broadcast<K extends keyof Events>(event: K, payload: Events[K]): void {
-  // Every brain change passes here (jobs, options, files, removal): the phone gets what differs a little later.
-  if (event === 'brain:changed') {
-    readingBrainChanged((payload as Events['brain:changed']).brainId);
-    readerBrainChanged();
-  }
+function send<K extends keyof Events>(event: K, payload: Events[K]): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send(`${EVENT_PREFIX}${event}`, payload);
+}
+
+/** A brain's files, options or existence may have changed: the reading list reads it again, the phone a little later. */
+function brainFilesChanged(brainId: string): void {
+  readingBrainChanged(brainId);
+  readerBrainChanged();
+}
+
+function broadcast<K extends keyof Events>(event: K, payload: Events[K]): void {
+  // Edits, options, archive and removal pass here; the job runner's status changes use `jobEvents` and only send.
+  broadcastEvent({ send, filesChanged: brainFilesChanged }, event, payload);
 }
 
 const scheme = () => schemeOf(nativeTheme.shouldUseDarkColors);
@@ -950,6 +957,7 @@ async function boot(): Promise<void> {
     const brainJobEvents = jobTelemetry((name, props) =>
       telemetry.event(name, props),
     );
+    const runnerEvents = jobEvents({ send, filesChanged: brainFilesChanged });
     // Pictures jobs' prompts, the job after a capture, and the one-time pass over earlier sources.
     const pictureHooks = createPictureHooks({
       brains,
@@ -1013,10 +1021,11 @@ async function boot(): Promise<void> {
         void settleHooks
           .afterJob(j)
           .catch((err) => console.error('[brain] settle record', err));
+        runnerEvents.ended(j);
       },
       onChange: (brainId, jobs) => {
         brainJobEvents(jobs);
-        broadcast('brain:changed', { brainId });
+        runnerEvents.changed(brainId);
       },
     });
     // The phone reading site: this install's account on a reader server, and the push that keeps it up to date.
