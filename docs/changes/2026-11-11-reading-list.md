@@ -53,7 +53,7 @@ The dev check needed the app to accept a loopback Azure DevOps address; that was
 - **Not run on Windows**, where the owner's brain lives; unit tests only (CI runs them there). Not tried on a real brain or a real sprint: the content above was made up, and the long reads were hand-written files, not `/write` output.
 - **The phone site on aktse is the build of #277.** Until it is deployed again (`docs/deploy-aktse.md`), a long read for your work is listed on the phone under "For your work this sprint" and under "Later" too.
 - A completed state is told by its name, since main has no work item type metadata there.
-- Main keeps what it read of a brain for five minutes or until a job ends, so a long read edited by hand in the brain's folder shows up to five minutes late.
+- Main keeps what it read of a brain for five minutes or until a job ends or the brain's options, files or existence change in Shellie (not on a job's status change, #280), so a long read edited by hand in the brain's folder shows up to five minutes late.
 - The phone learns a new work link at Shellie's next push (within 15 minutes).
 - "Before you start" on the task's setup page was not seen in the dev check (the task had no setup steps, so the page was skipped); `SetupScreen.test.tsx` covers it.
 - The notice names one piece and counts the others; there is no list of them besides the reading list itself.
