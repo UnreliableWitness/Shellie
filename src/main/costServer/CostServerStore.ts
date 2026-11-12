@@ -34,6 +34,8 @@ const empty = (): CostServerFile => ({
 /** The cost server's address, the developer's email and the company key (encrypted with safeStorage via TokenCrypto). */
 export class CostServerStore {
   private readonly store: JsonFileStore<CostServerFile>;
+  /** The key, decrypted once on load or set (safeStorage is async, the readers are not); null when it cannot be read. */
+  private key: string | null = null;
 
   constructor(
     file: string,
@@ -44,31 +46,34 @@ export class CostServerStore {
     this.store = new JsonFileStore(file, FileSchema, empty);
   }
 
-  load(): Promise<{ recovered: boolean; backup?: string }> {
-    return this.store.load();
+  async load(): Promise<{ recovered: boolean; backup?: string }> {
+    const result = await this.store.load();
+    const c = this.store.value.connection;
+    this.key = c
+      ? await this.crypto
+          .decrypt(Buffer.from(c.keyCiphertext, 'base64'))
+          .catch(() => null)
+      : null;
+    return result;
   }
 
   /** The connection with its key decrypted; null when none is saved or the key cannot be read. */
   get(): CostServerConnection | null {
     const c = this.store.value.connection;
-    if (!c) return null;
-    try {
-      const key = this.crypto.decrypt(Buffer.from(c.keyCiphertext, 'base64'));
-      return { url: c.url, email: c.email, key };
-    } catch {
-      return null;
-    }
+    if (!c || this.key === null) return null;
+    return { url: c.url, email: c.email, key: this.key };
   }
 
   async set(c: CostServerConnection): Promise<void> {
-    if (!this.crypto.available())
+    if (!(await this.crypto.available()))
       throw new Error(
         'Encryption is not available on this machine; the key was not saved',
       );
-    const keyCiphertext = this.crypto.encrypt(c.key).toString('base64');
+    const keyCiphertext = (await this.crypto.encrypt(c.key)).toString('base64');
     await this.store.update((f) => {
       f.connection = { url: c.url, email: c.email, keyCiphertext };
     });
+    this.key = c.key;
   }
 
   async clear(): Promise<void> {
@@ -79,6 +84,7 @@ export class CostServerStore {
       f.lastSentAt = null;
       f.refused = null;
     });
+    this.key = null;
     if (had) this.budgetsChanged();
   }
 

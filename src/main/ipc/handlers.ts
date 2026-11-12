@@ -720,7 +720,7 @@ export function createHandlers(s: Services): Handlers {
     input: ConnectionInput,
   ): Promise<Connection> => {
     // Verify with a throwaway client before anything is written, so a bad token never lands on disk.
-    s.connections.assertCanSave(input);
+    await s.connections.assertCanSave(input);
     const organizationUrl = s.connections.normalizeUrl(input.organizationUrl);
     const probe = new AdoClient(organizationUrl, async () => input.pat.trim());
     const { user, uniqueName } = await probe.verify(input.project.trim());

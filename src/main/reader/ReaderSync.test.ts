@@ -28,9 +28,9 @@ import { ReaderStore } from './ReaderStore';
 import { ReaderSync } from './ReaderSync';
 
 const crypto = {
-  available: () => true,
-  encrypt: (s: string) => Buffer.from(`enc:${s}`),
-  decrypt: (b: Buffer) => b.toString().slice(4),
+  available: async () => true,
+  encrypt: async (s: string) => Buffer.from(`enc:${s}`),
+  decrypt: async (b: Buffer) => b.toString().slice(4),
 };
 
 const READ = 'reads/order-to-invoice.md';
@@ -615,7 +615,10 @@ describe('the store', () => {
   it('saves nothing without encryption, and is not connected with a secret it cannot read', async () => {
     const dir = await tempDir();
     const file = path.join(dir, 'reader.json');
-    const none = new ReaderStore(file, { ...crypto, available: () => false });
+    const none = new ReaderStore(file, {
+      ...crypto,
+      available: async () => false,
+    });
     await none.load();
     await expect(
       none.set({ url: 'https://x.example', secret: new Uint8Array(32) }),
@@ -627,7 +630,7 @@ describe('the store', () => {
     await store.set({ url: 'https://x.example', secret: new Uint8Array(32) });
     const other = new ReaderStore(file, {
       ...crypto,
-      decrypt: () => {
+      decrypt: async () => {
         throw new Error('another keychain');
       },
     });

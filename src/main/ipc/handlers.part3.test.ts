@@ -570,7 +570,7 @@ describe('handlers: connection robustness', () => {
     const base = fakeCrypto();
     const { h, server, connections } = await harness({
       ...base,
-      decrypt: (b) => {
+      decrypt: async (b) => {
         if (broken) throw new Error('decrypt failed');
         return base.decrypt(b);
       },

@@ -85,16 +85,19 @@ describe('CostServerStore', () => {
   });
 
   it('applies the cached budgets only while the connection can be read', async () => {
-    const crypto = fakeCrypto();
-    const { store } = await make(crypto);
+    const { file, store } = await make();
     const b = { claude: { monthlyEur: 100, monthStartDay: 1 }, copilot: null };
     await store.set(conn);
     await store.setBudgets(b);
     expect(store.budgets).toEqual(b);
-    crypto.decrypt = () => {
-      throw new Error('cannot decrypt');
-    };
-    expect(store.get()).toBeNull();
-    expect(store.budgets).toBeNull();
+    const other = new CostServerStore(file, {
+      ...fakeCrypto(),
+      decrypt: async () => {
+        throw new Error('cannot decrypt');
+      },
+    });
+    await other.load();
+    expect(other.get()).toBeNull();
+    expect(other.budgets).toBeNull();
   });
 });

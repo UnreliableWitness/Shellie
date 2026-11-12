@@ -50,6 +50,8 @@ const empty = (): ReaderFile => ({
  */
 export class ReaderStore {
   private readonly store: JsonFileStore<ReaderFile>;
+  /** The secret, decrypted once on load or set (safeStorage is async, the readers are not); null when it cannot be read. */
+  private secret: Uint8Array | null = null;
 
   constructor(
     file: string,
@@ -58,38 +60,42 @@ export class ReaderStore {
     this.store = new JsonFileStore(file, FileSchema, empty);
   }
 
-  load(): Promise<{ recovered: boolean; backup?: string }> {
-    return this.store.load();
+  async load(): Promise<{ recovered: boolean; backup?: string }> {
+    const result = await this.store.load();
+    const c = this.store.value.connection;
+    const plain = c
+      ? await this.crypto
+          .decrypt(Buffer.from(c.secretCiphertext, 'base64'))
+          .catch(() => null)
+      : null;
+    const secret = plain === null ? null : fromB64url(plain);
+    this.secret = secret?.length === SECRET_BYTES ? secret : null;
+    return result;
   }
 
   /** The connection with its secret decrypted; null when none is saved or the secret cannot be read. */
   get(): ReaderConnection | null {
     const c = this.store.value.connection;
-    if (!c) return null;
-    try {
-      const secret = fromB64url(
-        this.crypto.decrypt(Buffer.from(c.secretCiphertext, 'base64')),
-      );
-      return secret?.length === SECRET_BYTES ? { url: c.url, secret } : null;
-    } catch {
-      return null;
-    }
+    if (!c || !this.secret) return null;
+    return { url: c.url, secret: this.secret };
   }
 
   async set(c: ReaderConnection): Promise<void> {
-    if (!this.crypto.available())
+    if (!(await this.crypto.available()))
       throw new Error(
         'Encryption is not available on this machine; the connection was not saved',
       );
-    const secretCiphertext = this.crypto
-      .encrypt(b64url(c.secret))
-      .toString('base64');
+    const secretCiphertext = (
+      await this.crypto.encrypt(b64url(c.secret))
+    ).toString('base64');
     await this.store.update((f) => {
       f.connection = { url: c.url, secretCiphertext };
       f.lastPush = null;
       f.refused = false;
       f.sent = {};
     });
+    this.secret =
+      c.secret.length === SECRET_BYTES ? Uint8Array.from(c.secret) : null;
   }
 
   /** Forgets the connection and what was sent. The marks stay: they are the person's, with or without a phone. */
@@ -100,6 +106,7 @@ export class ReaderStore {
       f.refused = false;
       f.sent = {};
     });
+    this.secret = null;
   }
 
   status(): ReaderStatus {

@@ -358,7 +358,7 @@ describe('ConnectionStore', () => {
     });
     const broken = new ConnectionStore(f, {
       ...fakeCrypto(),
-      decrypt: () => {
+      decrypt: async () => {
         throw new Error('bad key');
       },
     });

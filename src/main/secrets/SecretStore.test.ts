@@ -187,14 +187,86 @@ describe('SecretStore', () => {
       values: { test: { value: 'abc' } },
     });
     const other = new SecretStore(file, {
-      available: () => true,
-      encrypt: (s) => Buffer.from(s),
-      decrypt: () => {
+      available: async () => true,
+      encrypt: async (s) => Buffer.from(s),
+      decrypt: async () => {
         throw new Error('no key');
       },
     });
     await other.load();
+    const [id] = other.list().map((v) => v.id);
     expect(other.list()[0].values.test?.mask).toBe('⚠ unreadable');
+    expect(other.valuesFor('r1', 'test')).toEqual({});
+    expect(other.allValues(['r1'])).toEqual([]);
+    expect(() => other.reveal(id, 'test')).toThrow(/no value/);
+  });
+
+  it('reads a value the sync safeStorage API wrote, through the async one', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'shellie-secrets-'));
+    const file = path.join(dir, 'secrets.json');
+    // What 1.95 wrote: the ciphertext of encryptString, base64.
+    const old = Buffer.from(
+      'sk_live_abcdefghijkl0b3d'.split('').reverse().join(''),
+    );
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        secrets: [
+          {
+            id: 's1',
+            scope: 'all',
+            name: 'STRIPE',
+            givenTo: ['run'],
+            values: {
+              development: {
+                ciphertext: old.toString('base64'),
+                source: null,
+                changedAt: '2026-11-01T00:00:00.000Z',
+              },
+            },
+          },
+        ],
+        repoDefaults: {},
+      }),
+    );
+    const store = new SecretStore(file, fakeCrypto());
+    await store.load();
+    expect(store.list()[0].values.development?.mask).toBe('sk_live_••••0b3d');
+    expect(store.reveal('s1', 'development')).toBe('sk_live_abcdefghijkl0b3d');
+  });
+
+  it('keeps the values of saves that run at the same time, and drops a replaced one', async () => {
+    const { store } = await make();
+    const [a, b] = await Promise.all([
+      store.save({
+        scope: 'all',
+        name: 'A',
+        givenTo: [],
+        values: { development: { value: 'first-value' } },
+      }),
+      store.save({
+        scope: 'all',
+        name: 'B',
+        givenTo: [],
+        values: { development: { value: 'second-value' } },
+      }),
+    ]);
+    expect(store.reveal(a.id, 'development')).toBe('first-value');
+    expect(store.reveal(b.id, 'development')).toBe('second-value');
+    await store.save({
+      id: a.id,
+      scope: 'all',
+      name: 'A',
+      givenTo: [],
+      values: { development: { value: 'replaced' } },
+    });
+    expect(
+      store
+        .allValues([])
+        .map((v) => v.value)
+        .sort(),
+    ).toEqual(['replaced', 'second-value']);
   });
 
   it('collects every value for a repo, and limits defaults to development and test', async () => {
