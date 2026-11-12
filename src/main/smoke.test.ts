@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { inProcessPtyHost } from './test-helpers/ptyHost';
 import { failCmd, sleepCmd, testPlatform } from './test-helpers/shell';
 import { TerminalManager, UNKNOWN_EXIT } from './services/TerminalManager';
 import { runSmoke } from './smoke';
@@ -7,7 +8,7 @@ describe('runSmoke', () => {
   it('spawns a pty, sees its output and a clean exit', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: testPlatform(),
       log: (l) => lines.push(l),
     });
@@ -18,7 +19,7 @@ describe('runSmoke', () => {
   it('fails when the main process cannot be profiled', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: testPlatform(),
       log: (l) => lines.push(l),
       profiler: () => ({
@@ -38,7 +39,7 @@ describe('runSmoke', () => {
   it('fails when the OpenCode worker does not answer', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: testPlatform(),
       log: (l) => lines.push(l),
       openCode: {
@@ -54,7 +55,7 @@ describe('runSmoke', () => {
   it('fails when the brain canvas cannot be loaded', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: testPlatform(),
       log: (l) => lines.push(l),
       canvas: async () => null,
@@ -66,7 +67,7 @@ describe('runSmoke', () => {
   it('fails when the canvas loads but cannot encode', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: testPlatform(),
       log: (l) => lines.push(l),
       canvas: async () =>
@@ -87,7 +88,7 @@ describe('runSmoke', () => {
     const p = testPlatform();
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: { ...p, runCommand: () => p.runCommand(failCmd(3)) },
       log: (l) => lines.push(l),
     });
@@ -97,7 +98,7 @@ describe('runSmoke', () => {
 
   it('fails after the timeout', async () => {
     const p = testPlatform();
-    const terminals = new TerminalManager();
+    const terminals = new TerminalManager(inProcessPtyHost());
     const lines: string[] = [];
     const ok = await runSmoke({
       terminals,
@@ -113,7 +114,7 @@ describe('runSmoke', () => {
   it('fails when the pty cannot be spawned', async () => {
     const lines: string[] = [];
     const ok = await runSmoke({
-      terminals: new TerminalManager(),
+      terminals: new TerminalManager(inProcessPtyHost()),
       platform: {
         ...testPlatform(),
         runCommand: () => ({
@@ -127,7 +128,7 @@ describe('runSmoke', () => {
   });
 
   it('passes on the marker when the pty reports no exit code', async () => {
-    const terminals = new TerminalManager();
+    const terminals = new TerminalManager(inProcessPtyHost());
     const lines: string[] = [];
     // node-pty with conpty.dll can report exit before the code is known; TerminalManager then says UNKNOWN_EXIT.
     const realOn = terminals.on.bind(terminals);

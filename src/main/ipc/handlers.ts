@@ -1447,15 +1447,19 @@ export function createHandlers(s: Services): Handlers {
     leakWatch.forget(id);
   };
 
-  /** Spawns at once (no await), so a caller holding a task claim keeps it only for the spawn itself. */
+  /**
+   * Spawns at once (no await), so a caller holding a task claim keeps it only for the spawn itself. The returned
+   * promise rejects when the pty host could not start the process; callers await it after the claim.
+   */
   const startTerminal = (
     task: Task,
     def: TerminalDef,
     secrets: TabSecrets,
     resume = false,
     extraEnv: Record<string, string> = {},
-  ) => {
+  ): Promise<void> => {
     const spawnEnvironment = task.environment;
+    let started: Promise<void>;
     try {
       const cmd = terminalCommand(
         task,
@@ -1467,7 +1471,7 @@ export function createHandlers(s: Services): Handlers {
       // OpenCode's counterpart of Claude's --add-dir for the brain, given through its config.
       const brainDir = def.kind === 'opencode' ? brainToRead(task) : undefined;
       const cwd = terminalWorkspace(task, def).worktreePath;
-      s.terminals.spawn({
+      started = s.terminals.spawn({
         id: def.id,
         taskId: task.id,
         cwd,
@@ -1500,6 +1504,10 @@ export function createHandlers(s: Services): Handlers {
       spawnedWithSecrets.add(def.id);
     else spawnedWithSecrets.delete(def.id);
     if (def.kind === 'claude') s.claudeSpawned?.(def.id);
+    return started.catch((e: unknown) => {
+      s.terminalFailures?.spawnFailed(def.id, def.kind, e);
+      throw e;
+    });
   };
 
   /** The shared rule (inject.ts): a stored secret of the tab's repo is given to it. */
@@ -1549,16 +1557,18 @@ export function createHandlers(s: Services): Handlers {
     const prepared = await prepareTab(taskById(taskId), def);
     // Not withClaim: the spawn is synchronous, so the claim is held for no tick at all (two opens at once both go through).
     claim(taskId, ['ready'], 'run a command in');
+    let started: Promise<void>;
     try {
       if (taskById(taskId).environment !== spec.environment)
         throw new Error("The task's environment changed; run it again");
       // The agent went away (or the run was stopped) while the tab was prepared: nothing spawns with the secrets.
       if (!attach(def.id)) return;
       runArgs.set(def.id, spec.args);
-      startTerminal(taskById(taskId), def, prepared);
+      started = startTerminal(taskById(taskId), def, prepared);
     } finally {
       release(taskId);
     }
+    await started;
     await updateTerminals(taskId, (list) =>
       old ? list.map((d) => (d.id === def.id ? def : d)) : [...list, def],
     );
@@ -3931,6 +3941,7 @@ export function createHandlers(s: Services): Handlers {
       };
       // The secrets env is prepared outside the claim (two opens at once both go through); it is spawned under a
       // second claim, and prepared again when the environment changed meanwhile (a switch, an expiry).
+      let started: Promise<void>;
       for (let attempt = 0; ; attempt++) {
         const env = taskById(taskId).environment;
         const secrets = await prepareTab(taskById(taskId), full);
@@ -3938,7 +3949,7 @@ export function createHandlers(s: Services): Handlers {
         claim(taskId, ['ready'], 'open a terminal in');
         try {
           if (taskById(taskId).environment === env) {
-            startTerminal(taskById(taskId), full, secrets);
+            started = startTerminal(taskById(taskId), full, secrets);
             break;
           }
           if (attempt >= 2) throw new Error('Task is busy');
@@ -3946,6 +3957,7 @@ export function createHandlers(s: Services): Handlers {
           release(taskId);
         }
       }
+      await started;
       await updateTerminals(taskId, (list) => [...list, full]);
       // A switch, an expiry or Finish in the gap before the tab was listed missed it: it still holds the old
       // environment's values, so it starts again with the current ones (or stops when the task is no longer ready).
@@ -4029,7 +4041,7 @@ export function createHandlers(s: Services): Handlers {
         def?.kind !== 'opencode'
       ) {
         s.terminalFailures?.clear(id);
-        s.terminals.restart(id);
+        await s.terminals.restart(id);
         return;
       }
       if (!owner || !def) throw new Error(`Unknown terminal ${id}`);

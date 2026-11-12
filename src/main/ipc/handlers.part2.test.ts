@@ -22,6 +22,7 @@ import { folderPaths } from '../paths';
 import { loadEffectiveConfig } from '../services/effectiveConfig';
 import { TaskStore } from '../services/TaskStore';
 import { TerminalManager } from '../services/TerminalManager';
+import { inProcessPtyHost } from '../test-helpers/ptyHost';
 import { addOrigin, commitFile, git, makeRepo } from '../test-helpers/gitRepo';
 import {
   echoCmd,
@@ -115,7 +116,7 @@ describe('handlers: Claude Code sessions', () => {
     });
     // After a relaunch the new manager does not know the terminal; it still resumes.
     await hx.terminals.killAllForTask(t.id);
-    const fresh = new TerminalManager();
+    const fresh = new TerminalManager(inProcessPtyHost());
     allTerminals.push(fresh);
     const h2 = createHandlers({ ...hx.services, terminals: fresh });
     await h2['terminals:restart'](def!.id);

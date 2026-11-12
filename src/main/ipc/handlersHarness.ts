@@ -35,6 +35,7 @@ import {
   commitFile,
   makeRepo,
 } from '../test-helpers/gitRepo';
+import { inProcessPtyHost } from '../test-helpers/ptyHost';
 import { echoCmd, failCmd, testPlatform } from '../test-helpers/shell';
 import { createHandlers, type Services } from './handlers';
 
@@ -110,7 +111,7 @@ export async function harness(
           ? base.shellCommand(apm.fail ? failCmd(7) : echoCmd(c))
           : base.shellCommand(c),
   };
-  const terminals = new TerminalManager();
+  const terminals = new TerminalManager(inProcessPtyHost());
   allTerminals.push(terminals);
   const usageDir = mkdtempSync(path.join(os.tmpdir(), 'shellie-usage-'));
   connDirs.push(usageDir);

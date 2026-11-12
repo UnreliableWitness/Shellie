@@ -112,6 +112,8 @@ import { SetupRunner, ensureExcluded } from './main/services/SetupRunner';
 import { TaskStore } from './main/services/TaskStore';
 import { ClaudeRetheme } from './main/services/ClaudeRetheme';
 import { TerminalManager } from './main/services/TerminalManager';
+import { PtyHostClient } from './main/ptyHost/client';
+import { utilityPtyHost } from './main/ptyHost/utility';
 import { TerminalFailures } from './main/services/TerminalFailures';
 import { CopilotFileTailer } from './main/usage/CopilotFileTailer';
 import { ActivityTracker } from './main/time/ActivityTracker';
@@ -269,7 +271,11 @@ let mainWindow: BrowserWindow | null = null;
 let splashWin: BrowserWindow | null = null;
 /** True until the main window is revealed (stays true after a boot failure). */
 let booting = true;
-const terminals = new TerminalManager();
+/** Starts terminals and headless brain jobs in a utility process, so a slow Windows spawn never blocks main (#271). */
+const ptyHost = new PtyHostClient(
+  utilityPtyHost(path.join(__dirname, 'ptyHost.cjs')),
+);
+const terminals = new TerminalManager(ptyHost);
 /** How long after a terminal's exit its output is read for a diagnosis (late ConPTY output, #109). */
 const EXIT_SETTLE_MS = 150;
 const DOT = String.fromCharCode(0xb7);
@@ -983,7 +989,7 @@ async function boot(): Promise<void> {
     });
     const brainRunner = new BrainJobRunner({
       platform,
-      run: runWithInput,
+      run: (cmd, o) => ptyHost.run(cmd, o),
       env: (id) => brainJobEnv(id, brainEnv(id)),
       tokensToday: (id) => brainToday(id).tokens,
       cap: (id) => brainOf(id).options.dailyTokenCap,
