@@ -18,10 +18,9 @@ import {
   type ReaderShelf,
   type ReaderStatus,
 } from '../../shared/reader';
-import type { ReadWork } from '../../shared/reading';
 import type { TelemetryProps } from '../../shared/telemetry';
 import { errorMessage } from '../../shared/errors';
-import { buildBrain } from './build';
+import { buildBrain, phoneFiles, type PhoneFiles } from './build';
 import {
   deleteItem,
   getItem,
@@ -68,8 +67,11 @@ export type ReaderSyncDeps = {
   /** A brain's marks changed from the phone's side. */
   marksChanged: (brainId: string) => void;
   telemetry: (event: string, props?: TelemetryProps) => void;
-  /** Long read path → the work in front of the reader it bears on (the reading list's); none without it. */
-  work?: (brain: Brain) => Promise<ReadWork>;
+  /**
+   * A brain's files as the reading list read them, with the work each long read bears on. Without it, or when it
+   * fails, the push reads the files itself and goes without the work links.
+   */
+  files?: (brain: Brain) => Promise<PhoneFiles>;
   fetch?: typeof fetch;
   now?: () => Date;
 };
@@ -272,9 +274,11 @@ export class ReaderSync {
       const listed = await listItems(c, this.fetch);
       const keep = new Set<string>();
       for (const brain of wanted) {
-        // The work links are an extra: a push goes without them when they cannot be worked out.
-        const work = (await this.d.work?.(brain).catch(() => undefined)) ?? {};
-        const built = await buildBrain(brain, keys, work);
+        // The work links are an extra: a push reads the files itself and goes without them when the list fails.
+        const files =
+          (await this.d.files?.(brain).catch(() => undefined)) ??
+          (await phoneFiles(brain.path));
+        const built = await buildBrain(brain, keys, files);
         const before = store.sent(brain.id);
         // What is known to be on the server, kept as the push goes: a push that stops halfway is picked up there.
         const after: Record<string, string> = {};

@@ -27,7 +27,6 @@ import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
-import type { ReadWork } from './shared/reading';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { capturedSessionIds } from './main/brain/state';
 import { BrainStore } from './main/brain/BrainStore';
@@ -146,6 +145,7 @@ import { startLocalCrashDumps } from './main/diagnostics/crashDumps';
 import { rendererMemoryMb, startHealthReports } from './main/telemetry/health';
 import { reportLoggedErrors } from './main/telemetry/loggedErrors';
 import { hello, sendRecords } from './main/costServer/client';
+import { phoneFiles, type PhoneFiles } from './main/reader/build';
 import { ReaderStore } from './main/reader/ReaderStore';
 import { ReaderSync } from './main/reader/ReaderSync';
 import { TELEMETRY_CHANNEL } from './shared/telemetry';
@@ -284,7 +284,8 @@ let readerBrainChanged: () => void = () => {};
 let stopReader: () => void = () => {};
 /** The reading list (set where the handlers are made): told when a brain's files change, asked by the phone's push. */
 let readingBrainChanged: (brainId: string) => void = () => {};
-let readingWork: (brain: Brain) => Promise<ReadWork> = async () => ({});
+let readingFiles: (brain: Brain) => Promise<PhoneFiles> = (brain) =>
+  phoneFiles(brain.path);
 /** The brain's own Claude terminal; set where the brains are wired. Its terminal counts as a Claude tab. */
 let brainTerminals: ReturnType<typeof createBrainTerminals> | undefined =
   undefined;
@@ -1041,7 +1042,7 @@ async function boot(): Promise<void> {
       status: (st) => broadcast('reader:changed', st),
       marksChanged: (brainId) => broadcast('reader:marksChanged', { brainId }),
       telemetry: (event, props) => telemetry.event(event, props),
-      work: (brain) => readingWork(brain),
+      files: (brain) => readingFiles(brain),
     });
     readerBrainChanged = () => readerSync.brainChanged();
     // The scheduler starts with the window; the runner stops on quit either way.
@@ -1198,7 +1199,7 @@ async function boot(): Promise<void> {
       },
       onReading: (reading) => {
         readingBrainChanged = (brainId) => reading.brainChanged(brainId);
-        readingWork = (brain) => reading.work(brain);
+        readingFiles = (brain) => reading.forPhone(brain);
       },
       // Leftover worktree folders of finished tasks (#115): once soon after launch, then every few minutes.
       onCleanupRetry: (retryAll) => {
