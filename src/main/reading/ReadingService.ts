@@ -6,9 +6,10 @@
 import type { Brain, BrainPageRow } from '../../shared/brain';
 import type { ReaderMarkSet } from '../../shared/reader';
 import type { ReadingBrain, ReadWork } from '../../shared/reading';
-import { readBook } from '../brain/book';
+import { chaptersOf } from '../brain/book';
 import { pageRows } from '../brain/browse';
-import { brainReadsAndPages } from '../brain/reads';
+import { brainReadsAndPages, type BrainReadsAndPages } from '../brain/reads';
+import type { PhoneFiles } from '../reader/build';
 import { workFor, type WorkItem } from './work';
 
 /** A work item in front of the reader and where it lives; `id` as the tracker writes it. */
@@ -31,7 +32,7 @@ export type ReadingDeps = {
 
 type Files = {
   at: number;
-  reads: Awaited<ReturnType<typeof brainReadsAndPages>>;
+  reads: BrainReadsAndPages;
   rows: BrainPageRow[];
   chapters: string[];
 };
@@ -76,9 +77,22 @@ export class ReadingService {
 
   /** The work each of the brain's long reads bears on, for the phone's shelf. */
   async work(brain: Brain): Promise<ReadWork> {
-    const items = await this.d.workItems().catch(() => []);
-    if (!items.length) return {};
-    return match(brain, items, await this.of(brain));
+    return (await this.forPhone(brain)).work;
+  }
+
+  /** What the phone's shelf is built from: the files as read for the list, and the work each long read bears on. */
+  async forPhone(brain: Brain): Promise<PhoneFiles & { work: ReadWork }> {
+    const [items, f] = await Promise.all([
+      this.d.workItems().catch(() => []),
+      this.of(brain),
+    ]);
+    return {
+      reads: f.reads.reads,
+      letters: f.reads.letters,
+      chapters: f.chapters,
+      texts: f.reads.texts,
+      work: items.length ? match(brain, items, f) : {},
+    };
   }
 
   private of(brain: Brain): Promise<Files> {
@@ -95,14 +109,11 @@ export class ReadingService {
     const p = Promise.all([
       brainReadsAndPages(brain.path),
       pageRows(brain.path),
-      readBook(brain.path),
-    ]).then(([reads, rows, book]) => ({
+    ]).then(([reads, rows]) => ({
       at,
       reads,
       rows,
-      chapters: (book?.chapters ?? [])
-        .filter((c) => c.pages.length)
-        .map((c) => c.title),
+      chapters: chaptersOf(reads.book),
     }));
     this.files.set(brain.id, p);
     // A failed read is not kept: the next ask tries again.

@@ -297,6 +297,8 @@ type Loaded = {
   book: BrainBook | null;
   record: ReadsFile;
   chapters: Map<string, number>;
+  /** Each long read's and letter's file as it was read. */
+  texts: Record<string, string>;
 };
 
 async function load(brainDir: string): Promise<Loaded> {
@@ -313,16 +315,27 @@ async function load(brainDir: string): Promise<Loaded> {
     book,
     record,
     chapters: matchChapters(reads, book, record),
+    texts: Object.fromEntries(
+      [...files, ...letterFiles].map((f) => [f.path, f.text]),
+    ),
   };
 }
+
+export type BrainReadsAndPages = BrainReads & {
+  under: Record<string, string[]>;
+  book: BrainBook | null;
+  /** Long read or letter path to its file's text, read with the rest. */
+  texts: Record<string, string>;
+};
 
 /**
  * The brain's long reads (by title) and letters (newest first), each long read with what made it out of date; and
  * per long read the pages it was written from (its own list, the record's, and its chapter's as the book has it now).
+ * With the book and the files' texts they were read from, so whoever needs those too reads nothing again.
  */
 export async function brainReadsAndPages(
   brainDir: string,
-): Promise<BrainReads & { under: Record<string, string[]> }> {
+): Promise<BrainReadsAndPages> {
   const l = await load(brainDir);
   const hash = pageHasher(brainDir);
   const rows: BrainReadRow[] = [];
@@ -355,6 +368,8 @@ export async function brainReadsAndPages(
         b.path.localeCompare(a.path),
     ),
     under,
+    book: l.book,
+    texts: l.texts,
   };
 }
 

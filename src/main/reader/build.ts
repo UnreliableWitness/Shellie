@@ -13,8 +13,9 @@ import {
   type ReaderPiece,
   type ReaderShelf,
 } from '../../shared/reader';
+import type { BrainLetterRow, BrainReadRow } from '../../shared/brain';
 import type { ReadWork } from '../../shared/reading';
-import { readBook } from '../brain/book';
+import { chaptersOf } from '../brain/book';
 import {
   linkTargets,
   outsideFences,
@@ -22,7 +23,7 @@ import {
   str,
 } from '../brain/pages';
 import { absPath } from '../brain/paths';
-import { brainReads } from '../brain/reads';
+import { brainReadsAndPages } from '../brain/reads';
 
 /** A shelf before it is sent: `sentAt` is set then, so it is not part of what makes a shelf differ. */
 export type ShelfDraft = Omit<ReaderShelf, 'sentAt'>;
@@ -88,16 +89,35 @@ const read = async (brainDir: string, rel: string): Promise<string | null> => {
   }
 };
 
+/** A brain's long reads and letters as the reading list read them, with their files' texts. */
+export type PhoneFiles = {
+  reads: BrainReadRow[];
+  letters: BrainLetterRow[];
+  /** The book's chapters that have pages. */
+  chapters: string[];
+  /** Long read or letter path to its file's text. */
+  texts: Record<string, string>;
+  /** Long read path → the work in front of the reader it bears on. */
+  work?: ReadWork;
+};
+
+/** The files read here, for a push without the reading list: no work links. */
+export async function phoneFiles(brainDir: string): Promise<PhoneFiles> {
+  const r = await brainReadsAndPages(brainDir);
+  return {
+    reads: r.reads,
+    letters: r.letters,
+    chapters: chaptersOf(r.book),
+    texts: r.texts,
+  };
+}
+
 export async function buildBrain(
   brain: { id: string; name: string; path: string },
   keys: Pick<ReaderKeys, 'ids'>,
-  /** Long read path → the work in front of the reader it bears on. */
-  work: ReadWork = {},
+  files: PhoneFiles,
 ): Promise<BuiltBrain> {
-  const [rows, book] = await Promise.all([
-    brainReads(brain.path),
-    readBook(brain.path),
-  ]);
+  const work = files.work ?? {};
   const id = (kind: 'r' | 'p', rel: string) =>
     itemId(keys, kind, itemName(brain.id, rel));
   const pieces: BuiltItem[] = [];
@@ -109,17 +129,15 @@ export async function buildBrain(
     v: 1,
     brainId: brain.id,
     name: brain.name,
-    chapters: (book?.chapters ?? [])
-      .filter((c) => c.pages.length)
-      .map((c) => c.title),
+    chapters: files.chapters,
     reads: [],
     letters: [],
     refs: {},
   };
-  for (const row of [...rows.reads, ...rows.letters]) {
-    const text = await read(brain.path, row.path);
-    // Gone since it was listed: the next push says so.
-    if (text === null) continue;
+  for (const row of [...files.reads, ...files.letters]) {
+    const text = files.texts[row.path];
+    // Not read with the list: the next push says so.
+    if (text === undefined) continue;
     const value: ReaderPiece = {
       v: 1,
       path: row.path,

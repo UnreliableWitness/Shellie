@@ -364,7 +364,9 @@ export type Services = {
    * Hands out the reading list's work links and its "this brain changed": main gives the first to the phone's push
    * and calls the second when a brain's files change; tests capture them.
    */
-  onReading?: (reading: Pick<ReadingService, 'work' | 'brainChanged'>) => void;
+  onReading?: (
+    reading: Pick<ReadingService, 'forPhone' | 'brainChanged'>,
+  ) => void;
   /** How long Finish waits after closing terminals so the last telemetry batch arrives (main 2500, tests 0). */
   finishFlushMs: number;
   /** App telemetry (usage, errors, timings); see docs/telemetry.md. Defaults to sending nothing. */

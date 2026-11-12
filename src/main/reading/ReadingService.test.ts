@@ -1,9 +1,14 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrainSchema, type Brain } from '../../shared/brain';
-import type { ReaderMarkSet } from '../../shared/reader';
+import {
+  readerKeys,
+  SECRET_BYTES,
+  type ReaderMarkSet,
+} from '../../shared/reader';
+import { buildBrain } from '../reader/build';
 import { ReadingService, type ReadingWorkItem } from './ReadingService';
 
 let root: string;
@@ -165,6 +170,32 @@ describe('ReadingService', () => {
         { id: 412, title: 'Return flow: refund before receipt' },
       ],
     });
+  });
+
+  it("hands the phone's push the files it read: the book and each long read are read once", async () => {
+    await fill('b1');
+    const service = new ReadingService({
+      brains: () => [brain('b1')],
+      workItems: async () => [item()],
+      marks: () => ({}),
+    });
+    const keys = await readerKeys(new Uint8Array(SECRET_BYTES).fill(1));
+    const readFile = vi.spyOn(fs, 'readFile');
+    try {
+      const files = await service.forPhone(brain('b1'));
+      const built = await buildBrain(brain('b1'), keys, files);
+      expect(built.shelf.reads).toMatchObject([
+        { path: 'reads/returns.md', work: [{ id: 412 }] },
+      ]);
+      const reads = (rel: string) =>
+        readFile.mock.calls.filter(
+          ([file]) => file === path.join(root, 'b1', rel),
+        ).length;
+      expect(reads('brain/book.json')).toBe(1);
+      expect(reads('reads/returns.md')).toBe(1);
+    } finally {
+      readFile.mockRestore();
+    }
   });
 
   it('keeps what it read of a brain until the brain changes or five minutes pass', async () => {

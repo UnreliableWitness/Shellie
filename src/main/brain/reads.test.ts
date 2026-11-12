@@ -6,6 +6,7 @@ import { GitClient } from '../services/GitClient';
 import {
   bodyHash,
   brainReads,
+  brainReadsAndPages,
   checkWriteTarget,
   matchChapters,
   nextToWrite,
@@ -499,6 +500,23 @@ describe('long reads in a brain', () => {
       'reads/letters/2026-11-12-a.md',
       'reads/letters/2026-11-10-a.md',
     ]);
+  });
+
+  it('hands over the book and the texts it read the long reads and letters from', async () => {
+    const letter =
+      '---\ntitle: L\nread: reads/order-to-invoice.md\n---\n\nHi.\n';
+    await write('reads/order-to-invoice.md', longRead());
+    await write('reads/letters/2026-11-10-a.md', letter);
+    const r = await brainReadsAndPages(dir);
+    expect(r.book?.chapters.map((c) => c.title)).toEqual([
+      'Orders',
+      'Getting paid',
+      'Empty',
+    ]);
+    expect(r.texts).toEqual({
+      'reads/order-to-invoice.md': longRead(),
+      'reads/letters/2026-11-10-a.md': letter,
+    });
   });
 
   describe('checkWriteTarget', () => {
