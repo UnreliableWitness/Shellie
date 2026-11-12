@@ -80,9 +80,9 @@ function startServer(port = 0) {
 }
 
 const crypto: TokenCrypto = {
-  available: () => true,
-  encrypt: (s) => Buffer.from(`x${s}`),
-  decrypt: (b) => b.toString().slice(1),
+  available: async () => true,
+  encrypt: async (s) => Buffer.from(`x${s}`),
+  decrypt: async (b) => b.toString().slice(1),
 };
 
 const rec = (i: number, o: Partial<CostRecord> = {}): CostRecord => ({

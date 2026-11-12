@@ -75,6 +75,13 @@ const sameScope = (a: SecretScope, b: SecretScope) =>
 /** Secrets encrypted at rest (safeStorage via TokenCrypto). Decrypted values leave this class only through main-side calls. */
 export class SecretStore {
   private readonly store: JsonFileStore<SecretsFile>;
+  /**
+   * Each stored ciphertext's plaintext (null: unreadable), decrypted on load and save: safeStorage is async, and
+   * the readers (the leak watch's output filter among them) are not. Main memory only.
+   */
+  private readonly plain = new Map<string, string | null>();
+  /** Ciphertexts of saves still running: kept while another save or a delete drops the unused ones. */
+  private readonly pending = new Set<string>();
 
   constructor(
     filePath: string,
@@ -93,7 +100,17 @@ export class SecretStore {
   }
 
   async load(): Promise<{ recovered: boolean; backup?: string }> {
-    return this.store.load();
+    const result = await this.store.load();
+    this.plain.clear();
+    await Promise.all(
+      [...this.ciphertexts()].map(async (c) =>
+        this.plain.set(
+          c,
+          await this.crypto.decrypt(Buffer.from(c, 'base64')).catch(() => null),
+        ),
+      ),
+    );
+    return result;
   }
 
   /** Masked views; with a repo id, that repo's secrets and the All ones, with 'all' only the All ones. */
@@ -118,7 +135,7 @@ export class SecretStore {
         'A secret name can use letters, digits and underscores, and cannot start with a digit',
       );
     const adds = Object.entries(input.values).some(([, v]) => v);
-    if (adds && !this.crypto.available())
+    if (adds && !(await this.crypto.available()))
       throw new Error(
         'Encryption is not available on this machine; the secret was not saved',
       );
@@ -131,8 +148,20 @@ export class SecretStore {
       );
     if (clashes(this.current)) throw new Error(DUPLICATE);
     const now = new Date().toISOString();
+    // Encrypted before the update: its callback is synchronous.
+    const sealed = new Map<Environment, string>();
+    for (const env of ENVIRONMENTS) {
+      const v = input.values[env];
+      if (!v) continue;
+      const ciphertext = (await this.crypto.encrypt(v.value)).toString(
+        'base64',
+      );
+      sealed.set(env, ciphertext);
+      this.plain.set(ciphertext, v.value);
+      this.pending.add(ciphertext);
+    }
     let saved!: Stored;
-    await this.store.update((f) => {
+    const written = this.store.update((f) => {
       if (clashes(f)) throw new Error(DUPLICATE);
       const existing = input.id
         ? f.secrets.find((s) => s.id === input.id)
@@ -154,13 +183,17 @@ export class SecretStore {
         if (v === null) delete record.values[env];
         else
           record.values[env] = {
-            ciphertext: this.crypto.encrypt(v.value).toString('base64'),
+            ciphertext: sealed.get(env)!,
             source: v.source ?? null,
             changedAt: now,
           };
       }
       if (!existing) f.secrets.push(record);
       saved = record;
+    });
+    await written.finally(() => {
+      for (const c of sealed.values()) this.pending.delete(c);
+      this.forgetUnused();
     });
     return this.view(saved);
   }
@@ -169,6 +202,7 @@ export class SecretStore {
     await this.store.update((f) => {
       f.secrets = f.secrets.filter((s) => s.id !== id);
     });
+    this.forgetUnused();
   }
 
   /** The plain value, for an explicit reveal; leaves a record (without the value) in the reveal log. */
@@ -262,12 +296,22 @@ export class SecretStore {
 
   private decrypt(s: Stored, env: Environment): string | null {
     const v = s.values[env];
-    if (!v) return null;
-    try {
-      return this.crypto.decrypt(Buffer.from(v.ciphertext, 'base64'));
-    } catch {
-      return null;
-    }
+    return v ? (this.plain.get(v.ciphertext) ?? null) : null;
+  }
+
+  /** Drops the plaintext of values no longer stored (replaced, removed, or a save that failed). */
+  private forgetUnused(): void {
+    const kept = this.ciphertexts();
+    for (const c of this.plain.keys())
+      if (!kept.has(c) && !this.pending.has(c)) this.plain.delete(c);
+  }
+
+  private ciphertexts(): Set<string> {
+    return new Set(
+      this.current.secrets.flatMap((s) =>
+        Object.values(s.values).map((v) => v.ciphertext),
+      ),
+    );
   }
 
   private view(s: Stored): SecretView {

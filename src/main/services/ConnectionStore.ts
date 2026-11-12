@@ -10,11 +10,11 @@ import {
 } from '../../shared/types';
 import { JsonFileStore } from '../usage/JsonFileStore';
 
-/** Encrypts tokens at rest. main.ts adapts Electron safeStorage; tests pass a fake. */
+/** Encrypts tokens at rest. safeCrypto adapts Electron safeStorage; tests pass a fake. */
 export interface TokenCrypto {
-  available(): boolean;
-  encrypt(plain: string): Buffer;
-  decrypt(cipher: Buffer): string;
+  available(): Promise<boolean>;
+  encrypt(plain: string): Promise<Buffer>;
+  decrypt(cipher: Buffer): Promise<string>;
 }
 
 export class TokenUnavailableError extends Error {
@@ -102,13 +102,13 @@ export class ConnectionStore {
   }
 
   /** Everything save() rejects up front, so callers can fail before any network call. */
-  assertCanSave(input: ConnectionInput): void {
+  async assertCanSave(input: ConnectionInput): Promise<void> {
     this.normalizeUrl(input.organizationUrl);
     if (input.project.trim().length === 0)
       throw new Error('Enter the project name');
     if (input.pat.trim().length === 0)
       throw new Error('Enter a personal access token');
-    if (!this.crypto.available())
+    if (!(await this.crypto.available()))
       throw new TokenUnavailableError(
         'Token encryption is not available on this machine; the connection was not saved',
       );
@@ -144,11 +144,11 @@ export class ConnectionStore {
   }
 
   async save(input: ConnectionInput): Promise<Connection> {
-    this.assertCanSave(input);
+    await this.assertCanSave(input);
     const organizationUrl = this.normalizeUrl(input.organizationUrl);
     const project = input.project.trim();
     const pat = input.pat.trim();
-    const tokenCiphertext = this.crypto.encrypt(pat).toString('base64');
+    const tokenCiphertext = (await this.crypto.encrypt(pat)).toString('base64');
     const existing = input.id
       ? this.current.connections.find((c) => c.id === input.id)
       : undefined;
@@ -230,7 +230,9 @@ export class ConnectionStore {
         'This connection has an invalid organization URL; remove it and add it again',
       );
     try {
-      return this.crypto.decrypt(Buffer.from(c.tokenCiphertext, 'base64'));
+      return await this.crypto.decrypt(
+        Buffer.from(c.tokenCiphertext, 'base64'),
+      );
     } catch {
       throw new TokenUnavailableError(
         'Stored token could not be decrypted; enter it again',

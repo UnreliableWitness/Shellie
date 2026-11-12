@@ -99,6 +99,7 @@ import {
   readClaudeTheme,
 } from './main/services/claudeTheme';
 import { ConnectionStore } from './main/services/ConnectionStore';
+import { safeCrypto } from './main/services/safeCrypto';
 import { SecretStore, secretsLoadNotice } from './main/secrets/SecretStore';
 import { GitClient } from './main/services/GitClient';
 import { connectionIdForPath, createGitAuth } from './main/services/gitAuth';
@@ -479,13 +480,14 @@ async function boot(): Promise<void> {
   if (migration?.connections && !migration.failed && readOldKey) {
     reporter.step('Moving connection tokens');
     // Without encryption the tokens cannot be re-encrypted: keep the connections, marked unauthorized ('refused').
-    const canEncrypt = safeStorage.isEncryptionAvailable();
+    const tokenCrypto = safeCrypto(safeStorage);
+    const canEncrypt = await tokenCrypto.available().catch(() => false);
     tokenResult = await migrateTokens({
       file: path.join(userData, 'connections.json'),
       readOldKey: canEncrypt
         ? readOldKey
         : () => Promise.reject(new Error('safeStorage unavailable')),
-      encrypt: (plain) => safeStorage.encryptString(plain),
+      encrypt: (plain) => tokenCrypto.encrypt(plain),
     }).catch((): TokenMigration => {
       console.error('Moving MIAC connection tokens failed; enter them again.');
       return 'refused';
@@ -539,18 +541,14 @@ async function boot(): Promise<void> {
     reporter.step('Loading tasks');
     const store = new TaskStore(path.join(userData, 'state.json'));
     /** Secrets at rest (tokens, the cost server key) go through Electron's safeStorage. */
-    const safeCrypto = {
-      available: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (plain: string) => safeStorage.encryptString(plain),
-      decrypt: (cipher: Buffer) => safeStorage.decryptString(cipher),
-    };
+    const secretCrypto = safeCrypto(safeStorage);
     const connections = new ConnectionStore(
       path.join(userData, 'connections.json'),
-      safeCrypto,
+      secretCrypto,
     );
     const secrets = new SecretStore(
       path.join(userData, 'secrets.json'),
-      safeCrypto,
+      secretCrypto,
     );
     // The brains load before the ledger's first pass, so their records are attributed to them.
     const brains = new BrainStore(path.join(userData, 'brains.json'));
@@ -812,7 +810,7 @@ async function boot(): Promise<void> {
     // The cost server's address, key and last `hello` answer; a changed answer moves the budgets.
     const costServer = new CostServerStore(
       path.join(userData, 'cost-server.json'),
-      safeCrypto,
+      secretCrypto,
       () => {
         void budget.pass().catch(() => undefined);
         broadcast('budget:changed', {});
@@ -1033,7 +1031,7 @@ async function boot(): Promise<void> {
     // ordinary answer); `reader.push` and `reader.connect` say how it went.
     const readerStore = new ReaderStore(
       path.join(userData, 'reader.json'),
-      safeCrypto,
+      secretCrypto,
     );
     await readerStore.load();
     const readerSync = new ReaderSync({

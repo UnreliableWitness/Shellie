@@ -27,9 +27,9 @@ import { ReaderStore } from './ReaderStore';
 import { ReaderSync } from './ReaderSync';
 
 const crypto = {
-  available: () => true,
-  encrypt: (s: string) => Buffer.from(`enc:${s}`),
-  decrypt: (b: Buffer) => b.toString().slice(4),
+  available: async () => true,
+  encrypt: async (s: string) => Buffer.from(`enc:${s}`),
+  decrypt: async (b: Buffer) => b.toString().slice(4),
 };
 
 const READ = 'reads/order-to-invoice.md';

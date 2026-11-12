@@ -147,7 +147,7 @@ export async function readMiacWindowsKey(
 export async function migrateTokens(opts: {
   file: string;
   readOldKey: () => Promise<OldKey>;
-  encrypt: (plain: string) => Buffer;
+  encrypt: (plain: string) => Promise<Buffer>;
 }): Promise<TokenMigration> {
   const doc = ConnectionsFileSchema.parse(
     JSON.parse(await fs.readFile(opts.file, 'utf8')),
@@ -164,7 +164,7 @@ export async function migrateTokens(opts: {
     try {
       if (key === null) throw new Error('no key');
       const plain = decryptOld(Buffer.from(c.tokenCiphertext, 'base64'), key);
-      c.tokenCiphertext = opts.encrypt(plain).toString('base64');
+      c.tokenCiphertext = (await opts.encrypt(plain)).toString('base64');
     } catch {
       c.status = 'unauthorized';
       failed++;

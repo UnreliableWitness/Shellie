@@ -84,7 +84,7 @@ const tokens = (file: string) =>
 const mac = (password: string) => async () =>
   ({ kind: 'mac', password }) as const;
 
-const newKey = (p: string) => Buffer.from(`new:${p}`);
+const newKey = async (p: string) => Buffer.from(`new:${p}`);
 
 describe('decryptChromiumMac', () => {
   it('decrypts what Chromium encrypted', () => {
@@ -176,7 +176,7 @@ describe('migrateTokens', () => {
         readOldKey: async () => {
           throw new Error('User canceled');
         },
-        encrypt: () => Buffer.alloc(0),
+        encrypt: async () => Buffer.alloc(0),
       }),
     ).toBe('refused');
     expect(read(file).connections).toHaveLength(1);
@@ -190,7 +190,7 @@ describe('migrateTokens', () => {
       await migrateTokens({
         file,
         readOldKey: mac('pw'),
-        encrypt: () => Buffer.alloc(0),
+        encrypt: async () => Buffer.alloc(0),
       }),
     ).toBe('none');
     expect(readFileSync(file, 'utf8')).toBe(before);

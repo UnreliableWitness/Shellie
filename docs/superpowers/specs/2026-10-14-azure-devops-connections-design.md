@@ -27,7 +27,7 @@ Out:
 
 ## Decisions
 
-- **Credentials**: PATs are encrypted with Electron `safeStorage` and stored in `connections.json` in the user data folder, separate from `state.json`. If `safeStorage.isEncryptionAvailable()` is false, saving a connection is refused with a notice; there is no plain-text fallback. The renderer sends the PAT once on save and never receives it back.
+- **Credentials**: PATs are encrypted with Electron `safeStorage` and stored in `connections.json` in the user data folder, separate from `state.json`. If `safeStorage.isAsyncEncryptionAvailable()` resolves false, saving a connection is refused with a notice; there is no plain-text fallback. The renderer sends the PAT once on save and never receives it back.
 - **Client**: a small REST client over `fetch` with Basic auth (`:<pat>` base64) and `api-version=7.1`. No SDK.
 - **Work item types** are read from the project, so Basic, Agile and Scrum processes all work. `WorkItemRef.type` becomes a plain string; the branch prefix stays `bugfix` for `Bug` and `feature` for anything else.
 - **Picker default** is the current sprint for everyone, with an Assigned to me toggle. Results are capped at 50, ordered by changed date descending, closed and removed states excluded.
@@ -51,7 +51,7 @@ type Connection = {
 // connections.json (zod validated, atomic write)
 type ConnectionsFile = {
   version: 1;
-  connections: (Connection & { tokenCiphertext: string })[]; // base64 of safeStorage.encryptString(pat)
+  connections: (Connection & { tokenCiphertext: string })[]; // base64 of safeStorage.encryptStringAsync(pat) (same format as the deprecated encryptString)
 };
 
 type WorkItemRef = { id: string; type: string; title: string; url: string | null };
