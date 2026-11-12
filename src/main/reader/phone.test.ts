@@ -22,6 +22,7 @@ import {
   secretFromLink,
 } from '../../shared/reader';
 import type { ReadWork } from '../../shared/reading';
+import { phoneFiles } from './build';
 import { ReaderStore } from './ReaderStore';
 import { ReaderSync } from './ReaderSync';
 
@@ -96,7 +97,9 @@ async function setUp(work?: ReadWork) {
     status: () => undefined,
     marksChanged: (id) => told.push(id),
     telemetry: () => undefined,
-    work: work ? async () => work : undefined,
+    files: work
+      ? async (b) => ({ ...(await phoneFiles(b.path)), work })
+      : undefined,
   });
   expect((await shellie.connect(server.url, INVITE)).connected).toBe(true);
 

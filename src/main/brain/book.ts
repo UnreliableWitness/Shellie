@@ -59,6 +59,10 @@ export function parseBook(
   return chapters.length ? { chapters } : null;
 }
 
+/** The titles of the book's chapters that have pages, as the reading list and the phone show them. */
+export const chaptersOf = (book: BrainBook | null): string[] =>
+  (book?.chapters ?? []).filter((c) => c.pages.length).map((c) => c.title);
+
 /** The brain's book, or null when there is no file or it is not a usable book. */
 export async function readBook(brainDir: string): Promise<BrainBook | null> {
   let raw: string;
