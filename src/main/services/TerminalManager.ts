@@ -40,6 +40,8 @@ type Entry = {
   exit: Promise<void>;
   startedAt: number;
   exitedAt?: number;
+  /** How it exited (UNKNOWN_EXIT when the code was not known), for a view mounted after the exit (#288). */
+  exitCode?: number;
   /** Output the filter held back (the start of what could be a value split over two chunks). */
   carry: string;
   flushTimer?: NodeJS.Timeout;
@@ -171,13 +173,18 @@ export class TerminalManager extends EventEmitter<{
           entry.tail = seen.slice(-TAIL);
           this.deliver(entry, this.filtered(entry, data, false));
         },
-        exit: (exitCode) => {
+        exit: (exitCode, hostLost = false) => {
           exitResolve();
           if (this.entries.get(options.id) !== entry) return;
           if (entry.carry) this.deliver(entry, this.filtered(entry, '', true));
           entry.exited = true;
           entry.exitedAt = this.now();
-          this.emit('exit', options.id, normaliseExitCode(exitCode));
+          entry.exitCode = normaliseExitCode(exitCode);
+          // Tells a lost host from a program that ended, when a tab shows Process ended (#288).
+          console.error(
+            `[terminals] ${options.id} ended (code ${entry.exitCode === UNKNOWN_EXIT ? 'unknown' : entry.exitCode}, host lost: ${hostLost})`,
+          );
+          this.emit('exit', options.id, entry.exitCode);
         },
       },
     );
@@ -328,6 +335,12 @@ export class TerminalManager extends EventEmitter<{
   isRunning(id: string): boolean {
     const e = this.entries.get(id);
     return Boolean(e && !e.exited);
+  }
+
+  /** How the terminal's process exited; null while it runs and for an unknown one. */
+  exitCode(id: string): number | null {
+    const e = this.entries.get(id);
+    return e?.exited ? (e.exitCode ?? UNKNOWN_EXIT) : null;
   }
 
   /** How long the terminal's process ran: until its exit, or until now while it runs; 0 for an unknown one. */

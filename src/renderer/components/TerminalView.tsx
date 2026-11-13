@@ -53,6 +53,8 @@ export function TerminalView({
   const activeNow = useRef(active);
   const notify = useStore((s) => s.notify);
   const [exitCode, setExitCode] = useState<number | null>(null);
+  /** Counts new processes (restart, reset by main): an answer about the process before the last one is stale (#288). */
+  const starts = useRef(0);
   /** Why an agent tab stopped, when main could tell (#109). */
   const [failure, setFailure] = useState<TerminalFailure | null>(null);
   /** Main has no process for this terminal: the app was relaunched (or updated) since it started. */
@@ -159,10 +161,19 @@ export function TerminalView({
       }
     });
     const offExit = onTerminalEvent('terminal:exit', terminalId, (e) => {
-      setExitCode(e.exitCode);
-      setFailure(e.failure ?? null);
+      // A late exit must not put the bar over a process that runs again (#288).
+      const at = starts.current;
+      void api()
+        .invoke('terminals:isRunning', terminalId)
+        .catch(() => false)
+        .then((running) => {
+          if (!live || running || at !== starts.current) return;
+          setExitCode(e.exitCode);
+          setFailure(e.failure ?? null);
+        });
     });
     const offReset = onTerminalEvent('terminal:reset', terminalId, () => {
+      starts.current++;
       // Output gathered while hidden belongs to the old process.
       pending.length = 0;
       t.reset();
@@ -170,6 +181,8 @@ export function TerminalView({
       setFailure(null);
       sendSize.current(true);
     });
+    // A relaunched tab with autoStart is restarted while main answers; that answer is then stale (#288).
+    const at = starts.current;
     void api()
       .invoke('terminals:buffer', terminalId)
       .catch(() => null)
@@ -191,11 +204,16 @@ export function TerminalView({
         return api().invoke('terminals:isRunning', terminalId);
       })
       .then(async (running) => {
-        if (!live || running !== false) return;
-        setExitCode((c) => c ?? -1);
-        // It exited before this view was mounted: show why, when main knows.
+        const stale = () => !live || at !== starts.current;
+        if (stale() || running !== false) return;
+        // It exited before this view was mounted: show its code and why, when main knows.
+        const code = await api()
+          .invoke('terminals:exitCode', terminalId)
+          .catch(() => null);
+        if (stale()) return;
+        setExitCode((c) => c ?? code ?? -1);
         const f = await api().invoke('terminals:failure', terminalId);
-        if (live && f) setFailure((cur) => cur ?? f);
+        if (!stale() && f) setFailure((cur) => cur ?? f);
       })
       .catch(() => undefined);
     const onData = t.onData((data) => {
@@ -260,6 +278,7 @@ export function TerminalView({
     // Reset first so a fast exit of the new process is not wiped afterwards.
     const previous = exitCode;
     const previousFailure = failure;
+    starts.current++;
     term.current?.reset();
     setExitCode(null);
     setFailure(null);

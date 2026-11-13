@@ -121,6 +121,27 @@ describe('TerminalView after an app relaunch', () => {
     expect(restarts(calls)).toBe(0);
   });
 
+  it('does not show the exit bar over the session it resumed on mount (#288)', async () => {
+    let running = false;
+    const { calls } = installFakeApi({
+      'terminals:buffer': () => null,
+      // Answered as main saw it when asked, after a round trip.
+      'terminals:isRunning': () => {
+        const now = running;
+        return new Promise((r) => setTimeout(() => r(now), 20));
+      },
+      'terminals:restart': () => {
+        running = true;
+      },
+    });
+    render(
+      <TerminalView terminalId="t1" taskId="a" active autoStart resumes />,
+    );
+    await waitFor(() => expect(restarts(calls)).toBe(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('Process ended')).not.toBeInTheDocument();
+  });
+
   it('does not restart a terminal whose process exited in this run', async () => {
     const { calls } = installFakeApi({
       'terminals:buffer': () => 'bye',
@@ -139,9 +160,10 @@ describe('TerminalView after an app relaunch', () => {
 
 describe('TerminalView reset by main', () => {
   it('clears the exit bar and sizes the new process (#105)', async () => {
+    let running = true;
     const { calls, emit } = installFakeApi({
       'terminals:buffer': () => '',
-      'terminals:isRunning': () => true,
+      'terminals:isRunning': () => running,
       'terminals:resize': () => undefined,
     });
     const width = vi
@@ -158,6 +180,7 @@ describe('TerminalView reset by main', () => {
       await waitFor(() => expect(resizes()).toBeGreaterThan(0));
       await new Promise((r) => setTimeout(r, 50));
       const before = resizes();
+      running = false;
       emit('terminal:exit', { id: 't1', exitCode: 1 });
       expect(
         await screen.findByRole('button', { name: 'Resume session' }),
@@ -174,6 +197,47 @@ describe('TerminalView reset by main', () => {
       width.mockRestore();
       height.mockRestore();
     }
+  });
+});
+
+describe('TerminalView exit events (#288)', () => {
+  it('ignores an exit for a terminal main says is running', async () => {
+    const { calls, emit } = installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => true,
+    });
+    render(<TerminalView terminalId="t1" taskId="a" active resumes />);
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'terminals:isRunning')).toBe(true),
+    );
+    emit('terminal:exit', { id: 't1', exitCode: -1 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('Process ended')).not.toBeInTheDocument();
+  });
+
+  it('shows the bar for an exit main confirms', async () => {
+    let running = true;
+    const { calls, emit } = installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => running,
+    });
+    render(<TerminalView terminalId="t1" taskId="a" active resumes />);
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'terminals:isRunning')).toBe(true),
+    );
+    running = false;
+    emit('terminal:exit', { id: 't1', exitCode: -1 });
+    expect(await screen.findByText('Process ended')).toBeInTheDocument();
+  });
+
+  it('shows the real exit code of a terminal that exited before the view was mounted', async () => {
+    installFakeApi({
+      'terminals:buffer': () => 'bye',
+      'terminals:isRunning': () => false,
+      'terminals:exitCode': () => 7,
+    });
+    render(<TerminalView terminalId="t1" taskId="a" active />);
+    expect(await screen.findByText('Exited with code 7')).toBeInTheDocument();
   });
 });
 
@@ -261,15 +325,17 @@ describe('TerminalView when an agent fails to start (#109)', () => {
   };
 
   it('says what happened and offers to start OpenCode without the project config', async () => {
+    let running = true;
     const { calls, emit } = installFakeApi({
       'terminals:buffer': () => '',
-      'terminals:isRunning': () => true,
+      'terminals:isRunning': () => running,
       'terminals:restart': () => undefined,
     });
     render(<TerminalView terminalId="t1" taskId="a" active />);
     await waitFor(() =>
       expect(calls.some((c) => c.channel === 'terminals:isRunning')).toBe(true),
     );
+    running = false;
     emit('terminal:exit', { id: 't1', exitCode: 1, failure: invalidConfig });
     expect(
       await screen.findByText('OpenCode could not read its configuration'),

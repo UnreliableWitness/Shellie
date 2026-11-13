@@ -509,6 +509,8 @@ export type Channels = {
   /** null for a terminal main does not know: the app was relaunched since it started (#180). */
   'terminals:buffer': { args: [id: string]; result: string | null };
   'terminals:isRunning': { args: [id: string]; result: boolean };
+  /** How an exited terminal ended (-1: code unknown); null while it runs or when main does not know it (#288). */
+  'terminals:exitCode': { args: [id: string]; result: number | null };
   /** The renderer re-coloured this terminal; programs that asked (mode 2031) are told the scheme changed. */
   'terminals:reportScheme': {
     args: [id: string, scheme: ColorScheme];
