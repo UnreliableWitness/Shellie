@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { promises as fs, writeFileSync } from 'node:fs';
+import { existsSync, promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -24,6 +24,7 @@ import {
 import started from 'electron-squirrel-startup';
 import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
+import { BRAIN_HOME_CONNECTION_ID, parseJoinLink } from './shared/brainShare';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
@@ -40,6 +41,15 @@ import { createReadsHooks } from './main/brain/readsHooks';
 import { saveConflicts } from './main/brain/conflicts';
 import { createSettleHooks } from './main/brain/settleHooks';
 import { createPictureHooks } from './main/brain/pictures';
+import { BrainHomeStore } from './main/brain/share/BrainHomeStore';
+import { BrainSync } from './main/brain/share/BrainSync';
+import {
+  isAutomatic,
+  patchFacts,
+  shellieOutdated,
+} from './main/brain/share/keeper';
+import { onBrainGitIdle } from './main/brain/gitMutex';
+import { getInstallId } from './main/installId';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
   commitJobOutput,
@@ -102,7 +112,11 @@ import { ConnectionStore } from './main/services/ConnectionStore';
 import { safeCrypto } from './main/services/safeCrypto';
 import { SecretStore, secretsLoadNotice } from './main/secrets/SecretStore';
 import { GitClient } from './main/services/GitClient';
-import { connectionIdForPath, createGitAuth } from './main/services/gitAuth';
+import {
+  connectionIdForBrain,
+  connectionIdForPath,
+  createGitAuth,
+} from './main/services/gitAuth';
 import { loadEffectiveConfig } from './main/services/effectiveConfig';
 import { RETRY_EVERY_MS as CLEANUP_RETRY_EVERY_MS } from './main/services/worktreeCleanup';
 import { RepoRegistry } from './main/services/RepoRegistry';
@@ -271,6 +285,45 @@ let mainWindow: BrowserWindow | null = null;
 let splashWin: BrowserWindow | null = null;
 /** True until the main window is revealed (stays true after a boot failure). */
 let booting = true;
+/**
+ * A `shellie://join?…` link opened before the main window loaded: sent once it has, and handed to the renderer's
+ * `brain:pendingJoin` on mount (whichever comes first takes it).
+ */
+let pendingJoin: string | null = null;
+
+/** The `shellie://join?…` link among a launch's arguments (Windows hands the link to the app that way). */
+const joinLinkIn = (argv: string[]): string | null =>
+  argv.find((a) => parseJoinLink(a) !== null) ?? null;
+
+/**
+ * Makes Shellie the handler of shellie:// links. On Windows the registry points at Squirrel's stub one folder up,
+ * which starts the newest version, so an update does not leave the link on a removed app-<version> folder.
+ */
+function registerJoinScheme(): void {
+  const stub = path.resolve(
+    path.dirname(process.execPath),
+    '..',
+    path.basename(process.execPath),
+  );
+  if (process.platform === 'win32' && existsSync(stub))
+    app.setAsDefaultProtocolClient('shellie', stub);
+  else app.setAsDefaultProtocolClient('shellie');
+}
+
+/** Shows the join screen for a link now, or once the main window has loaded. */
+function openJoinLink(link: string): void {
+  if (!parseJoinLink(link)) return;
+  const w = mainWindow;
+  if (!w || w.isDestroyed() || w.webContents.isLoading()) {
+    pendingJoin = link;
+    return;
+  }
+  send('brain:openJoin', { link });
+  if (booting) return;
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+}
 /** Starts terminals and headless brain jobs in a utility process, so a slow Windows spawn never blocks main (#271). */
 const ptyHost = new PtyHostClient(
   utilityPtyHost(path.join(__dirname, 'ptyHost.cjs')),
@@ -391,6 +444,12 @@ function createWindow(): BrowserWindow {
   win.on('enter-full-screen', sendFullScreen);
   win.on('leave-full-screen', sendFullScreen);
   win.webContents.on('did-finish-load', sendFullScreen);
+  win.webContents.on('did-finish-load', () => {
+    if (!pendingJoin || mainWindow !== win) return;
+    const link = pendingJoin;
+    pendingJoin = null;
+    send('brain:openJoin', { link });
+  });
   win.on('focus', () => onWindowFocus(true));
   win.on('blur', () => onWindowFocus(false));
   win.on('minimize', () => onWindowFocus(false));
@@ -558,11 +617,16 @@ async function boot(): Promise<void> {
     );
     // The brains load before the ledger's first pass, so their records are attributed to them.
     const brains = new BrainStore(path.join(userData, 'brains.json'));
+    const brainHome = new BrainHomeStore(
+      path.join(userData, 'brain-home.json'),
+      secretCrypto,
+    );
     const [loaded, connectionsLoaded, secretsLoaded] = await Promise.all([
       store.load(),
       connections.load(),
       secrets.load(),
       brains.load(),
+      brainHome.load(),
     ]);
     // Once per install: installs that already have repositories skip the first-run page and keep their tabs.
     const migrated = migrateOnboarding(
@@ -591,9 +655,28 @@ async function boot(): Promise<void> {
     // Fetch and push to Azure Repos sign in with the connection's token, not a credential helper that may not start.
     const git = new GitClient(undefined, {
       auth: createGitAuth({
-        connections: () => connections.list(),
-        token: (id) => connections.token(id),
-        connectionIdFor: (cwd) => connectionIdForPath(store.state, cwd),
+        connections: () => {
+          const home = brainHome.get();
+          return [
+            ...connections.list(),
+            ...(home
+              ? [
+                  {
+                    id: BRAIN_HOME_CONNECTION_ID,
+                    organizationUrl: home.organizationUrl,
+                    project: home.project,
+                  },
+                ]
+              : []),
+          ];
+        },
+        token: (id) =>
+          id === BRAIN_HOME_CONNECTION_ID
+            ? brainHome.token()
+            : connections.token(id),
+        connectionIdFor: (cwd) =>
+          connectionIdForBrain(brains.list(), cwd) ??
+          connectionIdForPath(store.state, cwd),
       }),
     });
     const platform = createPlatform();
@@ -987,6 +1070,21 @@ async function boot(): Promise<void> {
       git,
       tokensToday: (id) => brainToday(id).tokens,
     });
+    // Shared brains: pull before each job and every 15 minutes, push after each brain commit.
+    const installIdHere = await getInstallId(userData);
+    const brainSync = new BrainSync({
+      brains,
+      git,
+      runner: () => brainRunner,
+      changed: (brainId) => broadcast('brain:changed', { brainId }),
+      commitOutsideEdits: async (id) => {
+        const b = brainOf(id);
+        await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
+      },
+      installId: installIdHere,
+      event: (name, props) => telemetry.event(name, props),
+    });
+    const stopSyncListener = onBrainGitIdle((dir) => brainSync.afterGit(dir));
     const brainRunner = new BrainJobRunner({
       platform,
       run: (cmd, o) => ptyHost.run(cmd, o),
@@ -997,10 +1095,14 @@ async function boot(): Promise<void> {
       model: (id) => brains.get(id)?.options.model ?? 'sonnet',
       agent: (id) => brains.get(id)?.options.agent ?? 'claude',
       opencodeModel: (id) => brains.get(id)?.options.opencodeModel ?? null,
-      // A brain that is gone is ready: its job fails on the folder, as before.
+      // A brain that is gone is ready: its job fails on the folder, as before. A colleague's newer skills stop the jobs.
       ready: (id) => {
         const b = brains.get(id);
-        return !b || b.options.agent !== 'opencode' || opencodeReady(b);
+        return (
+          !b ||
+          (!shellieOutdated(b) &&
+            (b.options.agent !== 'opencode' || opencodeReady(b)))
+        );
       },
       commit: async (id, message, job) => {
         const b = brainOf(id);
@@ -1011,6 +1113,8 @@ async function boot(): Promise<void> {
       beforeJob: async (id) => {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
+        // After the outside edits are committed, so the merge runs on a clean tree; the job runs on the server's latest.
+        await brainSync.pull(id, { lockHeld: true });
       },
       promptFor: (j) =>
         j.kind === 'settle'
@@ -1051,8 +1155,11 @@ async function boot(): Promise<void> {
     readerBrainChanged = () => readerSync.brainChanged();
     // The scheduler starts with the window; the runner stops on quit either way.
     let stopBrainScheduler = () => {};
+    let stopBrainSync = () => {};
     stopBrains = () => {
       stopBrainScheduler();
+      stopBrainSync();
+      stopSyncListener();
       brainRunner.stop();
     };
     /** The settings file Claude Code tabs start with (the theme, and a tab's deny rules); null when it could not be written. */
@@ -1119,9 +1226,17 @@ async function boot(): Promise<void> {
       brainTerminals,
       brain: {
         store: brains,
+        home: brainHome,
         runner: brainRunner,
         ledgerToday: brainToday,
         userData,
+        installId: installIdHere,
+        sync: brainSync,
+        takePendingJoin: () => {
+          const link = pendingJoin;
+          pendingJoin = null;
+          return link;
+        },
       },
       terminalFailures,
       budget,
@@ -1398,14 +1513,20 @@ async function boot(): Promise<void> {
       ledger.start();
       sender.start();
       stopReader = readerSync.start();
+      stopBrainSync = brainSync.start();
       stopBrainScheduler = startBrainScheduler({
         brains: () => brains.list(),
         refresh: (id) => handlers['brain:refresh'](id),
         digest: (id) => {
           brainRunner.enqueue(id, 'digest');
-          void brains
-            .patch(id, { lastDigestAt: new Date().toISOString() })
-            .catch((err) => console.error('[brain] lastDigestAt', err));
+          const at = new Date();
+          // On a shared brain the date goes to shared.json too, so a later keeper never digests twice that week.
+          void patchFacts(
+            { brains, git },
+            id,
+            { lastDigestAt: at.toISOString() },
+            at,
+          ).catch((err) => console.error('[brain] lastDigestAt', err));
         },
         running: (id) => brainRunner.running(id),
         picturePass: pictureHooks.picturePass,
@@ -1414,6 +1535,10 @@ async function boot(): Promise<void> {
         bookPassRunning: bookHooks.passRunning,
         readsPass: readsHooks.readsPass,
         readsPassRunning: readsHooks.passRunning,
+        automatic: (id) => {
+          const b = brains.get(id);
+          return !!b && isAutomatic(b, installIdHere);
+        },
       });
       void settleHooks
         .resume()
@@ -1558,7 +1683,18 @@ if (process.env.SHELLIE_SMOKE === '1') {
   // A second Shellie (a double launch, or a stray relaunch of Shellie.exe) hands over to the first one.
   app.quit();
 } else if (!started) {
-  app.on('second-instance', () => {
+  // shellie:// links open Shellie (the join link). Packaged builds only: a dev run would take the link from the
+  // installed app; it takes one as an argument instead. macOS also has the scheme in Info.plist (forge.config.mts).
+  if (app.isPackaged) registerJoinScheme();
+  pendingJoin = joinLinkIn(process.argv);
+  // macOS hands the link over here, also on a cold start (before ready).
+  app.on('open-url', (e, url) => {
+    e.preventDefault();
+    openJoinLink(url);
+  });
+  app.on('second-instance', (_e, argv) => {
+    const link = joinLinkIn(argv);
+    if (link) openJoinLink(link);
     // The splash while booting (nothing when it is off: the main window is still hidden), else the main window.
     const win = booting ? splashWin : mainWindow;
     const target = win && !win.isDestroyed() ? win : null;

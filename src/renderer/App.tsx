@@ -10,6 +10,7 @@ import { useShortcuts } from './hooks/useShortcuts';
 import { AddRepoScreen } from './screens/AddRepoScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
 import { BrainNewScreen } from './screens/BrainNewScreen';
+import { BrainJoinScreen } from './screens/BrainJoinScreen';
 import { BrainScreen } from './screens/BrainScreen';
 import { useReadingFeed } from './hooks/useReadingFeed';
 import { ConnectScreen } from './screens/ConnectScreen';
@@ -49,6 +50,14 @@ function Page() {
           brainId={screen.brainId}
           focus={screen.focus}
           open={screen.open}
+        />
+      );
+    case 'brain-join':
+      return (
+        <BrainJoinScreen
+          key={screen.link}
+          link={screen.link}
+          via={screen.via ?? 'link'}
         />
       );
     case 'task':
@@ -109,6 +118,7 @@ export function App() {
   const setRepos = useStore((s) => s.setRepos);
   const setConnections = useStore((s) => s.setConnections);
   const notify = useStore((s) => s.notify);
+  const go = useStore((s) => s.go);
   useTimeFocus();
   useAttention();
   useReadingFeed();
@@ -129,6 +139,20 @@ export function App() {
     ];
     return () => offs.forEach((off) => off());
   }, [load, setTasks, setRepos, setConnections, notify]);
+
+  // A shellie://join link: live from main, or the one that arrived before this window listened (a cold start).
+  useEffect(() => {
+    const off = api().on('brain:openJoin', ({ link }) =>
+      go({ kind: 'brain-join', link }),
+    );
+    api()
+      .invoke('brain:pendingJoin')
+      .then(
+        (link) => link && go({ kind: 'brain-join', link }),
+        () => undefined,
+      );
+    return off;
+  }, [go]);
 
   return <Shell />;
 }

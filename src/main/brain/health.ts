@@ -9,6 +9,7 @@ import type {
 import { CONFLICT_KINDS, conflictIdOf } from '../../shared/brain';
 import type { CostRecord } from '../../shared/ledger';
 import type { GitClient } from '../services/GitClient';
+import { CREATED_MESSAGE } from './brainCommits';
 import { checkBrain, SHELLIE_FINDING_KINDS } from './check';
 import { listConflicts, readConflicts } from './conflicts';
 import { readPages } from './pages';
@@ -18,9 +19,9 @@ import { readState } from './state';
 
 /** Commits Shellie makes in a brain: 'Brain: …', and the scaffold's first one. */
 const isBrainCommit = (subject: string) =>
-  subject.startsWith('Brain:') || subject === 'Brain created';
+  subject.startsWith('Brain:') || subject === CREATED_MESSAGE;
 /** A /sync run: it reconciles the human edits in wiki/ made before it. */
-const isSyncCommit = (subject: string) =>
+export const isSyncCommit = (subject: string) =>
   subject === 'Brain: sync' || subject.startsWith('Brain: sync ');
 
 const SUBJECT = '\u0001';
@@ -32,7 +33,7 @@ const RAW = ['-c', 'core.quotepath=off'];
  * there is none), plus uncommitted changes there. Outside edits a job start commits ('Edited outside a capture')
  * stay listed until a /sync.
  */
-async function outsideEdits(brainDir: string, git: GitClient) {
+export async function outsideEdits(brainDir: string, git: GitClient) {
   const found = new Set<string>();
   const log = await git
     .run(brainDir, [

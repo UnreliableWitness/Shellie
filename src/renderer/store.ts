@@ -109,6 +109,8 @@ export type Screen =
       /** A page, long read or letter to open in the Read view; another `n` opens it again. */
       open?: { path: string; n: number };
     }
+  /** A `shellie://join` link opened, or Join on the "Your team has a brain" card (`via: 'card'`): the join screen. */
+  | { kind: 'brain-join'; link: string; via?: 'card' }
   | { kind: 'task' }
   | {
       kind: 'new-task';

@@ -7,6 +7,7 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
   project: 'Shellie',
   path: '/data/brains/b1',
   wiki: null,
+  sharing: null,
   templatesVersion: 6,
   options: {
     contextInTaskMd: true,
@@ -84,6 +85,8 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     },
   },
   jobs: [],
+  keeper: null,
+  newerShellie: false,
   ...over,
 });
 
@@ -105,5 +108,6 @@ export const brainJob = (over: Partial<BrainJob> = {}): BrainJob => ({
   background: false,
   agent: 'claude',
   model: null,
+  replays: 0,
   ...over,
 });

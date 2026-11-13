@@ -19,6 +19,12 @@ import type {
   SourcePictures,
   SourceType,
 } from './brain';
+import type {
+  BrainHome,
+  BrainHomeInput,
+  DiscoveredBrain,
+  JoinPreview,
+} from './brainShare';
 import type { ColorScheme } from './theme';
 import type {
   DiscoverResult,
@@ -605,6 +611,11 @@ export type Channels = {
   'attention:view': { args: [view: AttentionView]; result: void };
   'attention:get': { args: []; result: AttentionSnapshot };
   /** Brains: one local git folder per Azure DevOps project (see docs/changes, the brain notes). */
+  /** The company's organization and project shared brains live in (no token); null until set. */
+  'brainHome:get': { args: []; result: BrainHome | null };
+  /** Checks the token and the project, then stores both (the token encrypted). */
+  'brainHome:save': { args: [input: BrainHomeInput]; result: BrainHome };
+  'brainHome:remove': { args: []; result: void };
   'brain:list': { args: []; result: BrainView[] };
   'brain:get': { args: [brainId: string]; result: BrainView };
   /** The brain of the task's connection and work item project, null when there is none. */
@@ -761,6 +772,62 @@ export type Channels = {
     result: BrainJob;
   };
   'brain:resumeQueue': { args: [brainId: string]; result: void };
+  /** A shared brain pulls the server's changes and sends its own now; a sync error shows in its status, never throws. */
+  'brain:syncNow': { args: [brainId: string]; result: void };
+  /**
+   * Shares a local brain: a repo in the home, one fresh commit pushed. `syncing`: a /sync was queued first, ask again
+   * when it is done; `secrets`: the files that may hold one.
+   */
+  'brain:share': {
+    args: [
+      input: {
+        brainId: string;
+        home: 'customer' | 'company';
+        repoName: string;
+      },
+    ];
+    result:
+      | { status: 'shared'; joinLink: string }
+      | { status: 'secrets'; files: string[] }
+      | { status: 'syncing' };
+  };
+  /** The `shellie://join?…` link of a shared brain (no token in it). */
+  'brain:joinLink': { args: [brainId: string]; result: string };
+  /** Makes a shared brain local again; its folder, history and origin.json stay. */
+  'brain:stopSharing': { args: [brainId: string]; result: void };
+  /**
+   * A member leaves a shared brain: their members.json line is taken out by a last push when the server is reachable,
+   * the brain becomes local, then it is archived or deleted (`deleteFolder` as for brain:delete). Refused for the keeper.
+   */
+  'brain:leave': {
+    args: [brainId: string, then: 'archive' | 'delete', deleteFolder?: boolean];
+    result: void;
+  };
+  /** The keeper names a member (by install id, from `BrainView.keeper.members`) as the new keeper. */
+  'brain:handOver': {
+    args: [brainId: string, installId: string];
+    result: void;
+  };
+  /** A member becomes the keeper; refused while the keeper's Shellie sent changes in the last 14 days. */
+  'brain:takeOver': { args: [brainId: string]; result: void };
+  /** What a `shellie://join?…` link leads to; `pat` is a token typed for the link's organization (never stored here). */
+  'brain:previewJoin': {
+    args: [link: string, pat?: string];
+    result: JoinPreview;
+  };
+  /** Clones the shared brain of a join link and records it on the person's connection; a typed `pat` becomes the brain home when there is none. */
+  /** `via`: how the person came to join (telemetry only), a link or the "Your team has a brain" card. */
+  'brain:join': {
+    args: [link: string, pat?: string, via?: 'link' | 'card'];
+    result: BrainView;
+  };
+  /** The join link opened before the renderer was listening (a cold start), cleared once returned; null when none. */
+  'brain:pendingJoin': { args: []; result: string | null };
+  /** The shared brains in a connection's project (the Join card), kept for the app session; `refresh` looks again. */
+  'brain:discover': {
+    args: [connectionId: string, refresh?: boolean];
+    result: DiscoveredBrain[];
+  };
   /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
   'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
   /** How many wiki pages and sources a brain has, without the health check's git and lint work. */
@@ -852,6 +919,8 @@ export type Events = {
   'window:fullScreen': boolean;
   /** A brain's store entry, jobs, state, files or mirror changed; the renderer fetches `brain:get` again. */
   'brain:changed': { brainId: string };
+  /** A `shellie://join?…` link was opened (macOS open-url, Windows argv); the renderer shows the join screen. */
+  'brain:openJoin': { link: string };
 };
 
 /** `version` is null when the release name holds none. */

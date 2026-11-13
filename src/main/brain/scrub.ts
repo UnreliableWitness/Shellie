@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathExists } from '../fsRetry';
+import { SCRUB_MESSAGE } from './brainCommits';
 import type { GitClient } from '../services/GitClient';
 import { withBrainGit } from './gitMutex';
 import { absPath } from './paths';
@@ -289,7 +290,7 @@ export async function scrubBrain(
           'commit',
           '-q',
           '-m',
-          'Brain: scrub',
+          SCRUB_MESSAGE,
           '--',
           ...extra,
         ]);

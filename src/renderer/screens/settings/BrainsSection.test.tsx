@@ -58,6 +58,8 @@ const brain = {
   templatesVersion: 7,
   health: null,
   jobs: [],
+  keeper: null,
+  newerShellie: false,
 } as unknown as BrainView;
 
 const detected = (claude: boolean, opencode: boolean): AgentsDetected => {
@@ -601,5 +603,200 @@ describe('archiving', () => {
     render(<BrainsForConnection connection={conn} />);
     await screen.findAllByText('/data/brains/b1');
     expect(screen.queryByText('Update skills first')).not.toBeInTheDocument();
+  });
+});
+
+describe('BrainsForConnection, shared brains', () => {
+  const shared = (me: boolean) =>
+    ({
+      ...brain,
+      sharing: {
+        home: 'company',
+        remoteUrl: 'u',
+        repositoryId: 'r',
+        homeOrganizationUrl: 'https://dev.azure.com/acme',
+        homeProject: 'Brains',
+        joinedAt: '2026-11-13T09:00:00.000Z',
+        lastPullAt: null,
+        lastPushAt: null,
+        status: 'ok',
+        heldFile: null,
+      },
+      keeper: {
+        installId: me ? 'me' : 'k',
+        name: 'Dries',
+        me,
+        members: [{ installId: 'm2', name: 'Anna' }],
+      },
+    }) as unknown as BrainView;
+
+  it("shows Runs on <keeper>'s Shellie instead of the automatic switches for a member", async () => {
+    installFakeApi({ 'brain:list': () => [shared(false)] });
+    render(<BrainsForConnection connection={conn} />);
+    // The two switches this brain offers (long reads need newer skills).
+    expect(await screen.findAllByText("Runs on Dries's Shellie")).toHaveLength(
+      2,
+    );
+    expect(
+      screen.queryByRole('checkbox', {
+        name: 'Write a weekly digest on Mondays while the app is open',
+      }),
+    ).not.toBeInTheDocument();
+  });
+  it('lets the keeper hand over to a member and stop sharing', async () => {
+    const a = installFakeApi({
+      'brain:list': () => [shared(true)],
+      'brain:handOver': () => undefined,
+      'brain:stopSharing': () => undefined,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Hand over to'),
+      'Anna',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Hand over' }));
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:handOver',
+        args: ['b1', 'm2'],
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Stop sharing' }));
+    // Colleagues joined: first the question to hand over.
+    await userEvent.click(screen.getByRole('button', { name: 'Stop anyway' }));
+    expect(
+      screen.getByText(
+        /The repo stays; delete it in Azure DevOps to end it for everyone\./,
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stop sharing this brain' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:stopSharing',
+        args: ['b1'],
+      }),
+    );
+  });
+  it('lets a member take over after confirming', async () => {
+    const a = installFakeApi({
+      'brain:list': () => [shared(false)],
+      'brain:takeOver': () => undefined,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Take over' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Take over as keeper' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:takeOver',
+        args: ['b1'],
+      }),
+    );
+  });
+  it('asks the keeper to hand over before archiving, and archives anyway when asked', async () => {
+    const a = installFakeApi({
+      'brain:list': () => [shared(true)],
+      'brain:update': () => shared(true),
+      'brain:handOver': () => undefined,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Archive' }),
+    );
+    expect(a.calls.some((c) => c.channel === 'brain:update')).toBe(false);
+    expect(
+      screen.getByText(/You keep this brain\. Hand over first/),
+    ).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('New keeper'), 'Anna');
+    await userEvent.click(
+      within(screen.getByText(/You keep this brain/).closest('div')!).getByRole(
+        'button',
+        { name: 'Hand over' },
+      ),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:handOver',
+        args: ['b1', 'm2'],
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Archive anyway' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:update',
+        args: ['b1', { archived: true }],
+      }),
+    );
+  });
+  it('asks the keeper to hand over before deleting, then confirms the delete', async () => {
+    installFakeApi({ 'brain:list': () => [shared(true)] });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Delete' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Delete anyway' }),
+    );
+    expect(screen.getByText('Delete this brain?')).toBeInTheDocument();
+  });
+  it('lets a member leave, archiving or deleting their copy, instead of Archive and Delete', async () => {
+    const a = installFakeApi({
+      'brain:list': () => [shared(false)],
+      'brain:leave': () => undefined,
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Leave' }));
+    expect(
+      screen.queryByRole('button', { name: 'Archive' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Delete' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Stop sharing' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Leave and archive' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:leave',
+        args: ['b1', 'archive'],
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Leave' }));
+    await userEvent.click(screen.getByLabelText('Also delete the folder'));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Leave and delete' }),
+    );
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:leave',
+        args: ['b1', 'delete', true],
+      }),
+    );
+  });
+  it('says Update skills on a shared brain updates them for everyone', async () => {
+    installFakeApi({
+      'brain:list': () => [shared(true)],
+      'brain:templateDiff': () => [{ path: 'SCHEMA.md', status: 'changed' }],
+    });
+    render(<BrainsForConnection connection={conn} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Update skills' }),
+    );
+    expect(
+      await screen.findByText(
+        'This brain is shared: applying updates the skills for everyone who shares it.',
+      ),
+    ).toBeInTheDocument();
   });
 });

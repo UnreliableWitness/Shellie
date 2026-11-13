@@ -11,6 +11,7 @@ import {
   type SourcePictures,
 } from '../../shared/brain';
 import { readJson, writeAtomic } from '../fsRetry';
+import { PENDING } from './bookPass';
 import type { GitClient } from '../services/GitClient';
 import { localTarget } from './check';
 import { convertFile, type ConvertOptions, type Rasterize } from './convert';
@@ -324,12 +325,6 @@ export async function picturesPrompt(
     ? `/pictures ${source} ${JSON.stringify(missing)}`
     : null;
 }
-
-const PENDING: ReadonlySet<BrainJob['status']> = new Set([
-  'queued',
-  'running',
-  'paused',
-]);
 
 /** Whether a pictures job for the source is queued, running or paused. */
 const picturesComing = (jobs: BrainJob[], source: string) =>

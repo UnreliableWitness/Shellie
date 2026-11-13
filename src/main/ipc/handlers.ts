@@ -217,7 +217,12 @@ import type { TimeBooking } from '../../shared/time';
 import { errorMessage } from '../../shared/errors';
 import type { createBrainTerminals } from '../brain/brainTerminal';
 import { BrainStore } from '../brain/BrainStore';
-import { createBrainHandlers, type BrainRunner } from '../brain/brainHandlers';
+import { BrainHomeStore } from '../brain/share/BrainHomeStore';
+import {
+  createBrainHandlers,
+  type BrainHandlerDeps,
+  type BrainRunner,
+} from '../brain/brainHandlers';
 import { createRasterizer } from '../brain/convert/raster';
 import { mirrorAuthFor } from '../brain/wikiAccess';
 import {
@@ -249,9 +254,13 @@ export type Services = {
    */
   brain?: {
     store: BrainStore;
+    home: BrainHomeStore;
     runner: BrainRunner;
     ledgerToday: (brainId: string) => { tokens: number; costEur: number };
     userData: string;
+    installId?: string;
+    sync?: BrainHandlerDeps['sync'];
+    takePendingJoin?: BrainHandlerDeps['takePendingJoin'];
   };
   /** What needs the developer's attention (main); absent in tests. */
   attention?: Pick<AttentionHub, 'setView' | 'snapshot'>;
@@ -836,6 +845,15 @@ export function createHandlers(s: Services): Handlers {
 
   const brain = s.brain ?? {
     store: new BrainStore(path.join(s.usageDir, 'brains.json')),
+    home: new BrainHomeStore(
+      path.join(s.usageDir, 'brain-home.json'),
+      // Tests have no safeStorage: saving a home is refused there.
+      {
+        available: async () => false,
+        encrypt: () => Promise.reject(new Error('No encryption here')),
+        decrypt: () => Promise.reject(new Error('No encryption here')),
+      },
+    ),
     runner: {
       enqueue: () => {
         throw new Error('Brain jobs are not available here');
@@ -893,6 +911,7 @@ export function createHandlers(s: Services): Handlers {
 
   const brainHandlers = createBrainHandlers({
     brains: brain.store,
+    home: brain.home,
     rasterize: createRasterizer({ platform: s.platform, run: runWithInput }),
     git: s.git,
     runner: brain.runner,
@@ -907,8 +926,11 @@ export function createHandlers(s: Services): Handlers {
     pickFolder: s.pickFolder,
     openPath,
     userData: brain.userData,
+    installId: brain.installId,
     remember: (values) => s.rememberSensitive?.(values),
     event: (n, p) => tel.event(n, p),
+    sync: brain.sync,
+    takePendingJoin: brain.takePendingJoin,
   });
   /** The brain a new task's summary names: by the work item's project when it is known (no network). */
   const summaryBrain = (

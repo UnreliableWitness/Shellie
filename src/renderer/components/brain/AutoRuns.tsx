@@ -10,6 +10,7 @@ import { api, tryInvoke } from '../../api';
 import { eur } from '../../format';
 import { useStore } from '../../store';
 import { trackBrain } from './brainActions';
+import { keeperElsewhere } from './sharing';
 
 type Switchable = Extract<
   keyof BrainOptions,
@@ -69,20 +70,26 @@ export function AutoRuns({ brain }: { brain: BrainView }) {
     trackBrain('resume');
     void tryInvoke(() => api().invoke('brain:resumeQueue', brain.id), notify);
   };
-  const toggleRow = (key: Switchable, label: string) => (
-    <Row label={label} tag={o[key] ? 'on' : 'off'}>
-      <label className="switch">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label={label}
-          checked={o[key]}
-          disabled={busy}
-          onChange={(e) => void toggle(key, e.target.checked)}
-        />
-      </label>
-    </Row>
-  );
+  const elsewhere = keeperElsewhere(brain);
+  const toggleRow = (key: Switchable, label: string) =>
+    elsewhere ? (
+      <Row label={label} tag={o[key] ? 'on' : 'off'}>
+        Runs on {elsewhere}&apos;s Shellie
+      </Row>
+    ) : (
+      <Row label={label} tag={o[key] ? 'on' : 'off'}>
+        <label className="switch">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label={label}
+            checked={o[key]}
+            disabled={busy}
+            onChange={(e) => void toggle(key, e.target.checked)}
+          />
+        </label>
+      </Row>
+    );
 
   return (
     <section className="brain-card" aria-labelledby="brain-auto-h">

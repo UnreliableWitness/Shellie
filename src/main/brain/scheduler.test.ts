@@ -72,6 +72,7 @@ describe('startBrainScheduler', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       now: () => now,
       tick: 1000,
     });
@@ -131,6 +132,7 @@ describe('startBrainScheduler', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       now: () => now,
       tick: 1000,
     });
@@ -157,6 +159,7 @@ describe('startBrainScheduler', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       now: () => now,
       tick: 1000,
     });
@@ -187,6 +190,7 @@ describe('startBrainScheduler', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       now: () => now,
       tick: 1000,
     });
@@ -238,6 +242,7 @@ describe('archived brains', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
     });
     await vi.advanceTimersByTimeAsync(10);
     stop();
@@ -283,6 +288,7 @@ describe('the one-time picture pass', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       tick: 1000,
     });
     // Not on the launch check: from the next tick on.
@@ -310,6 +316,7 @@ describe('the one-time picture pass', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       tick: 1000,
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -347,6 +354,7 @@ describe('the one-time picture pass', () => {
       bookPassRunning: (id) => id === 'queued',
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       tick: 1000,
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -371,6 +379,7 @@ describe('the one-time picture pass', () => {
       bookPassRunning: () => false,
       readsPass: async () => undefined,
       readsPassRunning: () => false,
+      automatic: () => true,
       tick: 1000,
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -409,6 +418,7 @@ describe('the one-time picture pass', () => {
       bookPassRunning: () => false,
       readsPass,
       readsPassRunning: (id) => id === 'queued',
+      automatic: () => true,
       tick: 1000,
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -417,6 +427,43 @@ describe('the one-time picture pass', () => {
     expect(readsPass.mock.calls.map((c) => c[0])).toEqual(['on']);
     await vi.advanceTimersByTimeAsync(1000);
     expect(readsPass).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('starts nothing on its own for a brain this machine does not keep', async () => {
+    // Monday 2026-11-02, 09:00 local.
+    const now = new Date(2026, 10, 2, 9, 0);
+    const all = {
+      weeklyDigest: true,
+      writeLongReads: true,
+    } as Brain['options'];
+    const refresh = vi.fn(async (_id: string) => undefined);
+    const digest = vi.fn();
+    const picturePass = vi.fn(async (_id: string) => undefined);
+    const bookPass = vi.fn(async (_id: string) => undefined);
+    const readsPass = vi.fn(async (_id: string) => undefined);
+    const stop = startBrainScheduler({
+      brains: () => [
+        brain({ id: 'member', wiki, templatesVersion: 10, options: all }),
+        brain({ id: 'keeper', wiki, templatesVersion: 10, options: all }),
+      ],
+      refresh,
+      digest,
+      running: () => false,
+      picturePass,
+      passRunning: () => false,
+      bookPass,
+      bookPassRunning: () => false,
+      readsPass,
+      readsPassRunning: () => false,
+      automatic: (id) => id === 'keeper',
+      now: () => now,
+      tick: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    for (const fn of [refresh, digest, picturePass, bookPass, readsPass])
+      expect([...new Set(fn.mock.calls.map((c) => c[0]))]).toEqual(['keeper']);
     stop();
   });
 });

@@ -1,11 +1,15 @@
 import { useState } from 'react';
+import { SHARED_WARNING } from './sharing';
 
 /** Remove a source (two clicks): the file, its original and pictures go; a /retract job takes its claims out. */
 export function SourceBar({
   path,
+  shared = false,
   onRemove,
 }: {
   path: string;
+  /** The brain is shared: the server's history keeps the file. */
+  shared?: boolean;
   onRemove: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -16,6 +20,7 @@ export function SourceBar({
           <span>
             Remove {path}? Its claims are taken out of the pages; the file stays
             in the brain&apos;s git history.
+            {shared && ` ${SHARED_WARNING}`}
           </span>
           <span className="brain-bar-actions">
             <button

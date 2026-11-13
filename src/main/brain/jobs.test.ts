@@ -163,6 +163,33 @@ describe('BrainJobRunner', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('holds the job, unrun, when the pull in beforeJob makes the brain not ready', async () => {
+    let ready = true;
+    let pulls = 0;
+    const finished: string[] = [];
+    const r = runner({
+      ready: () => ready,
+      // The first pull brings skills newer than this Shellie knows.
+      beforeJob: async () => {
+        if (++pulls === 1) ready = false;
+      },
+      afterJob: (j) => finished.push(j.status),
+    });
+    const job = r.enqueue('b1', 'sync');
+    await vi.waitFor(() => expect(r.held('b1')).toBe(true));
+    expect(r.running('b1')).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(job).toMatchObject({ status: 'queued', startedAt: null });
+    expect(finished).toEqual([]);
+    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
+    // Once the brain is ready again a release runs it.
+    ready = true;
+    r.release('b1');
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(1);
+    expect(finished).toEqual(['done']);
+  });
+
   it('fails the job when beforeJob throws, without running the skill', async () => {
     const r = runner({
       beforeJob: async () => {
@@ -716,9 +743,22 @@ describe('jobs on the brain agent', () => {
     ]);
     expect(timeouts).toEqual([1_200_000, 600_000]);
     expect(committed).toEqual([
-      'Brain: write <- chapter:Orders',
+      'Brain: write chapter:Orders <- chapter:Orders',
       'Brain: sync <- undefined',
     ]);
+  });
+
+  it('a settle job names its conflict id in its commit', async () => {
+    const committed: string[] = [];
+    const r = runner({
+      promptFor: async () => '/settle c1',
+      commit: async (_id, message) => {
+        committed.push(message);
+      },
+    });
+    r.enqueue('b1', 'settle', null, { conflict: 'c1' });
+    await idle(r, 'b1');
+    expect(committed).toEqual(['Brain: settle c1']);
   });
 
   it('an OpenCode write job gets its prompt without the command as its arguments', async () => {
@@ -963,5 +1003,48 @@ describe('a model of its own', () => {
     expect(calls[0].cmd.args).toEqual(
       opencodeJobArgs('capture', 'anthropic/claude-opus'),
     );
+  });
+
+  it('puts a job queued at the front before older queued ones, with its replays', async () => {
+    dirs = { b: await mk('b') };
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'sync');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    const older = r.enqueue('b', 'digest');
+    const again = r.enqueue('b', 'write', null, {
+      front: true,
+      target: 'reads/x.md',
+      replays: 1,
+    });
+    expect([older.replays, again.replays]).toEqual([0, 1]);
+    release();
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual(['/sync', '/write', '/digest']);
+  });
+
+  it('fails a finished job with a message', async () => {
+    const changes: string[] = [];
+    const ended: string[] = [];
+    const r = runner({
+      onChange: (_id, jobs) => changes.push(jobs[0]?.status ?? ''),
+      afterJob: (j) => ended.push(j.status),
+    });
+    const job = r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(r.fail('b1', job.id, 'Ran again')).toBe(true);
+    const rec = r.jobs('b1').find((j) => j.id === job.id);
+    expect(rec).toMatchObject({ status: 'failed', error: 'Ran again' });
+    expect(changes.at(-1)).toBe('failed');
+    expect(ended).toEqual(['done']);
+    expect(r.fail('b1', 'gone', 'x')).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import {
   capturedSessionIds,
   readState,
   releaseLock,
+  withBrainLock,
   writeState,
 } from './state';
 
@@ -136,5 +137,43 @@ describe('lock', () => {
     await acquireLock(dir);
     await releaseLock(dir);
     expect(existsSync(lock())).toBe(false);
+  });
+
+  it('withBrainLock runs under the lock and releases it, even when the work throws', async () => {
+    expect(
+      await withBrainLock<boolean | string>(
+        dir,
+        async () => existsSync(lock()),
+        { busy: () => 'busy' },
+      ),
+    ).toBe(true);
+    expect(existsSync(lock())).toBe(false);
+    await expect(
+      withBrainLock(
+        dir,
+        async () => {
+          throw new Error('boom');
+        },
+        { busy: () => 'busy' },
+      ),
+    ).rejects.toThrow('boom');
+    expect(existsSync(lock())).toBe(false);
+  });
+
+  it('withBrainLock answers busy and leaves a lock it did not take', async () => {
+    await acquireLock(dir);
+    let ran = false;
+    expect(
+      await withBrainLock(
+        dir,
+        async () => {
+          ran = true;
+          return 'ran';
+        },
+        { busy: () => 'busy' },
+      ),
+    ).toBe('busy');
+    expect(ran).toBe(false);
+    expect(existsSync(lock())).toBe(true);
   });
 });

@@ -30,6 +30,14 @@ import { acquireLock, releaseLock } from './state';
 import { brainHealth } from './health';
 import { isBrainFolder, scaffoldBrain } from './scaffold';
 import { TEMPLATES_VERSION } from './templates';
+import {
+  readMembers,
+  readShared,
+  upsertMember,
+  writeOrigin,
+} from './share/files';
+import { NEWER_SHELLIE } from '../../shared/brainShare';
+import { SHARED_FACTS_MESSAGE } from './brainCommits';
 
 const NEW = {
   name: 'Acme',
@@ -39,6 +47,12 @@ const NEW = {
   wiki: null,
   agent: 'claude' as const,
 };
+
+const isEmptyOrMissingDir = (dir: string) =>
+  fs.readdir(dir).then(
+    (l) => l.length === 0,
+    () => true,
+  );
 
 describe('brain handlers', () => {
   const git = new GitClient();
@@ -62,6 +76,7 @@ describe('brain handlers', () => {
   let pages: AdoWikiPage[];
   let tasks: Task[];
   let h: ReturnType<typeof createBrainHandlers>;
+  let deps: BrainHandlerDeps;
 
   const job = (brainId: string, kind: BrainJobKind, source: string | null) =>
     ({
@@ -78,6 +93,7 @@ describe('brain handlers', () => {
       background: false,
       agent: 'claude',
       model: null,
+      replays: 0,
     }) satisfies BrainJob;
 
   beforeEach(async () => {
@@ -98,7 +114,7 @@ describe('brain handlers', () => {
     openAgents = [];
     pages = [];
     tasks = [];
-    const deps: BrainHandlerDeps = {
+    deps = {
       brains,
       git,
       runner: {
@@ -127,6 +143,16 @@ describe('brain handlers', () => {
           return true;
         },
       },
+      home: {
+        get: () => null,
+        save: async () => {
+          throw new Error('not here');
+        },
+        remove: async () => undefined,
+        token: async () => {
+          throw new Error('not here');
+        },
+      },
       mirrorAuth: () => async () => ({}),
       tracker: () => ({
         wikis: async () => [],
@@ -138,7 +164,10 @@ describe('brain handlers', () => {
             id: 'c1',
             organizationUrl: 'https://dev.azure.com/org/',
             project: 'Default',
+            user: null,
           }) as ReturnType<BrainHandlerDeps['connections']['get']>,
+        list: () => [],
+        token: async () => 'token',
       },
       task: (id) => {
         const t = tasks.find((x) => x.id === id);
@@ -179,6 +208,71 @@ describe('brain handlers', () => {
       { wiki: false, agent: 'claude' },
     ]);
     expect(remembered).toEqual(expect.arrayContaining(['Acme', v.path]));
+  });
+
+  it('syncNow pulls then pushes a shared brain, and leaves a local one alone; a scrub of a held one folds and sends', async () => {
+    const calls: string[] = [];
+    const hs = createBrainHandlers({
+      ...deps,
+      sync: {
+        pull: async (id) => {
+          calls.push(`pull ${id}`);
+        },
+        push: async (id) => {
+          calls.push(`push ${id}`);
+        },
+        squashUnsent: async (id) => {
+          calls.push(`squash ${id}`);
+          return true;
+        },
+      },
+    });
+    const v = await hs['brain:create'](NEW);
+    await hs['brain:syncNow'](v.id);
+    expect(calls).toEqual([]);
+    const b = brains.get(v.id);
+    await brains.patch(v.id, {
+      sharing: {
+        home: 'company',
+        remoteUrl: 'https://dev.azure.com/o/p/_git/r',
+        repositoryId: 'r',
+        homeOrganizationUrl: 'https://dev.azure.com/o',
+        homeProject: 'p',
+        joinedAt: b?.createdAt ?? '',
+        lastPullAt: null,
+        lastPushAt: null,
+        status: 'ok',
+        heldFile: null,
+      },
+    });
+    await hs['brain:syncNow'](v.id);
+    expect(calls).toEqual([`pull ${v.id}`, `push ${v.id}`]);
+    // A scrub of a brain whose push is held folds the unsent commits, then sends.
+    calls.length = 0;
+    await hs['brain:scrub'](v.id, 'not-in-this-brain-1234');
+    expect(calls).toEqual([]);
+    const held = brains.get(v.id)?.sharing;
+    if (held)
+      await brains.patch(v.id, {
+        sharing: { ...held, status: 'held', heldFile: 'sources/s.md' },
+      });
+    await hs['brain:scrub'](v.id, 'not-in-this-brain-1234');
+    expect(calls).toEqual([`squash ${v.id}`, `push ${v.id}`]);
+  });
+
+  it('pendingJoin hands over the link opened before the renderer asked, once', async () => {
+    expect(await h['brain:pendingJoin']()).toBeNull();
+    let pending: string | null = 'shellie://join?x';
+    h = createBrainHandlers({
+      ...deps,
+      takePendingJoin: () => {
+        const link = pending;
+        pending = null;
+        return link;
+      },
+    });
+    expect(await h['brain:pendingJoin']()).toBe('shellie://join?x');
+    expect(await h['brain:pendingJoin']()).toBeNull();
   });
 
   it('create stores the chosen agent and OpenCode model', async () => {
@@ -887,6 +981,32 @@ describe('brain handlers', () => {
     expect(events).toContainEqual(['brain.deleted', { folder: true }]);
   });
 
+  it('sends brain.share with the home and outcome only', async () => {
+    const v = await h['brain:create'](NEW);
+    await expect(
+      h['brain:share']({ brainId: v.id, home: 'company', repoName: ' ' }),
+    ).rejects.toThrow('Enter a repo name');
+    await fs.writeFile(path.join(v.path, 'wiki', 'mine.md'), '# Mine\n');
+    await expect(
+      h['brain:share']({ brainId: v.id, home: 'customer', repoName: 'r' }),
+    ).resolves.toEqual({ status: 'syncing' });
+    expect(events.filter((e) => e[0] === 'brain.share')).toEqual([
+      ['brain.share', { home: 'company', outcome: 'failed' }],
+      ['brain.share', { home: 'customer', outcome: 'syncing' }],
+    ]);
+  });
+
+  it('sends brain.join with how it was opened and the outcome only', async () => {
+    await expect(
+      h['brain:join']('not a link', undefined, 'card'),
+    ).rejects.toThrow('This is not a Shellie join link');
+    await expect(h['brain:join']('not a link')).rejects.toThrow();
+    expect(events.filter((e) => e[0] === 'brain.join')).toEqual([
+      ['brain.join', { via: 'card', outcome: 'failed' }],
+      ['brain.join', { via: 'link', outcome: 'failed' }],
+    ]);
+  });
+
   it('delete without deleteFolder keeps the folder', async () => {
     const v = await h['brain:create'](NEW);
     await h['brain:delete'](v.id, false);
@@ -922,6 +1042,130 @@ describe('brain handlers', () => {
     ).toBe('same');
     expect(brains.get(v.id)?.templatesVersion).toBe(TEMPLATES_VERSION);
     expect(released).toEqual([v.id]);
+  });
+
+  it.each(['archive', 'delete'] as const)(
+    'leave takes the member out, pushes, makes the brain local, then %s',
+    async (then) => {
+      const existing = path.join(userData, 'joined');
+      await scaffoldBrain(git, existing, 'Acme');
+      const v = await h['brain:create']({ ...NEW, path: existing });
+      await writeOrigin(existing, {
+        format: 1,
+        organizationUrl: 'https://dev.azure.com/org',
+        project: 'Default',
+        name: 'Acme',
+        keeper: { installId: 'someone-else', name: 'Dries' },
+        sharedAt: '2026-11-13T09:00:00.000Z',
+      });
+      await upsertMember(existing, {
+        installId: 'me-1',
+        name: 'Ann',
+        joinedAt: '2026-11-13T09:00:00.000Z',
+      });
+      await git.run(existing, ['add', '-A']);
+      await git.run(existing, ['commit', '-q', '-m', 'Brain: joined']);
+      await brains.patch(v.id, {
+        sharing: {
+          home: 'company',
+          remoteUrl: 'https://dev.azure.com/org/Default/_git/acme',
+          repositoryId: 'r',
+          homeOrganizationUrl: 'https://dev.azure.com/org',
+          homeProject: 'Default',
+          joinedAt: '2026-11-13T09:00:00.000Z',
+          lastPullAt: null,
+          lastPushAt: null,
+          status: 'ok',
+          heldFile: null,
+        },
+      });
+      const pushed: string[] = [];
+      const hs = createBrainHandlers({
+        ...deps,
+        installId: 'me-1',
+        sync: {
+          pull: async () => undefined,
+          push: async (id) => {
+            pushed.push(id);
+          },
+          squashUnsent: async () => false,
+        },
+      });
+      await hs['brain:leave'](v.id, then, true);
+      expect(pushed).toEqual([v.id]);
+      expect((await readMembers(existing))?.members ?? []).toEqual([]);
+      if (then === 'archive')
+        expect(brains.get(v.id)).toMatchObject({
+          archived: true,
+          sharing: null,
+        });
+      else {
+        expect(brains.get(v.id)).toBeUndefined();
+        expect(await isEmptyOrMissingDir(existing)).toBe(true);
+      }
+    },
+  );
+
+  it('on a shared brain, updateTemplates sends the version to everyone, and a newer brain refuses it', async () => {
+    const existing = path.join(userData, 'shared');
+    await scaffoldBrain(git, existing, 'Acme');
+    const v = await h['brain:create']({ ...NEW, path: existing });
+    await writeOrigin(existing, {
+      format: 1,
+      organizationUrl: 'https://dev.azure.com/org',
+      project: 'Default',
+      name: 'Acme',
+      keeper: { installId: 'someone-else', name: 'Dries' },
+      sharedAt: '2026-11-13T09:00:00.000Z',
+    });
+    await brains.patch(v.id, {
+      templatesVersion: TEMPLATES_VERSION - 1,
+      sharing: {
+        home: 'company',
+        remoteUrl: 'https://dev.azure.com/org/Default/_git/acme',
+        repositoryId: 'r',
+        homeOrganizationUrl: 'https://dev.azure.com/org',
+        homeProject: 'Default',
+        joinedAt: '2026-11-13T09:00:00.000Z',
+        lastPullAt: null,
+        lastPushAt: null,
+        status: 'ok',
+        heldFile: null,
+      },
+    });
+    await h['brain:updateTemplates'](v.id, ['SCHEMA.md']);
+    expect((await readShared(existing))?.templatesVersion).toBe(
+      TEMPLATES_VERSION,
+    );
+    expect((await git.run(existing, ['log', '-1', '--format=%s'])).trim()).toBe(
+      SHARED_FACTS_MESSAGE,
+    );
+    expect((await h['brain:get'](v.id)).keeper).toMatchObject({
+      name: 'Dries',
+      me: false,
+    });
+
+    // Commits not on the server yet: all of them before the first fetch, then those past origin/main.
+    const total = Number(
+      (await git.run(existing, ['rev-list', '--count', 'HEAD'])).trim(),
+    );
+    expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(total);
+    await git.run(existing, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(0);
+    await git.run(existing, [
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'one more',
+    ]);
+    expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(1);
+
+    await brains.patch(v.id, { templatesVersion: TEMPLATES_VERSION + 1 });
+    expect((await h['brain:get'](v.id)).newerShellie).toBe(true);
+    await expect(
+      h['brain:updateTemplates'](v.id, ['SCHEMA.md']),
+    ).rejects.toThrow(NEWER_SHELLIE);
   });
 
   it('update releases held jobs only when the agent changes', async () => {
@@ -1295,6 +1539,47 @@ describe('brain handlers', () => {
       // The same attachment again: nothing queued.
       await h['brain:refresh'](v.id);
       expect(enqueued).toHaveLength(2);
+    });
+
+    it("on a colleague's machine a refresh shares its date but queues no sync or pictures job", async () => {
+      await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+      await fs.writeFile(path.join(wikiRepo, '.attachments/a.png'), 'png');
+      sh(wikiRepo, 'add', '-A');
+      sh(wikiRepo, 'commit', '-q', '-m', 'attachment');
+      commitFile(wikiRepo, 'Home.md', '# Home\n![a](/.attachments/a.png)\n');
+      const v = await h['brain:create']({ ...NEW, wiki });
+      await h['brain:update'](v.id, { options: { syncAfterRefresh: true } });
+      await writeOrigin(v.path, {
+        format: 1,
+        organizationUrl: 'https://dev.azure.com/org',
+        project: 'Default',
+        name: 'Acme',
+        keeper: { installId: 'someone-else', name: 'Dries' },
+        sharedAt: '2026-11-13T09:00:00.000Z',
+      });
+      await brains.patch(v.id, {
+        sharing: {
+          home: 'company',
+          remoteUrl: 'https://dev.azure.com/org/Default/_git/acme',
+          repositoryId: 'r',
+          homeOrganizationUrl: 'https://dev.azure.com/org',
+          homeProject: 'Default',
+          joinedAt: '2026-11-13T09:00:00.000Z',
+          lastPullAt: null,
+          lastPushAt: null,
+          status: 'ok',
+          heldFile: null,
+        },
+      });
+      expect(await h['brain:refresh'](v.id)).toMatchObject({
+        ok: true,
+        added: 1,
+        attachments: 1,
+      });
+      expect(enqueued).toEqual([]);
+      const at = brains.get(v.id)?.lastRefreshAt;
+      expect(at).not.toBeNull();
+      expect((await readShared(v.path))?.lastRefreshAt).toBe(at);
     });
 
     it('queues no pictures job for the mirror on a brain whose skills are older than v6', async () => {

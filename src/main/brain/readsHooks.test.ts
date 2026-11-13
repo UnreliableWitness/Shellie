@@ -86,6 +86,7 @@ describe('createReadsHooks', () => {
     background: true,
     agent: 'claude',
     model: null,
+    replays: 0,
     ...over,
   });
   const hooks = () => {

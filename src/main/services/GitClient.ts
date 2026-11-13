@@ -25,6 +25,9 @@ const execFileAsync = promisify(execFile);
 /** Long enough for an interactive Git Credential Manager sign-in, short enough that Finish never hangs. */
 const PUSH_TIMEOUT_MS = 120_000;
 
+/** A fetch no one watches gives up after this long (a hung network or a sign-in prompt). */
+const FETCH_TIMEOUT_MS = 120_000;
+
 /** Generous for a large checkout and its hooks (git-lfs on a slow disk), but a hung `worktree add` still fails (#148). */
 const WORKTREE_TIMEOUT_MS = 300_000;
 
@@ -100,6 +103,7 @@ export function splitRemoteRef(
 /** Thin wrapper over the git CLI. Every method takes the directory to run in. */
 export class GitClient {
   readonly pushTimeoutMs: number;
+  readonly fetchTimeoutMs: number;
   readonly worktreeTimeoutMs: number;
   private readonly auth: GitAuth | undefined;
 
@@ -107,11 +111,14 @@ export class GitClient {
     private readonly wait: Wait = realWait,
     opts: {
       pushTimeoutMs?: number;
+      /** How long an unattended fetch may take. */
+      fetchTimeoutMs?: number;
       worktreeTimeoutMs?: number;
       auth?: GitAuth;
     } = {},
   ) {
     this.pushTimeoutMs = opts.pushTimeoutMs ?? PUSH_TIMEOUT_MS;
+    this.fetchTimeoutMs = opts.fetchTimeoutMs ?? FETCH_TIMEOUT_MS;
     this.worktreeTimeoutMs = opts.worktreeTimeoutMs ?? WORKTREE_TIMEOUT_MS;
     this.auth = opts.auth;
   }
@@ -279,17 +286,38 @@ export class GitClient {
       .filter(Boolean);
   }
 
-  /** `origin/main` fetches `main` from `origin`. A ref without a known remote prefix is left alone. Returns whether it fetched. */
-  async fetch(cwd: string, baseRef: string): Promise<boolean> {
+  /**
+   * `origin/main` fetches `main` from `origin`. A ref without a known remote prefix is left alone. Returns whether it
+   * fetched. `unattended` (a fetch no one watches): ssh runs in batch mode, as for a push, and a fetch that hangs
+   * gives up after `fetchTimeoutMs`.
+   */
+  async fetch(
+    cwd: string,
+    baseRef: string,
+    opts: { unattended?: boolean } = {},
+  ): Promise<boolean> {
     if (baseRef.indexOf('/') <= 0) return false;
     const split = splitRemoteRef(baseRef, await this.remotes(cwd));
     if (!split) return false;
     const ctx = await this.remoteAuth(cwd, split.remote);
+    const unattended = opts.unattended === true;
+    const timeoutMs = unattended ? this.fetchTimeoutMs : undefined;
+    const env: Record<string, string> = {
+      ...(unattended && !(await this.hasOwnSshCommand(cwd))
+        ? { GIT_SSH_COMMAND: BATCH_SSH }
+        : {}),
+      ...ctx.auth.env,
+    };
     try {
       await this.run(cwd, ['fetch', '--quiet', split.remote, split.branch], {
-        env: ctx.auth.env,
+        env,
+        timeoutMs,
       });
     } catch (e) {
+      if (e instanceof GitTimeoutError)
+        throw new Error(
+          `git fetch timed out after ${(timeoutMs ?? 0) / 1000} s (a credential prompt may be waiting)`,
+        );
       if (e instanceof GitError && /couldn't find remote ref/i.test(e.stderr)) {
         const fallback = await this.defaultBaseRef(cwd);
         const real = fallback.startsWith(`${split.remote}/`)

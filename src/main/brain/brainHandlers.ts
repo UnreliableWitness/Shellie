@@ -33,9 +33,42 @@ import { pathExists } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
+import type { BrainHomeStore } from './share/BrainHomeStore';
+import type { BrainSync } from './share/BrainSync';
+import {
+  discoverCustomerBrains,
+  joinBrain,
+  previewJoin,
+  type DiscoverCache,
+  type JoinDeps,
+} from './share/join';
+import {
+  leaveBrain,
+  shareBrain,
+  stopSharing,
+  type ShareDeps,
+  type ShareResult,
+} from './share/share';
+import {
+  handOver,
+  isAutomatic,
+  keeperOf,
+  patchFacts,
+  shellieOutdated,
+  takeOver,
+} from './share/keeper';
+import { unsentCount } from './share/gitUtil';
+import { joinLink, NEWER_SHELLIE } from '../../shared/brainShare';
+import { getInstallId } from '../installId';
+import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
-import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
+import {
+  imagesBucket,
+  joinOutcome,
+  pagesBucket,
+  sizeBucket,
+} from './brainTelemetry';
 import { readBook } from './book';
 import { PENDING } from './bookPass';
 import { listConflicts, readConflicts, saveConflicts } from './conflicts';
@@ -77,6 +110,9 @@ export function checkModel(model: string): string {
 }
 
 export type BrainChannels =
+  | 'brainHome:get'
+  | 'brainHome:save'
+  | 'brainHome:remove'
   | 'brain:list'
   | 'brain:get'
   | 'brain:forTask'
@@ -91,6 +127,17 @@ export type BrainChannels =
   | 'brain:refresh'
   | 'brain:run'
   | 'brain:resumeQueue'
+  | 'brain:syncNow'
+  | 'brain:share'
+  | 'brain:joinLink'
+  | 'brain:stopSharing'
+  | 'brain:leave'
+  | 'brain:handOver'
+  | 'brain:takeOver'
+  | 'brain:previewJoin'
+  | 'brain:join'
+  | 'brain:discover'
+  | 'brain:pendingJoin'
   | 'brain:sources'
   | 'brain:counts'
   | 'brain:files'
@@ -126,6 +173,7 @@ export type BrainRunner = Pick<
 
 export type BrainHandlerDeps = {
   brains: BrainStore;
+  home: Pick<BrainHomeStore, 'get' | 'save' | 'remove' | 'token'>;
   /** Converts pictures in formats the agent cannot view (createRasterizer); absent in tests. */
   rasterize?: Rasterize;
   git: GitClient;
@@ -135,7 +183,9 @@ export type BrainHandlerDeps = {
   mirrorAuth: (connectionId: string, gitUrl: string) => MirrorAuth;
   tracker: (connectionId: string) => Pick<Tracker, 'wikis' | 'wikiPages'>;
   connections: {
-    get(id: string): Pick<Connection, 'organizationUrl' | 'project'>;
+    get(id: string): Pick<Connection, 'organizationUrl' | 'project' | 'user'>;
+    list(): Pick<Connection, 'id' | 'organizationUrl' | 'project' | 'user'>[];
+    token(id: string): Promise<string>;
   };
   task: (taskId: string) => Task;
   repos: () => Pick<Repo, 'id' | 'connectionId'>[];
@@ -145,10 +195,22 @@ export type BrainHandlerDeps = {
   /** shell.openPath: resolves to an error message, empty on success. */
   openPath: (absPath: string) => Promise<string>;
   userData: string;
+  /** This install's id, read once by main (getInstallId); tests leave it out and it is read from userData. */
+  installId?: string;
   /** Telemetry scrubs these from now on (a brain's name and path). */
   remember: (values: string[]) => void;
   event: (name: string, props?: TelemetryProps) => void;
+  /** Keeps shared brains in step with their server (BrainSync); absent in tests that do not share. */
+  sync?: Pick<BrainSync, 'pull' | 'push' | 'squashUnsent'>;
+  /** Creates the repo a brain is shared to, and reads one to join; tests pass a fake (default: AdoClient). */
+  ado?: (
+    organizationUrl: string,
+    token: () => Promise<string>,
+  ) => ReturnType<NonNullable<ShareDeps['ado']>> &
+    ReturnType<NonNullable<JoinDeps['ado']>>;
   now?: () => Date;
+  /** Returns and clears the join link opened before the renderer asked (main); absent in tests. */
+  takePendingJoin?: () => string | null;
 };
 
 const ROOT_FILES = new Set(['index.md', 'log.md', 'SCHEMA.md']);
@@ -251,7 +313,7 @@ export async function refreshIndex(
       'commit',
       '-q',
       '-m',
-      'Brain: index',
+      INDEX_MESSAGE,
       '--',
       'index.md',
     ]);
@@ -355,7 +417,7 @@ export async function verifyPage(
       'commit',
       '-q',
       '-m',
-      `Brain: verified ${rel}`,
+      `${VERIFIED_PREFIX}${rel}`,
       '--',
       rel,
     ]);
@@ -413,6 +475,49 @@ export function createBrainHandlers(
   };
   const changed = (brainId: string) =>
     d.broadcast('brain:changed', { brainId });
+  let installId: Promise<string> | null = null;
+  const myInstall = () =>
+    (installId ??= d.installId
+      ? Promise.resolve(d.installId)
+      : getInstallId(d.userData));
+  /** The brain's record goes, and its folder too when asked (only a brain folder, or an empty one). */
+  const deleteBrain = async (id: string, deleteFolder: boolean) => {
+    const b = brainOf(id);
+    if (
+      deleteFolder &&
+      !(await isEmptyOrMissing(b.path)) &&
+      !(await isBrainFolder(b.path))
+    )
+      throw new Error('The folder is not a brain; it was not deleted');
+    if (b.terminal) await d.terminals?.kill(b.terminal.id);
+    // Queued jobs of the brain stay in the runner; they fail on the missing folder or brain.
+    await d.brains.remove(id);
+    if (deleteFolder) await fs.rm(b.path, { recursive: true, force: true });
+    d.event('brain.deleted', { folder: deleteFolder });
+    changed(id);
+  };
+  const joinDeps: JoinDeps = {
+    brains: d.brains,
+    git: d.git,
+    home: d.home,
+    connections: d.connections,
+    userData: d.userData,
+    installId: myInstall,
+    ado: d.ado,
+    now: d.now,
+  };
+  const shareDeps: ShareDeps = {
+    brains: d.brains,
+    git: d.git,
+    home: d.home,
+    connections: d.connections,
+    runner: d.runner,
+    installId: myInstall,
+    ado: d.ado,
+    now: d.now,
+  };
+  /** The shared brains found per connection this app session (the Join card). */
+  const discovered: DiscoverCache = new Map();
   const brainOf = (id: string): Brain => {
     const b = d.brains.get(id);
     if (!b) throw new Error(`Unknown brain ${id}`);
@@ -423,6 +528,13 @@ export function createBrainHandlers(
     const b = brainOf(id);
     if (b.archived) throw new Error(ARCHIVED);
     return b;
+  };
+  /** A live shared brain, for the actions only a shared one has. */
+  const sharedBrain = (id: string, o: { live?: boolean } = {}) => {
+    const b = o.live ? live(id) : brainOf(id);
+    const sharing = b.sharing;
+    if (!sharing) throw new Error('This brain is not shared');
+    return { ...b, sharing };
   };
   /** A connection that was removed has no project. */
   const connectionProject = (id: string): string | null => {
@@ -449,20 +561,35 @@ export function createBrainHandlers(
         ? [j.source]
         : [],
     );
+    const newerShellie = shellieOutdated(b);
+    const health = withHealth
+      ? await brainHealth(
+          b.path,
+          d.git,
+          d.ledgerToday(b.id),
+          paused,
+          now(),
+          inFlight,
+          d.runner.held(b.id),
+        )
+      : null;
+    // Held for a newer Shellie, not for the skills: updating the skills here would not help.
+    if (health && newerShellie && health.queueHeld)
+      health.queueHeld = NEWER_SHELLIE;
+    // Commits the server does not have yet (every commit before the first push), and who keeps the brain.
+    const [ahead, keeper] = b.sharing
+      ? await Promise.all([
+          unsentCount(d.git, b.path).catch(() => 0),
+          myInstall().then((me) => keeperOf(b.path, me)),
+        ])
+      : [0, null];
     return {
       ...b,
-      health: withHealth
-        ? await brainHealth(
-            b.path,
-            d.git,
-            d.ledgerToday(b.id),
-            paused,
-            now(),
-            inFlight,
-            d.runner.held(b.id),
-          )
-        : null,
+      sharing: b.sharing ? { ...b.sharing, ahead } : null,
+      health,
       jobs,
+      keeper,
+      newerShellie,
     };
   };
   const sourceAdded = (
@@ -503,6 +630,16 @@ export function createBrainHandlers(
       return { ok: false, message: (e as Error).message };
     }
   };
+  /** Hands over or takes over the keeper role of a live shared brain, after a pull. */
+  const keeperChange = async (
+    id: string,
+    fn: (dir: string, installId: string) => Promise<void>,
+  ) => {
+    const b = sharedBrain(id, { live: true });
+    await d.sync?.pull(id);
+    await fn(b.path, await myInstall());
+    changed(id);
+  };
   // One refresh per brain at a time (the button and the scheduler share it).
   const refreshing = new Map<string, Promise<RefreshResult>>();
   const refresh = async (id: string): Promise<RefreshResult> => {
@@ -530,11 +667,17 @@ export function createBrainHandlers(
       ms: Date.now() - started,
     });
     if (r.ok) {
-      await d.brains.patch(id, { lastRefreshAt: now().toISOString() });
-      if (b.options.syncAfterRefresh && r.added + r.changed + r.removed > 0)
+      await patchFacts(d, id, { lastRefreshAt: now().toISOString() }, now());
+      // The brain-wide work after a refresh runs on the keeper's machine only (a local brain: here).
+      const automatic = isAutomatic(b, await myInstall());
+      if (
+        automatic &&
+        b.options.syncAfterRefresh &&
+        r.added + r.changed + r.removed > 0
+      )
         d.runner.enqueue(id, 'sync');
       // New or changed pictures: one re-evaluation of the mirror, which checks for gaps when it starts.
-      if (r.attachments > 0 && picturesReady(b))
+      if (automatic && r.attachments > 0 && picturesReady(b))
         d.runner.enqueue(id, 'pictures', MIRROR_SOURCE);
     }
     changed(id);
@@ -542,6 +685,9 @@ export function createBrainHandlers(
   };
 
   return {
+    'brainHome:get': async () => d.home.get(),
+    'brainHome:save': async (input) => d.home.save(input),
+    'brainHome:remove': async () => d.home.remove(),
     'brain:list': async () => Promise.all(d.brains.list().map((b) => view(b))),
     'brain:get': async (id) => view(brainOf(id), true),
     'brain:forTask': async (taskId) => {
@@ -593,15 +739,17 @@ export function createBrainHandlers(
       const name = patch.name?.trim();
       if (patch.name !== undefined && !name)
         throw new Error('A brain needs a name');
-      const wikiChanged = patch.wiki !== undefined;
-      const updated = await d.brains.patch(id, {
-        ...(name ? { name } : {}),
-        ...(wikiChanged
+      const wiki =
+        patch.wiki !== undefined
           ? {
               wiki: BrainWikiSchema.nullable().parse(patch.wiki),
               lastRefreshAt: null,
             }
-          : {}),
+          : null;
+      // A shared brain's colleagues get the new wiki link too.
+      if (wiki) await patchFacts(d, id, wiki, now());
+      const updated = await d.brains.patch(id, {
+        ...(name ? { name } : {}),
         ...(patch.options
           ? {
               options: BrainOptionsSchema.parse({
@@ -620,21 +768,7 @@ export function createBrainHandlers(
       changed(id);
       return view(updated);
     },
-    'brain:delete': async (id, deleteFolder) => {
-      const b = brainOf(id);
-      if (
-        deleteFolder &&
-        !(await isEmptyOrMissing(b.path)) &&
-        !(await isBrainFolder(b.path))
-      )
-        throw new Error('The folder is not a brain; it was not deleted');
-      if (b.terminal) await d.terminals?.kill(b.terminal.id);
-      // Queued jobs of the brain stay in the runner; they fail on the missing folder or brain.
-      await d.brains.remove(id);
-      if (deleteFolder) await fs.rm(b.path, { recursive: true, force: true });
-      d.event('brain.deleted', { folder: deleteFolder });
-      changed(id);
-    },
+    'brain:delete': (id, deleteFolder) => deleteBrain(id, deleteFolder),
     'brain:pickFolder': () => d.pickFolder(),
     'brain:wikis': (connectionId, project) =>
       d.tracker(connectionId).wikis(project),
@@ -846,6 +980,75 @@ export function createBrainHandlers(
       live(id);
       d.runner.resume(id);
     },
+    'brain:syncNow': async (id) => {
+      if (!live(id).sharing || !d.sync) return;
+      await d.sync.pull(id);
+      await d.sync.push(id);
+    },
+    'brain:share': async (input) => {
+      // Only the two fixed homes reach telemetry, whatever the window sent.
+      const home = input.home === 'company' ? 'company' : 'customer';
+      let outcome: ShareResult['status'] | 'failed' = 'failed';
+      try {
+        live(input.brainId);
+        const r = await shareBrain(shareDeps, input);
+        outcome = r.status;
+        changed(input.brainId);
+        return r;
+      } finally {
+        d.event('brain.share', { home, outcome });
+      }
+    },
+    'brain:joinLink': async (id) => {
+      const { sharing } = sharedBrain(id);
+      return joinLink({
+        organizationUrl: sharing.homeOrganizationUrl,
+        project: sharing.homeProject,
+        repositoryId: sharing.repositoryId,
+      });
+    },
+    'brain:stopSharing': async (id) => {
+      brainOf(id);
+      await stopSharing(d, id);
+      changed(id);
+    },
+    'brain:leave': async (id, then, deleteFolder) => {
+      if (d.runner.running(id)) throw new Error(BUSY);
+      await leaveBrain({ ...shareDeps, sync: d.sync }, id);
+      changed(id);
+      if (then === 'delete') await deleteBrain(id, deleteFolder === true);
+      else {
+        await d.brains.patch(id, { archived: true });
+        changed(id);
+      }
+    },
+    // Both pull first: the latest members list (a colleague who just joined can be picked), and the server's latest
+    // for a take-over (the keeper's newest commit and the current origin.json).
+    'brain:handOver': (id, target) =>
+      keeperChange(id, (dir, me) => handOver(d.git, dir, me, target)),
+    'brain:takeOver': (id) =>
+      keeperChange(id, (dir, me) => takeOver(d.git, dir, me, now())),
+    'brain:previewJoin': (link, pat) => previewJoin(joinDeps, link, { pat }),
+    'brain:join': async (link, pat, via) => {
+      const from = via === 'card' ? 'card' : 'link';
+      let b: Brain;
+      try {
+        b = await joinBrain(joinDeps, link, { pat });
+      } catch (e) {
+        d.event('brain.join', { via: from, outcome: joinOutcome(e) });
+        throw e;
+      }
+      d.event('brain.join', { via: from, outcome: 'joined' });
+      d.remember([b.name, b.path]);
+      changed(b.id);
+      return view(b);
+    },
+    'brain:pendingJoin': async () => d.takePendingJoin?.() ?? null,
+    'brain:discover': (connectionId, refresh) =>
+      discoverCustomerBrains(joinDeps, connectionId, {
+        cache: discovered,
+        refresh,
+      }),
     'brain:counts': async (id) => {
       const b = brainOf(id);
       const { state } = await readState(b.path);
@@ -896,6 +1099,15 @@ export function createBrainHandlers(
           'The scrub stopped halfway; check the brain folder with git status and try again',
         );
       }
+      // A shared brain held for a secret: the unsent commits fold into one, so the scrubbed text never goes out.
+      if (d.sync && d.brains.get(id)?.sharing?.status === 'held') {
+        await d.sync
+          .squashUnsent(id)
+          .catch((e: unknown) =>
+            console.error('[brain] fold unsent commits', (e as Error).message),
+          );
+        void d.sync.push(id);
+      }
       changed(id);
       return r;
     },
@@ -919,8 +1131,11 @@ export function createBrainHandlers(
     },
     'brain:updateTemplates': async (id, paths) => {
       const b = brainOf(id);
+      // This Shellie's skills are older than the brain's: applying them would undo a colleague's update.
+      if (shellieOutdated(b)) throw new Error(NEWER_SHELLIE);
       await applyTemplates(d.git, b.path, b.name, paths);
-      await d.brains.patch(id, { templatesVersion: TEMPLATES_VERSION });
+      // On a shared brain the new version goes to everyone.
+      await patchFacts(d, id, { templatesVersion: TEMPLATES_VERSION }, now());
       // Jobs held for skills older than OpenCode's start now.
       d.runner.release(id);
       changed(id);

@@ -551,3 +551,87 @@ describe('BrainScreen scrub', () => {
     );
   });
 });
+
+const sharedBrain = (over = {}) =>
+  brainView({
+    sharing: {
+      home: 'company',
+      remoteUrl: 'https://dev.azure.com/acme/Brains/_git/x',
+      repositoryId: 'r',
+      homeOrganizationUrl: 'https://dev.azure.com/acme',
+      homeProject: 'Brains',
+      joinedAt: '2026-11-13T09:00:00.000Z',
+      lastPullAt: null,
+      lastPushAt: null,
+      status: 'ok',
+      heldFile: null,
+    },
+    keeper: { installId: 'i1', name: 'Dries', me: true, members: [] },
+    ...over,
+  });
+
+describe('BrainScreen sharing', () => {
+  it('offers Share with colleagues on a local brain, not on a shared one', async () => {
+    setup();
+    const { unmount } = render(<BrainScreen brainId="b1" />);
+    expect(
+      await screen.findByRole('button', { name: 'Share with colleagues' }),
+    ).toBeInTheDocument();
+    unmount();
+    cleanup();
+    setup(sharedBrain());
+    render(<BrainScreen brainId="b1" />);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Shared · up to date',
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Share with colleagues' }),
+    ).not.toBeInTheDocument();
+  });
+  it('pulls when a shared brain opens, and copies the join link', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, { clipboard: { writeText } });
+    const a = setup(sharedBrain());
+    render(<BrainScreen brainId="b1" />);
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:syncNow',
+        args: ['b1'],
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Copy join link' }),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        'shellie://join?org=o&project=p&repo=r',
+      ),
+    );
+  });
+  it('does not sync a local brain', async () => {
+    const a = setup();
+    render(<BrainScreen brainId="b1" />);
+    await screen.findByRole('button', { name: 'Share with colleagues' });
+    expect(names(a)).not.toContain('brain:syncNow');
+  });
+  it('warns in Scrub only when the brain is shared', async () => {
+    const warning =
+      /This brain is shared\. The server keeps what was already sent/;
+    setup(sharedBrain());
+    const { unmount } = render(<BrainScreen brainId="b1" />);
+    await openAdd();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Scrub a value…' }),
+    );
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    unmount();
+    cleanup();
+    setup();
+    render(<BrainScreen brainId="b1" />);
+    await openAdd();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Scrub a value…' }),
+    );
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+  });
+});

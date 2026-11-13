@@ -65,6 +65,25 @@ export const BrainWikiSchema = z.object({
 });
 export type BrainWiki = z.infer<typeof BrainWikiSchema>;
 
+/** Where a shared brain lives and how it is doing; null on a brain that is not shared. Re-exported by brainShare. */
+export const BrainSharingSchema = z.object({
+  home: z.enum(['customer', 'company']),
+  remoteUrl: z.string(),
+  repositoryId: z.string(),
+  homeOrganizationUrl: z.string(),
+  homeProject: z.string(),
+  joinedAt: z.string(),
+  lastPullAt: z.string().nullable(),
+  lastPushAt: z.string().nullable(),
+  status: z.enum(['ok', 'pending', 'held', 'unreachable', 'unauthorized']),
+  heldFile: z.string().nullable(),
+  /** Why a push is held: a possible secret in `heldFile`, or a scan that could not run (`unchecked`). */
+  heldReason: z.enum(['secret', 'unchecked']).nullable().optional(),
+  /** Commits not yet on the server (`origin/main..HEAD`). Filled in when a view is built; never stored. */
+  ahead: z.number().int().optional(),
+});
+export type BrainSharing = z.infer<typeof BrainSharingSchema>;
+
 export const BrainSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -72,6 +91,7 @@ export const BrainSchema = z.object({
   project: z.string().min(1),
   path: z.string().min(1),
   wiki: BrainWikiSchema.nullable().default(null),
+  sharing: BrainSharingSchema.nullable().default(null),
   templatesVersion: z.number().int().default(0),
   options: BrainOptionsSchema.prefault({}),
   terminal: TerminalDefSchema.nullable().default(null),
@@ -321,18 +341,20 @@ export const BrainStateSchema = z.object({
 export type BrainState = z.infer<typeof BrainStateSchema>;
 
 /** `capture`, `retract`, `lessons` and `pictures` take a source path; the others run on the whole brain. */
-export type BrainJobKind =
-  | 'capture'
-  | 'sync'
-  | 'lint'
-  | 'digest'
-  | 'retract'
-  | 'lessons'
-  | 'pictures'
+export const BRAIN_JOB_KINDS = [
+  'capture',
+  'sync',
+  'lint',
+  'digest',
+  'retract',
+  'lessons',
+  'pictures',
   /** A conflict the person settled: runs `/settle` with the decision kept in brain/conflicts.json. */
-  | 'settle'
+  'settle',
   /** A long read written or brought up to date: runs `/write` on the job's `target`. */
-  | 'write';
+  'write',
+] as const;
+export type BrainJobKind = (typeof BRAIN_JOB_KINDS)[number];
 export const SOURCE_JOB_KINDS: ReadonlySet<BrainJobKind> = new Set([
   'capture',
   'retract',
@@ -360,6 +382,8 @@ export type BrainJob = {
   conflict?: string;
   /** What a write job writes (`writeTarget`): a chapter, a topic, or the long read it brings up to date. */
   target?: string;
+  /** How many times the job ran again because its output clashed with a colleague's change (shared brains). */
+  replays: number;
 };
 
 /** Whether the path is a long read (`reads/<name>.md`), not a letter. No backslash: on Windows it is a separator. */
@@ -491,6 +515,18 @@ export type BrainHealth = {
 export type BrainView = Brain & {
   health: BrainHealth | null;
   jobs: BrainJob[];
+  /** A shared brain's keeper and members, from its `brain/origin.json` and `members.json`; null for a local brain. */
+  keeper: BrainKeeper | null;
+  /** A shared brain whose skills are newer than this Shellie knows: its jobs wait ("A colleague's Shellie is newer"). */
+  newerShellie: boolean;
+};
+
+/** Who keeps a shared brain (`me`: this install) and the members who could take it over (the keeper left out). */
+export type BrainKeeper = {
+  installId: string;
+  name: string;
+  me: boolean;
+  members: { installId: string; name: string }[];
 };
 
 /** Page types by file name, in the order the front page shows them. */

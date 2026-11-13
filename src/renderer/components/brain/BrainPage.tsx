@@ -48,6 +48,7 @@ export function BrainPage({
   onRemoved,
   jobs = [],
   skillsReady = true,
+  shared = false,
 }: {
   brainId: string;
   path: string;
@@ -67,6 +68,8 @@ export function BrainPage({
   jobs?: BrainJob[];
   /** False when the brain's skills cannot re-evaluate pictures (`picturesReady`). */
   skillsReady?: boolean;
+  /** The brain is shared (Remove warns that the server keeps the file). */
+  shared?: boolean;
 }) {
   const notify = useStore((s) => s.notify);
   const [text, setText] = useState<string | null>(null);
@@ -350,7 +353,11 @@ export function BrainPage({
             !row &&
             source &&
             !path.startsWith('sources/wiki/') && (
-              <SourceBar path={path} onRemove={() => void removeSource()} />
+              <SourceBar
+                path={path}
+                shared={shared}
+                onRemove={() => void removeSource()}
+              />
             )}
           {main}
         </div>

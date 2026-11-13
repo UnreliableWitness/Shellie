@@ -43,6 +43,9 @@ const config: ForgeConfig = {
       ),
     },
     executableName: 'Shellie',
+    // shellie:// opens Shellie (the join link of a shared brain). macOS reads this into Info.plist; Squirrel has no
+    // protocol option, so Windows registers the scheme at runtime (setAsDefaultProtocolClient in main.ts).
+    protocols: [{ name: 'Shellie', schemes: ['shellie'] }],
     icon: 'assets/icon/shellie',
     // macOS only (Windows ignores extendInfo): the hardened runtime asks for these when a CLI run in a
     // Shellie terminal uses the microphone, camera or Apple Events.

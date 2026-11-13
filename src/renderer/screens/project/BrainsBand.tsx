@@ -3,6 +3,7 @@ import type { BrainCounts, BrainView } from '../../../shared/brain';
 import { tasksOfProject } from '../../../shared/projectGraph';
 import type { Connection } from '../../../shared/types';
 import { api } from '../../api';
+import { JoinCard } from '../../components/brain/JoinCard';
 import { Band } from '../../components/home/Band';
 import { ago, eur, plural, taskLabel } from '../../format';
 import { useBrains } from '../../hooks/useBrains';
@@ -76,6 +77,7 @@ export function BrainsBand({ connection }: { connection: Connection }) {
       }
     >
       <div className="home-cards">
+        <JoinCard connectionId={id} project={connection.project} />
         {brains.map((b) => {
           const c = counts[b.id];
           const facts = [

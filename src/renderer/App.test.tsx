@@ -112,6 +112,7 @@ describe('App', () => {
         'attention:get',
         'attention:view',
         'brain:list',
+        'brain:pendingJoin',
         'connections:list',
         'reading:get',
         'repos:list',
@@ -126,6 +127,32 @@ describe('App', () => {
     expect(
       await screen.findByText('state.json was unreadable'),
     ).toBeInTheDocument();
+  });
+
+  it('opens the join screen for a join link, live or from a cold start', async () => {
+    const { emit } = installFakeApi({
+      'brain:pendingJoin': () => 'shellie://join?cold',
+      'brain:previewJoin': () => ({
+        name: 'Acme',
+        organizationUrl: 'https://dev.azure.com/acme',
+        project: 'Shellie',
+        connectionId: 'c1',
+        needsToken: false,
+        alreadyHave: false,
+      }),
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(useStore.getState().screen).toEqual({
+        kind: 'brain-join',
+        link: 'shellie://join?cold',
+      }),
+    );
+    act(() => emit('brain:openJoin', { link: 'shellie://join?live' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain-join',
+      link: 'shellie://join?live',
+    });
   });
 
   it('tells main which task is on screen for time tracking', async () => {

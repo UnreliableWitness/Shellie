@@ -257,6 +257,26 @@ describe('brains', () => {
     );
   });
 
+  it('offers the shared brain of the project only when there is none of its own', async () => {
+    const found = [
+      { repositoryId: 'r', name: 'Acme', joinLink: 'shellie://join?a' },
+    ];
+    useStore.setState({ connections: [conn('c1', 'Shellie')] });
+    installFakeApi({ 'brain:discover': () => found });
+    const first = render(<TaskNav />);
+    expect(
+      await screen.findByText('Your team has a brain for Shellie. Join?'),
+    ).toBeInTheDocument();
+    first.unmount();
+    installFakeApi({
+      'brain:discover': () => found,
+      'brain:list': () => [listedBrain()],
+    });
+    render(<TaskNav />);
+    await screen.findByRole('button', { name: 'Acme' });
+    expect(screen.queryByText(/Your team has a brain/)).not.toBeInTheDocument();
+  });
+
   it('marks a brain with something for the work or a change to read, unless the nudges are off', async () => {
     installFakeApi({
       'brain:list': () => [

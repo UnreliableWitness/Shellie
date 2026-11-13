@@ -39,6 +39,16 @@ export const isFile = (p: string): Promise<boolean> =>
     () => false,
   );
 
+/** A file's text; null when it is missing (any other read error throws). */
+export async function readTextIfExists(file: string): Promise<string | null> {
+  try {
+    return await fs.readFile(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
 /** Reads a JSON file; null when it is missing or not JSON. */
 export async function readJson<T = unknown>(file: string): Promise<T | null> {
   try {

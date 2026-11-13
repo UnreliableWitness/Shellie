@@ -5,6 +5,8 @@ import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainAdd } from '../components/brain/BrainAdd';
 import { BrainRead } from '../components/brain/BrainRead';
+import { ShareDialog } from '../components/brain/ShareDialog';
+import { SharedStatus } from '../components/brain/SharedStatus';
 import { trackBrain, trackSettleOpen } from '../components/brain/brainActions';
 import { useBrainPages } from '../components/brain/BrainWiki';
 import { SettleView } from '../components/brain/settle/SettleView';
@@ -84,6 +86,15 @@ export function BrainScreen({
   const { conflicts } = useBrainConflicts(brainId);
   // The Settle view, shown in place of Add: at one conflict (target) or its list (null).
   const [settle, setSettle] = useState<{ target: string | null } | null>(null);
+  const [sharing, setSharing] = useState(false);
+  // A shared brain pulls when its page opens.
+  const isShared = brain?.sharing != null;
+  useEffect(() => {
+    if (isShared)
+      api()
+        .invoke('brain:syncNow', brainId)
+        .catch(() => undefined);
+  }, [brainId, isShared]);
 
   if (!brain)
     return (
@@ -133,6 +144,7 @@ export function BrainScreen({
         after={
           <>
             <span className="muted">{brain.project}</span>
+            <SharedStatus brain={brain} />
             <div className="brain-switch" role="tablist" aria-label="View">
               <button
                 type="button"
@@ -168,6 +180,29 @@ export function BrainScreen({
         inline
         commands={
           <>
+            {brain.sharing ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() =>
+                  void tryInvoke(async () => {
+                    const link = await api().invoke('brain:joinLink', brain.id);
+                    await navigator.clipboard.writeText(link);
+                    notify('info', 'Join link copied');
+                  }, notify)
+                }
+              >
+                Copy join link
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setSharing(true)}
+              >
+                Share with colleagues
+              </button>
+            )}
             <AskBox
               brainId={brain.id}
               agent={brain.options.agent}
@@ -226,6 +261,17 @@ export function BrainScreen({
         }
       />
       <div className="brain-body">
+        {sharing && (
+          <ShareDialog
+            brain={brain}
+            onClose={() => setSharing(false)}
+            onSources={() => {
+              setSharing(false);
+              setSettle(null);
+              choose('add');
+            }}
+          />
+        )}
         {/* Both views stay mounted, so the open page and a half-filled form survive a switch. */}
         <div className="brain-view brain-view-read" hidden={view !== 'read'}>
           <BrainRead
@@ -238,6 +284,7 @@ export function BrainScreen({
             jobs={brain.jobs}
             skillsReady={picturesReady(brain)}
             canWrite={writeReady(brain)}
+            shared={brain.sharing !== null}
             conflicts={conflicts.open}
             onSettle={(id) => openSettle(id, 'read')}
           />

@@ -80,6 +80,8 @@ const brain = (
     },
     health: null,
     jobs: [],
+    keeper: null,
+    newerShellie: false,
   }) as unknown as BrainView;
 
 const row = (id: string) => {

@@ -114,6 +114,7 @@ const job = (over: Partial<BrainJob>): BrainJob => ({
   background: false,
   agent: 'claude',
   model: null,
+  replays: 0,
   ...over,
 });
 
