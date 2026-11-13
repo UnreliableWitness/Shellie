@@ -76,7 +76,14 @@ beforeEach(async () => {
   a = path.join(root, 'a');
   b = path.join(root, 'b');
   for (const dir of [a, b]) {
-    await git.run(root, ['clone', '-q', server, dir]);
+    await git.run(root, [
+      'clone',
+      '-q',
+      '-c',
+      'core.autocrlf=false',
+      server,
+      dir,
+    ]);
     await git.run(dir, ['config', 'user.name', 'Shellie']);
     await git.run(dir, ['config', 'user.email', 'shellie@localhost']);
   }

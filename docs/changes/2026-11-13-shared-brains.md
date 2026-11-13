@@ -57,6 +57,7 @@ Not seen in the running app: the Share dialog itself (share went through IPC), t
 ## Known gaps
 
 - **Not run on Windows**, the release target: the `shellie://` handler (`setAsDefaultProtocolClient`, the link in `second-instance` argv) and the sync's git runs there are unverified until run there. On macOS too, the handler is checked by tests only.
+- **Line endings**: a brain has no line-ending policy. On Windows with git's default `core.autocrlf=true`, files a merge or pull checks out land in CRLF (blobs stay LF), so Shellie reads CRLF there that it wrote as LF. A shared brain could carry `.gitattributes` `* text=auto eol=lf` (or Shellie set `core.autocrlf=false` on its brains), but adding it to an existing brain renormalizes any CRLF source a user dropped, so it is left as an open choice. The secrets scan of a large file now works on Windows (its `checkout-index` prefix was a backslash path git could not make the folder for).
 - **Not run against real Azure DevOps**: the repo create, list and item calls, and git sign-in to Azure Repos for a brain, ran against a stand-in.
 - **GitHub (or any other host) as a home is not supported**; Azure DevOps only.
 - **Merging two existing brains is not supported**: join is for people without a brain for the project; someone with one archives it first.

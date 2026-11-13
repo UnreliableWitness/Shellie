@@ -144,7 +144,14 @@ beforeEach(async () => {
     [a, KEEPER, 'Dries'],
     [b, MEMBER, 'Ann'],
   ]) {
-    await git.run(root, ['clone', '-q', server, dir]);
+    await git.run(root, [
+      'clone',
+      '-q',
+      '-c',
+      'core.autocrlf=false',
+      server,
+      dir,
+    ]);
     await git.run(dir, ['config', 'user.name', name]);
     await git.run(dir, [
       'config',

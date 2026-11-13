@@ -1,8 +1,23 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getInstallId } from './installId';
+
+// Windows' EBUSY on demand: a chmod 000 file is still readable there.
+const busy = vi.hoisted(() => ({ on: false }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>();
+  const readFile = ((...args: Parameters<typeof fs.readFile>) =>
+    busy.on
+      ? Promise.reject(
+          Object.assign(new Error('EBUSY: resource busy or locked'), {
+            code: 'EBUSY',
+          }),
+        )
+      : fs.readFile(...args)) as typeof fs.readFile;
+  return { ...fs, readFile, default: { ...fs, readFile } };
+});
 
 const dirs: string[] = [];
 const tmp = async () => {
@@ -38,12 +53,15 @@ describe('getInstallId', () => {
 
   it('never mints a new id when the file cannot be read', async () => {
     const a = await tmp();
-    // An unreadable file stands in for Windows' EBUSY/EPERM: the id in it must survive.
+    // A file Windows holds busy (EBUSY): the id in it must survive.
     const file = path.join(a, 'install-id');
     await writeFile(file, 'kept-id\n');
-    await chmod(file, 0o000);
-    await expect(getInstallId(a, async () => {})).rejects.toThrow();
-    await chmod(file, 0o600);
+    busy.on = true;
+    try {
+      await expect(getInstallId(a, async () => {})).rejects.toThrow('EBUSY');
+    } finally {
+      busy.on = false;
+    }
     expect(await readFile(file, 'utf8')).toBe('kept-id\n');
   });
 });

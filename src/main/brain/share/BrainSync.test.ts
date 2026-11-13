@@ -160,7 +160,14 @@ beforeEach(async () => {
   a = path.join(root, 'a');
   b = path.join(root, 'b');
   for (const dir of [a, b]) {
-    await git.run(root, ['clone', '-q', server, dir]);
+    await git.run(root, [
+      'clone',
+      '-q',
+      '-c',
+      'core.autocrlf=false',
+      server,
+      dir,
+    ]);
     await git.run(dir, ['config', 'user.name', 'Shellie']);
     await git.run(dir, ['config', 'user.email', 'shellie@localhost']);
   }
@@ -362,17 +369,21 @@ describe('BrainSync', () => {
     }
   });
 
-  it('scans a file whose name git quotes', async () => {
-    const before = await serverHead();
-    await write(a, 'sources/a"b.md', `token ${TOKEN}\n`);
-    await commit(a, 'Brain: add source a"b.md');
-    await sync().push('a');
-    expect(await serverHead()).toBe(before);
-    expect(sharing()).toMatchObject({
-      status: 'held',
-      heldFile: 'sources/a"b.md',
-    });
-  });
+  // With core.quotepath off git quotes only a quote, a backslash or a control character: none can be in a Windows file name.
+  it.skipIf(process.platform === 'win32')(
+    'scans a file whose name git quotes',
+    async () => {
+      const before = await serverHead();
+      await write(a, 'sources/a"b.md', `token ${TOKEN}\n`);
+      await commit(a, 'Brain: add source a"b.md');
+      await sync().push('a');
+      expect(await serverHead()).toBe(before);
+      expect(sharing()).toMatchObject({
+        status: 'held',
+        heldFile: 'sources/a"b.md',
+      });
+    },
+  );
 
   it('scans a file over the chunk size on its own, and each commit by itself', async () => {
     const before = await serverHead();

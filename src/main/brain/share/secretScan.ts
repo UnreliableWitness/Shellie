@@ -184,6 +184,11 @@ async function largeSecretFiles(
   const found: string[] = [];
   try {
     await fs.rm(scratch, { recursive: true, force: true });
+    // git makes a file's folders by splitting the prefixed path on '/' only. A win32 prefix (`C:\…\scan\`) has none,
+    // so git never made the scratch folder itself and every file failed there. So: the folder made here, and the prefix
+    // in forward slashes, which git for Windows takes.
+    await fs.mkdir(scratch, { recursive: true });
+    const prefix = `${scratch.split(path.sep).join('/')}/`;
     await git.run(dir, ['read-tree', commit], { env });
     for (let n = 0; n < paths.length; n += CHUNK_PATHS)
       await git.run(
@@ -192,7 +197,7 @@ async function largeSecretFiles(
           '--literal-pathspecs',
           'checkout-index',
           '-f',
-          `--prefix=${scratch}${path.sep}`,
+          `--prefix=${prefix}`,
           '--',
           ...paths.slice(n, n + CHUNK_PATHS),
         ],
