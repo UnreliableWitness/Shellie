@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
 import {
@@ -9,7 +9,7 @@ import {
   type Origin,
   type SharedFacts,
 } from '../../../shared/brainShare';
-import { readJson, writeAtomic } from '../../fsRetry';
+import { writeAtomic } from '../../fsRetry';
 
 const fileOf = (dir: string, name: string) => path.join(dir, 'brain', name);
 
@@ -18,8 +18,15 @@ async function read<T>(
   name: string,
   schema: z.ZodType<T>,
 ): Promise<T | null> {
-  const raw = await readJson(fileOf(dir, name));
-  return raw === null ? null : schema.parse(raw);
+  let text: string;
+  try {
+    text = await readFile(fileOf(dir, name), 'utf8');
+  } catch (e) {
+    // Only a missing file reads as null; a corrupt one must throw, not be overwritten.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+  return schema.parse(JSON.parse(text));
 }
 
 async function write(dir: string, name: string, value: unknown): Promise<void> {

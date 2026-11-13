@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -65,5 +65,27 @@ describe('share files', () => {
     expect(s?.updatedAt.templatesVersion).toBe(t2.toISOString());
     expect(s?.updatedAt.wiki).toBe(new Date(0).toISOString());
     expect(s?.updatedAt.lastDigestAt).toBe(new Date(0).toISOString());
+  });
+
+  it('throws on a corrupt file and never overwrites it', async () => {
+    await mkdir(path.join(dir, 'brain'), { recursive: true });
+    const corrupt = '<<<<<<< HEAD\n{"format": 1\n';
+    for (const name of ['members.json', 'shared.json', 'origin.json']) {
+      await writeFile(path.join(dir, 'brain', name), corrupt);
+    }
+    await expect(readMembers(dir)).rejects.toThrow();
+    await expect(readShared(dir)).rejects.toThrow();
+    await expect(readOrigin(dir)).rejects.toThrow();
+    await expect(
+      upsertMember(dir, { installId: 'a', name: 'A', joinedAt: 't' }),
+    ).rejects.toThrow();
+    await expect(
+      writeShared(dir, { templatesVersion: 1 }, new Date()),
+    ).rejects.toThrow();
+    for (const name of ['members.json', 'shared.json']) {
+      expect(await readFile(path.join(dir, 'brain', name), 'utf8')).toBe(
+        corrupt,
+      );
+    }
   });
 });
