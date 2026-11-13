@@ -65,6 +65,21 @@ export const BrainWikiSchema = z.object({
 });
 export type BrainWiki = z.infer<typeof BrainWikiSchema>;
 
+/** Where a shared brain lives and how it is doing; null on a brain that is not shared. Re-exported by brainShare. */
+export const BrainSharingSchema = z.object({
+  home: z.enum(['customer', 'company']),
+  remoteUrl: z.string(),
+  repositoryId: z.string(),
+  homeOrganizationUrl: z.string(),
+  homeProject: z.string(),
+  joinedAt: z.string(),
+  lastPullAt: z.string().nullable(),
+  lastPushAt: z.string().nullable(),
+  status: z.enum(['ok', 'pending', 'held', 'unreachable', 'unauthorized']),
+  heldFile: z.string().nullable(),
+});
+export type BrainSharing = z.infer<typeof BrainSharingSchema>;
+
 export const BrainSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -72,6 +87,7 @@ export const BrainSchema = z.object({
   project: z.string().min(1),
   path: z.string().min(1),
   wiki: BrainWikiSchema.nullable().default(null),
+  sharing: BrainSharingSchema.nullable().default(null),
   templatesVersion: z.number().int().default(0),
   options: BrainOptionsSchema.prefault({}),
   terminal: TerminalDefSchema.nullable().default(null),
