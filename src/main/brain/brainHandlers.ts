@@ -34,6 +34,7 @@ import type { GitClient } from '../services/GitClient';
 import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
 import type { BrainHomeStore } from './share/BrainHomeStore';
+import type { BrainSync } from './share/BrainSync';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
@@ -95,6 +96,7 @@ export type BrainChannels =
   | 'brain:refresh'
   | 'brain:run'
   | 'brain:resumeQueue'
+  | 'brain:syncNow'
   | 'brain:sources'
   | 'brain:counts'
   | 'brain:files'
@@ -153,6 +155,8 @@ export type BrainHandlerDeps = {
   /** Telemetry scrubs these from now on (a brain's name and path). */
   remember: (values: string[]) => void;
   event: (name: string, props?: TelemetryProps) => void;
+  /** Keeps shared brains in step with their server (BrainSync); absent in tests that do not share. */
+  sync?: Pick<BrainSync, 'pull' | 'push'>;
   now?: () => Date;
 };
 
@@ -853,6 +857,11 @@ export function createBrainHandlers(
     'brain:resumeQueue': async (id) => {
       live(id);
       d.runner.resume(id);
+    },
+    'brain:syncNow': async (id) => {
+      if (!live(id).sharing || !d.sync) return;
+      await d.sync.pull(id);
+      await d.sync.push(id);
     },
     'brain:counts': async (id) => {
       const b = brainOf(id);

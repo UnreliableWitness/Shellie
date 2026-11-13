@@ -218,7 +218,11 @@ import { errorMessage } from '../../shared/errors';
 import type { createBrainTerminals } from '../brain/brainTerminal';
 import { BrainStore } from '../brain/BrainStore';
 import { BrainHomeStore } from '../brain/share/BrainHomeStore';
-import { createBrainHandlers, type BrainRunner } from '../brain/brainHandlers';
+import {
+  createBrainHandlers,
+  type BrainHandlerDeps,
+  type BrainRunner,
+} from '../brain/brainHandlers';
 import { createRasterizer } from '../brain/convert/raster';
 import { mirrorAuthFor } from '../brain/wikiAccess';
 import {
@@ -254,6 +258,7 @@ export type Services = {
     runner: BrainRunner;
     ledgerToday: (brainId: string) => { tokens: number; costEur: number };
     userData: string;
+    sync?: BrainHandlerDeps['sync'];
   };
   /** What needs the developer's attention (main); absent in tests. */
   attention?: Pick<AttentionHub, 'setView' | 'snapshot'>;
@@ -921,6 +926,7 @@ export function createHandlers(s: Services): Handlers {
     userData: brain.userData,
     remember: (values) => s.rememberSensitive?.(values),
     event: (n, p) => tel.event(n, p),
+    sync: brain.sync,
   });
   /** The brain a new task's summary names: by the work item's project when it is known (no network). */
   const summaryBrain = (

@@ -294,6 +294,7 @@ export async function brainServices() {
       background: false,
       agent: 'claude',
       model: null,
+      replays: 0,
     }),
   );
   const brain: NonNullable<Services['brain']> = {

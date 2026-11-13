@@ -153,6 +153,7 @@ const defaults: FakeHandlers = {
   'brain:refresh': () => ({ ok: false, message: 'No wiki' }),
   'brain:delete': () => undefined,
   'brain:resumeQueue': () => undefined,
+  'brain:syncNow': () => undefined,
   'brain:updateTemplates': () => undefined,
   'brain:openFolder': () => undefined,
   'time:task': (taskId) => emptyTime(taskId),

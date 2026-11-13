@@ -421,6 +421,7 @@ describe('pictures', () => {
       background: false,
       agent: 'claude',
       model: null,
+      replays: 0,
       ...over,
     });
     const gap = async () => {
@@ -739,6 +740,7 @@ describe('one-time pass over earlier sources', () => {
       background: true,
       agent: 'claude',
       model: null,
+      replays: 0,
       ...over,
     });
     const now = () => new Date('2026-11-07T12:00:00.000Z');
@@ -931,6 +933,7 @@ describe('one-time pass over earlier sources', () => {
       background: true,
       agent: 'claude',
       model: null,
+      replays: 0,
       ...over,
     });
     const now = new Date('2026-11-07T12:00:00.000Z');

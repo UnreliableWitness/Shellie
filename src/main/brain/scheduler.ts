@@ -7,7 +7,7 @@ import {
 import { MAX_BOOK_ATTEMPTS } from './bookPass';
 
 const DAY_MS = 24 * 3600 * 1000;
-const TICK_MS = 15 * 60 * 1000;
+export const TICK_MS = 15 * 60 * 1000;
 /** A refresh that failed (offline, no access) is tried again after this, not on every tick. */
 const RETRY_MS = 60 * 60 * 1000;
 

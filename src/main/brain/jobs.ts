@@ -222,6 +222,7 @@ export class BrainJobRunner {
       background,
       agent: this.agentOf(brainId),
       model,
+      replays: 0,
     };
   }
 
@@ -270,6 +271,10 @@ export class BrainJobRunner {
       conflict?: string;
       /** What a write job writes about (`writeTarget`). */
       target?: string;
+      /** Runs before every job already queued (a job run again after a clash with a colleague's change). */
+      front?: boolean;
+      /** How many times this job has run again after a clash. */
+      replays?: number;
     },
   ): BrainJob {
     const withSource = SOURCE_JOB_KINDS.has(kind);
@@ -284,6 +289,7 @@ export class BrainJobRunner {
     );
     if (opts?.conflict) job.conflict = opts.conflict;
     if (opts?.target) job.target = opts.target;
+    if (opts?.replays) job.replays = opts.replays;
     // A pictures job queued by hand replaces a background one still waiting for the same source: one run, not two.
     if (kind === 'pictures' && !job.background) {
       const gone = l.queue.filter(
@@ -297,11 +303,23 @@ export class BrainJobRunner {
       l.queue = l.queue.filter((j) => !gone.includes(j));
       l.list = l.list.filter((j) => !gone.includes(j));
     }
-    l.queue.push(job);
+    if (opts?.front) l.queue.unshift(job);
+    else l.queue.push(job);
     this.add(l, job);
     this.changed(brainId);
     this.pump(brainId);
     return job;
+  }
+
+  /** Marks a finished job failed with `error` (a job that clashed too often to run again); false when it is not one. */
+  fail(brainId: string, jobId: string, error: string): boolean {
+    const job = this.lane(brainId).list.find((j) => j.id === jobId);
+    if (!job || (job.status !== 'done' && job.status !== 'failed'))
+      return false;
+    job.status = 'failed';
+    job.error = error;
+    this.changed(brainId);
+    return true;
   }
 
   private add(l: Lane, job: BrainJob) {

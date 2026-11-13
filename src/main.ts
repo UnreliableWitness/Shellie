@@ -44,6 +44,9 @@ import {
   BrainHomeStore,
   BRAIN_HOME_CONNECTION_ID,
 } from './main/brain/share/BrainHomeStore';
+import { BrainSync } from './main/brain/share/BrainSync';
+import { onBrainGitIdle } from './main/brain/gitMutex';
+import { getInstallId } from './main/installId';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
   commitJobOutput,
@@ -1019,6 +1022,15 @@ async function boot(): Promise<void> {
       git,
       tokensToday: (id) => brainToday(id).tokens,
     });
+    // Shared brains: pull before each job and every 15 minutes, push after each brain commit.
+    const brainSync = new BrainSync({
+      brains,
+      git,
+      runner: () => brainRunner,
+      changed: (brainId) => broadcast('brain:changed', { brainId }),
+      installId: await getInstallId(userData),
+    });
+    const stopSyncListener = onBrainGitIdle((dir) => brainSync.afterGit(dir));
     const brainRunner = new BrainJobRunner({
       platform,
       run: (cmd, o) => ptyHost.run(cmd, o),
@@ -1043,6 +1055,8 @@ async function boot(): Promise<void> {
       beforeJob: async (id) => {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
+        // After the outside edits are committed, so the merge runs on a clean tree; the job runs on the server's latest.
+        await brainSync.pull(id, { lockHeld: true });
       },
       promptFor: (j) =>
         j.kind === 'settle'
@@ -1083,8 +1097,11 @@ async function boot(): Promise<void> {
     readerBrainChanged = () => readerSync.brainChanged();
     // The scheduler starts with the window; the runner stops on quit either way.
     let stopBrainScheduler = () => {};
+    let stopBrainSync = () => {};
     stopBrains = () => {
       stopBrainScheduler();
+      stopBrainSync();
+      stopSyncListener();
       brainRunner.stop();
     };
     /** The settings file Claude Code tabs start with (the theme, and a tab's deny rules); null when it could not be written. */
@@ -1155,6 +1172,7 @@ async function boot(): Promise<void> {
         runner: brainRunner,
         ledgerToday: brainToday,
         userData,
+        sync: brainSync,
       },
       terminalFailures,
       budget,
@@ -1431,6 +1449,7 @@ async function boot(): Promise<void> {
       ledger.start();
       sender.start();
       stopReader = readerSync.start();
+      stopBrainSync = brainSync.start();
       stopBrainScheduler = startBrainScheduler({
         brains: () => brains.list(),
         refresh: (id) => handlers['brain:refresh'](id),

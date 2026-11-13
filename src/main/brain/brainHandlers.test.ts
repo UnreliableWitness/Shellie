@@ -62,6 +62,7 @@ describe('brain handlers', () => {
   let pages: AdoWikiPage[];
   let tasks: Task[];
   let h: ReturnType<typeof createBrainHandlers>;
+  let deps: BrainHandlerDeps;
 
   const job = (brainId: string, kind: BrainJobKind, source: string | null) =>
     ({
@@ -78,6 +79,7 @@ describe('brain handlers', () => {
       background: false,
       agent: 'claude',
       model: null,
+      replays: 0,
     }) satisfies BrainJob;
 
   beforeEach(async () => {
@@ -98,7 +100,7 @@ describe('brain handlers', () => {
     openAgents = [];
     pages = [];
     tasks = [];
-    const deps: BrainHandlerDeps = {
+    deps = {
       brains,
       git,
       runner: {
@@ -186,6 +188,41 @@ describe('brain handlers', () => {
       { wiki: false, agent: 'claude' },
     ]);
     expect(remembered).toEqual(expect.arrayContaining(['Acme', v.path]));
+  });
+
+  it('syncNow pulls then pushes a shared brain, and leaves a local one alone', async () => {
+    const calls: string[] = [];
+    const hs = createBrainHandlers({
+      ...deps,
+      sync: {
+        pull: async (id) => {
+          calls.push(`pull ${id}`);
+        },
+        push: async (id) => {
+          calls.push(`push ${id}`);
+        },
+      },
+    });
+    const v = await hs['brain:create'](NEW);
+    await hs['brain:syncNow'](v.id);
+    expect(calls).toEqual([]);
+    const b = brains.get(v.id);
+    await brains.patch(v.id, {
+      sharing: {
+        home: 'company',
+        remoteUrl: 'https://dev.azure.com/o/p/_git/r',
+        repositoryId: 'r',
+        homeOrganizationUrl: 'https://dev.azure.com/o',
+        homeProject: 'p',
+        joinedAt: b?.createdAt ?? '',
+        lastPullAt: null,
+        lastPushAt: null,
+        status: 'ok',
+        heldFile: null,
+      },
+    });
+    await hs['brain:syncNow'](v.id);
+    expect(calls).toEqual([`pull ${v.id}`, `push ${v.id}`]);
   });
 
   it('create stores the chosen agent and OpenCode model', async () => {

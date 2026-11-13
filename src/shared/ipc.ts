@@ -765,6 +765,8 @@ export type Channels = {
     result: BrainJob;
   };
   'brain:resumeQueue': { args: [brainId: string]; result: void };
+  /** A shared brain pulls the server's changes and sends its own now; a sync error shows in its status, never throws. */
+  'brain:syncNow': { args: [brainId: string]; result: void };
   /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
   'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
   /** How many wiki pages and sources a brain has, without the health check's git and lint work. */

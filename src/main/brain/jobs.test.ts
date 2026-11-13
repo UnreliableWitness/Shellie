@@ -977,4 +977,47 @@ describe('a model of its own', () => {
       opencodeJobArgs('capture', 'anthropic/claude-opus'),
     );
   });
+
+  it('puts a job queued at the front before older queued ones, with its replays', async () => {
+    dirs = { b: await mk('b') };
+    let release: () => void = () => undefined;
+    let held = false;
+    run = () => {
+      if (held) return Promise.resolve(ok('s2'));
+      held = true;
+      return new Promise((resolve) => {
+        release = () => resolve(ok('s'));
+      });
+    };
+    const r = runner();
+    r.enqueue('b', 'sync');
+    await vi.waitFor(() => expect(r.jobs('b')[0].status).toBe('running'));
+    const older = r.enqueue('b', 'digest');
+    const again = r.enqueue('b', 'write', null, {
+      front: true,
+      target: 'reads/x.md',
+      replays: 1,
+    });
+    expect([older.replays, again.replays]).toEqual([0, 1]);
+    release();
+    await idle(r, 'b');
+    expect(calls.map((c) => c.input)).toEqual(['/sync', '/write', '/digest']);
+  });
+
+  it('fails a finished job with a message', async () => {
+    const changes: string[] = [];
+    const ended: string[] = [];
+    const r = runner({
+      onChange: (_id, jobs) => changes.push(jobs[0]?.status ?? ''),
+      afterJob: (j) => ended.push(j.status),
+    });
+    const job = r.enqueue('b1', 'sync');
+    await idle(r, 'b1');
+    expect(r.fail('b1', job.id, 'Ran again')).toBe(true);
+    const rec = r.jobs('b1').find((j) => j.id === job.id);
+    expect(rec).toMatchObject({ status: 'failed', error: 'Ran again' });
+    expect(changes.at(-1)).toBe('failed');
+    expect(ended).toEqual(['done']);
+    expect(r.fail('b1', 'gone', 'x')).toBe(false);
+  });
 });

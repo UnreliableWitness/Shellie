@@ -376,6 +376,8 @@ export type BrainJob = {
   conflict?: string;
   /** What a write job writes (`writeTarget`): a chapter, a topic, or the long read it brings up to date. */
   target?: string;
+  /** How many times the job ran again because its output clashed with a colleague's change (shared brains). */
+  replays: number;
 };
 
 /** Whether the path is a long read (`reads/<name>.md`), not a letter. No backslash: on Windows it is a separator. */
