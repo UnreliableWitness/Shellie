@@ -17,7 +17,8 @@ import { findSecrets } from '../secrets';
 import { absPath } from '../paths';
 import { READS_RECORD } from '../reads';
 import { acquireLock, readState, releaseLock } from '../state';
-import { readOrigin } from './files';
+import { readOrigin, readShared } from './files';
+import { factsFromShared } from './keeper';
 import { mergeServer, type JobRef } from './merge';
 
 export const RAN_AGAIN =
@@ -255,6 +256,7 @@ export class BrainSync {
           .catch(() => undefined);
         return merged;
       });
+      await this.copySharedFacts(id, dir);
       this.runAgain(id, r.rerun);
       await this.pickUpUncaptured(id, dir);
       const status = this.d.brains.get(id)?.sharing?.status;
@@ -270,6 +272,24 @@ export class BrainSync {
     } finally {
       if (!lockHeld) await releaseLock(dir).catch(() => undefined);
     }
+  }
+
+  /**
+   * The brain facts every machine shares (wiki link, last refresh and digest, skills version) as the server has them
+   * now go into the record. A skills version newer than this Shellie knows stops the brain's jobs (`shellieOutdated`),
+   * not its pulls.
+   */
+  private async copySharedFacts(id: string, dir: string) {
+    const shared = await readShared(dir).catch((e: unknown) => {
+      console.error('[brain] shared facts unreadable', (e as Error).message);
+      return null;
+    });
+    const b = this.d.brains.get(id);
+    if (!shared || !b) return;
+    const change = factsFromShared(b, shared);
+    if (!change) return;
+    await this.d.brains.patch(id, change);
+    this.d.changed(id);
   }
 
   /** Each job whose output lost a clash goes back to the front of the queue, or fails after its second run again. */

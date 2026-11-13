@@ -27,6 +27,7 @@ function lastMonday(now: Date): Date {
  * have failed.
  * A brain on templates v10 with `writeLongReads` on gets its next long read looked for the same way (the pass itself
  * decides whether one is due).
+ * A shared brain gets none of this unless this machine is its keeper (`automatic`).
  * Checks at once and then every tick (default 15 min); returns the stop function.
  */
 export function startBrainScheduler(d: {
@@ -46,6 +47,8 @@ export function startBrainScheduler(d: {
   readsPass: (id: string) => Promise<unknown>;
   /** Whether an automatic write of the brain is queued, running or paused, or its result not saved yet. */
   readsPassRunning: (id: string) => boolean;
+  /** Whether this machine runs the brain's automatic work: a local brain, or a shared one it keeps. */
+  automatic: (id: string) => boolean;
   now?: () => Date;
   tick?: number;
 }): () => void {
@@ -66,7 +69,8 @@ export function startBrainScheduler(d: {
     const launch = firstCheck;
     firstCheck = false;
     for (const b of d.brains()) {
-      if (b.archived) continue;
+      // A shared brain's colleagues leave its brain-wide work to the keeper; anyone can still start it by hand.
+      if (b.archived || !d.automatic(b.id)) continue;
       const last = b.lastRefreshAt ? Date.parse(b.lastRefreshAt) : 0;
       const failed = failedAt.get(b.id);
       if (

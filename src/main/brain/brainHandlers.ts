@@ -43,6 +43,15 @@ import {
   type JoinDeps,
 } from './share/join';
 import { shareBrain, stopSharing, type ShareDeps } from './share/share';
+import {
+  handOver,
+  keeperOf,
+  NEWER_SHELLIE,
+  patchFacts,
+  saveSharedFacts,
+  shellieOutdated,
+  takeOver,
+} from './share/keeper';
 import { joinLink } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
 import type { BrainStore } from './BrainStore';
@@ -110,6 +119,8 @@ export type BrainChannels =
   | 'brain:share'
   | 'brain:joinLink'
   | 'brain:stopSharing'
+  | 'brain:handOver'
+  | 'brain:takeOver'
   | 'brain:previewJoin'
   | 'brain:join'
   | 'brain:discover'
@@ -449,13 +460,15 @@ export function createBrainHandlers(
   };
   const changed = (brainId: string) =>
     d.broadcast('brain:changed', { brainId });
+  let installId: Promise<string> | null = null;
+  const myInstall = () => (installId ??= getInstallId(d.userData));
   const joinDeps: JoinDeps = {
     brains: d.brains,
     git: d.git,
     home: d.home,
     connections: d.connections,
     userData: d.userData,
-    installId: () => getInstallId(d.userData),
+    installId: myInstall,
     ado: d.ado,
     now: d.now,
   };
@@ -497,20 +510,27 @@ export function createBrainHandlers(
         ? [j.source]
         : [],
     );
+    const newerShellie = shellieOutdated(b);
+    const health = withHealth
+      ? await brainHealth(
+          b.path,
+          d.git,
+          d.ledgerToday(b.id),
+          paused,
+          now(),
+          inFlight,
+          d.runner.held(b.id),
+        )
+      : null;
+    // Held for a newer Shellie, not for the skills: updating the skills here would not help.
+    if (health && newerShellie && health.queueHeld)
+      health.queueHeld = NEWER_SHELLIE;
     return {
       ...b,
-      health: withHealth
-        ? await brainHealth(
-            b.path,
-            d.git,
-            d.ledgerToday(b.id),
-            paused,
-            now(),
-            inFlight,
-            d.runner.held(b.id),
-          )
-        : null,
+      health,
       jobs,
+      keeper: b.sharing ? await keeperOf(b.path, await myInstall()) : null,
+      newerShellie,
     };
   };
   const sourceAdded = (
@@ -578,7 +598,7 @@ export function createBrainHandlers(
       ms: Date.now() - started,
     });
     if (r.ok) {
-      await d.brains.patch(id, { lastRefreshAt: now().toISOString() });
+      await patchFacts(d, id, { lastRefreshAt: now().toISOString() }, now());
       if (b.options.syncAfterRefresh && r.added + r.changed + r.removed > 0)
         d.runner.enqueue(id, 'sync');
       // New or changed pictures: one re-evaluation of the mirror, which checks for gaps when it starts.
@@ -644,15 +664,21 @@ export function createBrainHandlers(
       const name = patch.name?.trim();
       if (patch.name !== undefined && !name)
         throw new Error('A brain needs a name');
-      const wikiChanged = patch.wiki !== undefined;
-      const updated = await d.brains.patch(id, {
-        ...(name ? { name } : {}),
-        ...(wikiChanged
+      const wiki =
+        patch.wiki !== undefined
           ? {
               wiki: BrainWikiSchema.nullable().parse(patch.wiki),
               lastRefreshAt: null,
             }
-          : {}),
+          : null;
+      // A shared brain's colleagues get the new wiki link too.
+      if (wiki)
+        await saveSharedFacts(d.git, b, wiki, now()).catch((e: unknown) =>
+          console.error('[brain] shared facts', (e as Error).message),
+        );
+      const updated = await d.brains.patch(id, {
+        ...(name ? { name } : {}),
+        ...wiki,
         ...(patch.options
           ? {
               options: BrainOptionsSchema.parse({
@@ -911,7 +937,7 @@ export function createBrainHandlers(
           home: d.home,
           connections: d.connections,
           runner: d.runner,
-          installId: () => getInstallId(d.userData),
+          installId: myInstall,
           ado: d.ado,
           now: d.now,
         },
@@ -932,6 +958,22 @@ export function createBrainHandlers(
     'brain:stopSharing': async (id) => {
       brainOf(id);
       await stopSharing(d, id);
+      changed(id);
+    },
+    'brain:handOver': async (id, target) => {
+      const b = live(id);
+      if (!b.sharing) throw new Error('This brain is not shared');
+      // The latest members list: a colleague who just joined can be picked.
+      await d.sync?.pull(id);
+      await handOver(d.git, b.path, await myInstall(), target);
+      changed(id);
+    },
+    'brain:takeOver': async (id) => {
+      const b = live(id);
+      if (!b.sharing) throw new Error('This brain is not shared');
+      // The server's latest: the keeper's newest commit and the current origin.json.
+      await d.sync?.pull(id);
+      await takeOver(d.git, b.path, await myInstall(), now());
       changed(id);
     },
     'brain:previewJoin': (link, pat) => previewJoin(joinDeps, link, { pat }),
@@ -1029,8 +1071,11 @@ export function createBrainHandlers(
     },
     'brain:updateTemplates': async (id, paths) => {
       const b = brainOf(id);
+      // This Shellie's skills are older than the brain's: applying them would undo a colleague's update.
+      if (shellieOutdated(b)) throw new Error(NEWER_SHELLIE);
       await applyTemplates(d.git, b.path, b.name, paths);
-      await d.brains.patch(id, { templatesVersion: TEMPLATES_VERSION });
+      // On a shared brain the new version goes to everyone.
+      await patchFacts(d, id, { templatesVersion: TEMPLATES_VERSION }, now());
       // Jobs held for skills older than OpenCode's start now.
       d.runner.release(id);
       changed(id);

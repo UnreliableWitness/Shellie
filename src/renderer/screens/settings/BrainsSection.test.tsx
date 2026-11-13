@@ -58,6 +58,8 @@ const brain = {
   templatesVersion: 7,
   health: null,
   jobs: [],
+  keeper: null,
+  newerShellie: false,
 } as unknown as BrainView;
 
 const detected = (claude: boolean, opencode: boolean): AgentsDetected => {

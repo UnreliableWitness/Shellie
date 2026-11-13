@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { BrainWikiSchema } from './brain';
 
 // BrainSharingSchema lives in brain.ts (BrainSchema uses it; this file imports brain.ts), re-exported here.
-export { BrainSharingSchema, type BrainSharing } from './brain';
+export {
+  BrainSharingSchema,
+  type BrainKeeper,
+  type BrainSharing,
+} from './brain';
 
 /** brain/origin.json: where the brain was shared from and who keeps it. */
 export const OriginSchema = z.object({

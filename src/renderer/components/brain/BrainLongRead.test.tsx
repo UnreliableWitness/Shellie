@@ -101,6 +101,8 @@ function show(
     marks: {},
     onMark: vi.fn(),
     jobs: [],
+    keeper: null,
+    newerShellie: false,
     canWrite: true,
     canBack: true,
     canForward: false,

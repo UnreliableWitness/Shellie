@@ -46,6 +46,11 @@ import {
   BRAIN_HOME_CONNECTION_ID,
 } from './main/brain/share/BrainHomeStore';
 import { BrainSync } from './main/brain/share/BrainSync';
+import {
+  isAutomatic,
+  patchFacts,
+  shellieOutdated,
+} from './main/brain/share/keeper';
 import { onBrainGitIdle } from './main/brain/gitMutex';
 import { getInstallId } from './main/installId';
 import { startBrainScheduler } from './main/brain/scheduler';
@@ -1069,6 +1074,7 @@ async function boot(): Promise<void> {
       tokensToday: (id) => brainToday(id).tokens,
     });
     // Shared brains: pull before each job and every 15 minutes, push after each brain commit.
+    const installIdHere = await getInstallId(userData);
     const brainSync = new BrainSync({
       brains,
       git,
@@ -1078,7 +1084,7 @@ async function boot(): Promise<void> {
         const b = brainOf(id);
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
-      installId: await getInstallId(userData),
+      installId: installIdHere,
     });
     const stopSyncListener = onBrainGitIdle((dir) => brainSync.afterGit(dir));
     const brainRunner = new BrainJobRunner({
@@ -1091,10 +1097,14 @@ async function boot(): Promise<void> {
       model: (id) => brains.get(id)?.options.model ?? 'sonnet',
       agent: (id) => brains.get(id)?.options.agent ?? 'claude',
       opencodeModel: (id) => brains.get(id)?.options.opencodeModel ?? null,
-      // A brain that is gone is ready: its job fails on the folder, as before.
+      // A brain that is gone is ready: its job fails on the folder, as before. A colleague's newer skills stop the jobs.
       ready: (id) => {
         const b = brains.get(id);
-        return !b || b.options.agent !== 'opencode' || opencodeReady(b);
+        return (
+          !b ||
+          (!shellieOutdated(b) &&
+            (b.options.agent !== 'opencode' || opencodeReady(b)))
+        );
       },
       commit: async (id, message, job) => {
         const b = brainOf(id);
@@ -1510,9 +1520,14 @@ async function boot(): Promise<void> {
         refresh: (id) => handlers['brain:refresh'](id),
         digest: (id) => {
           brainRunner.enqueue(id, 'digest');
-          void brains
-            .patch(id, { lastDigestAt: new Date().toISOString() })
-            .catch((err) => console.error('[brain] lastDigestAt', err));
+          const at = new Date();
+          // On a shared brain the date goes to shared.json too, so a later keeper never digests twice that week.
+          void patchFacts(
+            { brains, git },
+            id,
+            { lastDigestAt: at.toISOString() },
+            at,
+          ).catch((err) => console.error('[brain] lastDigestAt', err));
         },
         running: (id) => brainRunner.running(id),
         picturePass: pictureHooks.picturePass,
@@ -1521,6 +1536,10 @@ async function boot(): Promise<void> {
         bookPassRunning: bookHooks.passRunning,
         readsPass: readsHooks.readsPass,
         readsPassRunning: readsHooks.passRunning,
+        automatic: (id) => {
+          const b = brains.get(id);
+          return !!b && isAutomatic(b, installIdHere);
+        },
       });
       void settleHooks
         .resume()

@@ -85,6 +85,8 @@ export const brainView = (over: Partial<BrainView> = {}): BrainView => ({
     },
   },
   jobs: [],
+  keeper: null,
+  newerShellie: false,
   ...over,
 });
 

@@ -509,6 +509,18 @@ export type BrainHealth = {
 export type BrainView = Brain & {
   health: BrainHealth | null;
   jobs: BrainJob[];
+  /** A shared brain's keeper and members, from its `brain/origin.json` and `members.json`; null for a local brain. */
+  keeper: BrainKeeper | null;
+  /** A shared brain whose skills are newer than this Shellie knows: its jobs wait ("A colleague's Shellie is newer"). */
+  newerShellie: boolean;
+};
+
+/** Who keeps a shared brain (`me`: this install) and who joined it, for the Brain page's keeper choices. */
+export type BrainKeeper = {
+  installId: string;
+  name: string;
+  me: boolean;
+  members: { installId: string; name: string }[];
 };
 
 /** Page types by file name, in the order the front page shows them. */

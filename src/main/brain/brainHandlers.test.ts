@@ -30,6 +30,8 @@ import { acquireLock, releaseLock } from './state';
 import { brainHealth } from './health';
 import { isBrainFolder, scaffoldBrain } from './scaffold';
 import { TEMPLATES_VERSION } from './templates';
+import { readShared, writeOrigin } from './share/files';
+import { NEWER_SHELLIE, SHARED_FACTS_MESSAGE } from './share/keeper';
 
 const NEW = {
   name: 'Acme',
@@ -1002,6 +1004,52 @@ describe('brain handlers', () => {
     ).toBe('same');
     expect(brains.get(v.id)?.templatesVersion).toBe(TEMPLATES_VERSION);
     expect(released).toEqual([v.id]);
+  });
+
+  it('on a shared brain, updateTemplates sends the version to everyone, and a newer brain refuses it', async () => {
+    const existing = path.join(userData, 'shared');
+    await scaffoldBrain(git, existing, 'Acme');
+    const v = await h['brain:create']({ ...NEW, path: existing });
+    await writeOrigin(existing, {
+      format: 1,
+      organizationUrl: 'https://dev.azure.com/org',
+      project: 'Default',
+      name: 'Acme',
+      keeper: { installId: 'someone-else', name: 'Dries' },
+      sharedAt: '2026-11-13T09:00:00.000Z',
+    });
+    await brains.patch(v.id, {
+      templatesVersion: TEMPLATES_VERSION - 1,
+      sharing: {
+        home: 'company',
+        remoteUrl: 'https://dev.azure.com/org/Default/_git/acme',
+        repositoryId: 'r',
+        homeOrganizationUrl: 'https://dev.azure.com/org',
+        homeProject: 'Default',
+        joinedAt: '2026-11-13T09:00:00.000Z',
+        lastPullAt: null,
+        lastPushAt: null,
+        status: 'ok',
+        heldFile: null,
+      },
+    });
+    await h['brain:updateTemplates'](v.id, ['SCHEMA.md']);
+    expect((await readShared(existing))?.templatesVersion).toBe(
+      TEMPLATES_VERSION,
+    );
+    expect((await git.run(existing, ['log', '-1', '--format=%s'])).trim()).toBe(
+      SHARED_FACTS_MESSAGE,
+    );
+    expect((await h['brain:get'](v.id)).keeper).toMatchObject({
+      name: 'Dries',
+      me: false,
+    });
+
+    await brains.patch(v.id, { templatesVersion: TEMPLATES_VERSION + 1 });
+    expect((await h['brain:get'](v.id)).newerShellie).toBe(true);
+    await expect(
+      h['brain:updateTemplates'](v.id, ['SCHEMA.md']),
+    ).rejects.toThrow(NEWER_SHELLIE);
   });
 
   it('update releases held jobs only when the agent changes', async () => {

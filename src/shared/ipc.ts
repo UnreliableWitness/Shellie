@@ -793,6 +793,13 @@ export type Channels = {
   'brain:joinLink': { args: [brainId: string]; result: string };
   /** Makes a shared brain local again; its folder, history and origin.json stay. */
   'brain:stopSharing': { args: [brainId: string]; result: void };
+  /** The keeper names a member (by install id, from `BrainView.keeper.members`) as the new keeper. */
+  'brain:handOver': {
+    args: [brainId: string, installId: string];
+    result: void;
+  };
+  /** A member becomes the keeper; refused while the keeper's Shellie sent changes in the last 14 days. */
+  'brain:takeOver': { args: [brainId: string]; result: void };
   /** What a `shellie://join?…` link leads to; `pat` is a token typed for the link's organization (never stored here). */
   'brain:previewJoin': {
     args: [link: string, pat?: string];
