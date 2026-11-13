@@ -258,6 +258,7 @@ export class BrainSync {
       });
       await this.copySharedFacts(id, dir);
       const replays = this.runAgain(id, r.rerun);
+      this.captureNotes(id, r.notes);
       await this.pickUpUncaptured(id, dir);
       const status = this.d.brains.get(id)?.sharing?.status;
       await this.patch(id, {
@@ -322,6 +323,23 @@ export class BrainSync {
       queued++;
     }
     return queued;
+  }
+
+  /**
+   * The source notes a merge kept for this machine's outside edits that lost a clash: captured here, where the edit
+   * was made (the keeper's hour-later pick-up is for a colleague's source).
+   */
+  private captureNotes(id: string, notes: string[]) {
+    const runner = this.d.runner();
+    for (const note of notes) {
+      const pending = runner
+        .jobs(id)
+        .some(
+          (j) =>
+            j.kind === 'capture' && j.source === note && PENDING.has(j.status),
+        );
+      if (!pending) runner.enqueue(id, 'capture', note);
+    }
   }
 
   /**

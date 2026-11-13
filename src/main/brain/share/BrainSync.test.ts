@@ -486,6 +486,19 @@ describe('BrainSync', () => {
     expect(sharing()?.lastPullAt).not.toBeNull();
   });
 
+  it('queues a capture of the source note kept for a clashing outside edit, on this machine', async () => {
+    await write(b, 'wiki/x.md', PAGE('TWO by B'));
+    await commit(b, 'Brain: capture sources/b.md');
+    await pushB();
+    await write(a, 'wiki/x.md', PAGE('TWO by hand'));
+    await sync().pull('a');
+    const notes = (await fs.readdir(path.join(a, 'sources', 'notes'))).map(
+      (n) => `sources/notes/${n}`,
+    );
+    expect(notes).toHaveLength(1);
+    expect(fake.queued).toContainEqual(['capture', notes[0], {}]);
+  });
+
   it('skips a pull while a job holds the lock, and pulls when the job says it holds it', async () => {
     await write(b, 'sources/b.md', 'from B\n');
     await commit(b, 'Brain: add source b.md');

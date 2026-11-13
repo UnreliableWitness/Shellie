@@ -5,7 +5,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitClient } from '../../services/GitClient';
 import { OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { scaffoldBrain } from '../scaffold';
-import { mergeServer, parseJobSubject } from './merge';
+import { SQUASH_MESSAGE } from './BrainSync';
+import { JOIN_MESSAGE } from './join';
+import { KEEPER_MESSAGE, SHARED_FACTS_MESSAGE } from './keeper';
+import {
+  isPersonFree,
+  MERGE_MESSAGE,
+  mergeServer,
+  parseJobSubject,
+} from './merge';
+import { SHARE_MESSAGE } from './share';
 
 const git = new GitClient();
 const NOW = new Date('2026-11-13T10:00:00Z');
@@ -71,6 +80,23 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
+});
+
+describe('isPersonFree', () => {
+  it("knows Shellie's own person-free commits by their constants, and not the fold", () => {
+    for (const s of [
+      MERGE_MESSAGE,
+      JOIN_MESSAGE,
+      KEEPER_MESSAGE,
+      SHARED_FACTS_MESSAGE,
+      SHARE_MESSAGE,
+      'Brain: index',
+      'Brain: verified wiki/x.md',
+    ])
+      expect(isPersonFree(s)).toBe(true);
+    for (const s of [SQUASH_MESSAGE, 'Brain: scrub', OUTSIDE_EDIT_MESSAGE])
+      expect(isPersonFree(s)).toBe(false);
+  });
 });
 
 describe('parseJobSubject', () => {
@@ -434,6 +460,134 @@ describe('mergeServer', () => {
     expect(await read(a, 'sources/s-local.md')).toBe('A\n');
     expect(await read(a, 'sources/wiki/p.md')).toBe('B\n');
     await expect(read(a, 'sources/wiki/p-local.md')).rejects.toThrow();
+    await expectCleanTree(a);
+  });
+
+  it('picks a free name for the local side when <name>-local is taken', async () => {
+    await write(a, 'sources/s-local.md', 'kept\n');
+    await commit(a, 'Brain: add source s-local.md');
+    await push(a);
+    await git.run(b, ['pull', '-q', 'origin', 'main']);
+    await write(a, 'sources/s.md', 'A\n');
+    await commit(a, 'Brain: add source s.md');
+    await write(b, 'sources/s.md', 'B\n');
+    await commit(b, 'Brain: add source s.md');
+    await serverThenMerge();
+    expect(await read(a, 'sources/s-local.md')).toBe('kept\n');
+    expect(await read(a, 'sources/s-local-2.md')).toBe('A\n');
+    expect(await read(a, 'sources/s.md')).toBe('B\n');
+    await expectCleanTree(a);
+  });
+
+  it.each([
+    'Brain: changes since the last send',
+    'Brain: task closed',
+    'Brain: something a newer Shellie makes',
+  ])(
+    'keeps the local text of a clashing page from %j as a source note',
+    async (subject) => {
+      await write(
+        a,
+        'wiki/x.md',
+        PAGE(['one', 'two edited by hand', 'three', 'four', 'five']),
+      );
+      await commit(a, subject);
+      await write(
+        b,
+        'wiki/x.md',
+        PAGE(['one', 'TWO by B', 'three', 'four', 'five']),
+      );
+      await commit(b, 'Brain: capture sources/b.md');
+      const r = await serverThenMerge();
+      expect(r.notes).toEqual(['sources/notes/2026-11-13-x-local.md']);
+      expect(await read(a, r.notes[0])).toContain('two edited by hand');
+      await expectCleanTree(a);
+    },
+  );
+
+  it.each([
+    'Brain: index',
+    'Brain: verified wiki/x.md',
+    'Brain: shared facts',
+    'Brain: keeper',
+    'Brain: joined',
+    'Brain: shared',
+  ])(
+    'writes no note for %j, a commit with no person in it',
+    async (subject) => {
+      await write(
+        a,
+        'wiki/x.md',
+        PAGE(['one', 'two by Shellie', 'three', 'four', 'five']),
+      );
+      await commit(a, subject);
+      await write(
+        b,
+        'wiki/x.md',
+        PAGE(['one', 'TWO by B', 'three', 'four', 'five']),
+      );
+      await commit(b, 'Brain: capture sources/b.md');
+      expect((await serverThenMerge()).notes).toEqual([]);
+      await expectCleanTree(a);
+    },
+  );
+
+  it("keeps the scrubbed page when the server's still holds the scrubbed value", async () => {
+    const SECRET = 'hunter2-very-secret';
+    await write(
+      a,
+      'wiki/x.md',
+      PAGE(['one', `pw ${SECRET}`, 'three', 'four', 'five']),
+    );
+    await commit(a, 'Brain: capture sources/a.md');
+    await push(a);
+    await git.run(b, ['pull', '-q', 'origin', 'main']);
+    await write(
+      a,
+      'wiki/x.md',
+      PAGE(['one', 'pw REDACTED', 'three', 'four', 'five']),
+    );
+    await commit(a, 'Brain: scrub');
+    await write(
+      b,
+      'wiki/x.md',
+      PAGE(['one', `pw ${SECRET} (B)`, 'three', 'four', 'five']),
+    );
+    await commit(b, 'Brain: capture sources/b.md');
+    const r = await serverThenMerge();
+    expect(await read(a, 'wiki/x.md')).not.toContain(SECRET);
+    expect(await read(a, 'wiki/x.md')).toContain('pw REDACTED');
+    // No note of a scrubbed page: nothing of it is lost, and nothing goes back in.
+    expect(r.notes).toEqual([]);
+    await expectCleanTree(a);
+  });
+
+  it("takes the server's page over a scrub when it no longer holds the value, keeping a note", async () => {
+    const SECRET = 'hunter2-very-secret';
+    await write(
+      a,
+      'wiki/x.md',
+      PAGE(['one', `pw ${SECRET}`, 'three', 'four', 'five']),
+    );
+    await commit(a, 'Brain: capture sources/a.md');
+    await push(a);
+    await git.run(b, ['pull', '-q', 'origin', 'main']);
+    await write(
+      a,
+      'wiki/x.md',
+      PAGE(['one', 'pw REDACTED', 'three', 'four', 'five']),
+    );
+    await commit(a, 'Brain: scrub');
+    await write(
+      b,
+      'wiki/x.md',
+      PAGE(['one', 'rewritten by B', 'three', 'four', 'five']),
+    );
+    await commit(b, 'Brain: capture sources/b.md');
+    const r = await serverThenMerge();
+    expect(await read(a, 'wiki/x.md')).toContain('rewritten by B');
+    expect(r.notes).toHaveLength(1);
+    expect(await read(a, r.notes[0])).not.toContain(SECRET);
     await expectCleanTree(a);
   });
 

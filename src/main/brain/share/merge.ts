@@ -14,9 +14,10 @@ import {
 import { MembersSchema, SharedFactsSchema } from '../../../shared/brainShare';
 import type { GitClient } from '../../services/GitClient';
 import type { ConflictsFile } from '../conflicts';
-import { isBrainCommit } from '../health';
 import { rebuildIndex } from '../indexPage';
+import { pathExists } from '../../fsRetry';
 import { absPath } from '../paths';
+import { REDACTED } from '../scrub';
 import { renderSource, sha256, slugify, sourceFileName } from '../sourceFile';
 import {
   mergeBook,
@@ -70,6 +71,25 @@ export function parseJobSubject(subject: string): JobRef | null {
 }
 
 const RAW = ['-c', 'core.quotepath=off'];
+
+/**
+ * Shellie commits with no person's text in them (the index, a verified stamp, merges, the share files): a clash on
+ * their page loses nothing. Kept as text here, not imported, so this module stays free of the sync's own imports;
+ * merge.test.ts checks them against the constants. Any other commit that is not a job's counts as an outside edit,
+ * the fold (`Brain: changes since the last send`) and `Brain: scrub` included.
+ */
+const PERSON_FREE = new Set([
+  'Brain created',
+  'Brain: index',
+  'Brain: merge from colleagues',
+  'Brain: shared facts',
+  'Brain: keeper',
+  'Brain: joined',
+  'Brain: shared',
+]);
+export const isPersonFree = (subject: string) =>
+  PERSON_FREE.has(subject.trim()) || subject.startsWith('Brain: verified ');
+const SCRUB_SUBJECT = 'Brain: scrub';
 
 /** The template files the skills live in: the side with the higher `templatesVersion` wins them. */
 const isSkillsPath = (p: string) =>
@@ -319,25 +339,45 @@ async function resolveConflicts(
       await keepBothSources(git, dir, p, conflicted.get(p) ?? new Set());
     } else if (p.startsWith('wiki/') || p.startsWith('reads/')) {
       const ours = await stage(p, 2);
-      await take(p, 'theirs');
-      const subjects = (
+      const log = (
         await git.run(dir, [
           ...RAW,
           'log',
           '--no-merges',
           `${base}..HEAD`,
-          '--format=%s',
+          '--format=%H %s',
           '--',
           p,
         ])
       )
         .split('\n')
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((l) => ({
+          id: l.slice(0, l.indexOf(' ')),
+          subject: l.slice(l.indexOf(' ') + 1),
+        }));
+      // A scrub took a value out here: a server page that still holds it would bring it back, so ours stays.
+      const scrubs = log.filter((c) => c.subject === SCRUB_SUBJECT);
+      const theirs = scrubs.length ? await stage(p, 3) : null;
+      if (
+        theirs !== null &&
+        (
+          await scrubbedValues(
+            git,
+            dir,
+            scrubs.map((c) => c.id),
+            p,
+          )
+        ).some((v) => theirs.includes(v))
+      ) {
+        await take(p, 'ours');
+        continue;
+      }
+      await take(p, 'theirs');
       let outsideEdit = false;
-      for (const s of subjects) {
-        const job = parseJobSubject(s);
-        // Shellie's other commits (`Brain: verified`, `Brain: scrub`) are not a person's text.
-        if (!job) outsideEdit ||= !isBrainCommit(s);
+      for (const { subject } of log) {
+        const job = parseJobSubject(subject);
+        if (!job) outsideEdit ||= !isPersonFree(subject);
         else if (!rerun.some((r) => sameJob(r, job))) rerun.push(job);
       }
       if (outsideEdit && ours !== null)
@@ -353,7 +393,10 @@ async function resolveConflicts(
 const sameJob = (a: JobRef, b: JobRef) =>
   a.kind === b.kind && a.source === b.source && a.target === b.target;
 
-/** Sources are never edited, but if one clashes, both stay: the server's at its path, ours as `<name>-local<ext>`. */
+/**
+ * Sources are never edited, but if one clashes, both stay: the server's at its path, ours as `<name>-local<ext>` (or
+ * the first free `-local-<n>`).
+ */
 async function keepBothSources(
   git: GitClient,
   dir: string,
@@ -367,13 +410,79 @@ async function keepBothSources(
   }
   if (stages.has(2)) {
     const ext = path.posix.extname(p);
-    const local = `${p.slice(0, p.length - ext.length)}-local${ext}`;
+    const stem = p.slice(0, p.length - ext.length);
+    // Never over a file of that name (either side's): -local, then -local-2, -local-3…
+    let local = `${stem}-local${ext}`;
+    for (let n = 2; await pathExists(absPath(dir, local)); n++)
+      local = `${stem}-local-${n}${ext}`;
     await git.run(dir, ['checkout', '--ours', '--', p]);
     await fs.rename(absPath(dir, p), absPath(dir, local));
     await git.run(dir, ['add', '--', local]);
   }
   await git.run(dir, ['checkout', '--theirs', '--', p]);
   await git.run(dir, ['add', '--', p]);
+}
+
+/**
+ * The values `Brain: scrub` commits took out of `p`: per changed line, the part of the old line its REDACTED
+ * replaced (the whole old line when the two cannot be lined up). Six characters at least, as the scrub asks.
+ */
+async function scrubbedValues(
+  git: GitClient,
+  dir: string,
+  commits: string[],
+  p: string,
+): Promise<string[]> {
+  const values: string[] = [];
+  for (const c of commits) {
+    const diff = await git.run(dir, [
+      ...RAW,
+      'diff',
+      '--no-color',
+      '--no-ext-diff',
+      '-U0',
+      `${c}^`,
+      c,
+      '--',
+      p,
+    ]);
+    let removed: string[] = [];
+    let added: string[] = [];
+    const flush = () => {
+      removed.forEach((r, i) => {
+        const a = added[i];
+        let v = r;
+        if (a !== undefined && a.includes(REDACTED)) {
+          let start = 0;
+          while (start < r.length && start < a.length && r[start] === a[start])
+            start++;
+          let end = 0;
+          while (
+            end < r.length - start &&
+            end < a.length - start &&
+            r[r.length - 1 - end] === a[a.length - 1 - end]
+          )
+            end++;
+          v = r.slice(start, r.length - end);
+        }
+        if (v.trim().length >= 6) values.push(v.trim());
+      });
+      removed = [];
+      added = [];
+    };
+    let inHunk = false;
+    for (const line of diff.split('\n')) {
+      if (line.startsWith('diff --git ')) inHunk = false;
+      else if (line.startsWith('@@')) {
+        flush();
+        inHunk = true;
+      } else if (!inHunk) continue;
+      else if (line.startsWith('-')) removed.push(line.slice(1));
+      else if (line.startsWith('+')) added.push(line.slice(1));
+    }
+    flush();
+  }
+  return values;
 }
 
 /** Our text of a page or read the server's version replaced, as a note source a capture folds back in. */
