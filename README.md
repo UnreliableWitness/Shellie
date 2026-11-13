@@ -154,7 +154,7 @@ flowchart LR
 </td>
 <td valign="top">
 
-### A brain per project
+### Second brain
 
 - A local git wiki an agent keeps from your documents and the project's Azure DevOps wiki
 - PDF, Word, PowerPoint, Excel, draw.io, XML, transcripts and pictures, with a secret scan at the door
@@ -177,7 +177,7 @@ flowchart LR
 </td>
 <td valign="top">
 
-### Secrets
+### Secrets kept from agents
 
 - Each repo's secrets kept encrypted on your machine, per environment
 - Env files and the dev server get them; Claude Code, Copilot and OpenCode never do
