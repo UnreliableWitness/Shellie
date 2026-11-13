@@ -4076,6 +4076,7 @@ export function createHandlers(s: Services): Handlers {
     'terminals:failure': async (id) => s.terminalFailures?.get(id) ?? null,
     'terminals:buffer': async (id) => s.terminals.buffer(id),
     'terminals:isRunning': async (id) => s.terminals.isRunning(id),
+    'terminals:exitCode': async (id) => s.terminals.exitCode(id),
     'terminals:reportScheme': async (id, scheme) =>
       s.terminals.reportScheme(id, scheme === 'dark' ? 'dark' : 'light'),
     'secrets:list': async (scope) =>

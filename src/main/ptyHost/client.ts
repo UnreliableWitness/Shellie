@@ -30,8 +30,8 @@ export type PtyProcess = {
 
 export type PtyListeners = {
   data(data: string): void;
-  /** `exitCode` is what node-pty reported (undefined when the host went away). */
-  exit(exitCode: unknown): void;
+  /** `exitCode` is what node-pty reported (undefined when the host went away, then `hostLost` is true). */
+  exit(exitCode: unknown, hostLost?: boolean): void;
 };
 
 /** What TerminalManager needs from the host. */
@@ -191,7 +191,7 @@ export class PtyHostClient implements PtyHost {
       p.exited = true;
       // A spawn the host never answered did not start; one that did has ended.
       if (!p.spawned) p.started.reject(error());
-      else p.on.exit(undefined);
+      else p.on.exit(undefined, true);
     }
   }
 }
