@@ -20,7 +20,7 @@ import { readState } from './state';
 export const isBrainCommit = (subject: string) =>
   subject.startsWith('Brain:') || subject === 'Brain created';
 /** A /sync run: it reconciles the human edits in wiki/ made before it. */
-const isSyncCommit = (subject: string) =>
+export const isSyncCommit = (subject: string) =>
   subject === 'Brain: sync' || subject.startsWith('Brain: sync ');
 
 const SUBJECT = '\u0001';

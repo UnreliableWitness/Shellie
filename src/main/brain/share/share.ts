@@ -11,11 +11,11 @@ import { AdoClient } from '../../services/AdoClient';
 import type { GitClient } from '../../services/GitClient';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
-import { outsideEdits } from '../health';
+import { isSyncCommit, outsideEdits } from '../health';
 import type { BrainJobRunner } from '../jobs';
 import { absPath } from '../paths';
 import { findSecrets } from '../secrets';
-import { acquireLock, releaseLock, writeState } from '../state';
+import { acquireLock, readState, releaseLock, writeState } from '../state';
 import type { BrainHomeStore } from './BrainHomeStore';
 import { PRE_SHARE_REF, unquoteGitPath } from './BrainSync';
 
@@ -57,6 +57,8 @@ export type ShareDeps = {
     token: () => Promise<string>,
   ) => Pick<AdoClient, 'createRepository'>;
   now?: () => Date;
+  /** Blobs read together per diff, and the size over which one is read on its own (tests make it small). */
+  scanChunkBytes?: number;
 };
 
 export type ShareResult =
@@ -67,8 +69,13 @@ export type ShareResult =
 const realAdo: NonNullable<ShareDeps['ado']> = (org, token) =>
   new AdoClient(org, token);
 
-/** The repo-relative files of HEAD's tree that hold a possible secret, in tree order. */
-async function secretFiles(git: GitClient, dir: string): Promise<string[]> {
+/** The repo-relative files of `commit`'s tree that hold a possible secret, in tree order. */
+async function secretFiles(
+  git: GitClient,
+  dir: string,
+  commit: string,
+  chunkBytes: number,
+): Promise<string[]> {
   const listing = await git.run(dir, [
     '-c',
     'core.quotepath=off',
@@ -76,7 +83,7 @@ async function secretFiles(git: GitClient, dir: string): Promise<string[]> {
     '-r',
     '-z',
     '-l',
-    'HEAD',
+    commit,
   ]);
   const blobs: { path: string; size: number }[] = [];
   for (const rec of listing.split('\0')) {
@@ -86,19 +93,16 @@ async function secretFiles(git: GitClient, dir: string): Promise<string[]> {
     if (type === 'blob') blobs.push({ path: rec.slice(tab + 1), size: +size });
   }
   const found: string[] = [];
+  const large: string[] = [];
   const chunks: string[][] = [];
   let chunk: string[] = [];
   let bytes = 0;
   for (const b of blobs) {
-    if (b.size > CHUNK_BYTES) {
-      // Too large for one diff: read from disk, where a tracked file is HEAD's unless edited since.
-      const text = await fs
-        .readFile(absPath(dir, b.path), 'utf8')
-        .catch(() => '');
-      if (!text.includes('\0') && findSecrets(text).length) found.push(b.path);
+    if (b.size > chunkBytes) {
+      large.push(b.path);
       continue;
     }
-    if (chunk.length >= CHUNK_PATHS || bytes + b.size > CHUNK_BYTES) {
+    if (chunk.length >= CHUNK_PATHS || bytes + b.size > chunkBytes) {
       chunks.push(chunk);
       chunk = [];
       bytes = 0;
@@ -118,13 +122,87 @@ async function secretFiles(git: GitClient, dir: string): Promise<string[]> {
       '--no-ext-diff',
       '-U0',
       EMPTY_TREE,
-      'HEAD',
+      commit,
       '--',
       ...paths,
     ]);
     found.push(...secretsInDiff(diff));
   }
+  found.push(...(await largeSecretFiles(git, dir, commit, large)));
   return found;
+}
+
+/**
+ * The blobs too large for one diff (its output must fit GitClient's buffer), as `commit` has them: written by git
+ * into a scratch folder of the git dir, read from there, and removed.
+ */
+async function largeSecretFiles(
+  git: GitClient,
+  dir: string,
+  commit: string,
+  paths: string[],
+): Promise<string[]> {
+  if (!paths.length) return [];
+  const scratch = path.resolve(
+    dir,
+    (
+      await git.run(dir, ['rev-parse', '--git-path', 'shellie-share-scan'])
+    ).trim(),
+  );
+  const env = { GIT_INDEX_FILE: `${scratch}.index` };
+  const found: string[] = [];
+  try {
+    await fs.rm(scratch, { recursive: true, force: true });
+    await git.run(dir, ['read-tree', commit], { env });
+    for (let n = 0; n < paths.length; n += CHUNK_PATHS)
+      await git.run(
+        dir,
+        [
+          '--literal-pathspecs',
+          'checkout-index',
+          '-f',
+          `--prefix=${scratch}${path.sep}`,
+          '--',
+          ...paths.slice(n, n + CHUNK_PATHS),
+        ],
+        { env },
+      );
+    for (const p of paths) {
+      const text = await fs.readFile(absPath(scratch, p), 'utf8');
+      if (!text.includes('\0') && findSecrets(text).length) found.push(p);
+    }
+  } finally {
+    await fs.rm(scratch, { recursive: true, force: true });
+    await fs.rm(env.GIT_INDEX_FILE, { force: true });
+  }
+  return found;
+}
+
+/**
+ * True when a /sync must run before the share: outside edits Health lists, or commits to sources/ or wiki/ since
+ * `lastSyncCommit` other than a /sync's own (any capture at all when there is none). The shared history starts
+ * afresh, so /sync could not see those changes later.
+ */
+async function needsSync(git: GitClient, dir: string): Promise<boolean> {
+  if ((await outsideEdits(dir, git)).length) return true;
+  const { state } = await readState(dir);
+  const last = state?.lastSyncCommit ?? null;
+  if (!last) return Object.keys(state?.captured ?? {}).length > 0;
+  const log = await git
+    .run(dir, [
+      'log',
+      '--format=%s',
+      `${last}..HEAD`,
+      '--',
+      'sources/',
+      'wiki/',
+    ])
+    .catch(() => null);
+  // A lastSyncCommit git does not know: a /sync sets a good one.
+  if (log === null) return true;
+  return log
+    .split('\n')
+    .some((subject) => subject.trim() && !isSyncCommit(subject));
 }
 
 /** The files a diff adds a possible secret to. */
@@ -163,9 +241,10 @@ const localConfig = (git: GitClient, dir: string, key: string) =>
 
 /**
  * Shares the brain: creates the repo in the home, writes the share files, and pushes one fresh commit of the tree
- * (`Brain: shared`) as main; the old history stays in PRE_SHARE_REF until the first pull. Outside edits not yet
- * synced queue a `/sync` first (`syncing`: the caller asks again once it is done); a possible secret stops it
- * (`secrets`). A failure once the repo exists leaves the brain as it was, and says the empty repo can be deleted.
+ * (`Brain: shared`) as main; the old history stays in PRE_SHARE_REF until the first pull. Changes /sync has not
+ * seen queue a `/sync` first (`syncing`: the caller asks again once it is done); a possible secret stops it
+ * (`secrets`). A commit made during the share is checked again before anything is written. A failure once the repo
+ * exists leaves the brain as it was, and says the empty repo can be deleted.
  */
 export async function shareBrain(
   d: ShareDeps,
@@ -180,14 +259,16 @@ export async function shareBrain(
   const dir = b.path;
   if (d.runner.running(b.id)) throw new Error(BUSY);
 
-  if ((await outsideEdits(dir, d.git)).length) {
+  const chunkBytes = d.scanChunkBytes ?? CHUNK_BYTES;
+  if (await needsSync(d.git, dir)) {
     const waiting = d.runner
       .jobs(b.id)
       .some((j) => j.kind === 'sync' && PENDING.has(j.status));
     if (!waiting) d.runner.enqueue(b.id, 'sync');
     return { status: 'syncing' };
   }
-  const files = await secretFiles(d.git, dir);
+  const scanned = (await d.git.run(dir, ['rev-parse', 'HEAD'])).trim();
+  const files = await secretFiles(d.git, dir, scanned, chunkBytes);
   if (files.length) return { status: 'secrets', files };
   if ((await d.git.remotes(dir)).includes('origin'))
     throw new Error(
@@ -225,6 +306,15 @@ export async function shareBrain(
     await withBrainGit(dir, async () => {
       const git = d.git;
       const before = (await git.run(dir, ['rev-parse', 'HEAD'])).trim();
+      // A commit made since the checks (a source added meanwhile) is checked too, before anything is written.
+      if (
+        before !== scanned &&
+        ((await needsSync(git, dir)) ||
+          (await secretFiles(git, dir, before, chunkBytes)).length)
+      )
+        throw new Error(
+          'The brain changed while it was being shared; share again',
+        );
       const identity = {
         email: await localConfig(git, dir, 'user.email'),
         name: await localConfig(git, dir, 'user.name'),
@@ -236,6 +326,7 @@ export async function shareBrain(
         })),
       );
       let remoteAdded = false;
+      let recorded = false;
       try {
         await git.run(dir, ['update-ref', PRE_SHARE_REF, before]);
         // Which machine made a commit is told by its author email.
@@ -286,7 +377,7 @@ export async function shareBrain(
         let tree: string;
         try {
           const env = { GIT_INDEX_FILE: index };
-          await git.run(dir, ['read-tree', 'HEAD'], { env });
+          await git.run(dir, ['read-tree', before], { env });
           await git.run(dir, ['add', '--', ...SHARE_FILES], { env });
           tree = (await git.run(dir, ['write-tree'], { env })).trim();
         } finally {
@@ -298,7 +389,6 @@ export async function shareBrain(
         await git.run(dir, ['reset', '-q', shared]);
         await git.run(dir, ['remote', 'add', 'origin', repo.remoteUrl]);
         remoteAdded = true;
-        await git.push(dir, 'origin', 'HEAD:main');
         const sharing: BrainSharing = {
           home: i.home,
           remoteUrl: repo.remoteUrl,
@@ -307,12 +397,28 @@ export async function shareBrain(
           homeProject: home.project,
           joinedAt: now.toISOString(),
           lastPullAt: null,
-          lastPushAt: now.toISOString(),
-          status: 'ok',
+          lastPushAt: null,
+          status: 'pending',
           heldFile: null,
         };
+        // Recorded before the push: git signs in by the brain's home (connectionIdForBrain), the brain home's token
+        // for the company home. The brain lock keeps BrainSync's pulls out meanwhile.
         await d.brains.patch(b.id, { sharing });
+        recorded = true;
+        await git.push(dir, 'origin', 'HEAD:main');
+        await d.brains.patch(b.id, {
+          sharing: { ...sharing, status: 'ok', lastPushAt: now.toISOString() },
+        });
       } catch (e) {
+        if (recorded)
+          await d.brains
+            .patch(b.id, { sharing: null })
+            .catch((r: unknown) =>
+              console.error(
+                '[brain] share restore failed',
+                (r as Error).message,
+              ),
+            );
         await restore(git, dir, {
           before,
           identity,

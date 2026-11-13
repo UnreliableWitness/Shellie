@@ -4,6 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrainSchema, type BrainJob } from '../../../shared/brain';
 import { GitClient } from '../../services/GitClient';
+import { connectionIdForBrain } from '../../services/gitAuth';
+import { BRAIN_HOME_CONNECTION_ID } from './BrainHomeStore';
 import { BrainStore } from '../BrainStore';
 import { commitJobOutput, OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { scaffoldBrain } from '../scaffold';
@@ -135,7 +137,8 @@ describe('shareBrain', () => {
     ).trim();
     await git.run(dir, ['rm', '-q', 'sources/old.md']);
     await git.run(dir, ['commit', '-q', '-m', 'Brain: remove source old.md']);
-    await writeState(dir, (s) => ({ ...s, lastSyncCommit: 'abc1234' }));
+    const synced = await head();
+    await writeState(dir, (s) => ({ ...s, lastSyncCommit: synced }));
     await commit('Brain: sync');
     const before = await head();
 
@@ -255,6 +258,108 @@ describe('shareBrain', () => {
       homeOrganizationUrl: 'https://dev.azure.com/customer',
       homeProject: 'Webshop',
     });
+  });
+
+  it('pushes with the sign-in of the home the repo was made in', async () => {
+    const seen: (string | null)[] = [];
+    const signedIn = new GitClient(undefined, {
+      auth: async ({ cwd }) => {
+        seen.push(connectionIdForBrain(brains.list(), cwd));
+        return { env: {}, connectionId: null };
+      },
+    });
+    await shareBrain(deps({ git: signedIn }), {
+      brainId: 'a',
+      home: 'company',
+      repoName: 'Acme brain',
+    });
+    expect(seen).toEqual([BRAIN_HOME_CONNECTION_ID]);
+    await stopSharing(deps(), 'a');
+    remoteUrl = path.join(root, 'server2.git');
+    await git.run(root, ['init', '-q', '--bare', '-b', 'main', remoteUrl]);
+    seen.length = 0;
+    await shareBrain(deps({ git: signedIn }), {
+      brainId: 'a',
+      home: 'customer',
+      repoName: 'Acme brain',
+    });
+    expect(seen).toEqual(['c']);
+  });
+
+  it('runs a sync first when a capture came after the last sync', async () => {
+    const synced = await head();
+    await writeState(dir, (s) => ({ ...s, lastSyncCommit: synced }));
+    await commit('Brain: sync');
+    const d = deps();
+    // Only the sync's own commit since: nothing to sync.
+    remoteUrl = path.join(root, 'nowhere.git');
+    await expect(
+      shareBrain(d, { brainId: 'a', home: 'company', repoName: 'x' }),
+    ).rejects.toThrow(/can be deleted/);
+    expect(enqueued).toEqual([]);
+    await write('wiki/y.md', '# Y\n\nCaptured.\n');
+    await commit('Brain: capture sources/b.md');
+    expect(
+      await shareBrain(d, { brainId: 'a', home: 'company', repoName: 'x' }),
+    ).toEqual({ status: 'syncing' });
+    expect(enqueued).toEqual([['a', 'sync']]);
+  });
+
+  it('runs a sync first when there are captures and never a sync', async () => {
+    await writeState(dir, (s) => ({
+      ...s,
+      captured: {
+        'sources/a.md': { at: '2026-11-12T09:00:00.000Z', sessionId: null },
+      },
+    }));
+    await commit('Brain: capture sources/a.md');
+    expect(
+      await shareBrain(deps(), {
+        brainId: 'a',
+        home: 'company',
+        repoName: 'x',
+      }),
+    ).toEqual({ status: 'syncing' });
+    expect(made).toEqual([]);
+  });
+
+  it('scans a large file as committed, not as it is on disk', async () => {
+    await write('sources/big.md', `${'filler line\n'.repeat(200)}${TOKEN}\n`);
+    await commit('Brain: add source big.md');
+    await write('sources/big.md', 'cleaned on disk only\n');
+    expect(
+      await shareBrain(deps({ scanChunkBytes: 1000 }), {
+        brainId: 'a',
+        home: 'company',
+        repoName: 'x',
+      }),
+    ).toEqual({ status: 'secrets', files: ['sources/big.md'] });
+    expect(made).toEqual([]);
+  });
+
+  it('checks a commit made while the repo was being created', async () => {
+    let added = '';
+    const d = deps({
+      ado: () => ({
+        createRepository: async () => {
+          // A source added meanwhile (addSource takes no brain lock).
+          await write('sources/late.md', `key ${TOKEN}\n`);
+          await commit('Brain: add source late.md');
+          added = await head();
+          return { id: 'repo-1', remoteUrl };
+        },
+      }),
+    });
+    await expect(
+      shareBrain(d, { brainId: 'a', home: 'company', repoName: 'Acme brain' }),
+    ).rejects.toThrow(/changed while it was being shared.*can be deleted/);
+    expect(await head()).toBe(added);
+    expect(brains.get('a')?.sharing).toBeNull();
+    expect(
+      await onServer(['rev-parse', '--verify', '-q', 'main']).catch(
+        () => 'none',
+      ),
+    ).toBe('none');
   });
 
   it('stops at a possible secret in a wiki page, with no repo made', async () => {
