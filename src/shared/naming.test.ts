@@ -341,3 +341,29 @@ describe('claudeContext and shellie run', () => {
     expect(claudeContext(t)).not.toContain('shellie run');
   });
 });
+
+describe('claudeContext and the brain', () => {
+  const t = {
+    workItem: null,
+    name: 'Spike',
+    branch: 'feature/spike',
+    slug: 'spike',
+  };
+  const brain = { name: 'Wiki', path: '/b' };
+  it('tells Claude to read the brain first, with or without a repo', () => {
+    for (const task of [t, { ...t, repoId: null }]) {
+      const text = claudeContext(task, undefined, brain);
+      expect(text).toContain(
+        "The project's brain (Wiki) is at /b, read-only. Before answering questions about this project or starting work, read its index.md",
+      );
+      // The Windows start command quotes the prompt; these would break it.
+      expect(text).not.toMatch(/["`]/);
+    }
+    expect(claudeContext(t, ['dev'], brain)).toContain('shellie run');
+  });
+  it('stays as it was without a brain', () => {
+    expect(claudeContext(t, undefined, undefined)).toBe(claudeContext(t));
+    expect(claudeContext(t)).not.toContain('index.md');
+    expect(claudeContext({ ...t, repoId: null })).not.toContain('index.md');
+  });
+});

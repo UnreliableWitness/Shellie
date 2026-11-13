@@ -1245,12 +1245,10 @@ export function createHandlers(s: Services): Handlers {
       ? []
       : s.secrets.list({ repoId: terminalWorkspace(task, def).repoId });
 
-  /** The task's brain folder its agent tabs may read, when the brain gives tasks read access and the folder is there. */
-  const brainToRead = (task: Task): string | undefined => {
+  /** The task's brain its agent tabs may read, when the brain gives tasks read access and the folder is there. */
+  const brainToRead = (task: Task): Brain | undefined => {
     const b = taskBrain(task);
-    return b?.options.addDirForClaude && existsSync(b.path)
-      ? b.path
-      : undefined;
+    return b?.options.addDirForClaude && existsSync(b.path) ? b : undefined;
   };
 
   /**
@@ -1276,7 +1274,7 @@ export function createHandlers(s: Services): Handlers {
         .filter((w) => w.worktreePath !== cwd && existsSync(w.worktreePath))
         .flatMap((w) => ['--add-dir', w.worktreePath]);
       const b = brainToRead(task);
-      if (b) dirs.push('--add-dir', b);
+      if (b) dirs.push('--add-dir', b.path);
       const themeFile =
         s.claudeThemeSettings?.(denyRulesFor(denyPaths)) ?? null;
       const theme = themeFile ? ['--settings', themeFile] : [];
@@ -1293,7 +1291,8 @@ export function createHandlers(s: Services): Handlers {
           own?.claude,
         );
       return s.platform.claudeCommand(
-        claudeContext(task, runNames),
+        // Only a brain Claude can read is named in its prompt.
+        claudeContext(task, runNames, b),
         [
           ...(def.sessionId ? ['--session-id', def.sessionId] : []),
           ...dirs,
@@ -1491,7 +1490,8 @@ export function createHandlers(s: Services): Handlers {
         secrets.denyPaths,
       );
       // OpenCode's counterpart of Claude's --add-dir for the brain, given through its config.
-      const brainDir = def.kind === 'opencode' ? brainToRead(task) : undefined;
+      const brainDir =
+        def.kind === 'opencode' ? brainToRead(task)?.path : undefined;
       const cwd = terminalWorkspace(task, def).worktreePath;
       started = s.terminals.spawn({
         id: def.id,
@@ -4098,6 +4098,7 @@ export function createHandlers(s: Services): Handlers {
     'terminals:failure': async (id) => s.terminalFailures?.get(id) ?? null,
     'terminals:buffer': async (id) => s.terminals.buffer(id),
     'terminals:isRunning': async (id) => s.terminals.isRunning(id),
+    'terminals:exitCode': async (id) => s.terminals.exitCode(id),
     'terminals:reportScheme': async (id, scheme) =>
       s.terminals.reportScheme(id, scheme === 'dark' ? 'dark' : 'light'),
     'secrets:list': async (scope) =>

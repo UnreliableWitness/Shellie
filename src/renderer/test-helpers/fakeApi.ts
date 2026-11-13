@@ -338,6 +338,7 @@ const defaults: FakeHandlers = {
   }),
   'terminals:buffer': () => '',
   'terminals:isRunning': () => false,
+  'terminals:exitCode': () => null,
   'terminals:failure': () => null,
   'terminals:leak': () => null,
   'runs:pending': () => [],

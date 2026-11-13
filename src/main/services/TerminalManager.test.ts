@@ -8,6 +8,7 @@ import {
   testPlatform,
 } from '../test-helpers/shell';
 import { inProcessPtyHost } from '../test-helpers/ptyHost';
+import type { PtyHost, PtyListeners } from '../ptyHost/client';
 import { LeakMatcher } from '../secrets/LeakMatcher';
 import {
   mergeEnv,
@@ -332,6 +333,36 @@ describe('TerminalManager', () => {
     await exited;
     await m.kill('gone');
     expect(m.ids()).toEqual([]);
+  });
+
+  it('keeps the exit code and logs the exit, marking a lost host (#288)', () => {
+    const exits: PtyListeners['exit'][] = [];
+    const host: PtyHost = {
+      spawn: (_o, on) => {
+        exits.push(on.exit);
+        const proc = { write() {}, resize() {}, kill() {} };
+        return { proc, started: Promise.resolve() };
+      },
+    };
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const m = new TerminalManager(host);
+      const opts = { taskId: 't', cwd: '/w', command: 'x', args: [] };
+      void m.spawn({ id: 'a', ...opts });
+      void m.spawn({ id: 'b', ...opts });
+      expect(m.exitCode('a')).toBeNull();
+      exits[0](7);
+      exits[1](undefined, true);
+      expect(m.exitCode('a')).toBe(7);
+      expect(m.exitCode('b')).toBe(UNKNOWN_EXIT);
+      expect(m.exitCode('unknown')).toBeNull();
+      expect(log.mock.calls).toEqual([
+        ['[terminals] a ended (code 7, host lost: false)'],
+        ['[terminals] b ended (code unknown, host lost: true)'],
+      ]);
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('reports an unknown exit code as UNKNOWN_EXIT, never undefined', () => {
