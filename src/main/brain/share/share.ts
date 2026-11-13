@@ -14,22 +14,17 @@ import { withBrainGit } from '../gitMutex';
 import { isSyncCommit, outsideEdits } from '../health';
 import type { BrainJobRunner } from '../jobs';
 import { absPath } from '../paths';
-import { findSecrets } from '../secrets';
 import { acquireLock, readState, releaseLock, writeState } from '../state';
 import type { BrainHomeStore } from './BrainHomeStore';
-import { PRE_SHARE_REF, unquoteGitPath } from './BrainSync';
+import { PRE_SHARE_REF } from './BrainSync';
 
 export { PRE_SHARE_REF };
 import { upsertMember, writeOrigin, writeShared } from './files';
 import { installEmail } from './keeper';
+import { CHUNK_BYTES, treeSecretFiles } from './secretScan';
 
 export const SHARE_MESSAGE = 'Brain: shared';
 const BUSY = 'A brain job is running; try again later';
-/** git's empty tree: the whole tree is compared with it to read every text file's lines at once. */
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
-/** One diff reads at most this much (git's output must fit GitClient's 16 MB buffer) and this many paths. */
-const CHUNK_BYTES = 8 * 1024 * 1024;
-const CHUNK_PATHS = 100;
 const SHARE_FILES = [
   'brain/origin.json',
   'brain/members.json',
@@ -70,115 +65,6 @@ export type ShareResult =
 const realAdo: NonNullable<ShareDeps['ado']> = (org, token) =>
   new AdoClient(org, token);
 
-/** The repo-relative files of `commit`'s tree that hold a possible secret, in tree order. */
-async function secretFiles(
-  git: GitClient,
-  dir: string,
-  commit: string,
-  chunkBytes: number,
-): Promise<string[]> {
-  const listing = await git.run(dir, [
-    '-c',
-    'core.quotepath=off',
-    'ls-tree',
-    '-r',
-    '-z',
-    '-l',
-    commit,
-  ]);
-  const blobs: { path: string; size: number }[] = [];
-  for (const rec of listing.split('\0')) {
-    const tab = rec.indexOf('\t');
-    if (tab < 0) continue;
-    const [, type, , size] = rec.slice(0, tab).split(/\s+/);
-    if (type === 'blob') blobs.push({ path: rec.slice(tab + 1), size: +size });
-  }
-  const found: string[] = [];
-  const large: string[] = [];
-  const chunks: string[][] = [];
-  let chunk: string[] = [];
-  let bytes = 0;
-  for (const b of blobs) {
-    if (b.size > chunkBytes) {
-      large.push(b.path);
-      continue;
-    }
-    if (chunk.length >= CHUNK_PATHS || bytes + b.size > chunkBytes) {
-      chunks.push(chunk);
-      chunk = [];
-      bytes = 0;
-    }
-    chunk.push(b.path);
-    bytes += b.size;
-  }
-  if (chunk.length) chunks.push(chunk);
-  for (const paths of chunks) {
-    // Every line of every text file, as added since the empty tree; git leaves binary files out.
-    const diff = await git.run(dir, [
-      '--literal-pathspecs',
-      '-c',
-      'core.quotepath=off',
-      'diff',
-      '--no-color',
-      '--no-ext-diff',
-      '-U0',
-      EMPTY_TREE,
-      commit,
-      '--',
-      ...paths,
-    ]);
-    found.push(...secretsInDiff(diff));
-  }
-  found.push(...(await largeSecretFiles(git, dir, commit, large)));
-  return found;
-}
-
-/**
- * The blobs too large for one diff (its output must fit GitClient's buffer), as `commit` has them: written by git
- * into a scratch folder of the git dir, read from there, and removed.
- */
-async function largeSecretFiles(
-  git: GitClient,
-  dir: string,
-  commit: string,
-  paths: string[],
-): Promise<string[]> {
-  if (!paths.length) return [];
-  const scratch = path.resolve(
-    dir,
-    (
-      await git.run(dir, ['rev-parse', '--git-path', 'shellie-share-scan'])
-    ).trim(),
-  );
-  const env = { GIT_INDEX_FILE: `${scratch}.index` };
-  const found: string[] = [];
-  try {
-    await fs.rm(scratch, { recursive: true, force: true });
-    await git.run(dir, ['read-tree', commit], { env });
-    for (let n = 0; n < paths.length; n += CHUNK_PATHS)
-      await git.run(
-        dir,
-        [
-          '--literal-pathspecs',
-          'checkout-index',
-          '-f',
-          `--prefix=${scratch}${path.sep}`,
-          '--',
-          ...paths.slice(n, n + CHUNK_PATHS),
-        ],
-        { env },
-      );
-    for (const p of paths) {
-      const text = await fs.readFile(absPath(scratch, p), 'utf8');
-      if (!text.includes('\0') && findSecrets(text).length) found.push(p);
-    }
-  } finally {
-    await fs.rm(scratch, { recursive: true, force: true });
-    await fs.rm(env.GIT_INDEX_FILE, { force: true });
-  }
-  return found;
-}
-
 /**
  * True when a /sync must run before the share: outside edits Health lists, or commits to sources/ or wiki/ since
  * `lastSyncCommit` other than a /sync's own (any capture at all when there is none). The shared history starts
@@ -204,34 +90,6 @@ async function needsSync(git: GitClient, dir: string): Promise<boolean> {
   return log
     .split('\n')
     .some((subject) => subject.trim() && !isSyncCommit(subject));
-}
-
-/** The files a diff adds a possible secret to. */
-function secretsInDiff(diff: string): string[] {
-  const out: string[] = [];
-  let file: string | null = null;
-  let lines: string[] = [];
-  let header = false;
-  const check = () => {
-    if (file && findSecrets(lines.join('\n')).length) out.push(file);
-  };
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      check();
-      header = true;
-      file = null;
-      lines = [];
-    } else if (header && line.startsWith('+++ ')) {
-      const name = unquoteGitPath(line.slice(4).replace(/\t$/, ''));
-      file = name.startsWith('b/') ? name.slice(2) : name;
-    } else if (line.startsWith('@@')) {
-      header = false;
-    } else if (!header && file && line.startsWith('+')) {
-      lines.push(line.slice(1));
-    }
-  }
-  check();
-  return out;
 }
 
 const localConfig = (git: GitClient, dir: string, key: string) =>
@@ -269,7 +127,7 @@ export async function shareBrain(
     return { status: 'syncing' };
   }
   const scanned = (await d.git.run(dir, ['rev-parse', 'HEAD'])).trim();
-  const files = await secretFiles(d.git, dir, scanned, chunkBytes);
+  const files = await treeSecretFiles(d.git, dir, scanned, chunkBytes);
   if (files.length) return { status: 'secrets', files };
   if ((await d.git.remotes(dir)).includes('origin'))
     throw new Error(
@@ -311,7 +169,7 @@ export async function shareBrain(
       if (
         before !== scanned &&
         ((await needsSync(git, dir)) ||
-          (await secretFiles(git, dir, before, chunkBytes)).length)
+          (await treeSecretFiles(git, dir, before, chunkBytes)).length)
       )
         throw new Error(
           'The brain changed while it was being shared; share again',

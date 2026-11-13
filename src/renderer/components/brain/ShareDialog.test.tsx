@@ -151,7 +151,7 @@ describe('ShareDialog', () => {
         }),
       ],
     });
-  const syncFirst = async (share: () => unknown) => {
+  const syncFirst = async (share: FakeHandlers['brain:share']) => {
     const a = setup({ 'brain:share': share });
     const { rerender } = render(
       <ShareDialog
@@ -170,7 +170,9 @@ describe('ShareDialog', () => {
     a.calls.filter((c) => c.channel === 'brain:share').length;
 
   it('does not ask again when the sync fails, and says so', async () => {
-    const { a, rerender } = await syncFirst(() => ({ status: 'syncing' }));
+    const { a, rerender } = await syncFirst(() => ({
+      status: 'syncing' as const,
+    }));
     rerender(
       <ShareDialog
         brain={ended('failed')}
@@ -185,7 +187,9 @@ describe('ShareDialog', () => {
   });
 
   it('asks again only once: a second Syncing shows a message, not another sync', async () => {
-    const { a, rerender } = await syncFirst(() => ({ status: 'syncing' }));
+    const { a, rerender } = await syncFirst(() => ({
+      status: 'syncing' as const,
+    }));
     rerender(
       <ShareDialog
         brain={ended('done')}

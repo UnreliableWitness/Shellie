@@ -41,6 +41,10 @@ describe('SharedStatus', () => {
       { status: 'held' as const, heldFile: 'sources/a.md' },
       'Held: possible secret in sources/a.md',
     ],
+    [
+      { status: 'held' as const, heldReason: 'unchecked' as const },
+      "Held: the changes couldn't be checked for secrets",
+    ],
   ])('says it for %j', (over, expected) => {
     text(over);
     expect(screen.getByRole('status')).toHaveTextContent(expected);

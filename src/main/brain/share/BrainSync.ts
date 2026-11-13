@@ -14,13 +14,13 @@ import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import type { BrainJobRunner } from '../jobs';
 import { TICK_MS } from '../scheduler';
-import { findSecrets } from '../secrets';
 import { absPath } from '../paths';
 import { READS_RECORD } from '../reads';
 import { acquireLock, readState, releaseLock } from '../state';
 import { readOrigin, readShared } from './files';
 import { factsFromShared } from './keeper';
 import { mergeServer, type JobRef } from './merge';
+import { EMPTY_TREE, unsentSecretFile } from './secretScan';
 
 export const RAN_AGAIN =
   'Ran again: a colleague changed the brain at the same time';
@@ -35,8 +35,6 @@ const FETCH_TIMEOUT_MS = 120_000;
 /** The brain's history from before it was shared (`shareBrain`), dropped after the first successful pull. */
 export const PRE_SHARE_REF = 'refs/shellie/pre-share';
 export const SQUASH_MESSAGE = 'Brain: changes since the last send';
-/** git's empty tree: what a brain is compared with before the server has a main. */
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const PENDING: ReadonlySet<BrainJob['status']> = new Set([
   'queued',
   'running',
@@ -63,6 +61,8 @@ export type BrainSyncDeps = {
   now?: () => Date;
   pushDelayMs?: number;
   tickMs?: number;
+  /** Bytes one secrets-scan diff reads at most; a larger file is read on its own (tests make it small). */
+  scanChunkBytes?: number;
   fetchTimeoutMs?: number;
 };
 
@@ -90,39 +90,6 @@ const server = <T>(p: Promise<T>): Promise<T> =>
   p.catch((e: unknown) => {
     throw e instanceof GitAuthError ? e : new ServerError(e);
   });
-
-/** A path as git prints it in a diff header: C-quoted (`"b/a\"b.md"`) when it holds a quote, a backslash or a control character. */
-export function unquoteGitPath(name: string): string {
-  if (!name.startsWith('"') || name.length < 2) return name;
-  const chars = Array.from(name.slice(1, name.lastIndexOf('"')));
-  const escapes: Record<string, number> = {
-    a: 7,
-    b: 8,
-    t: 9,
-    n: 10,
-    v: 11,
-    f: 12,
-    r: 13,
-    '"': 34,
-    '\\': 92,
-  };
-  const bytes: number[] = [];
-  for (let i = 0; i < chars.length; i++) {
-    const c = chars[i];
-    if (c !== '\\' || i + 1 >= chars.length) {
-      bytes.push(...Buffer.from(c, 'utf8'));
-      continue;
-    }
-    const n = chars[++i];
-    const octal = chars.slice(i, i + 3).join('');
-    if (Object.hasOwn(escapes, n)) bytes.push(escapes[n]);
-    else if (/^[0-7]{3}$/.test(octal)) {
-      bytes.push(parseInt(octal, 8));
-      i += 2;
-    } else bytes.push(...Buffer.from(n, 'utf8'));
-  }
-  return Buffer.from(bytes).toString('utf8');
-}
 
 /** What a pull or push did, for `brain.sync`: `replays` is how many jobs that lost a clash were queued again. */
 type SyncOutcome = {
@@ -413,7 +380,11 @@ export class BrainSync {
       // Nothing waits: no push to hold or to send.
       const status = this.d.brains.get(id)?.sharing?.status;
       if (status === 'held' || status === 'pending')
-        await this.patch(id, { status: 'ok', heldFile: null });
+        await this.patch(id, {
+          status: 'ok',
+          heldFile: null,
+          heldReason: null,
+        });
       return null;
     }
     const held: SyncOutcome = { outcome: 'held', replays: 0 };
@@ -434,6 +405,7 @@ export class BrainSync {
     await this.patch(id, {
       status: 'ok',
       heldFile: null,
+      heldReason: null,
       lastPushAt: this.now().toISOString(),
     });
     return { outcome: 'pushed', replays };
@@ -565,60 +537,35 @@ export class BrainSync {
     return n > 0;
   }
 
-  /** Holds the push when a commit the server lacks adds a possible secret; true when held. */
-  private async hold(id: string, dir: string, tip: string): Promise<boolean> {
-    const file = await this.secretFile(dir, await this.base(dir), tip);
-    if (!file) return false;
-    await this.patch(id, { status: 'held', heldFile: file });
-    return true;
-  }
-
   /**
-   * The first file a commit between `base` and `tip` adds a possible secret to, or null. Each commit on its own: a
-   * line a later commit took out still goes to the server in the earlier one. A merge adds nothing of its own here
-   * (its local side was scanned in the commits it merged).
+   * Holds the push when a commit the server lacks adds a possible secret, or when the scan could not run (the commits
+   * are never sent unscanned); true when held.
    */
-  private async secretFile(
-    dir: string,
-    base: string,
-    tip: string,
-  ): Promise<string | null> {
-    const log = await this.d.git.run(dir, [
-      '-c',
-      'core.quotepath=off',
-      'log',
-      '-p',
-      '--format=',
-      '--no-color',
-      '--no-ext-diff',
-      '-U0',
-      this.range(base, tip),
-    ]);
-    let file: string | null = null;
-    let lines: string[] = [];
-    let header = false;
-    const hit = () => !!file && findSecrets(lines.join('\n')).length > 0;
-    for (const line of log.split('\n')) {
-      if (line.startsWith('diff --git ')) {
-        if (hit()) return file;
-        header = true;
-        file = null;
-        lines = [];
-      } else if (header && line.startsWith('+++ ')) {
-        const name = unquoteGitPath(line.slice(4).replace(/\t$/, ''));
-        file =
-          name === '/dev/null'
-            ? null
-            : name.startsWith('b/')
-              ? name.slice(2)
-              : name;
-      } else if (line.startsWith('@@')) {
-        header = false;
-      } else if (!header && file && line.startsWith('+')) {
-        lines.push(line.slice(1));
-      }
+  private async hold(id: string, dir: string, tip: string): Promise<boolean> {
+    let file: string | null;
+    try {
+      file = await unsentSecretFile(
+        this.d.git,
+        dir,
+        this.range(await this.base(dir), tip),
+        this.d.scanChunkBytes,
+      );
+    } catch (e) {
+      console.error('[brain] secrets scan failed', (e as Error).message);
+      await this.patch(id, {
+        status: 'held',
+        heldFile: null,
+        heldReason: 'unchecked',
+      });
+      return true;
     }
-    return hit() ? file : null;
+    if (!file) return false;
+    await this.patch(id, {
+      status: 'held',
+      heldFile: file,
+      heldReason: 'secret',
+    });
+    return true;
   }
 }
 

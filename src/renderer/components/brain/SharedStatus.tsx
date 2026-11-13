@@ -15,7 +15,10 @@ export function SharedStatus({ brain }: { brain: BrainView }) {
     pending: `Sending ${plural(ahead, 'change')}`,
     unreachable: `Can't reach ${org} · ${plural(ahead, 'change')} waiting`,
     unauthorized: `Can't sign in to ${org}`,
-    held: `Held: possible secret in ${s.heldFile ?? 'a file'}`,
+    held:
+      s.heldReason === 'unchecked'
+        ? "Held: the changes couldn't be checked for secrets"
+        : `Held: possible secret in ${s.heldFile ?? 'a file'}`,
   }[s.status];
   // Only while it is on, or for an hour after it ended.
   const ranAgain = brain.jobs.some(

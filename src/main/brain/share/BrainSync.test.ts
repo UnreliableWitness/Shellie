@@ -18,7 +18,6 @@ import {
   BrainSync,
   RAN_AGAIN,
   SQUASH_MESSAGE,
-  unquoteGitPath,
   type SyncRunner,
 } from './BrainSync';
 import { writeOrigin } from './files';
@@ -374,9 +373,56 @@ describe('BrainSync', () => {
       status: 'held',
       heldFile: 'sources/a"b.md',
     });
-    expect(unquoteGitPath('"b/a\\"b\\\\c\\tq\\303\\251.md"')).toBe(
-      'b/a"b\\c\tq\u00e9.md',
+  });
+
+  it('scans a file over the chunk size on its own, and each commit by itself', async () => {
+    const before = await serverHead();
+    // Over the 64-byte chunk: read on its own, not in one diff with the rest.
+    await write(
+      a,
+      'sources/big.md',
+      `${'filler line\n'.repeat(40)}token ${TOKEN}\n`,
     );
+    await write(a, 'sources/small.md', 'a note\n');
+    await commit(a, 'Brain: add source big.md');
+    // A later commit taking the line out does not clear the earlier one.
+    await write(a, 'sources/big.md', 'short now\n');
+    await commit(a, 'Brain: scrub');
+    await sync({ scanChunkBytes: 64 }).push('a');
+    expect(await serverHead()).toBe(before);
+    expect(sharing()).toMatchObject({
+      status: 'held',
+      heldFile: 'sources/big.md',
+    });
+  });
+
+  it('holds the push when the scan itself fails, never sending unscanned commits', async () => {
+    class Failing extends GitClient {
+      override async run(
+        cwd: string,
+        args: string[],
+        opts?: { timeoutMs?: number; env?: Record<string, string> },
+      ): Promise<string> {
+        // What an over-full output buffer looks like: not a server error.
+        if (args.includes('--no-ext-diff'))
+          throw new Error('stdout maxBuffer length exceeded');
+        return super.run(cwd, args, opts);
+      }
+    }
+    const before = await serverHead();
+    await write(a, 'sources/n.md', 'a note\n');
+    await commit(a, 'Brain: add source n.md');
+    await sync({ git: new Failing() }).push('a');
+    expect(await serverHead()).toBe(before);
+    expect(sharing()).toMatchObject({
+      status: 'held',
+      heldFile: null,
+      heldReason: 'unchecked',
+    });
+    // Once the scan works again the push goes through.
+    await sync().push('a');
+    expect(await serverHead()).toBe(await head(a));
+    expect(sharing()).toMatchObject({ status: 'ok', heldReason: null });
   });
 
   it('pushes the commit it scanned, not one made while it scanned', async () => {
@@ -388,7 +434,7 @@ describe('BrainSync', () => {
         opts?: { timeoutMs?: number; env?: Record<string, string> },
       ): Promise<string> {
         const out = await super.run(cwd, args, opts);
-        if (!this.raced && args.includes('log') && args.includes('-p')) {
+        if (!this.raced && args.includes('--no-ext-diff')) {
           this.raced = true;
           await write(a, 'sources/late.md', `late ${TOKEN}\n`);
           await super.run(a, ['add', '-A']);

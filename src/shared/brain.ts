@@ -77,6 +77,8 @@ export const BrainSharingSchema = z.object({
   lastPushAt: z.string().nullable(),
   status: z.enum(['ok', 'pending', 'held', 'unreachable', 'unauthorized']),
   heldFile: z.string().nullable(),
+  /** Why a push is held: a possible secret in `heldFile`, or a scan that could not run (`unchecked`). */
+  heldReason: z.enum(['secret', 'unchecked']).nullable().optional(),
   /** Commits not yet on the server (`origin/main..HEAD`). Filled in when a view is built; never stored. */
   ahead: z.number().int().optional(),
 });
