@@ -44,7 +44,9 @@ export function JoinCard({
         <button
           type="button"
           className="btn btn-primary btn-sm"
-          onClick={() => go({ kind: 'brain-join', link: offer.joinLink })}
+          onClick={() =>
+            go({ kind: 'brain-join', link: offer.joinLink, via: 'card' })
+          }
         >
           Join
         </button>

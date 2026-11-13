@@ -53,7 +53,13 @@ function Page() {
         />
       );
     case 'brain-join':
-      return <BrainJoinScreen key={screen.link} link={screen.link} />;
+      return (
+        <BrainJoinScreen
+          key={screen.link}
+          link={screen.link}
+          via={screen.via ?? 'link'}
+        />
+      );
     case 'task':
       return <TaskScreen />;
     case 'new-task':

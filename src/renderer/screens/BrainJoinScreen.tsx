@@ -5,8 +5,17 @@ import { api } from '../api';
 import { PageHeader } from '../components/ui';
 import { useStore } from '../store';
 
-/** What a `shellie://join` link leads to: the brain and project, a token field when the link needs one, and Join. */
-export function BrainJoinScreen({ link }: { link: string }) {
+/**
+ * What a `shellie://join` link leads to: the brain and project, a token field when the link needs one, and Join.
+ * `via`: whether a link or the "Your team has a brain" card opened it (telemetry only).
+ */
+export function BrainJoinScreen({
+  link,
+  via = 'link',
+}: {
+  link: string;
+  via?: 'link' | 'card';
+}) {
   const go = useStore((s) => s.go);
   const [preview, setPreview] = useState<JoinPreview | null>(null);
   const [pat, setPat] = useState('');
@@ -33,7 +42,7 @@ export function BrainJoinScreen({ link }: { link: string }) {
     setError(null);
     try {
       const token = pat.trim() || undefined;
-      const brain = await api().invoke('brain:join', link, token);
+      const brain = await api().invoke('brain:join', link, token, via);
       go({ kind: 'brain', brainId: brain.id });
     } catch (e) {
       setError(errorMessage(e));

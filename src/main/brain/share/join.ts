@@ -122,6 +122,14 @@ function tokenFor(
   return null;
 }
 
+/** The person has no connection for the brain's customer project: they add the project first. */
+export class NoConnectionError extends Error {
+  constructor(project: string) {
+    super(`Add the ${project} project in Shellie first`);
+    this.name = 'NoConnectionError';
+  }
+}
+
 const denied = (origin: Origin, path: string, status?: number) =>
   new AdoError(
     'unauthorized',
@@ -234,8 +242,7 @@ export async function joinBrain(
       `Enter a personal access token for ${i.link.organizationUrl}`,
     );
   const { origin, repo, connection } = i;
-  if (!connection)
-    throw new Error(`Add the ${origin.project} project in Shellie first`);
+  if (!connection) throw new NoConnectionError(origin.project);
   if (i.alreadyHave)
     throw new Error('You already have a brain for this project');
   const key = `${connection.id}\n${origin.project.toLowerCase()}`;

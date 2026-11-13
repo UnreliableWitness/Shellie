@@ -535,3 +535,83 @@ describe('BrainSync', () => {
     expect(fake.queued).toHaveLength(1);
   });
 });
+
+describe('BrainSync telemetry', () => {
+  let sent: [string, unknown][];
+  const tracked = (
+    over: Partial<ConstructorParameters<typeof BrainSync>[0]> = {},
+  ) => sync({ event: (n, p) => sent.push([n, p]), ...over });
+  beforeEach(() => {
+    sent = [];
+  });
+
+  it('sends one brain.sync for a push, with only outcome and replays', async () => {
+    await write(a, 'sources/n.md', 'a note\n');
+    await commit(a, 'Brain: add source n.md');
+    await tracked().push('a');
+    expect(sent).toEqual([['brain.sync', { outcome: 'pushed', replays: 0 }]]);
+  });
+
+  it('sends nothing for a pull or push with nothing to do', async () => {
+    const s = tracked();
+    // The first pull commits the clone's outside edits; that commit goes out once.
+    await s.pull('a');
+    await s.push('a');
+    sent = [];
+    await s.pull('a');
+    await s.push('a');
+    expect(sent).toEqual([]);
+  });
+
+  it('sends merged for a pull that brought changes, with the jobs queued again', async () => {
+    fake.ran('capture', 'sources/a.md', 0);
+    await write(a, 'wiki/x.md', PAGE('TWO by A'));
+    await commit(a, 'Brain: capture sources/a.md');
+    await write(b, 'wiki/x.md', PAGE('TWO by B'));
+    await commit(b, 'Brain: capture sources/b.md');
+    await pushB();
+    await tracked().pull('a');
+    expect(sent).toEqual([['brain.sync', { outcome: 'merged', replays: 1 }]]);
+  });
+
+  it('sends one event for a push that merged first, counting its replays', async () => {
+    fake.ran('capture', 'sources/a.md', 0);
+    await write(a, 'wiki/x.md', PAGE('TWO by A'));
+    await commit(a, 'Brain: capture sources/a.md');
+    await write(b, 'wiki/x.md', PAGE('TWO by B'));
+    await commit(b, 'Brain: capture sources/b.md');
+    await pushB();
+    await tracked().push('a');
+    expect(sent).toEqual([['brain.sync', { outcome: 'pushed', replays: 1 }]]);
+  });
+
+  it('sends held for a push with a secret', async () => {
+    await write(a, 'sources/s.md', `token ${TOKEN}\n`);
+    await commit(a, 'Brain: add source s.md');
+    await tracked().push('a');
+    expect(sent).toEqual([['brain.sync', { outcome: 'held', replays: 0 }]]);
+  });
+
+  it('sends unreachable and unauthorized for a server that fails', async () => {
+    await write(a, 'sources/n.md', 'a note\n');
+    await commit(a, 'Brain: add source n.md');
+    const away = `${server}-away`;
+    await fs.rename(server, away);
+    await tracked().pull('a');
+    await fs.rename(away, server);
+    class NoSignIn extends GitClient {
+      override async push(): Promise<void> {
+        throw new GitAuthError('denied', 'Authentication failed', {
+          host: 'dev.azure.com',
+          connectionId: null,
+          path: a,
+        });
+      }
+    }
+    await tracked({ git: new NoSignIn() }).push('a');
+    expect(sent).toEqual([
+      ['brain.sync', { outcome: 'unreachable', replays: 0 }],
+      ['brain.sync', { outcome: 'unauthorized', replays: 0 }],
+    ]);
+  });
+});

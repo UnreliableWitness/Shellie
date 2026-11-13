@@ -1085,6 +1085,7 @@ async function boot(): Promise<void> {
         await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
       },
       installId: installIdHere,
+      event: (name, props) => telemetry.event(name, props),
     });
     const stopSyncListener = onBrainGitIdle((dir) => brainSync.afterGit(dir));
     const brainRunner = new BrainJobRunner({

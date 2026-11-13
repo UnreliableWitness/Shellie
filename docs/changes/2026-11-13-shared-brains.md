@@ -1,0 +1,71 @@
+# Shared brains
+
+Asked for: colleagues on the same customer project should **use and add to** the same brain, as easy as a click on both ends, without anyone ever seeing git; where the brain lives is a choice per brain, the customer's Azure DevOps project or the company's own organization (a "brain home") so the customer need not see it. Joining a company-home brain is by a join link (the owner's choice, 2026-11-13). Spec: `docs/superpowers/specs/2026-11-13-shared-brains-design.md`; plan: `docs/superpowers/plans/2026-11-13-shared-brains.md`.
+
+The spec's own calls are marked **(call)** there; the calls made while building are under "Decided without the owner" below.
+
+## What changed
+
+- **Share files and the install id** (`src/shared/brainShare.ts`, `src/main/brain/share/files.ts`, `src/main/installId.ts`). A shared brain commits `brain/origin.json` (organization, customer project, name, keeper, `"format": 1`), `brain/members.json` (who joined) and `brain/shared.json` (wiki link, last refresh and digest, skills version). Each install has an id, kept in user data; it is how the keeper is known.
+- **The brain home** (`share/BrainHomeStore.ts`, Settings › User › Brain home): one organization, project and PAT per person, the token encrypted with safeStorage like connections'. It is not a project in Shellie. Git signs in to a company-home brain with it (`gitAuth.ts`, `connectionIdForBrain`).
+- **Azure DevOps repo calls** (`AdoClient`): `createRepository`, `repositories`, `repositoryById`, `itemText`; a 409 is "A repo with that name already exists".
+- **Merges nobody resolves** (`share/jsonMerge.ts`, `share/merge.ts`). `mergeServer` fetches and merges `origin/main`; every conflicted path is settled by the spec's rule table: sources kept both (the local one renamed), the wiki mirror taken from the server, `log.md` as a union, `index.md` rebuilt, `brain/*.json` by their own mergers (state, conflicts, reads, pictures, book, shared facts, skills max-wins), and a clashing `wiki/` or `reads/` change from a job taken from the server, with the job named for a run again from its commit subject (`Brain: capture <source>`, `Brain: write <target>`, `Brain: settle <id>`). An outside edit that clashes goes in as a source note.
+- **Sync** (`share/BrainSync.ts`). Pull when the app starts, before each job (`beforeJob` commits outside edits, then pulls), when the Brain page opens (`brain:syncNow`) and every 15 minutes while the brain is idle; push 2 s after every brain commit. A push whose unsent commits add a possible secret is held ("Held: possible secret in …"); Scrub on a held brain folds the unsent commits into one so the secret never leaves. A rejected push merges and sends once more. A job whose output lost a clash goes back to the front of the queue; on its second clash it fails with "Ran again: a colleague changed the brain at the same time" and Retry. Only fetches, merges and new commits: no rebase, no force push.
+- **Share** (`share/share.ts`, the Share dialog on the Brain page). Where (company home by default when set up, or the customer project, with the organization named), repo name, then: a `/sync` first when there are outside edits or captures since the last one, the secrets scan over the tree, the repo created through the API, and one fresh commit `Brain: shared` of the current tree pushed (the old history kept in `refs/shellie/pre-share` until the first pull). The result is the join link; **Copy join link** gives it again later. **Stop sharing** makes the brain local again and leaves the repo.
+- **Join** (`share/join.ts`, `BrainJoinScreen.tsx`, `JoinCard.tsx`). A `shellie://join?org=…&project=…&repo=…` link (only `dev.azure.com` or `*.visualstudio.com` organizations; never a token) or the "Your team has a brain for … Join?" card on the Project page and in the nav (customer-project brains found by listing the project's repos for a `brain/origin.json`). The join screen names the brain and project, asks for a PAT when nothing reaches the organization (saved as the brain home when there is none), clones into `<userData>/brains/<new id>`, adds the person to `members.json` and commits `Brain: joined`. Refusals are plain: no access ("ask <keeper>"), the project not added yet, a brain for the project already, a second brain home.
+- **The keeper** (`share/keeper.ts`). The brain-wide automatic jobs (digest, `/sync` after a refresh, long reads by themselves, the picture and book passes, the scheduled refresh) run on the keeper's machine only; others see "Runs on <name>'s Shellie". The keeper hands over to a member; a member takes over after 14 days without a push from the keeper's install (its commits carry `<installId>@install.shellie` as author email). The keeper also captures a colleague's source still uncaptured an hour after it arrived. A brain whose skills are newer than this Shellie knows holds its jobs ("A colleague's Shellie is newer") until Shellie is updated.
+- **Status** (`SharedStatus.tsx`): "Shared · up to date", "Sending <n> changes", "Can't reach <home> · <n> changes waiting", "Can't sign in to <org>", "Held: possible secret in <file>", and "· Ran a capture again" while a run again is recent.
+- **Telemetry** (`docs/telemetry.md`): `brain.share` (`home`, `outcome`: `shared`, `secrets`, `syncing`, `failed`), `brain.join` (`via`: `link`, `card`; `outcome`: `joined`, `noConnection`, `denied`, `failed`) and `brain.sync` (`outcome`: `pushed`, `merged`, `held`, `unreachable`, `unauthorized`; `replays`), at most one per pull or push and none for a pull or push that had nothing to do. No names, paths, links or URLs. The renderer passes `via` to `brain:join`; a missing project is a `NoConnectionError` so it can be told apart.
+
+## Decided without the owner
+
+Beyond the spec's **(call)**s:
+
+- The write subject for a run again is built in `jobs.ts` (`runSkill`), where the commit is made; the plan named the wrong file.
+- A machine's commits are marked by the brain repo's local `user.email` `<installId>@install.shellie` (and `user.name` the person's name), set at share and join, instead of a trailer on every commit; take-over reads the keeper's last push from it. Commits in the shared repo show that synthetic email.
+- A settle that clashes runs again: its commit subject is `Brain: settle <conflictId>` and the id rides in the job reference's target.
+- `beforeJob` commits outside edits **then** pulls (git refuses to merge over a dirty tree); any other pull commits them first too.
+- Every unsent commit is scanned for secrets, not only the end state; while held, Scrub folds the unsent commits into one on the merge base (no colleague's change undone), and `lastSyncCommit` and long reads' commits that pointed into the fold move to that base, so `/sync` reads the folded changes again.
+- The replay cap: the original run plus one run again; the second clash fails the job.
+- A C-quoted file name in a diff is unquoted before the secret scan, and large files are scanned from the commit, not the disk: both were ways past the gate.
+- After a share `lastSyncCommit` is null (the share commit cannot name itself; `/sync` then starts at the share commit). Share also refuses a folder that already has an `origin` remote and an empty repo name.
+- Share syncs first when captures happened since the last `/sync`, not only on outside edits.
+- A join link to another organization than the person's brain home, with a typed PAT, is refused ("Shellie has one brain home for now"); only a company home is saved from a join; the home is saved last; a link opened before the window listened is kept for it (`brain:pendingJoin`).
+- The skills version merges max-wins (skills never go backwards); share and join use the same install email; jobs held for newer skills are released after a pull brings the brain back to ready.
+- "Can't sign in to <org>" for a refused sign-in (the brief had no copy). Counts in the status come from a main-side `ahead` (commits not on the server). "Ran a capture again" shows for active and recent jobs only.
+- The running-app check used a local bare repo standing in for the server; no repo was made in a real Azure DevOps organization.
+
+## Verified
+
+`npm test` (401 files, 4844 tests green), `npm run typecheck`, `npm run lint`. The git tests use a bare repo as the server and two clones as two machines: every merge rule, a pull in the middle of a job, held and folded secrets, push rejected then merged, a clash queued again once then failed, the keeper's pick-up and take-over, share and join with their refusals, and the three telemetry events with only their listed properties.
+
+Two dev instances side by side (`SHELLIE_USER_DATA=<scratch a|b> npm start -- -- --remote-debugging-port=<p> --inspect=<q> --use-mock-keychain`), driven by raw CDP. Azure DevOps was a stand-in on loopback (organization `fakeorg`, project `Demo`, two PATs that answer as "Anna" and "Bert"): its repo-create call made a local bare repo and answered with that folder as `remoteUrl`; its items call read files from that bare repo. Each instance's main-process `fetch` was redirected from `https://dev.azure.com/fakeorg` to the stand-in through the Node inspector; the app's code was not changed for it. A fake `claude` first on PATH logged its arguments and stdin, wrote a page for the source and a shared page `wiki/shared.md` (and set `lastSyncCommit` for `/sync`), and printed a result line: no tokens spent. What was seen:
+
+- **Share from A** (`brain:share`, customer home, repo `acme-brain`, through IPC rather than the dialog): the first call answered `syncing` and queued a `/sync` (the brain had a capture since the last one); after it ran, the next call answered `shared` with `shellie://join?org=https%3A%2F%2Fdev.azure.com%2Ffakeorg&project=Demo&repo=repo-1`. The server held one commit `Brain: shared` by `<installId>@install.shellie`, its `origin.json` naming Anna as keeper. A's Brain page said "Shared · up to date" with "Copy join link".
+- **Join from B by the link**: the link opened the join screen ("Acme, the brain for Demo"); clicking Join cloned it and opened the brain, "Shared · up to date", with A's source. The server got `Brain: joined` by Bert. Before that, B's nav showed the card "Your team has a brain for Demo. Join?" with "Acme" (not clicked).
+- **Both add, both see both**: a source added on B was captured there (fake `claude` ran with B's environment) and pushed; opening A's Brain page pulled it (B's source and page listed in A, sources 2). A source added on A then showed on B after its page opened (sources 3).
+- **A clash**: a source added on A and one on B at the same moment, both captured at once, both writing `wiki/shared.md`. A pushed first; B's push was refused, B merged (`Brain: merge from colleagues`) taking A's page, queued its capture again and its lint, and both ran again (replays 1) and were pushed. B's Brain page said "Shared · up to date · Ran a capture again". No conflict was left (`git status` clean). After A's next pull, A, B and the server were at the same commit and the two brain folders were identical apart from `.git`.
+
+Not seen in the running app: the Share dialog itself (share went through IPC), the company brain home, a link opened through the `shellie://` handler (the handler is registered in packaged builds only; the dev check navigated to the join screen as the handler does), a held secret, a job failing on its second clash, the keeper's pick-up after an hour, hand-over and take-over, Stop sharing, the 15-minute timer, and the telemetry events being sent (a local build sends none). These are covered by the unit and git tests only.
+
+## Known gaps
+
+- **Not run on Windows**, the release target: the `shellie://` handler (`setAsDefaultProtocolClient`, the link in `second-instance` argv) and the sync's git runs there are unverified until run there. On macOS too, the handler is checked by tests only.
+- **Not run against real Azure DevOps**: the repo create, list and item calls, and git sign-in to Azure Repos for a brain, ran against a stand-in.
+- **GitHub (or any other host) as a home is not supported**; Azure DevOps only.
+- **Merging two existing brains is not supported**: join is for people without a brain for the project; someone with one archives it first.
+- One brain home per person.
+- Deferred minors from the reviews:
+  - the install id is minted again on any read error of its file (not only a missing file), and two first calls at once can mint two;
+  - the brain home falls back to a same-organization customer token if the home is removed while a company-home brain exists;
+  - `itemText` reads any 404 (a wrong repo or project too) as "no file";
+  - `log.md` is not sorted again after a merge if an entry is undated, or after a clean merge; `mergeBook` can append an empty chapter, and a page deleted on one side comes back;
+  - a `-local` rename can overwrite an existing file of that name; a source note written for an outside-edit clash can stay untracked after an aborted merge;
+  - the replay count does not survive a restart; matching a folder after git writes is case-sensitive (Windows paths);
+  - a fold leaves an uncommitted `state.json`/`reads.json` unmoved;
+  - the keeper's pick-up runs one `git log` per uncaptured source on each pull (process spawns are slow on Windows);
+  - the repo is created before the brain lock is taken (a busy brain then leaves an empty repo, and the message says so);
+  - Sync now can race the share's own first push;
+  - `discover` reads one file per repo of the project without a limit; the Join card swallows discover errors and has no refresh;
+  - a shared fact written by a member that fails to push still updates the local record and reverts on the next pull; a member's hand refresh brings mirror pictures nobody evaluates;
+  - the status counts cost one `git rev-list` per shared brain on every brain list.

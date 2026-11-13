@@ -42,7 +42,12 @@ import {
   type DiscoverCache,
   type JoinDeps,
 } from './share/join';
-import { shareBrain, stopSharing, type ShareDeps } from './share/share';
+import {
+  shareBrain,
+  stopSharing,
+  type ShareDeps,
+  type ShareResult,
+} from './share/share';
 import {
   handOver,
   isAutomatic,
@@ -57,7 +62,12 @@ import { joinLink } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
-import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
+import {
+  imagesBucket,
+  joinOutcome,
+  pagesBucket,
+  sizeBucket,
+} from './brainTelemetry';
 import { readBook } from './book';
 import { PENDING } from './bookPass';
 import { listConflicts, readConflicts, saveConflicts } from './conflicts';
@@ -953,22 +963,30 @@ export function createBrainHandlers(
       await d.sync.push(id);
     },
     'brain:share': async (input) => {
-      live(input.brainId);
-      const r = await shareBrain(
-        {
-          brains: d.brains,
-          git: d.git,
-          home: d.home,
-          connections: d.connections,
-          runner: d.runner,
-          installId: myInstall,
-          ado: d.ado,
-          now: d.now,
-        },
-        input,
-      );
-      changed(input.brainId);
-      return r;
+      // Only the two fixed homes reach telemetry, whatever the window sent.
+      const home = input.home === 'company' ? 'company' : 'customer';
+      let outcome: ShareResult['status'] | 'failed' = 'failed';
+      try {
+        live(input.brainId);
+        const r = await shareBrain(
+          {
+            brains: d.brains,
+            git: d.git,
+            home: d.home,
+            connections: d.connections,
+            runner: d.runner,
+            installId: myInstall,
+            ado: d.ado,
+            now: d.now,
+          },
+          input,
+        );
+        outcome = r.status;
+        changed(input.brainId);
+        return r;
+      } finally {
+        d.event('brain.share', { home, outcome });
+      }
     },
     'brain:joinLink': async (id) => {
       const sharing = brainOf(id).sharing;
@@ -1001,8 +1019,16 @@ export function createBrainHandlers(
       changed(id);
     },
     'brain:previewJoin': (link, pat) => previewJoin(joinDeps, link, { pat }),
-    'brain:join': async (link, pat) => {
-      const b = await joinBrain(joinDeps, link, { pat });
+    'brain:join': async (link, pat, via) => {
+      const from = via === 'card' ? 'card' : 'link';
+      let b: Brain;
+      try {
+        b = await joinBrain(joinDeps, link, { pat });
+      } catch (e) {
+        d.event('brain.join', { via: from, outcome: joinOutcome(e) });
+        throw e;
+      }
+      d.event('brain.join', { via: from, outcome: 'joined' });
       d.remember([b.name, b.path]);
       changed(b.id);
       return view(b);

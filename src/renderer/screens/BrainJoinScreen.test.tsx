@@ -41,7 +41,7 @@ describe('BrainJoinScreen', () => {
     );
     expect(a.calls).toContainEqual({
       channel: 'brain:join',
-      args: ['shellie://join?x', undefined],
+      args: ['shellie://join?x', undefined, 'link'],
     });
   });
   it('asks to add the project first when there is no connection', async () => {
@@ -54,15 +54,15 @@ describe('BrainJoinScreen', () => {
       screen.queryByRole('button', { name: 'Join' }),
     ).not.toBeInTheDocument();
   });
-  it('asks for a token when the link needs one and joins with it', async () => {
+  it('asks for a token when the link needs one and joins with it, saying the card opened it', async () => {
     const a = setup(preview({ needsToken: true }));
-    render(<BrainJoinScreen link="l" />);
+    render(<BrainJoinScreen link="l" via="card" />);
     await userEvent.type(await screen.findByLabelText('Token'), 'secret-pat');
     await userEvent.click(screen.getByRole('button', { name: 'Join' }));
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:join',
-        args: ['l', 'secret-pat'],
+        args: ['l', 'secret-pat', 'card'],
       }),
     );
   });

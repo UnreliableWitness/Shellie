@@ -1,5 +1,7 @@
 import type { BrainJob } from '../../shared/brain';
 import type { TelemetryProps } from '../../shared/telemetry';
+import { AdoError } from '../services/AdoClient';
+import { NoConnectionError } from './share/join';
 
 /** A size in kB as a coarse bucket, never the exact number. */
 export function sizeBucket(bytes: number): string {
@@ -44,4 +46,11 @@ export function jobTelemetry(
       });
     }
   };
+}
+
+/** A failed join for `brain.join`: no connection for the project, access refused, or anything else. */
+export function joinOutcome(e: unknown): 'noConnection' | 'denied' | 'failed' {
+  if (e instanceof NoConnectionError) return 'noConnection';
+  if (e instanceof AdoError && e.kind === 'unauthorized') return 'denied';
+  return 'failed';
 }

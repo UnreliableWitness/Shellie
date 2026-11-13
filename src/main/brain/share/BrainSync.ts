@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Brain, BrainJob, BrainSharing } from '../../../shared/brain';
 import { isKeeper } from '../../../shared/brainShare';
+import type { TelemetryProps } from '../../../shared/telemetry';
 import { GitAuthError, type GitClient } from '../../services/GitClient';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
@@ -57,6 +58,8 @@ export type BrainSyncDeps = {
   commitOutsideEdits: (brainId: string) => Promise<void>;
   /** This install's id: the keeper picks up colleagues' sources left uncaptured. Absent: never the keeper. */
   installId?: string;
+  /** Telemetry: one `brain.sync` per pull or push that merged, sent, held or failed on the server. Absent: none. */
+  event?: (name: string, props?: TelemetryProps) => void;
   now?: () => Date;
   pushDelayMs?: number;
   tickMs?: number;
@@ -121,6 +124,12 @@ export function unquoteGitPath(name: string): string {
   return Buffer.from(bytes).toString('utf8');
 }
 
+/** What a pull or push did, for `brain.sync`: `replays` is how many jobs that lost a clash were queued again. */
+type SyncOutcome = {
+  outcome: 'pushed' | 'merged' | 'held';
+  replays: number;
+};
+
 /** The status a failed sync leaves: a sign-in the server refused, a push it still refuses, or no server at all. */
 function failureStatus(e: unknown): BrainSharing['status'] | null {
   if (e instanceof GitAuthError) return 'unauthorized';
@@ -170,7 +179,21 @@ export class BrainSync {
     console.error('[brain] sync failed', (e as Error).message);
     // A merge that could not run leaves the status: it says how the server is, and the next pull tries again.
     const status = failureStatus(e);
+    if (status === 'unreachable' || status === 'unauthorized')
+      this.report({ outcome: status, replays: 0 });
     if (status) await this.patch(id, { status }).catch(() => undefined);
+  }
+
+  /** One `brain.sync` event: no names, paths or URLs. */
+  private report(r: {
+    outcome: SyncOutcome['outcome'] | 'unreachable' | 'unauthorized';
+    replays: number;
+  }) {
+    this.d.event?.('brain.sync', { outcome: r.outcome, replays: r.replays });
+  }
+
+  private sent(r: SyncOutcome | null) {
+    if (r) this.report(r);
   }
 
   /**
@@ -180,14 +203,20 @@ export class BrainSync {
    */
   pull(id: string, o: { lockHeld?: boolean } = {}): Promise<void> {
     return this.serial(id, () =>
-      this.pullNow(id, o.lockHeld ?? false).catch((e) => this.fail(id, e)),
+      this.pullNow(id, o.lockHeld ?? false).then(
+        (r) => this.sent(r),
+        (e: unknown) => this.fail(id, e),
+      ),
     );
   }
 
   /** Sends the commits the server lacks, unless their added text holds a possible secret. Never throws. */
   push(id: string): Promise<void> {
     return this.serial(id, () =>
-      this.pushNow(id).catch((e) => this.fail(id, e)),
+      this.pushNow(id).then(
+        (r) => this.sent(r),
+        (e: unknown) => this.fail(id, e),
+      ),
     );
   }
 
@@ -227,18 +256,22 @@ export class BrainSync {
     };
   }
 
-  private async pullNow(id: string, lockHeld: boolean): Promise<void> {
+  /** Null when skipped or when the server had nothing new. */
+  private async pullNow(
+    id: string,
+    lockHeld: boolean,
+  ): Promise<SyncOutcome | null> {
     const b = this.shared(id);
-    if (!b) return;
+    if (!b) return null;
     const dir = b.path;
     if (!lockHeld) {
       // A job of this runner holds the brain (even past the lock's stale hour): it pulls itself before it starts.
-      if (this.d.runner().running(id)) return;
+      if (this.d.runner().running(id)) return null;
       const took = await acquireLock(dir, process.pid, this.now).catch(
         () => false,
       );
       // A job of another process holds the brain.
-      if (!took) return;
+      if (!took) return null;
     }
     try {
       // The job's own pull comes after beforeJob committed them; any other pull commits them here.
@@ -257,7 +290,7 @@ export class BrainSync {
         return merged;
       });
       await this.copySharedFacts(id, dir);
-      this.runAgain(id, r.rerun);
+      const replays = this.runAgain(id, r.rerun);
       await this.pickUpUncaptured(id, dir);
       const status = this.d.brains.get(id)?.sharing?.status;
       await this.patch(id, {
@@ -269,6 +302,7 @@ export class BrainSync {
               ? 'pending'
               : 'ok',
       });
+      return r.merged ? { outcome: 'merged', replays } : null;
     } finally {
       if (!lockHeld) await releaseLock(dir).catch(() => undefined);
     }
@@ -294,9 +328,13 @@ export class BrainSync {
     this.d.changed(id);
   }
 
-  /** Each job whose output lost a clash goes back to the front of the queue, or fails after its second run again. */
-  private runAgain(id: string, refs: JobRef[]) {
+  /**
+   * Each job whose output lost a clash goes back to the front of the queue, or fails after its second run again.
+   * Returns how many were queued again.
+   */
+  private runAgain(id: string, refs: JobRef[]): number {
     const runner = this.d.runner();
+    let queued = 0;
     for (const ref of refs) {
       const last = runner.jobs(id).find((j) => sameJob(j, ref));
       // Queued or running already: it runs on the merged brain.
@@ -314,7 +352,9 @@ export class BrainSync {
           ? { conflict: ref.target }
           : {}),
       });
+      queued++;
     }
+    return queued;
   }
 
   /**
@@ -362,9 +402,10 @@ export class BrainSync {
     }
   }
 
-  private async pushNow(id: string): Promise<void> {
+  /** Null when nothing waited to be sent. */
+  private async pushNow(id: string): Promise<SyncOutcome | null> {
     const b = this.shared(id);
-    if (!b) return;
+    if (!b) return null;
     const dir = b.path;
     // One commit id for the check, the scan and the push: a commit made meanwhile waits for the next push.
     let sha = await this.head(dir);
@@ -373,9 +414,11 @@ export class BrainSync {
       const status = this.d.brains.get(id)?.sharing?.status;
       if (status === 'held' || status === 'pending')
         await this.patch(id, { status: 'ok', heldFile: null });
-      return;
+      return null;
     }
-    if (await this.hold(id, dir, sha)) return;
+    const held: SyncOutcome = { outcome: 'held', replays: 0 };
+    if (await this.hold(id, dir, sha)) return held;
+    let replays = 0;
     const send = (c: string) =>
       server(this.d.git.push(dir, 'origin', `${c}:refs/heads/main`));
     try {
@@ -383,9 +426,9 @@ export class BrainSync {
     } catch (e) {
       if (!(e instanceof ServerError) || !rejected(e)) throw e;
       // Someone pushed first: merge their changes, then send ours on top, once.
-      await this.pullNow(id, false);
+      replays = (await this.pullNow(id, false))?.replays ?? 0;
       sha = await this.head(dir);
-      if (await this.hold(id, dir, sha)) return;
+      if (await this.hold(id, dir, sha)) return { ...held, replays };
       await send(sha);
     }
     await this.patch(id, {
@@ -393,6 +436,7 @@ export class BrainSync {
       heldFile: null,
       lastPushAt: this.now().toISOString(),
     });
+    return { outcome: 'pushed', replays };
   }
 
   /**

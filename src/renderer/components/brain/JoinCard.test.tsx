@@ -25,6 +25,7 @@ describe('JoinCard', () => {
     expect(useStore.getState().screen).toEqual({
       kind: 'brain-join',
       link: 'shellie://join?a',
+      via: 'card',
     });
   });
   it('shows nothing when no shared brain is found', async () => {

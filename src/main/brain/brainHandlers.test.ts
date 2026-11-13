@@ -969,6 +969,32 @@ describe('brain handlers', () => {
     expect(events).toContainEqual(['brain.deleted', { folder: true }]);
   });
 
+  it('sends brain.share with the home and outcome only', async () => {
+    const v = await h['brain:create'](NEW);
+    await expect(
+      h['brain:share']({ brainId: v.id, home: 'company', repoName: ' ' }),
+    ).rejects.toThrow('Enter a repo name');
+    await fs.writeFile(path.join(v.path, 'wiki', 'mine.md'), '# Mine\n');
+    await expect(
+      h['brain:share']({ brainId: v.id, home: 'customer', repoName: 'r' }),
+    ).resolves.toEqual({ status: 'syncing' });
+    expect(events.filter((e) => e[0] === 'brain.share')).toEqual([
+      ['brain.share', { home: 'company', outcome: 'failed' }],
+      ['brain.share', { home: 'customer', outcome: 'syncing' }],
+    ]);
+  });
+
+  it('sends brain.join with how it was opened and the outcome only', async () => {
+    await expect(
+      h['brain:join']('not a link', undefined, 'card'),
+    ).rejects.toThrow('This is not a Shellie join link');
+    await expect(h['brain:join']('not a link')).rejects.toThrow();
+    expect(events.filter((e) => e[0] === 'brain.join')).toEqual([
+      ['brain.join', { via: 'card', outcome: 'failed' }],
+      ['brain.join', { via: 'link', outcome: 'failed' }],
+    ]);
+  });
+
   it('delete without deleteFolder keeps the folder', async () => {
     const v = await h['brain:create'](NEW);
     await h['brain:delete'](v.id, false);
