@@ -222,7 +222,8 @@ install id, name, joined at), and any member can **take over** after the keeper'
 with a confirmation.
 
 **Shared brain-wide facts** go in a new committed `brain/shared.json`, so a new keeper can carry on and nothing runs
-twice in one week: the customer wiki link (today's `Brain.wiki`, a `BrainWiki`), `lastRefreshAt` and `lastDigestAt`.
+twice in one week: the customer wiki link (today's `Brain.wiki`, a `BrainWiki`), `lastRefreshAt`, `lastDigestAt` and the skills'
+`templatesVersion` (the folder has no version marker of its own today).
 Each member refreshes the mirror with their own customer PAT. For a shared brain these fields are read from
 `shared.json`, not `brains.json`. **(call)**
 
