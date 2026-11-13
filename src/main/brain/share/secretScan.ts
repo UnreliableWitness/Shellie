@@ -7,10 +7,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { GitClient } from '../../services/GitClient';
 import { absPath } from '../paths';
+import { EMPTY_TREE } from '../../review/reviewGit';
 import { findSecrets } from '../secrets';
-
-/** git's empty tree: what a root commit, or a whole tree, is compared with. */
-export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 /** One diff reads at most this much (git's output must fit GitClient's 16 MB buffer) and this many paths. */
 export const CHUNK_BYTES = 8 * 1024 * 1024;
 const CHUNK_PATHS = 100;
@@ -298,12 +296,14 @@ async function commitSecretFile(
  * The first file a commit in `range` (a rev-list range) adds a possible secret to, or null. Each commit on its own: a
  * line a later commit took out still goes to the server in the earlier one. A merge adds nothing of its own here (its
  * local side was scanned in the commits it merged). Throws when a scan cannot run: the caller holds the push then.
+ * Commits in `clean` are skipped, and each commit found clean is added to it.
  */
 export async function unsentSecretFile(
   git: GitClient,
   dir: string,
   range: string,
   chunkBytes = CHUNK_BYTES,
+  clean?: Set<string>,
 ): Promise<string | null> {
   const commits = (
     await git.run(dir, ['rev-list', '--reverse', '--no-merges', range])
@@ -312,8 +312,10 @@ export async function unsentSecretFile(
     .map((c) => c.trim())
     .filter(Boolean);
   for (const c of commits) {
+    if (clean?.has(c)) continue;
     const file = await commitSecretFile(git, dir, c, chunkBytes);
     if (file) return file;
+    clean?.add(c);
   }
   return null;
 }

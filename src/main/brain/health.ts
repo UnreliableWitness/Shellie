@@ -17,7 +17,7 @@ import { listSources } from './sources';
 import { readState } from './state';
 
 /** Commits Shellie makes in a brain: 'Brain: …', and the scaffold's first one. */
-export const isBrainCommit = (subject: string) =>
+const isBrainCommit = (subject: string) =>
   subject.startsWith('Brain:') || subject === 'Brain created';
 /** A /sync run: it reconciles the human edits in wiki/ made before it. */
 export const isSyncCommit = (subject: string) =>

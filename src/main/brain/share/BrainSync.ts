@@ -5,22 +5,33 @@
  * `squashUnsent`, which folds commits that never left the machine into one after a scrub.
  */
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import type { Brain, BrainJob, BrainSharing } from '../../../shared/brain';
-import { isKeeper } from '../../../shared/brainShare';
 import type { TelemetryProps } from '../../../shared/telemetry';
+import { samePath } from '../../paths';
 import { GitAuthError, type GitClient } from '../../services/GitClient';
+import { PENDING } from '../bookPass';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import type { BrainJobRunner } from '../jobs';
 import { TICK_MS } from '../scheduler';
 import { absPath } from '../paths';
 import { READS_RECORD } from '../reads';
-import { acquireLock, readState, releaseLock } from '../state';
-import { readOrigin, readShared } from './files';
-import { factsFromShared } from './keeper';
+import { readState, withBrainLock } from '../state';
+import { readShared } from './files';
+import {
+  headOf,
+  isRecord,
+  mapReadCommits,
+  parseJsonOrNull,
+  SERVER,
+  serverBase,
+  unsentCount,
+  unsentRange,
+  withPrivateIndex,
+} from './gitUtil';
+import { factsFromShared, isAutomatic } from './keeper';
 import { mergeServer, type JobRef } from './merge';
-import { EMPTY_TREE, unsentSecretFile } from './secretScan';
+import { unsentSecretFile } from './secretScan';
 
 export const RAN_AGAIN =
   'Ran again: a colleague changed the brain at the same time';
@@ -29,17 +40,9 @@ const MAX_REPLAYS = 1;
 const PUSH_DELAY_MS = 2000;
 /** A colleague's source still uncaptured this long after it arrived is captured by the keeper. */
 const UNCAPTURED_MS = 3600_000;
-const SERVER = 'origin/main';
-/** A fetch no one watches gives up after this long (a hung network or a sign-in prompt). */
-const FETCH_TIMEOUT_MS = 120_000;
 /** The brain's history from before it was shared (`shareBrain`), dropped after the first successful pull. */
 export const PRE_SHARE_REF = 'refs/shellie/pre-share';
 export const SQUASH_MESSAGE = 'Brain: changes since the last send';
-const PENDING: ReadonlySet<BrainJob['status']> = new Set([
-  'queued',
-  'running',
-  'paused',
-]);
 
 export type SyncRunner = Pick<
   BrainJobRunner,
@@ -63,7 +66,6 @@ export type BrainSyncDeps = {
   tickMs?: number;
   /** Bytes one secrets-scan diff reads at most; a larger file is read on its own (tests make it small). */
   scanChunkBytes?: number;
-  fetchTimeoutMs?: number;
 };
 
 const sameJob = (j: BrainJob, r: JobRef) =>
@@ -112,6 +114,8 @@ export class BrainSync {
     string,
     ReturnType<typeof setTimeout>
   >();
+  /** Per brain, the unsent commits the secrets scan already found clean: a later push scans only new ones. */
+  private readonly scannedClean = new Map<string, Set<string>>();
 
   constructor(private readonly d: BrainSyncDeps) {
     this.now = d.now ?? (() => new Date());
@@ -159,8 +163,19 @@ export class BrainSync {
     this.d.event?.('brain.sync', { outcome: r.outcome, replays: r.replays });
   }
 
-  private sent(r: SyncOutcome | null) {
-    if (r) this.report(r);
+  /** Runs a pull or push after the brain's earlier ones; reports what it did, and never throws. */
+  private guarded(
+    id: string,
+    work: () => Promise<SyncOutcome | null>,
+  ): Promise<void> {
+    return this.serial(id, () =>
+      work().then(
+        (r) => {
+          if (r) this.report(r);
+        },
+        (e: unknown) => this.fail(id, e),
+      ),
+    );
   }
 
   /**
@@ -169,30 +184,19 @@ export class BrainSync {
    * (`lockHeld`). Never throws: a sync error never blocks local work.
    */
   pull(id: string, o: { lockHeld?: boolean } = {}): Promise<void> {
-    return this.serial(id, () =>
-      this.pullNow(id, o.lockHeld ?? false).then(
-        (r) => this.sent(r),
-        (e: unknown) => this.fail(id, e),
-      ),
-    );
+    return this.guarded(id, () => this.pullNow(id, o.lockHeld ?? false));
   }
 
   /** Sends the commits the server lacks, unless their added text holds a possible secret. Never throws. */
   push(id: string): Promise<void> {
-    return this.serial(id, () =>
-      this.pushNow(id).then(
-        (r) => this.sent(r),
-        (e: unknown) => this.fail(id, e),
-      ),
-    );
+    return this.guarded(id, () => this.pushNow(id));
   }
 
   /** After git writes to a brain folder: a shared brain pushes once the writes have been quiet for the debounce. */
   afterGit(dir: string): void {
-    const key = path.resolve(dir);
     const b = this.d.brains
       .list()
-      .find((x) => x.sharing && !x.archived && path.resolve(x.path) === key);
+      .find((x) => samePath(x.path, dir) && this.shared(x.id));
     if (!b) return;
     const id = b.id;
     clearTimeout(this.pushTimers.get(id));
@@ -205,16 +209,16 @@ export class BrainSync {
     );
   }
 
-  /** Pulls every shared brain now, then every tick while its jobs are idle. Returns the stop. */
+  /** Pulls every shared brain now, one after another, then every tick while its jobs are idle. Returns the stop. */
   start(): () => void {
-    const all = (skipBusy: boolean) => {
-      for (const b of this.d.brains.list())
-        if (b.sharing && !b.archived) {
-          if (skipBusy && this.d.runner().running(b.id)) continue;
-          void this.pull(b.id);
-        }
+    const all = async (skipBusy: boolean) => {
+      for (const b of this.d.brains.list()) {
+        if (!this.shared(b.id)) continue;
+        if (skipBusy && this.d.runner().running(b.id)) continue;
+        await this.pull(b.id);
+      }
     };
-    all(false);
+    void all(false);
     const timer = setInterval(() => all(true), this.d.tickMs ?? TICK_MS);
     return () => {
       clearInterval(timer);
@@ -231,49 +235,49 @@ export class BrainSync {
     const b = this.shared(id);
     if (!b) return null;
     const dir = b.path;
-    if (!lockHeld) {
-      // A job of this runner holds the brain (even past the lock's stale hour): it pulls itself before it starts.
-      if (this.d.runner().running(id)) return null;
-      const took = await acquireLock(dir, process.pid, this.now).catch(
-        () => false,
-      );
-      // A job of another process holds the brain.
-      if (!took) return null;
-    }
-    try {
-      // The job's own pull comes after beforeJob committed them; any other pull commits them here.
-      if (!lockHeld) await this.d.commitOutsideEdits(id);
-      await server(
-        this.d.git.fetch(dir, SERVER, {
-          timeoutMs: this.d.fetchTimeoutMs ?? FETCH_TIMEOUT_MS,
-        }),
-      );
-      const r = await withBrainGit(dir, async () => {
-        const merged = await mergeServer(this.d.git, dir, SERVER, this.now());
-        // The history from before the share is no longer needed once a pull went through.
-        await this.d.git
+    if (lockHeld) return this.merge(id, dir);
+    // A job of this runner holds the brain (even past the lock's stale hour): it pulls itself before it starts.
+    if (this.d.runner().running(id)) return null;
+    // A job of another process holds the brain.
+    return withBrainLock(
+      dir,
+      async () => {
+        // A job's own pull comes after beforeJob committed them; any other pull commits them here.
+        await this.d.commitOutsideEdits(id);
+        return this.merge(id, dir);
+      },
+      { now: this.now, busy: () => null },
+    );
+  }
+
+  /** The pull itself: fetch, merge, and what follows from the merge. */
+  private async merge(id: string, dir: string): Promise<SyncOutcome | null> {
+    const git = this.d.git;
+    await server(git.fetch(dir, SERVER, { unattended: true }));
+    const r = await withBrainGit(dir, async () => {
+      const merged = await mergeServer(git, dir, SERVER, this.now());
+      // The history from before the share is no longer needed once a pull went through.
+      if (await git.commitExists(dir, PRE_SHARE_REF))
+        await git
           .run(dir, ['update-ref', '-d', PRE_SHARE_REF])
           .catch(() => undefined);
-        return merged;
-      });
-      await this.copySharedFacts(id, dir);
-      const replays = this.runAgain(id, r.rerun);
-      this.captureNotes(id, r.notes);
-      await this.pickUpUncaptured(id, dir);
-      const status = this.d.brains.get(id)?.sharing?.status;
-      await this.patch(id, {
-        lastPullAt: this.now().toISOString(),
-        status:
-          status === 'held'
-            ? 'held'
-            : (await this.ahead(dir, await this.base(dir), 'HEAD'))
-              ? 'pending'
-              : 'ok',
-      });
-      return r.merged ? { outcome: 'merged', replays } : null;
-    } finally {
-      if (!lockHeld) await releaseLock(dir).catch(() => undefined);
-    }
+      return merged;
+    });
+    await this.copySharedFacts(id, dir);
+    const replays = this.runAgain(id, r.rerun);
+    this.captureNotes(id, r.notes);
+    await this.pickUpUncaptured(id, dir);
+    const status = this.d.brains.get(id)?.sharing?.status;
+    await this.patch(id, {
+      lastPullAt: this.now().toISOString(),
+      status:
+        status === 'held'
+          ? 'held'
+          : (await unsentCount(git, dir)) > 0
+            ? 'pending'
+            : 'ok',
+    });
+    return r.merged ? { outcome: 'merged', replays } : null;
   }
 
   /**
@@ -348,43 +352,57 @@ export class BrainSync {
    * background.
    */
   private async pickUpUncaptured(id: string, dir: string) {
+    const b = this.d.brains.get(id);
     const installId = this.d.installId;
-    if (!installId) return;
-    const origin = await readOrigin(dir).catch(() => null);
-    if (!origin || !isKeeper(origin, installId)) return;
+    if (!b || !installId || !isAutomatic(b, installId)) return;
     const { state } = await readState(dir);
     if (!state) return;
+    const raw = ['-c', 'core.quotepath=off'];
     const files = (
-      await this.d.git.run(dir, [
-        '-c',
-        'core.quotepath=off',
-        'ls-files',
-        '-z',
-        '--',
-        'sources',
-      ])
+      await this.d.git.run(dir, [...raw, 'ls-files', '-z', '--', 'sources'])
     )
       .split('\0')
       .filter((p) => p.endsWith('.md') && !p.startsWith('sources/wiki/'));
     const runner = this.d.runner();
     const jobs = runner.jobs(id);
-    for (const p of files) {
-      if (state.captured[p]) continue;
-      if (
-        jobs.some(
+    const waiting = files.filter(
+      (p) =>
+        !state.captured[p] &&
+        !jobs.some(
           (j) =>
             j.source === p && (PENDING.has(j.status) || j.status === 'failed'),
-        )
-      )
-        continue;
-      const at = Number(
-        (
-          await this.d.git.run(dir, ['log', '-1', '--format=%ct', '--', p])
-        ).trim(),
-      );
+        ),
+    );
+    if (!waiting.length) return;
+    const last = await this.lastCommitTimes(dir);
+    for (const p of waiting) {
+      const at = last.get(p) ?? 0;
       if (!at || this.now().getTime() - at * 1000 <= UNCAPTURED_MS) continue;
       runner.enqueue(id, 'capture', p, { background: true });
     }
+  }
+
+  /** The time (seconds) of the newest commit that touched each path under sources/, from one `git log`. */
+  private async lastCommitTimes(dir: string): Promise<Map<string, number>> {
+    const log = await this.d.git.run(dir, [
+      '-c',
+      'core.quotepath=off',
+      'log',
+      '--format=%x01%ct',
+      // A merge names the paths it made itself (a clash's `-local` source), as `git log -- <path>` shows it.
+      '--cc',
+      '--name-only',
+      '--',
+      'sources',
+    ]);
+    const out = new Map<string, number>();
+    // Newest first: a path's first commit is its newest.
+    for (const block of log.split('\x01').slice(1)) {
+      const [time, ...paths] = block.split('\n');
+      for (const p of paths)
+        if (p && !out.has(p)) out.set(p, Number(time.trim()));
+    }
+    return out;
   }
 
   /** Null when nothing waited to be sent. */
@@ -392,9 +410,11 @@ export class BrainSync {
     const b = this.shared(id);
     if (!b) return null;
     const dir = b.path;
+    const git = this.d.git;
     // One commit id for the check, the scan and the push: a commit made meanwhile waits for the next push.
-    let sha = await this.head(dir);
-    if (!(await this.ahead(dir, await this.base(dir), sha))) {
+    let sha = await headOf(git, dir);
+    let base = await serverBase(git, dir);
+    if (!(await unsentCount(git, dir, sha, base))) {
       // Nothing waits: no push to hold or to send.
       const status = this.d.brains.get(id)?.sharing?.status;
       if (status === 'held' || status === 'pending')
@@ -406,20 +426,24 @@ export class BrainSync {
       return null;
     }
     const held: SyncOutcome = { outcome: 'held', replays: 0 };
-    if (await this.hold(id, dir, sha)) return held;
+    if (await this.hold(id, dir, unsentRange(base, sha))) return held;
     let replays = 0;
     const send = (c: string) =>
-      server(this.d.git.push(dir, 'origin', `${c}:refs/heads/main`));
+      server(git.push(dir, 'origin', `${c}:refs/heads/main`));
     try {
       await send(sha);
     } catch (e) {
       if (!(e instanceof ServerError) || !rejected(e)) throw e;
       // Someone pushed first: merge their changes, then send ours on top, once.
       replays = (await this.pullNow(id, false))?.replays ?? 0;
-      sha = await this.head(dir);
-      if (await this.hold(id, dir, sha)) return { ...held, replays };
+      sha = await headOf(git, dir);
+      base = await serverBase(git, dir);
+      if (await this.hold(id, dir, unsentRange(base, sha)))
+        return { ...held, replays };
       await send(sha);
     }
+    // What was scanned has been sent: it is never unsent again.
+    this.scannedClean.delete(id);
     await this.patch(id, {
       status: 'ok',
       heldFile: null,
@@ -440,26 +464,18 @@ export class BrainSync {
     const b = this.shared(id);
     if (!b || this.d.runner().running(id)) return false;
     const dir = b.path;
-    const took = await acquireLock(dir, process.pid, this.now).catch(
-      () => false,
-    );
-    if (!took) return false;
-    try {
-      return await withBrainGit(dir, () => this.fold(dir));
-    } finally {
-      await releaseLock(dir).catch(() => undefined);
-    }
+    return withBrainLock(dir, () => withBrainGit(dir, () => this.fold(dir)), {
+      now: this.now,
+      busy: () => false,
+    });
   }
 
   private async fold(dir: string): Promise<boolean> {
     const git = this.d.git;
-    const head = await this.head(dir);
+    const head = await headOf(git, dir);
     const parent =
-      (await this.base(dir)) === SERVER
-        ? await git
-            .run(dir, ['merge-base', head, SERVER])
-            .then((o) => o.trim() || null)
-            .catch(() => null)
+      (await serverBase(git, dir)) === SERVER
+        ? await git.mergeBase(dir, head, SERVER)
         : null;
     const folded = (
       await git.run(dir, ['rev-list', parent ? `${parent}..${head}` : head])
@@ -468,35 +484,32 @@ export class BrainSync {
       .filter(Boolean);
     if (!folded.length) return false;
     const records = await movedRecords(git, dir, head, folded, parent);
-    let tree = (await git.run(dir, ['rev-parse', `${head}^{tree}`])).trim();
-    if (records.length) {
-      // HEAD's tree with the records replaced, built in an index of its own: the person's staged work stays out.
-      const index = path.resolve(
-        dir,
-        (
-          await git.run(dir, ['rev-parse', '--git-path', 'shellie-fold-index'])
-        ).trim(),
-      );
-      const env = { GIT_INDEX_FILE: index };
-      try {
-        await git.run(dir, ['read-tree', head], { env });
-        for (const r of records) {
-          await fs.writeFile(`${index}.blob`, r.text, 'utf8');
-          const blob = (
-            await git.run(dir, ['hash-object', '-w', `${index}.blob`])
-          ).trim();
-          await git.run(
-            dir,
-            ['update-index', '--cacheinfo', `100644,${blob},${r.path}`],
-            { env },
-          );
-        }
-        tree = (await git.run(dir, ['write-tree'], { env })).trim();
-      } finally {
-        await fs.rm(index, { force: true });
-        await fs.rm(`${index}.blob`, { force: true });
-      }
-    }
+    // HEAD's tree with the records replaced, built in an index of its own: the person's staged work stays out.
+    const tree = records.length
+      ? await withPrivateIndex(
+          git,
+          dir,
+          'shellie-fold-index',
+          head,
+          async (env, index) => {
+            try {
+              for (const r of records) {
+                await fs.writeFile(`${index}.blob`, r.text, 'utf8');
+                const blob = (
+                  await git.run(dir, ['hash-object', '-w', `${index}.blob`])
+                ).trim();
+                await git.run(
+                  dir,
+                  ['update-index', '--cacheinfo', `100644,${blob},${r.path}`],
+                  { env },
+                );
+              }
+            } finally {
+              await fs.rm(`${index}.blob`, { force: true });
+            }
+          },
+        )
+      : (await git.run(dir, ['rev-parse', `${head}^{tree}`])).trim();
     const squash = (
       await git.run(dir, [
         'commit-tree',
@@ -519,54 +532,21 @@ export class BrainSync {
     return true;
   }
 
-  private async head(dir: string): Promise<string> {
-    return (await this.d.git.run(dir, ['rev-parse', 'HEAD'])).trim();
-  }
-
-  /** What the brain is compared with: the server's main, or the empty tree before it has one. */
-  private async base(dir: string): Promise<string> {
-    return this.d.git
-      .run(dir, ['rev-parse', '--verify', '-q', `${SERVER}^{commit}`])
-      .then(
-        () => SERVER,
-        () => EMPTY_TREE,
-      );
-  }
-
-  /** The commits from `base` to `tip` the server lacks: a range for rev-list and log. */
-  private range(base: string, tip: string): string {
-    return base === EMPTY_TREE ? tip : `${base}..${tip}`;
-  }
-
-  private async ahead(
-    dir: string,
-    base: string,
-    tip: string,
-  ): Promise<boolean> {
-    const n = Number(
-      (
-        await this.d.git.run(dir, [
-          'rev-list',
-          '--count',
-          this.range(base, tip),
-        ])
-      ).trim(),
-    );
-    return n > 0;
-  }
-
   /**
-   * Holds the push when a commit the server lacks adds a possible secret, or when the scan could not run (the commits
-   * are never sent unscanned); true when held.
+   * Holds the push when a commit in `range` (the commits the server lacks) adds a possible secret, or when the scan
+   * could not run (the commits are never sent unscanned); true when held. Commits found clean are not scanned again.
    */
-  private async hold(id: string, dir: string, tip: string): Promise<boolean> {
+  private async hold(id: string, dir: string, range: string): Promise<boolean> {
+    const clean = this.scannedClean.get(id) ?? new Set<string>();
+    this.scannedClean.set(id, clean);
     let file: string | null;
     try {
       file = await unsentSecretFile(
         this.d.git,
         dir,
-        this.range(await this.base(dir), tip),
+        range,
         this.d.scanChunkBytes,
+        clean,
       );
     } catch (e) {
       console.error('[brain] secrets scan failed', (e as Error).message);
@@ -608,12 +588,7 @@ async function movedRecords(
       .run(dir, ['show', `${head}:${rel}`])
       .catch(() => null);
     if (before === null) return;
-    let value: unknown;
-    try {
-      value = JSON.parse(before);
-    } catch {
-      return;
-    }
+    const value = parseJsonOrNull(before);
     if (change(value))
       out.push({
         path: rel,
@@ -621,25 +596,14 @@ async function movedRecords(
         text: `${JSON.stringify(value, null, 2)}\n`,
       });
   };
-  const record = (v: unknown) =>
-    v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
   await edit('brain/state.json', (v) => {
-    const st = record(v);
-    if (!st || !isFolded(st.lastSyncCommit)) return false;
-    st.lastSyncCommit = to;
+    if (!isRecord(v) || !isFolded(v.lastSyncCommit)) return false;
+    v.lastSyncCommit = to;
     return true;
   });
-  await edit(READS_RECORD, (v) => {
-    const reads = record(record(v)?.reads);
-    let changed = false;
-    for (const r of Object.values(reads ?? {})) {
-      const rec = record(r);
-      if (rec && isFolded(rec.commit)) {
-        rec.commit = to;
-        changed = true;
-      }
-    }
-    return changed;
-  });
+  await edit(
+    READS_RECORD,
+    (v) => mapReadCommits(v, (c) => (isFolded(c) ? to : c)) === true,
+  );
   return out;
 }

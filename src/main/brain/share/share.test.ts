@@ -5,17 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrainSchema, type BrainJob } from '../../../shared/brain';
 import { GitClient } from '../../services/GitClient';
 import { connectionIdForBrain } from '../../services/gitAuth';
-import { BRAIN_HOME_CONNECTION_ID } from './BrainHomeStore';
+import { BRAIN_HOME_CONNECTION_ID } from '../../../shared/brainShare';
 import { BrainStore } from '../BrainStore';
 import { commitJobOutput, OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { scaffoldBrain } from '../scaffold';
 import { readState, writeState } from '../state';
-import { BrainSync, type SyncRunner } from './BrainSync';
+import { BrainSync, PRE_SHARE_REF, type SyncRunner } from './BrainSync';
 import { readMembers, readOrigin, readShared, upsertMember } from './files';
 import {
   LEAVE_MESSAGE,
   leaveBrain,
-  PRE_SHARE_REF,
   shareBrain,
   stopSharing,
   type ShareDeps,

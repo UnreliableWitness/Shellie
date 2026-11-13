@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { Brain } from '../../../shared/brain';
 import {
   isKeeper,
-  OriginSchema,
+  SHARED_FIELDS,
   type BrainKeeper,
   type SharedFacts,
 } from '../../../shared/brainShare';
@@ -16,15 +16,19 @@ import { GitAuthError, type GitClient } from '../../services/GitClient';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { TEMPLATES_VERSION } from '../templates';
-import { readMembers, readOrigin, writeOrigin, writeShared } from './files';
+import {
+  parseOrigin,
+  readMembers,
+  readOrigin,
+  writeOrigin,
+  writeShared,
+} from './files';
+import { isAncestor, SERVER, succeeds } from './gitUtil';
 
 export const SHARED_FACTS_MESSAGE = 'Brain: shared facts';
 export const KEEPER_MESSAGE = 'Brain: keeper';
-export const NEWER_SHELLIE = "A colleague's Shellie is newer: update Shellie.";
 /** A member may take over once the keeper's machine has sent nothing for this long. */
 const TAKE_OVER_MS = 14 * 24 * 3600 * 1000;
-const SERVER = 'origin/main';
-const FETCH_TIMEOUT_MS = 120_000;
 export const UNREACHABLE = "Can't reach the brain's server; try again.";
 const NOT_UP_TO_DATE =
   "This brain doesn't have the server's latest changes yet; try again.";
@@ -35,6 +39,17 @@ export type FactsPatch = Partial<Omit<SharedFacts, 'format' | 'updatedAt'>>;
 export const installEmail = (installId: string) =>
   `${installId}@install.shellie`;
 
+/** Sets the clone's commit identity: the install's email (which machine made a commit) and the person's name. */
+export async function setCommitIdentity(
+  git: GitClient,
+  dir: string,
+  installId: string,
+  person: string,
+): Promise<void> {
+  await git.run(dir, ['config', 'user.email', installEmail(installId)]);
+  await git.run(dir, ['config', 'user.name', person]);
+}
+
 /**
  * Whether this machine runs the brain's automatic work: always for a local brain, for a shared one only on the
  * keeper's. Read from `brain/origin.json` each time (a small file), so a hand-over pulled in counts at once; a shared
@@ -43,12 +58,10 @@ export const installEmail = (installId: string) =>
 export function isAutomatic(b: Brain, installId: string): boolean {
   if (!b.sharing) return true;
   try {
-    const text = readFileSync(
-      path.join(b.path, 'brain', 'origin.json'),
-      'utf8',
+    const origin = parseOrigin(
+      readFileSync(path.join(b.path, 'brain', 'origin.json'), 'utf8'),
     );
-    const origin = OriginSchema.safeParse(JSON.parse(text));
-    return origin.success && isKeeper(origin.data, installId);
+    return !!origin && isKeeper(origin, installId);
   } catch {
     return false;
   }
@@ -71,13 +84,14 @@ export async function saveSharedFacts(
   await withBrainGit(dir, async () => {
     await writeShared(dir, patch, now);
     await git.run(dir, ['add', '--', 'brain/shared.json']);
-    const staged = await git
-      .run(dir, ['diff', '--cached', '--quiet', '--', 'brain/shared.json'])
-      .then(
-        () => false,
-        () => true,
-      );
-    if (!staged) return;
+    const unchanged = await succeeds(git, dir, [
+      'diff',
+      '--cached',
+      '--quiet',
+      '--',
+      'brain/shared.json',
+    ]);
+    if (unchanged) return;
     // Only shared.json: nothing else staged in the brain lands in this commit.
     await git.run(dir, [
       'commit',
@@ -114,14 +128,9 @@ export function factsFromShared(
   shared: SharedFacts,
 ): FactsPatch | null {
   const out: FactsPatch = {};
-  if (JSON.stringify(b.wiki) !== JSON.stringify(shared.wiki))
-    out.wiki = shared.wiki;
-  if (b.lastRefreshAt !== shared.lastRefreshAt)
-    out.lastRefreshAt = shared.lastRefreshAt;
-  if (b.lastDigestAt !== shared.lastDigestAt)
-    out.lastDigestAt = shared.lastDigestAt;
-  if (b.templatesVersion !== shared.templatesVersion)
-    out.templatesVersion = shared.templatesVersion;
+  for (const key of SHARED_FIELDS)
+    if (JSON.stringify(b[key]) !== JSON.stringify(shared[key]))
+      Object.assign(out, { [key]: shared[key] });
   return Object.keys(out).length ? out : null;
 }
 
@@ -133,9 +142,12 @@ export async function keeperOf(
   dir: string,
   installId: string,
 ): Promise<BrainKeeper | null> {
-  const origin = await readOrigin(dir).catch(() => null);
+  const [origin, read] = await Promise.all([
+    readOrigin(dir).catch(() => null),
+    readMembers(dir).catch(() => null),
+  ]);
   if (!origin) return null;
-  const members = (await readMembers(dir).catch(() => null))?.members ?? [];
+  const members = read?.members ?? [];
   return {
     ...origin.keeper,
     me: isKeeper(origin, installId),
@@ -197,13 +209,7 @@ async function keeperLastSent(
   dir: string,
   keeperId: string,
 ): Promise<number | null> {
-  const has = await git
-    .run(dir, ['rev-parse', '--verify', '-q', `${SERVER}^{commit}`])
-    .then(
-      () => true,
-      () => false,
-    );
-  if (!has) return null;
+  if (!(await git.commitExists(dir, SERVER))) return null;
   const own = (
     await git.run(dir, [
       'log',
@@ -233,7 +239,7 @@ export async function takeOver(
 ): Promise<void> {
   // The server as it is now, never a stale copy: offline, a keeper who still pushes would look gone.
   const fetched = await git
-    .fetch(dir, SERVER, { timeoutMs: FETCH_TIMEOUT_MS })
+    .fetch(dir, SERVER, { unattended: true })
     .catch((e: unknown) => {
       // A refused sign-in says so; anything else is a server out of reach.
       if (e instanceof GitAuthError) throw e;
@@ -242,13 +248,8 @@ export async function takeOver(
   if (!fetched) throw new Error(UNREACHABLE);
   await withBrainGit(dir, async () => {
     // The brain holds everything the server has (a pull merged it), so origin.json is the current one.
-    const merged = await git
-      .run(dir, ['merge-base', '--is-ancestor', SERVER, 'HEAD'])
-      .then(
-        () => true,
-        () => false,
-      );
-    if (!merged) throw new Error(NOT_UP_TO_DATE);
+    if (!(await isAncestor(git, dir, SERVER, 'HEAD')))
+      throw new Error(NOT_UP_TO_DATE);
     const origin = await readOrigin(dir);
     if (!origin) throw new Error('This brain is not shared');
     if (isKeeper(origin, installId)) return;

@@ -1,15 +1,17 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
 import {
   MembersSchema,
   OriginSchema,
+  SHARED_FIELDS,
   SharedFactsSchema,
   type Members,
   type Origin,
   type SharedFacts,
 } from '../../../shared/brainShare';
-import { writeAtomic } from '../../fsRetry';
+import { readTextIfExists, writeAtomic } from '../../fsRetry';
+import { parseJsonOrNull } from './gitUtil';
 
 const fileOf = (dir: string, name: string) => path.join(dir, 'brain', name);
 
@@ -18,15 +20,9 @@ async function read<T>(
   name: string,
   schema: z.ZodType<T>,
 ): Promise<T | null> {
-  let text: string;
-  try {
-    text = await readFile(fileOf(dir, name), 'utf8');
-  } catch (e) {
-    // Only a missing file reads as null; a corrupt one must throw, not be overwritten.
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw e;
-  }
-  return schema.parse(JSON.parse(text));
+  // Only a missing file reads as null; a corrupt one must throw, not be overwritten.
+  const text = await readTextIfExists(fileOf(dir, name));
+  return text === null ? null : schema.parse(JSON.parse(text));
 }
 
 async function write(dir: string, name: string, value: unknown): Promise<void> {
@@ -40,6 +36,12 @@ async function write(dir: string, name: string, value: unknown): Promise<void> {
 
 export const readOrigin = (dir: string): Promise<Origin | null> =>
   read(dir, 'origin.json', OriginSchema);
+
+/** An origin.json text as an Origin; null when it is not JSON or not an origin. */
+export function parseOrigin(text: string): Origin | null {
+  const r = OriginSchema.safeParse(parseJsonOrNull(text));
+  return r.success ? r.data : null;
+}
 
 export const writeOrigin = (dir: string, o: Origin): Promise<void> =>
   write(dir, 'origin.json', OriginSchema.parse(o));
@@ -87,12 +89,9 @@ export async function writeShared(
     lastRefreshAt: null,
     lastDigestAt: null,
     templatesVersion: 0,
-    updatedAt: {
-      wiki: epoch,
-      lastRefreshAt: epoch,
-      lastDigestAt: epoch,
-      templatesVersion: epoch,
-    },
+    updatedAt: Object.fromEntries(
+      SHARED_FIELDS.map((k) => [k, epoch]),
+    ) as SharedFacts['updatedAt'],
   };
   const stamp = now.toISOString();
   const next: SharedFacts = { ...cur, updatedAt: { ...cur.updatedAt } };

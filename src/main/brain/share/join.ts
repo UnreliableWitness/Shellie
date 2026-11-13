@@ -12,7 +12,6 @@ import {
 } from '../../../shared/brain';
 import {
   joinLink,
-  OriginSchema,
   parseJoinLink,
   type DiscoveredBrain,
   type JoinPreview,
@@ -28,8 +27,8 @@ import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { isBrainFolder } from '../scaffold';
 import type { BrainHomeStore } from './BrainHomeStore';
-import { readShared, upsertMember } from './files';
-import { installEmail } from './keeper';
+import { parseOrigin, readShared, upsertMember } from './files';
+import { setCommitIdentity } from './keeper';
 
 export const JOIN_MESSAGE = 'Brain: joined';
 const ORIGIN_PATH = '/brain/origin.json';
@@ -163,12 +162,8 @@ async function inspect(
   // A 401/403 here is Azure DevOps's own words: the keeper is not known yet.
   const text = await ado.itemText(link.project, link.repositoryId, ORIGIN_PATH);
   if (text === null) throw new Error('This repo holds no shared brain');
-  let origin: Origin;
-  try {
-    origin = OriginSchema.parse(JSON.parse(text));
-  } catch {
-    throw new Error("This brain's origin.json could not be read");
-  }
+  const origin = parseOrigin(text);
+  if (!origin) throw new Error("This brain's origin.json could not be read");
   let repo: Awaited<ReturnType<JoinAdo['repositoryById']>>;
   try {
     repo = await ado.repositoryById(link.repositoryId);
@@ -290,9 +285,7 @@ export async function joinBrain(
       },
     });
     await withBrainGit(dir, async () => {
-      // Which machine made a commit is told by its author email.
-      await d.git.run(dir, ['config', 'user.email', installEmail(installId)]);
-      await d.git.run(dir, ['config', 'user.name', person]);
+      await setCommitIdentity(d.git, dir, installId, person);
       await upsertMember(dir, {
         installId,
         name: person,
@@ -389,14 +382,9 @@ async function discover(
       const text = await ado
         .itemText(c.project, r.id, ORIGIN_PATH)
         .catch(() => null);
-      if (text === null) return null;
-      let origin: Origin;
-      try {
-        origin = OriginSchema.parse(JSON.parse(text));
-      } catch {
-        return null;
-      }
+      const origin = text === null ? null : parseOrigin(text);
       if (
+        !origin ||
         !sameOrg(origin.organizationUrl, c.organizationUrl) ||
         !sameName(origin.project, c.project)
       )

@@ -8,9 +8,6 @@ import {
 } from '../../services/ConnectionStore';
 import { JsonFileStore } from '../../usage/JsonFileStore';
 
-/** The id git sign-in uses for the brain home's token (see createGitAuth). Never a real connection's id. */
-export const BRAIN_HOME_CONNECTION_ID = 'brain-home';
-
 const FileSchema = z.object({
   version: z.literal(1),
   home: z

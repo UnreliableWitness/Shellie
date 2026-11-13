@@ -5,8 +5,8 @@
  */
 
 import type { Brain } from '../../shared/brain';
+import { BRAIN_HOME_CONNECTION_ID } from '../../shared/brainShare';
 import type { Connection, Repo, Task } from '../../shared/types';
-import { BRAIN_HOME_CONNECTION_ID } from '../brain/share/BrainHomeStore';
 import { taskWorkspaces } from '../../shared/workspaces';
 import { samePath } from '../paths';
 import {

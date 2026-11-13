@@ -36,7 +36,8 @@ import {
   upsertMember,
   writeOrigin,
 } from './share/files';
-import { NEWER_SHELLIE, SHARED_FACTS_MESSAGE } from './share/keeper';
+import { NEWER_SHELLIE } from '../../shared/brainShare';
+import { SHARED_FACTS_MESSAGE } from './share/keeper';
 
 const NEW = {
   name: 'Acme',

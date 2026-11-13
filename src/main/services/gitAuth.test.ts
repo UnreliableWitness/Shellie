@@ -8,7 +8,7 @@ import {
   extraHeaderEnv,
 } from './gitAuth';
 import { TokenUnavailableError } from './ConnectionStore';
-import { BRAIN_HOME_CONNECTION_ID } from '../brain/share/BrainHomeStore';
+import { BRAIN_HOME_CONNECTION_ID } from '../../shared/brainShare';
 
 const PAT = 'pat-secret-123';
 const B64 = Buffer.from(`:${PAT}`).toString('base64');

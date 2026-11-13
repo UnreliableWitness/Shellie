@@ -53,13 +53,12 @@ import {
   handOver,
   isAutomatic,
   keeperOf,
-  NEWER_SHELLIE,
   patchFacts,
-  saveSharedFacts,
   shellieOutdated,
   takeOver,
 } from './share/keeper';
-import { joinLink } from '../../shared/brainShare';
+import { unsentCount } from './share/gitUtil';
+import { joinLink, NEWER_SHELLIE } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
@@ -255,20 +254,6 @@ const JOB_OUTPUT = [
 
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
 export const OUTSIDE_EDIT_MESSAGE = 'Edited outside a capture';
-
-/** Commits the server does not have yet: `origin/main..HEAD`, or every commit before the first push. */
-async function commitsAhead(git: GitClient, brainDir: string): Promise<number> {
-  const count = async (range: string) =>
-    Number.parseInt(
-      (await git.run(brainDir, ['rev-list', '--count', range])).trim(),
-      10,
-    );
-  try {
-    return await count('origin/main..HEAD');
-  } catch {
-    return await count('HEAD').catch(() => 0);
-  }
-}
 
 /** The job output paths git can stage: on disk, or tracked (deleted since). An adopted brain may lack some. */
 async function stageable(git: GitClient, brainDir: string): Promise<string[]> {
@@ -520,6 +505,16 @@ export function createBrainHandlers(
     ado: d.ado,
     now: d.now,
   };
+  const shareDeps: ShareDeps = {
+    brains: d.brains,
+    git: d.git,
+    home: d.home,
+    connections: d.connections,
+    runner: d.runner,
+    installId: myInstall,
+    ado: d.ado,
+    now: d.now,
+  };
   /** The shared brains found per connection this app session (the Join card). */
   const discovered: DiscoverCache = new Map();
   const brainOf = (id: string): Brain => {
@@ -532,6 +527,13 @@ export function createBrainHandlers(
     const b = brainOf(id);
     if (b.archived) throw new Error(ARCHIVED);
     return b;
+  };
+  /** A live shared brain, for the actions only a shared one has. */
+  const sharedBrain = (id: string, o: { live?: boolean } = {}) => {
+    const b = o.live ? live(id) : brainOf(id);
+    const sharing = b.sharing;
+    if (!sharing) throw new Error('This brain is not shared');
+    return { ...b, sharing };
   };
   /** A connection that was removed has no project. */
   const connectionProject = (id: string): string | null => {
@@ -573,14 +575,19 @@ export function createBrainHandlers(
     // Held for a newer Shellie, not for the skills: updating the skills here would not help.
     if (health && newerShellie && health.queueHeld)
       health.queueHeld = NEWER_SHELLIE;
+    // Commits the server does not have yet (every commit before the first push), and who keeps the brain.
+    const [ahead, keeper] = b.sharing
+      ? await Promise.all([
+          unsentCount(d.git, b.path).catch(() => 0),
+          myInstall().then((me) => keeperOf(b.path, me)),
+        ])
+      : [0, null];
     return {
       ...b,
-      sharing: b.sharing
-        ? { ...b.sharing, ahead: await commitsAhead(d.git, b.path) }
-        : null,
+      sharing: b.sharing ? { ...b.sharing, ahead } : null,
       health,
       jobs,
-      keeper: b.sharing ? await keeperOf(b.path, await myInstall()) : null,
+      keeper,
       newerShellie,
     };
   };
@@ -621,6 +628,16 @@ export function createBrainHandlers(
     } catch (e) {
       return { ok: false, message: (e as Error).message };
     }
+  };
+  /** Hands over or takes over the keeper role of a live shared brain, after a pull. */
+  const keeperChange = async (
+    id: string,
+    fn: (dir: string, installId: string) => Promise<void>,
+  ) => {
+    const b = sharedBrain(id, { live: true });
+    await d.sync?.pull(id);
+    await fn(b.path, await myInstall());
+    changed(id);
   };
   // One refresh per brain at a time (the button and the scheduler share it).
   const refreshing = new Map<string, Promise<RefreshResult>>();
@@ -729,13 +746,9 @@ export function createBrainHandlers(
             }
           : null;
       // A shared brain's colleagues get the new wiki link too.
-      if (wiki)
-        await saveSharedFacts(d.git, b, wiki, now()).catch((e: unknown) =>
-          console.error('[brain] shared facts', (e as Error).message),
-        );
+      if (wiki) await patchFacts(d, id, wiki, now());
       const updated = await d.brains.patch(id, {
         ...(name ? { name } : {}),
-        ...wiki,
         ...(patch.options
           ? {
               options: BrainOptionsSchema.parse({
@@ -977,19 +990,7 @@ export function createBrainHandlers(
       let outcome: ShareResult['status'] | 'failed' = 'failed';
       try {
         live(input.brainId);
-        const r = await shareBrain(
-          {
-            brains: d.brains,
-            git: d.git,
-            home: d.home,
-            connections: d.connections,
-            runner: d.runner,
-            installId: myInstall,
-            ado: d.ado,
-            now: d.now,
-          },
-          input,
-        );
+        const r = await shareBrain(shareDeps, input);
         outcome = r.status;
         changed(input.brainId);
         return r;
@@ -998,8 +999,7 @@ export function createBrainHandlers(
       }
     },
     'brain:joinLink': async (id) => {
-      const sharing = brainOf(id).sharing;
-      if (!sharing) throw new Error('This brain is not shared');
+      const { sharing } = sharedBrain(id);
       return joinLink({
         organizationUrl: sharing.homeOrganizationUrl,
         project: sharing.homeProject,
@@ -1013,7 +1013,7 @@ export function createBrainHandlers(
     },
     'brain:leave': async (id, then, deleteFolder) => {
       if (d.runner.running(id)) throw new Error(BUSY);
-      await leaveBrain({ ...d, installId: myInstall }, id);
+      await leaveBrain({ ...shareDeps, sync: d.sync }, id);
       changed(id);
       if (then === 'delete') await deleteBrain(id, deleteFolder === true);
       else {
@@ -1021,22 +1021,12 @@ export function createBrainHandlers(
         changed(id);
       }
     },
-    'brain:handOver': async (id, target) => {
-      const b = live(id);
-      if (!b.sharing) throw new Error('This brain is not shared');
-      // The latest members list: a colleague who just joined can be picked.
-      await d.sync?.pull(id);
-      await handOver(d.git, b.path, await myInstall(), target);
-      changed(id);
-    },
-    'brain:takeOver': async (id) => {
-      const b = live(id);
-      if (!b.sharing) throw new Error('This brain is not shared');
-      // The server's latest: the keeper's newest commit and the current origin.json.
-      await d.sync?.pull(id);
-      await takeOver(d.git, b.path, await myInstall(), now());
-      changed(id);
-    },
+    // Both pull first: the latest members list (a colleague who just joined can be picked), and the server's latest
+    // for a take-over (the keeper's newest commit and the current origin.json).
+    'brain:handOver': (id, target) =>
+      keeperChange(id, (dir, me) => handOver(d.git, dir, me, target)),
+    'brain:takeOver': (id) =>
+      keeperChange(id, (dir, me) => takeOver(d.git, dir, me, now())),
     'brain:previewJoin': (link, pat) => previewJoin(joinDeps, link, { pat }),
     'brain:join': async (link, pat, via) => {
       const from = via === 'card' ? 'card' : 'link';

@@ -627,7 +627,11 @@ describe('GitClient push from the GUI', () => {
       isolate();
       const { repo, out } = repoWithFakeSsh('echo "$@" > "OUT"; exit 1');
       await expect(
-        client.fetch(repo, 'origin/main', { timeoutMs: 5000 }),
+        new GitClient(undefined, { fetchTimeoutMs: 5000 }).fetch(
+          repo,
+          'origin/main',
+          { unattended: true },
+        ),
       ).rejects.toThrow();
       expect(readFileSync(out, 'utf8')).toContain('-o BatchMode=yes');
     },
@@ -639,8 +643,8 @@ describe('GitClient push from the GUI', () => {
       isolate();
       const { repo } = repoWithFakeSsh('exec sleep 10');
       const started = Date.now();
-      const err = await client
-        .fetch(repo, 'origin/main', { timeoutMs: 300 })
+      const err = await new GitClient(undefined, { fetchTimeoutMs: 300 })
+        .fetch(repo, 'origin/main', { unattended: true })
         .catch((e: unknown) => e);
       expect(Date.now() - started).toBeLessThan(5000);
       expect((err as Error).message).toBe(

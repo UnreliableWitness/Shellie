@@ -83,6 +83,27 @@ describe('unsentSecretFile', () => {
     expect(await unsentSecretFile(git, dir, `${base}..${tip}`)).toBe('big.md');
   });
 
+  it('skips the commits found clean before and remembers new clean ones', async () => {
+    const base = await commit({ 'a.md': 'hello\n' }, 'one');
+    const clean = await commit({ 'b.md': 'fine\n' }, 'two');
+    const clean2 = await commit({ 'c.md': 'also fine\n' }, 'three');
+    const seen = new Set<string>();
+    expect(
+      await unsentSecretFile(git, dir, `${base}..${clean2}`, undefined, seen),
+    ).toBeNull();
+    expect([...seen].sort()).toEqual([clean, clean2].sort());
+    const leak = await commit({ 'd.md': `token ${TOKEN}\n` }, 'four');
+    // A commit in the set is never read again: one marked clean by hand is passed.
+    expect(
+      await unsentSecretFile(git, dir, `${base}..${leak}`, undefined, seen),
+    ).toBe('d.md');
+    expect(seen.has(leak)).toBe(false);
+    seen.add(leak);
+    expect(
+      await unsentSecretFile(git, dir, `${base}..${leak}`, undefined, seen),
+    ).toBeNull();
+  });
+
   it('reads a file that shrank in a chunk of its larger side', async () => {
     const base = await commit(
       { 'shrunk.md': 'x'.repeat(500), 'n.md': 'one\n' },

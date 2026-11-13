@@ -3,23 +3,21 @@
  * as one fresh commit of its tree, so sources removed or scrubbed earlier, and old blobs, never reach the server.
  */
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import type { BrainJob, BrainSharing } from '../../../shared/brain';
-import { isKeeper, joinLink } from '../../../shared/brainShare';
+import type { BrainSharing } from '../../../shared/brain';
+import { isKeeper, joinLink, sharedFactsOf } from '../../../shared/brainShare';
 import type { Connection } from '../../../shared/types';
 import { AdoClient } from '../../services/AdoClient';
 import type { GitClient } from '../../services/GitClient';
+import { PENDING } from '../bookPass';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { isSyncCommit, outsideEdits } from '../health';
 import type { BrainJobRunner } from '../jobs';
 import { absPath } from '../paths';
 import { READS_RECORD } from '../reads';
-import { acquireLock, readState, releaseLock, writeState } from '../state';
+import { readState, withBrainLock, writeState } from '../state';
 import type { BrainHomeStore } from './BrainHomeStore';
 import { PRE_SHARE_REF, type BrainSync } from './BrainSync';
-
-export { PRE_SHARE_REF };
 import {
   readOrigin,
   removeMember,
@@ -27,7 +25,14 @@ import {
   writeOrigin,
   writeShared,
 } from './files';
-import { installEmail } from './keeper';
+import {
+  headOf,
+  mapReadCommits,
+  parseJsonOrNull,
+  succeeds,
+  withPrivateIndex,
+} from './gitUtil';
+import { setCommitIdentity } from './keeper';
 import { CHUNK_BYTES, treeSecretFiles } from './secretScan';
 
 export const SHARE_MESSAGE = 'Brain: shared';
@@ -39,11 +44,6 @@ const SHARE_FILES = [
   'brain/shared.json',
   'brain/state.json',
 ];
-const PENDING: ReadonlySet<BrainJob['status']> = new Set([
-  'queued',
-  'running',
-  'paused',
-]);
 
 export type ShareDeps = {
   brains: BrainStore;
@@ -134,7 +134,7 @@ export async function shareBrain(
     if (!waiting) d.runner.enqueue(b.id, 'sync');
     return { status: 'syncing' };
   }
-  const scanned = (await d.git.run(dir, ['rev-parse', 'HEAD'])).trim();
+  const scanned = await headOf(d.git, dir);
   const files = await treeSecretFiles(d.git, dir, scanned, chunkBytes);
   if (files.length) return { status: 'secrets', files };
   if ((await d.git.remotes(dir)).includes('origin'))
@@ -165,144 +165,132 @@ export async function shareBrain(
     home.token,
   ).createRepository(home.project, repoName);
 
-  if (!(await acquireLock(dir, process.pid, () => now).catch(() => false)))
-    throw new Error(
-      `${BUSY}. Nothing was shared; the empty repo ${repoName} can be deleted in Azure DevOps.`,
-    );
-  try {
-    await withBrainGit(dir, async () => {
-      const git = d.git;
-      const before = (await git.run(dir, ['rev-parse', 'HEAD'])).trim();
-      // A commit made since the checks (a source added meanwhile) is checked too, before anything is written.
-      if (
-        before !== scanned &&
-        ((await needsSync(git, dir)) ||
-          (await treeSecretFiles(git, dir, before, chunkBytes)).length)
-      )
-        throw new Error(
-          'The brain changed while it was being shared; share again',
-        );
-      const identity = {
-        email: await localConfig(git, dir, 'user.email'),
-        name: await localConfig(git, dir, 'user.name'),
-      };
-      const kept = await Promise.all(
-        [...SHARE_FILES, READS_RECORD].map(async (rel) => ({
-          rel,
-          text: await fs.readFile(absPath(dir, rel), 'utf8').catch(() => null),
-        })),
-      );
-      let remoteAdded = false;
-      let recorded = false;
-      try {
-        await git.run(dir, ['update-ref', PRE_SHARE_REF, before]);
-        // Which machine made a commit is told by its author email.
-        await git.run(dir, ['config', 'user.email', installEmail(installId)]);
-        await git.run(dir, ['config', 'user.name', person]);
-        await writeOrigin(dir, {
-          format: 1,
-          organizationUrl: connection.organizationUrl,
-          project: b.project,
-          name: b.name,
-          keeper: { installId, name: person },
-          sharedAt: now.toISOString(),
-        });
-        // A fresh members list: an earlier share's members are not in this repo.
-        await fs.rm(absPath(dir, 'brain/members.json'), { force: true });
-        await upsertMember(dir, {
-          installId,
-          name: person,
-          joinedAt: now.toISOString(),
-        });
-        await writeShared(
-          dir,
-          {
-            wiki: b.wiki,
-            lastRefreshAt: b.lastRefreshAt,
-            lastDigestAt: b.lastDigestAt,
-            templatesVersion: b.templatesVersion,
-          },
-          now,
-        );
-        // The old history's commits are not in the shared one; null makes /sync start from its first commit, the share.
-        await writeState(dir, (s) => ({ ...s, lastSyncCommit: null }));
-        // Likewise a long read's commit: null makes /write update compare with the share commit (the file's last).
-        const reads = await movedReads(dir);
-        const toAdd = reads ? [...SHARE_FILES, READS_RECORD] : SHARE_FILES;
-        // HEAD's tree plus the share files, built in an index of its own: the person's staged work stays out.
-        const index = path.resolve(
-          dir,
-          (
-            await git.run(dir, [
-              'rev-parse',
-              '--git-path',
-              'shellie-share-index',
-            ])
-          ).trim(),
-        );
-        let tree: string;
-        try {
-          const env = { GIT_INDEX_FILE: index };
-          await git.run(dir, ['read-tree', before], { env });
-          await git.run(dir, ['add', '--', ...toAdd], { env });
-          tree = (await git.run(dir, ['write-tree'], { env })).trim();
-        } finally {
-          await fs.rm(index, { force: true });
-        }
-        const shared = (
-          await git.run(dir, ['commit-tree', tree, '-m', SHARE_MESSAGE])
-        ).trim();
-        await git.run(dir, ['reset', '-q', shared]);
-        await git.run(dir, ['remote', 'add', 'origin', repo.remoteUrl]);
-        remoteAdded = true;
-        const sharing: BrainSharing = {
-          home: i.home,
-          remoteUrl: repo.remoteUrl,
-          repositoryId: repo.id,
-          homeOrganizationUrl: home.organizationUrl,
-          homeProject: home.project,
-          joinedAt: now.toISOString(),
-          lastPullAt: null,
-          lastPushAt: null,
-          status: 'pending',
-          heldFile: null,
+  const nothingShared = `Nothing was shared; the empty repo ${repoName} can be deleted in Azure DevOps.`;
+  await withBrainLock(
+    dir,
+    () =>
+      withBrainGit(dir, async () => {
+        const git = d.git;
+        const before = await headOf(git, dir);
+        // A commit made since the checks (a source added meanwhile) is checked too, before anything is written.
+        if (
+          before !== scanned &&
+          ((await needsSync(git, dir)) ||
+            (await treeSecretFiles(git, dir, before, chunkBytes)).length)
+        )
+          throw new Error(
+            'The brain changed while it was being shared; share again',
+          );
+        const identity = {
+          email: await localConfig(git, dir, 'user.email'),
+          name: await localConfig(git, dir, 'user.name'),
         };
-        // Recorded before the push: git signs in by the brain's home (connectionIdForBrain), the brain home's token
-        // for the company home. The brain lock keeps BrainSync's pulls out meanwhile.
-        await d.brains.patch(b.id, { sharing });
-        recorded = true;
-        await git.push(dir, 'origin', 'HEAD:main');
-        await d.brains.patch(b.id, {
-          sharing: { ...sharing, status: 'ok', lastPushAt: now.toISOString() },
-        });
-      } catch (e) {
-        if (recorded)
-          await d.brains
-            .patch(b.id, { sharing: null })
-            .catch((r: unknown) =>
-              console.error(
-                '[brain] share restore failed',
-                (r as Error).message,
-              ),
-            );
-        await restore(git, dir, {
-          before,
-          identity,
-          kept,
-          remoteAdded,
-        }).catch((r: unknown) =>
-          console.error('[brain] share restore failed', (r as Error).message),
+        const kept = await Promise.all(
+          [...SHARE_FILES, READS_RECORD].map(async (rel) => ({
+            rel,
+            text: await fs
+              .readFile(absPath(dir, rel), 'utf8')
+              .catch(() => null),
+          })),
         );
-        throw e;
-      }
-    });
-  } catch (e) {
-    throw new Error(
-      `${(e as Error).message.replace(/\.?\s*$/, '')}. Nothing was shared; the empty repo ${repoName} can be deleted in Azure DevOps.`,
-    );
-  } finally {
-    await releaseLock(dir).catch(() => undefined);
-  }
+        let remoteAdded = false;
+        let recorded = false;
+        try {
+          await git.run(dir, ['update-ref', PRE_SHARE_REF, before]);
+          await setCommitIdentity(git, dir, installId, person);
+          await writeOrigin(dir, {
+            format: 1,
+            organizationUrl: connection.organizationUrl,
+            project: b.project,
+            name: b.name,
+            keeper: { installId, name: person },
+            sharedAt: now.toISOString(),
+          });
+          // A fresh members list: an earlier share's members are not in this repo.
+          await fs.rm(absPath(dir, 'brain/members.json'), { force: true });
+          await upsertMember(dir, {
+            installId,
+            name: person,
+            joinedAt: now.toISOString(),
+          });
+          await writeShared(dir, sharedFactsOf(b), now);
+          // The old history's commits are not in the shared one; null makes /sync start from its first commit, the share.
+          await writeState(dir, (s) => ({ ...s, lastSyncCommit: null }));
+          // Likewise a long read's commit: null makes /write update compare with the share commit (the file's last).
+          const reads = await movedReads(dir);
+          const toAdd = reads ? [...SHARE_FILES, READS_RECORD] : SHARE_FILES;
+          // HEAD's tree plus the share files, built in an index of its own: the person's staged work stays out.
+          const tree = await withPrivateIndex(
+            git,
+            dir,
+            'shellie-share-index',
+            before,
+            async (env) => {
+              await git.run(dir, ['add', '--', ...toAdd], { env });
+            },
+          );
+          const shared = (
+            await git.run(dir, ['commit-tree', tree, '-m', SHARE_MESSAGE])
+          ).trim();
+          await git.run(dir, ['reset', '-q', shared]);
+          await git.run(dir, ['remote', 'add', 'origin', repo.remoteUrl]);
+          remoteAdded = true;
+          const sharing: BrainSharing = {
+            home: i.home,
+            remoteUrl: repo.remoteUrl,
+            repositoryId: repo.id,
+            homeOrganizationUrl: home.organizationUrl,
+            homeProject: home.project,
+            joinedAt: now.toISOString(),
+            lastPullAt: null,
+            lastPushAt: null,
+            status: 'pending',
+            heldFile: null,
+          };
+          // Recorded before the push: git signs in by the brain's home (connectionIdForBrain), the brain home's token
+          // for the company home. The brain lock keeps BrainSync's pulls out meanwhile.
+          await d.brains.patch(b.id, { sharing });
+          recorded = true;
+          await git.push(dir, 'origin', 'HEAD:main');
+          await d.brains.patch(b.id, {
+            sharing: {
+              ...sharing,
+              status: 'ok',
+              lastPushAt: now.toISOString(),
+            },
+          });
+        } catch (e) {
+          if (recorded)
+            await d.brains
+              .patch(b.id, { sharing: null })
+              .catch((r: unknown) =>
+                console.error(
+                  '[brain] share restore failed',
+                  (r as Error).message,
+                ),
+              );
+          await restore(git, dir, {
+            before,
+            identity,
+            kept,
+            remoteAdded,
+          }).catch((r: unknown) =>
+            console.error('[brain] share restore failed', (r as Error).message),
+          );
+          throw e;
+        }
+      }).catch((e: unknown) => {
+        throw new Error(
+          `${(e as Error).message.replace(/\.?\s*$/, '')}. ${nothingShared}`,
+        );
+      }),
+    {
+      now: () => now,
+      busy: () => {
+        throw new Error(`${BUSY}. ${nothingShared}`);
+      },
+    },
+  );
   return {
     status: 'shared',
     joinLink: joinLink({
@@ -321,19 +309,8 @@ async function movedReads(dir: string): Promise<boolean> {
   const file = absPath(dir, READS_RECORD);
   const text = await fs.readFile(file, 'utf8').catch(() => null);
   if (text === null) return false;
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return false;
-  }
-  const reads =
-    value && typeof value === 'object'
-      ? (value as { reads?: unknown }).reads
-      : null;
-  if (!reads || typeof reads !== 'object') return false;
-  for (const r of Object.values(reads as Record<string, unknown>))
-    if (r && typeof r === 'object') (r as { commit?: unknown }).commit = null;
+  const value = parseJsonOrNull(text);
+  if (mapReadCommits(value, () => null) === null) return false;
   await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   return true;
 }
@@ -350,7 +327,7 @@ async function restore(
   },
 ): Promise<void> {
   if (was.remoteAdded) await git.run(dir, ['remote', 'remove', 'origin']);
-  const now = (await git.run(dir, ['rev-parse', 'HEAD'])).trim();
+  const now = await headOf(git, dir);
   if (now !== was.before) await git.run(dir, ['reset', '-q', was.before]);
   for (const f of was.kept) {
     const file = absPath(dir, f.rel);
@@ -405,18 +382,15 @@ export async function leaveBrain(
   const committed = await withBrainGit(dir, async () => {
     await removeMember(dir, installId);
     const rel = 'brain/members.json';
-    const tracked = await d.git
-      .run(dir, ['ls-files', '--error-unmatch', '--', rel])
-      .then(
-        () => true,
-        () => false,
-      );
+    const tracked = await succeeds(d.git, dir, [
+      'ls-files',
+      '--error-unmatch',
+      '--',
+      rel,
+    ]);
     if (!tracked) return false;
-    const changed = await d.git.run(dir, ['diff', '--quiet', '--', rel]).then(
-      () => false,
-      () => true,
-    );
-    if (!changed) return false;
+    if (await succeeds(d.git, dir, ['diff', '--quiet', '--', rel]))
+      return false;
     await d.git.run(dir, ['add', '--', rel]);
     await d.git.run(dir, ['commit', '-q', '-m', LEAVE_MESSAGE, '--', rel]);
     return true;

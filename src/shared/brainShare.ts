@@ -52,6 +52,15 @@ export const SharedFactsSchema = z.object({
 });
 export type SharedFacts = z.infer<typeof SharedFactsSchema>;
 
+/** Just the shared fields of a brain record or a shared.json. */
+export const sharedFactsOf = (
+  x: Pick<SharedFacts, SharedField>,
+): Pick<SharedFacts, SharedField> =>
+  Object.fromEntries(SHARED_FIELDS.map((k) => [k, x[k]])) as Pick<
+    SharedFacts,
+    SharedField
+  >;
+
 const JOIN_PREFIX = 'shellie://join?';
 
 export function joinLink(o: {
@@ -102,6 +111,12 @@ export function parseJoinLink(
 
 export const isKeeper = (origin: Origin, installId: string): boolean =>
   origin.keeper.installId === installId;
+
+/** The id git sign-in uses for the brain home's token (see createGitAuth). Never a real connection's id. */
+export const BRAIN_HOME_CONNECTION_ID = 'brain-home';
+
+/** A shared brain's skills are newer than this Shellie knows: its jobs wait for an update of Shellie. */
+export const NEWER_SHELLIE = "A colleague's Shellie is newer: update Shellie.";
 
 /** Where this person's shared brains live when the company hosts them: an organization, a project and a PAT (never sent to the renderer). */
 export type BrainHome = {

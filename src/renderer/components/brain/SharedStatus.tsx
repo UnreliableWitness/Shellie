@@ -1,4 +1,5 @@
 import type { BrainView } from '../../../shared/brain';
+import { NEWER_SHELLIE } from '../../../shared/brainShare';
 import { plural } from '../../../shared/text';
 import { orgName } from './sharing';
 
@@ -40,9 +41,7 @@ export function SharedStatus({ brain }: { brain: BrainView }) {
         {ranAgain && ' · Ran a capture again'}
       </span>
       {brain.newerShellie && (
-        <span className="small brain-shared-warn">
-          A colleague&apos;s Shellie is newer: update Shellie.
-        </span>
+        <span className="small brain-shared-warn">{NEWER_SHELLIE}</span>
       )}
     </>
   );

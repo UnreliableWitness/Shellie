@@ -24,7 +24,7 @@ import {
 import started from 'electron-squirrel-startup';
 import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
-import { parseJoinLink } from './shared/brainShare';
+import { BRAIN_HOME_CONNECTION_ID, parseJoinLink } from './shared/brainShare';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
@@ -41,10 +41,7 @@ import { createReadsHooks } from './main/brain/readsHooks';
 import { saveConflicts } from './main/brain/conflicts';
 import { createSettleHooks } from './main/brain/settleHooks';
 import { createPictureHooks } from './main/brain/pictures';
-import {
-  BrainHomeStore,
-  BRAIN_HOME_CONNECTION_ID,
-} from './main/brain/share/BrainHomeStore';
+import { BrainHomeStore } from './main/brain/share/BrainHomeStore';
 import { BrainSync } from './main/brain/share/BrainSync';
 import {
   isAutomatic,

@@ -114,3 +114,23 @@ export async function acquireLock(
 export async function releaseLock(brainDir: string): Promise<void> {
   await rm(lockFile(brainDir), { force: true });
 }
+
+/**
+ * Runs `fn` holding brain/lock, released after; `busy` answers instead when the lock is taken (a lock that cannot be
+ * written counts as taken).
+ */
+export async function withBrainLock<T>(
+  brainDir: string,
+  fn: () => Promise<T>,
+  o: { busy: () => T; now?: () => Date },
+): Promise<T> {
+  const took = await acquireLock(brainDir, process.pid, o.now).catch(
+    () => false,
+  );
+  if (!took) return o.busy();
+  try {
+    return await fn();
+  } finally {
+    await releaseLock(brainDir).catch(() => undefined);
+  }
+}
