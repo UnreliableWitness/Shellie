@@ -9,7 +9,8 @@ import { orgName } from './sharing';
 type Where = 'company' | 'customer';
 type Result =
   | { status: 'idle' }
-  | { status: 'syncing'; since: number }
+  /** `again`: this is the one re-call after the sync; a second `syncing` stops there. */
+  | { status: 'syncing'; since: number; again: boolean }
   | { status: 'secrets'; files: string[] }
   | { status: 'shared'; joinLink: string };
 
@@ -54,7 +55,7 @@ export function ShareDialog({
   const org =
     where === 'company' && home ? orgName(home.organizationUrl) : customerOrg;
 
-  const share = async () => {
+  const share = async (again = false) => {
     setBusy(true);
     setError(null);
     try {
@@ -64,9 +65,15 @@ export function ShareDialog({
         home: where,
         repoName: repoName.trim(),
       });
+      if (r.status === 'syncing' && again) {
+        // Never a second paid /sync on its own: the person decides.
+        setResult({ status: 'idle' });
+        setError('The brain changed while it synced. Share again.');
+        return;
+      }
       setResult(
         r.status === 'syncing'
-          ? { status: 'syncing', since: started }
+          ? { status: 'syncing', since: started, again }
           : r.status === 'secrets'
             ? { status: 'secrets', files: r.files }
             : { status: 'shared', joinLink: r.joinLink },
@@ -79,22 +86,29 @@ export function ShareDialog({
     }
   };
 
-  // A /sync was queued first: when it ends, ask again.
+  // A /sync was queued first: when it is done, ask once more; when it failed, say so and stop.
   const shareAgain = useRef(share);
   shareAgain.current = share;
   const waitingSince = result.status === 'syncing' ? result.since : null;
-  const syncEnded =
-    waitingSince !== null &&
-    brain.jobs.some(
-      (j) =>
-        j.kind === 'sync' &&
-        (j.status === 'done' || j.status === 'failed') &&
-        j.endedAt !== null &&
-        Date.parse(j.endedAt) >= waitingSince,
-    );
+  const syncEnd =
+    waitingSince === null
+      ? null
+      : (brain.jobs.find(
+          (j) =>
+            j.kind === 'sync' &&
+            (j.status === 'done' || j.status === 'failed') &&
+            j.endedAt !== null &&
+            Date.parse(j.endedAt) >= waitingSince,
+        )?.status ?? null);
   useEffect(() => {
-    if (syncEnded) void shareAgain.current();
-  }, [syncEnded]);
+    if (syncEnd === 'done') void shareAgain.current(true);
+    else if (syncEnd === 'failed') {
+      setResult({ status: 'idle' });
+      setError(
+        'The sync before sharing failed. Look at the job, then share again.',
+      );
+    }
+  }, [syncEnd]);
 
   const copy = (link: string) =>
     navigator.clipboard

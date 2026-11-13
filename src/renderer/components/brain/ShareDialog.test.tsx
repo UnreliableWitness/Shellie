@@ -139,4 +139,64 @@ describe('ShareDialog', () => {
     expect(await screen.findByText('shellie://join?y')).toBeInTheDocument();
     expect(a.calls.filter((c) => c.channel === 'brain:share')).toHaveLength(2);
   });
+
+  const ended = (status: 'done' | 'failed') =>
+    brainView({
+      jobs: [
+        brainJob({
+          id: 's',
+          kind: 'sync',
+          status,
+          endedAt: new Date(Date.now() + 1000).toISOString(),
+        }),
+      ],
+    });
+  const syncFirst = async (share: () => unknown) => {
+    const a = setup({ 'brain:share': share });
+    const { rerender } = render(
+      <ShareDialog
+        brain={brainView({
+          jobs: [brainJob({ id: 's', kind: 'sync', status: 'running' })],
+        })}
+        onClose={vi.fn()}
+        onSources={vi.fn()}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Share' }));
+    expect(await screen.findByText('Syncing first…')).toBeInTheDocument();
+    return { a, rerender };
+  };
+  const shares = (a: { calls: { channel: string }[] }) =>
+    a.calls.filter((c) => c.channel === 'brain:share').length;
+
+  it('does not ask again when the sync fails, and says so', async () => {
+    const { a, rerender } = await syncFirst(() => ({ status: 'syncing' }));
+    rerender(
+      <ShareDialog
+        brain={ended('failed')}
+        onClose={vi.fn()}
+        onSources={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The sync before sharing failed. Look at the job, then share again.',
+    );
+    expect(shares(a)).toBe(1);
+  });
+
+  it('asks again only once: a second Syncing shows a message, not another sync', async () => {
+    const { a, rerender } = await syncFirst(() => ({ status: 'syncing' }));
+    rerender(
+      <ShareDialog
+        brain={ended('done')}
+        onClose={vi.fn()}
+        onSources={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The brain changed while it synced. Share again.',
+    );
+    expect(shares(a)).toBe(2);
+    expect(screen.queryByText('Syncing first…')).not.toBeInTheDocument();
+  });
 });
