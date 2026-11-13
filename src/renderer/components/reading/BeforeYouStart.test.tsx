@@ -50,11 +50,14 @@ describe('BeforeYouStart', () => {
       name: /How a return becomes a credit/,
     });
     expect(row).toHaveTextContent('9 min · a long read in Acme');
-    expect(tracked).toContainEqual({
-      type: 'event',
-      name: 'reading.nudge',
-      props: { kind: 'task' },
-    });
+    // The nudge is tracked in a passive effect, which can run after the row is found (seen on Windows CI).
+    await waitFor(() =>
+      expect(tracked).toContainEqual({
+        type: 'event',
+        name: 'reading.nudge',
+        props: { kind: 'task' },
+      }),
+    );
     await userEvent.click(row);
     expect(useStore.getState().screen).toMatchObject({
       kind: 'brain',
