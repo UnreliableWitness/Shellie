@@ -467,26 +467,40 @@ export class BrainJobRunner {
       d.onLockRetry?.(brainId);
       return;
     }
+    // The brain stopped being ready during beforeJob (a pull brought skills newer than this Shellie): the job waits.
+    let heldBack = false;
     try {
       job.status = 'running';
       job.startedAt = this.now().toISOString();
       this.changed(brainId);
       await d.beforeJob(brainId);
-      const input = await d.promptFor?.(job);
-      if (input === null) {
-        // Nothing for the agent to do: nothing changed, so there is nothing to commit.
-        job.result = 'Nothing to re-evaluate';
+      if (!this.isReady(brainId)) {
+        heldBack = true;
       } else {
-        await this.runSkill(brainId, dir, job, input ?? prompt(job));
+        const input = await d.promptFor?.(job);
+        if (input === null) {
+          // Nothing for the agent to do: nothing changed, so there is nothing to commit.
+          job.result = 'Nothing to re-evaluate';
+        } else {
+          await this.runSkill(brainId, dir, job, input ?? prompt(job));
+        }
+        job.status = 'done';
       }
-      job.status = 'done';
     } catch (e) {
       job.status = 'failed';
       job.error = (e as Error).message;
     } finally {
-      job.endedAt = this.now().toISOString();
+      if (!heldBack) job.endedAt = this.now().toISOString();
       await releaseLock(dir).catch(() => undefined);
-      done();
+      if (!heldBack) done();
+    }
+    if (heldBack) {
+      // Back in the queue where it was, held like a job that never started; release starts it again.
+      job.status = 'queued';
+      job.startedAt = null;
+      l.held = true;
+      this.changed(brainId);
+      return;
     }
     if (job.kind === 'capture' && job.status === 'done') {
       const lint = this.make(brainId, 'lint', null);

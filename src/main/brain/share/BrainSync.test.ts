@@ -82,6 +82,7 @@ function fakeRunner() {
       failed.push([jobId, error]);
       return true;
     },
+    release: () => undefined,
   };
   function record(
     brainId: string,

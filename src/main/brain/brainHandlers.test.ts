@@ -1425,6 +1425,47 @@ describe('brain handlers', () => {
       expect(enqueued).toHaveLength(2);
     });
 
+    it("on a colleague's machine a refresh shares its date but queues no sync or pictures job", async () => {
+      await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
+      await fs.writeFile(path.join(wikiRepo, '.attachments/a.png'), 'png');
+      sh(wikiRepo, 'add', '-A');
+      sh(wikiRepo, 'commit', '-q', '-m', 'attachment');
+      commitFile(wikiRepo, 'Home.md', '# Home\n![a](/.attachments/a.png)\n');
+      const v = await h['brain:create']({ ...NEW, wiki });
+      await h['brain:update'](v.id, { options: { syncAfterRefresh: true } });
+      await writeOrigin(v.path, {
+        format: 1,
+        organizationUrl: 'https://dev.azure.com/org',
+        project: 'Default',
+        name: 'Acme',
+        keeper: { installId: 'someone-else', name: 'Dries' },
+        sharedAt: '2026-11-13T09:00:00.000Z',
+      });
+      await brains.patch(v.id, {
+        sharing: {
+          home: 'company',
+          remoteUrl: 'https://dev.azure.com/org/Default/_git/acme',
+          repositoryId: 'r',
+          homeOrganizationUrl: 'https://dev.azure.com/org',
+          homeProject: 'Default',
+          joinedAt: '2026-11-13T09:00:00.000Z',
+          lastPullAt: null,
+          lastPushAt: null,
+          status: 'ok',
+          heldFile: null,
+        },
+      });
+      expect(await h['brain:refresh'](v.id)).toMatchObject({
+        ok: true,
+        added: 1,
+        attachments: 1,
+      });
+      expect(enqueued).toEqual([]);
+      const at = brains.get(v.id)?.lastRefreshAt;
+      expect(at).not.toBeNull();
+      expect((await readShared(v.path))?.lastRefreshAt).toBe(at);
+    });
+
     it('queues no pictures job for the mirror on a brain whose skills are older than v6', async () => {
       await fs.mkdir(path.join(wikiRepo, '.attachments'), { recursive: true });
       await fs.writeFile(path.join(wikiRepo, '.attachments/a.png'), 'png');

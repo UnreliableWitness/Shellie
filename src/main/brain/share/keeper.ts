@@ -12,7 +12,7 @@ import {
   type BrainKeeper,
   type SharedFacts,
 } from '../../../shared/brainShare';
-import type { GitClient } from '../../services/GitClient';
+import { GitAuthError, type GitClient } from '../../services/GitClient';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { TEMPLATES_VERSION } from '../templates';
@@ -24,6 +24,10 @@ export const NEWER_SHELLIE = "A colleague's Shellie is newer: update Shellie.";
 /** A member may take over once the keeper's machine has sent nothing for this long. */
 const TAKE_OVER_MS = 14 * 24 * 3600 * 1000;
 const SERVER = 'origin/main';
+const FETCH_TIMEOUT_MS = 120_000;
+export const UNREACHABLE = "Can't reach the brain's server; try again.";
+const NOT_UP_TO_DATE =
+  "This brain doesn't have the server's latest changes yet; try again.";
 
 export type FactsPatch = Partial<Omit<SharedFacts, 'format' | 'updatedAt'>>;
 
@@ -222,7 +226,24 @@ export async function takeOver(
   installId: string,
   now: Date,
 ): Promise<void> {
+  // The server as it is now, never a stale copy: offline, a keeper who still pushes would look gone.
+  const fetched = await git
+    .fetch(dir, SERVER, { timeoutMs: FETCH_TIMEOUT_MS })
+    .catch((e: unknown) => {
+      // A refused sign-in says so; anything else is a server out of reach.
+      if (e instanceof GitAuthError) throw e;
+      return false;
+    });
+  if (!fetched) throw new Error(UNREACHABLE);
   await withBrainGit(dir, async () => {
+    // The brain holds everything the server has (a pull merged it), so origin.json is the current one.
+    const merged = await git
+      .run(dir, ['merge-base', '--is-ancestor', SERVER, 'HEAD'])
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!merged) throw new Error(NOT_UP_TO_DATE);
     const origin = await readOrigin(dir);
     if (!origin) throw new Error('This brain is not shared');
     if (isKeeper(origin, installId)) return;

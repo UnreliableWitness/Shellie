@@ -29,6 +29,7 @@ import { withBrainGit } from '../gitMutex';
 import { isBrainFolder } from '../scaffold';
 import type { BrainHomeStore } from './BrainHomeStore';
 import { readShared, upsertMember } from './files';
+import { installEmail } from './keeper';
 
 export const JOIN_MESSAGE = 'Brain: joined';
 const ORIGIN_PATH = '/brain/origin.json';
@@ -283,11 +284,7 @@ export async function joinBrain(
     });
     await withBrainGit(dir, async () => {
       // Which machine made a commit is told by its author email.
-      await d.git.run(dir, [
-        'config',
-        'user.email',
-        `${installId}@install.shellie`,
-      ]);
+      await d.git.run(dir, ['config', 'user.email', installEmail(installId)]);
       await d.git.run(dir, ['config', 'user.name', person]);
       await upsertMember(dir, {
         installId,

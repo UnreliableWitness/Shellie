@@ -44,7 +44,7 @@ const PENDING: ReadonlySet<BrainJob['status']> = new Set([
 
 export type SyncRunner = Pick<
   BrainJobRunner,
-  'enqueue' | 'jobs' | 'running' | 'fail'
+  'enqueue' | 'jobs' | 'running' | 'fail' | 'release'
 >;
 
 export type BrainSyncDeps = {
@@ -289,6 +289,8 @@ export class BrainSync {
     const change = factsFromShared(b, shared);
     if (!change) return;
     await this.d.brains.patch(id, change);
+    // Jobs held for skills this Shellie did not know, or for OpenCode's, start once the brain is ready again.
+    if (change.templatesVersion !== undefined) this.d.runner().release(id);
     this.d.changed(id);
   }
 

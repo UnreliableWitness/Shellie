@@ -45,6 +45,7 @@ import {
 import { shareBrain, stopSharing, type ShareDeps } from './share/share';
 import {
   handOver,
+  isAutomatic,
   keeperOf,
   NEWER_SHELLIE,
   patchFacts,
@@ -599,10 +600,16 @@ export function createBrainHandlers(
     });
     if (r.ok) {
       await patchFacts(d, id, { lastRefreshAt: now().toISOString() }, now());
-      if (b.options.syncAfterRefresh && r.added + r.changed + r.removed > 0)
+      // The brain-wide work after a refresh runs on the keeper's machine only (a local brain: here).
+      const automatic = isAutomatic(b, await myInstall());
+      if (
+        automatic &&
+        b.options.syncAfterRefresh &&
+        r.added + r.changed + r.removed > 0
+      )
         d.runner.enqueue(id, 'sync');
       // New or changed pictures: one re-evaluation of the mirror, which checks for gaps when it starts.
-      if (r.attachments > 0 && picturesReady(b))
+      if (automatic && r.attachments > 0 && picturesReady(b))
         d.runner.enqueue(id, 'pictures', MIRROR_SOURCE);
     }
     changed(id);

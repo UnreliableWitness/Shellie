@@ -202,13 +202,23 @@ describe('mergeShared', () => {
     },
   });
   it('per field the later updatedAt wins', () => {
-    const m = mergeShared(
-      facts('2026-11-02', 5, '1'),
-      facts('2026-11-01', 9, '2'),
-    );
-    expect(m.templatesVersion).toBe(5);
-    expect(m.updatedAt.templatesVersion).toBe('2026-11-02');
+    const ours = { ...facts('2026-11-02', 5, '1'), lastDigestAt: 'ours' };
+    const m = mergeShared(ours, facts('2026-11-01', 5, '2'));
+    expect(m.lastDigestAt).toBe('ours');
+    expect(m.updatedAt.lastDigestAt).toBe('2026-11-02');
     expect(m.updatedAt.wiki).toBe('2');
+  });
+  it('keeps the higher skills version whatever its updatedAt', () => {
+    expect(
+      mergeShared(facts('2026-11-02', 5, '1'), facts('2026-11-01', 9, '2'))
+        .templatesVersion,
+    ).toBe(9);
+    const m = mergeShared(
+      facts('2026-11-01', 9, '1'),
+      facts('2026-11-02', 5, '2'),
+    );
+    expect(m.templatesVersion).toBe(9);
+    expect(m.updatedAt.templatesVersion).toBe('2026-11-01');
   });
 });
 

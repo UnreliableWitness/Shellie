@@ -158,7 +158,7 @@ export function mergeBook(ours: BrainBook, theirs: BrainBook): BrainBook {
   return { chapters };
 }
 
-/** brain/shared.json: per field, the later `updatedAt` wins (theirs on a tie). */
+/** brain/shared.json: per field, the later `updatedAt` wins (theirs on a tie); the higher `templatesVersion` always wins. */
 export function mergeShared(
   ours: SharedFacts,
   theirs: SharedFacts,
@@ -166,6 +166,14 @@ export function mergeShared(
   const out: SharedFacts = { ...theirs, updatedAt: { ...theirs.updatedAt } };
   const set = out as Record<string, unknown>;
   for (const f of SHARED_FIELDS) {
+    // The skills version never goes back: an older Shellie's later write cannot undo a colleague's update.
+    if (f === 'templatesVersion') {
+      if (ours.templatesVersion > theirs.templatesVersion) {
+        out.templatesVersion = ours.templatesVersion;
+        out.updatedAt.templatesVersion = ours.updatedAt.templatesVersion;
+      }
+      continue;
+    }
     if (after(ours.updatedAt[f], theirs.updatedAt[f])) {
       set[f] = ours[f];
       out.updatedAt[f] = ours.updatedAt[f];

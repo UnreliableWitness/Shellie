@@ -21,6 +21,7 @@ import { PRE_SHARE_REF, unquoteGitPath } from './BrainSync';
 
 export { PRE_SHARE_REF };
 import { upsertMember, writeOrigin, writeShared } from './files';
+import { installEmail } from './keeper';
 
 export const SHARE_MESSAGE = 'Brain: shared';
 const BUSY = 'A brain job is running; try again later';
@@ -330,11 +331,7 @@ export async function shareBrain(
       try {
         await git.run(dir, ['update-ref', PRE_SHARE_REF, before]);
         // Which machine made a commit is told by its author email.
-        await git.run(dir, [
-          'config',
-          'user.email',
-          `${installId}@install.shellie`,
-        ]);
+        await git.run(dir, ['config', 'user.email', installEmail(installId)]);
         await git.run(dir, ['config', 'user.name', person]);
         await writeOrigin(dir, {
           format: 1,

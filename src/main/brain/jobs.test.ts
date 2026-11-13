@@ -163,6 +163,33 @@ describe('BrainJobRunner', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('holds the job, unrun, when the pull in beforeJob makes the brain not ready', async () => {
+    let ready = true;
+    let pulls = 0;
+    const finished: string[] = [];
+    const r = runner({
+      ready: () => ready,
+      // The first pull brings skills newer than this Shellie knows.
+      beforeJob: async () => {
+        if (++pulls === 1) ready = false;
+      },
+      afterJob: (j) => finished.push(j.status),
+    });
+    const job = r.enqueue('b1', 'sync');
+    await vi.waitFor(() => expect(r.held('b1')).toBe(true));
+    expect(r.running('b1')).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(job).toMatchObject({ status: 'queued', startedAt: null });
+    expect(finished).toEqual([]);
+    expect(existsSync(path.join(dirs.b1, 'brain', 'lock'))).toBe(false);
+    // Once the brain is ready again a release runs it.
+    ready = true;
+    r.release('b1');
+    await idle(r, 'b1');
+    expect(calls).toHaveLength(1);
+    expect(finished).toEqual(['done']);
+  });
+
   it('fails the job when beforeJob throws, without running the skill', async () => {
     const r = runner({
       beforeJob: async () => {

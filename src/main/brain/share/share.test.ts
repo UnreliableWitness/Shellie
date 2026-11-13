@@ -446,6 +446,7 @@ describe('the old history', () => {
       jobs: () => [],
       running: () => false,
       fail: () => false,
+      release: () => undefined,
     };
     const sync = new BrainSync({
       brains,

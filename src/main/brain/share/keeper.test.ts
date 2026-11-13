@@ -26,6 +26,7 @@ import {
   SHARED_FACTS_MESSAGE,
   shellieOutdated,
   takeOver,
+  UNREACHABLE,
 } from './keeper';
 
 const git = new GitClient();
@@ -41,11 +42,15 @@ let a: string;
 let b: string;
 let brains: BrainStore;
 
+let released: string[];
 const runner: SyncRunner = {
   enqueue: () => ({}) as BrainJob,
   jobs: () => [],
   running: () => false,
   fail: () => true,
+  release: (id) => {
+    released.push(id);
+  },
 };
 const sync = () =>
   new BrainSync({
@@ -95,6 +100,7 @@ const brainRecord = (id: string, dir: string, over: Partial<Brain> = {}) =>
   });
 
 beforeEach(async () => {
+  released = [];
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-keeper-'));
   const seed = path.join(root, 'seed');
   server = path.join(root, 'server.git');
@@ -256,6 +262,8 @@ describe('the keeper', () => {
     expect(record('b').templatesVersion).toBe(TEMPLATES_VERSION + 1);
     expect(shellieOutdated(record('b'))).toBe(true);
     expect(record('b').sharing?.status).toBe('ok');
+    // The runner checks again: still not ready, its jobs stay held.
+    expect(released).toEqual(['b']);
     // The next pull still merges the server's changes.
     await fs.writeFile(path.join(a, 'sources', 'm.md'), 'another\n');
     await git.run(a, ['add', '-A']);
@@ -326,5 +334,36 @@ describe('the keeper', () => {
     ).rejects.toThrow("The keeper's Shellie sent changes in the last 14 days");
     await takeOver(git, b, MEMBER, new Date(t + 15 * DAY));
     expect((await readOrigin(b))?.keeper.installId).toBe(MEMBER);
+  });
+
+  it('refuses a take-over when the server cannot be reached, and changes nothing', async () => {
+    await git.run(b, [
+      'remote',
+      'set-url',
+      'origin',
+      path.join(root, 'gone.git'),
+    ]);
+    const before = await fs.readFile(
+      path.join(b, 'brain', 'origin.json'),
+      'utf8',
+    );
+    await expect(
+      takeOver(git, b, MEMBER, new Date(Date.parse(SHARED_AT) + 30 * DAY)),
+    ).rejects.toThrow(UNREACHABLE);
+    expect(
+      await fs.readFile(path.join(b, 'brain', 'origin.json'), 'utf8'),
+    ).toBe(before);
+    expect(await subject(b)).not.toBe(KEEPER_MESSAGE);
+  });
+
+  it("refuses a take-over before the server's latest changes are merged", async () => {
+    await fs.writeFile(path.join(a, 'sources', 'n.md'), 'a note\n');
+    await git.run(a, ['add', '-A']);
+    await git.run(a, ['commit', '-q', '-m', 'Brain: add source n.md']);
+    await sync().push('a');
+    await expect(
+      takeOver(git, b, MEMBER, new Date(Date.now() + 30 * DAY)),
+    ).rejects.toThrow("doesn't have the server's latest changes");
+    expect((await readOrigin(b))?.keeper.installId).toBe(KEEPER);
   });
 });
