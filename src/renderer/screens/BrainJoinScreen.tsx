@@ -6,7 +6,8 @@ import { PageHeader } from '../components/ui';
 import { useStore } from '../store';
 
 /**
- * What a `shellie://join` link leads to: the brain and project, a token field when the link needs one, and Join.
+ * What a `shellie://join` link leads to: a token field first when nothing reaches the link's organization (main is
+ * then asked again with it), then the brain and project, and Join.
  * `via`: whether a link or the "Your team has a brain" card opened it (telemetry only).
  */
 export function BrainJoinScreen({
@@ -37,6 +38,19 @@ export function BrainJoinScreen({
     };
   }, [link]);
 
+  /** With a token typed: asks main again with it, which reads the brain's name and project from the repo. */
+  const check = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setPreview(await api().invoke('brain:previewJoin', link, pat.trim()));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const join = async () => {
     setBusy(true);
     setError(null);
@@ -51,23 +65,58 @@ export function BrainJoinScreen({
     }
   };
 
-  const can = preview && preview.connectionId !== null && !preview.alreadyHave;
+  const known = preview && !preview.needsToken ? preview : null;
+  const can = known && known.connectionId !== null && !known.alreadyHave;
   return (
     <div className="page">
       <PageHeader title="Join a brain" />
       <div className="page-body brain-join">
         {!preview && !error && <p className="muted">Loading</p>}
-        {preview && (
+        {preview?.needsToken && (
+          <form
+            className="conn-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void check();
+            }}
+          >
+            <label htmlFor="join-token">Token</label>
+            <input
+              id="join-token"
+              className="field mono"
+              type="password"
+              autoComplete="off"
+              value={pat}
+              onChange={(e) => setPat(e.target.value)}
+            />
+            <span />
+            <span className="small muted">
+              A token for {preview.organizationUrl}, with Code read and write.
+              Shellie keeps it encrypted.
+            </span>
+            <span />
+            <div className="actions">
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={busy || !pat.trim()}
+              >
+                Continue
+              </button>
+            </div>
+          </form>
+        )}
+        {known && (
           <h2>
-            {preview.name}, the brain for {preview.project}
+            {known.name}, the brain for {known.project}
           </h2>
         )}
-        {preview?.alreadyHave && (
+        {known?.alreadyHave && (
           <p>You already have a brain for this project.</p>
         )}
-        {preview && preview.connectionId === null && (
+        {known && known.connectionId === null && (
           <>
-            <p>Add the {preview.project} project in Shellie first.</p>
+            <p>Add the {known.project} project in Shellie first.</p>
             <div className="actions">
               <button
                 type="button"
@@ -80,42 +129,16 @@ export function BrainJoinScreen({
           </>
         )}
         {can && (
-          <form
-            className="conn-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void join();
-            }}
-          >
-            {preview.needsToken && (
-              <>
-                <label htmlFor="join-token">Token</label>
-                <input
-                  id="join-token"
-                  className="field mono"
-                  type="password"
-                  autoComplete="off"
-                  value={pat}
-                  onChange={(e) => setPat(e.target.value)}
-                />
-                <span />
-                <span className="small muted">
-                  A token for {preview.organizationUrl}, with Code read and
-                  write. Shellie keeps it encrypted.
-                </span>
-              </>
-            )}
-            <span />
-            <div className="actions">
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={busy || (preview.needsToken && !pat.trim())}
-              >
-                Join
-              </button>
-            </div>
-          </form>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void join()}
+            >
+              Join
+            </button>
+          </div>
         )}
         {error && (
           <p role="alert" className="conn-status-bad">

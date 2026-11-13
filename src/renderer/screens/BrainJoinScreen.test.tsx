@@ -54,10 +54,35 @@ describe('BrainJoinScreen', () => {
       screen.queryByRole('button', { name: 'Join' }),
     ).not.toBeInTheDocument();
   });
-  it('asks for a token when the link needs one and joins with it, saying the card opened it', async () => {
-    const a = setup(preview({ needsToken: true }));
+  // What main answers before a token is typed (previewJoin's needsToken shape): nothing of the brain is known yet.
+  const needsToken = preview({
+    name: '',
+    project: '',
+    connectionId: null,
+    needsToken: true,
+  });
+  it('asks for a token first, previews again with it and joins with it, saying the card opened it', async () => {
+    const a = installFakeApi({
+      'brain:previewJoin': (_link, pat) => (pat ? preview() : needsToken),
+      'brain:join': () => brainView({ id: 'joined' }),
+    });
     render(<BrainJoinScreen link="l" via="card" />);
-    await userEvent.type(await screen.findByLabelText('Token'), 'secret-pat');
+    expect(
+      await screen.findByText(/A token for https:\/\/dev.azure.com\/acme/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Add the/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Join' }),
+    ).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Token'), 'secret-pat');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(
+      await screen.findByText('Acme, the brain for Shellie'),
+    ).toBeInTheDocument();
+    expect(a.calls).toContainEqual({
+      channel: 'brain:previewJoin',
+      args: ['l', 'secret-pat'],
+    });
     await userEvent.click(screen.getByRole('button', { name: 'Join' }));
     await waitFor(() =>
       expect(a.calls).toContainEqual({
@@ -65,6 +90,33 @@ describe('BrainJoinScreen', () => {
         args: ['l', 'secret-pat', 'card'],
       }),
     );
+  });
+  it('asks to add the project after the token when the person has no connection for it', async () => {
+    installFakeApi({
+      'brain:previewJoin': (_link, pat) =>
+        pat ? preview({ connectionId: null }) : needsToken,
+    });
+    render(<BrainJoinScreen link="l" />);
+    await userEvent.type(await screen.findByLabelText('Token'), 'pat');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(
+      await screen.findByText('Add the Shellie project in Shellie first.'),
+    ).toBeInTheDocument();
+  });
+  it('shows a refusal of the typed token', async () => {
+    installFakeApi({
+      'brain:previewJoin': (_link, pat) => {
+        if (pat) throw new Error("You don't have access to this brain");
+        return needsToken;
+      },
+    });
+    render(<BrainJoinScreen link="l" />);
+    await userEvent.type(await screen.findByLabelText('Token'), 'pat');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "You don't have access to this brain",
+    );
+    expect(screen.getByLabelText('Token')).toBeInTheDocument();
   });
   it('says when the person already has the brain', async () => {
     setup(preview({ alreadyHave: true }));
