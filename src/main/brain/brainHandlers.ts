@@ -33,6 +33,7 @@ import { pathExists } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
+import type { BrainHomeStore } from './share/BrainHomeStore';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
@@ -77,6 +78,9 @@ export function checkModel(model: string): string {
 }
 
 export type BrainChannels =
+  | 'brainHome:get'
+  | 'brainHome:save'
+  | 'brainHome:remove'
   | 'brain:list'
   | 'brain:get'
   | 'brain:forTask'
@@ -126,6 +130,7 @@ export type BrainRunner = Pick<
 
 export type BrainHandlerDeps = {
   brains: BrainStore;
+  home: Pick<BrainHomeStore, 'get' | 'save' | 'remove'>;
   /** Converts pictures in formats the agent cannot view (createRasterizer); absent in tests. */
   rasterize?: Rasterize;
   git: GitClient;
@@ -542,6 +547,9 @@ export function createBrainHandlers(
   };
 
   return {
+    'brainHome:get': async () => d.home.get(),
+    'brainHome:save': async (input) => d.home.save(input),
+    'brainHome:remove': async () => d.home.remove(),
     'brain:list': async () => Promise.all(d.brains.list().map((b) => view(b))),
     'brain:get': async (id) => view(brainOf(id), true),
     'brain:forTask': async (taskId) => {

@@ -13,6 +13,7 @@ import {
 } from '../../shared/brain';
 import type { CreateTaskInput, SetupEvent } from '../../shared/types';
 import { BrainStore } from '../brain/BrainStore';
+import { BrainHomeStore } from '../brain/share/BrainHomeStore';
 import { scaffoldBrain } from '../brain/scaffold';
 import { TrackerRegistry } from '../trackers/TrackerRegistry';
 import { ConnectionStore, type TokenCrypto } from '../services/ConnectionStore';
@@ -297,6 +298,10 @@ export async function brainServices() {
   );
   const brain: NonNullable<Services['brain']> = {
     store,
+    home: new BrainHomeStore(
+      path.join(userData, 'brain-home.json'),
+      fakeCrypto(),
+    ),
     runner: {
       enqueue,
       jobs: () => [],

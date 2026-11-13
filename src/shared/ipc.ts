@@ -19,6 +19,7 @@ import type {
   SourcePictures,
   SourceType,
 } from './brain';
+import type { BrainHome, BrainHomeInput } from './brainShare';
 import type { ColorScheme } from './theme';
 import type {
   DiscoverResult,
@@ -603,6 +604,11 @@ export type Channels = {
   'attention:view': { args: [view: AttentionView]; result: void };
   'attention:get': { args: []; result: AttentionSnapshot };
   /** Brains: one local git folder per Azure DevOps project (see docs/changes, the brain notes). */
+  /** The company's organization and project shared brains live in (no token); null until set. */
+  'brainHome:get': { args: []; result: BrainHome | null };
+  /** Checks the token and the project, then stores both (the token encrypted). */
+  'brainHome:save': { args: [input: BrainHomeInput]; result: BrainHome };
+  'brainHome:remove': { args: []; result: void };
   'brain:list': { args: []; result: BrainView[] };
   'brain:get': { args: [brainId: string]; result: BrainView };
   /** The brain of the task's connection and work item project, null when there is none. */

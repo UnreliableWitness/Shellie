@@ -40,6 +40,10 @@ import { createReadsHooks } from './main/brain/readsHooks';
 import { saveConflicts } from './main/brain/conflicts';
 import { createSettleHooks } from './main/brain/settleHooks';
 import { createPictureHooks } from './main/brain/pictures';
+import {
+  BrainHomeStore,
+  BRAIN_HOME_CONNECTION_ID,
+} from './main/brain/share/BrainHomeStore';
 import { startBrainScheduler } from './main/brain/scheduler';
 import {
   commitJobOutput,
@@ -102,7 +106,11 @@ import { ConnectionStore } from './main/services/ConnectionStore';
 import { safeCrypto } from './main/services/safeCrypto';
 import { SecretStore, secretsLoadNotice } from './main/secrets/SecretStore';
 import { GitClient } from './main/services/GitClient';
-import { connectionIdForPath, createGitAuth } from './main/services/gitAuth';
+import {
+  connectionIdForBrain,
+  connectionIdForPath,
+  createGitAuth,
+} from './main/services/gitAuth';
 import { loadEffectiveConfig } from './main/services/effectiveConfig';
 import { RETRY_EVERY_MS as CLEANUP_RETRY_EVERY_MS } from './main/services/worktreeCleanup';
 import { RepoRegistry } from './main/services/RepoRegistry';
@@ -558,11 +566,16 @@ async function boot(): Promise<void> {
     );
     // The brains load before the ledger's first pass, so their records are attributed to them.
     const brains = new BrainStore(path.join(userData, 'brains.json'));
+    const brainHome = new BrainHomeStore(
+      path.join(userData, 'brain-home.json'),
+      secretCrypto,
+    );
     const [loaded, connectionsLoaded, secretsLoaded] = await Promise.all([
       store.load(),
       connections.load(),
       secrets.load(),
       brains.load(),
+      brainHome.load(),
     ]);
     // Once per install: installs that already have repositories skip the first-run page and keep their tabs.
     const migrated = migrateOnboarding(
@@ -591,9 +604,28 @@ async function boot(): Promise<void> {
     // Fetch and push to Azure Repos sign in with the connection's token, not a credential helper that may not start.
     const git = new GitClient(undefined, {
       auth: createGitAuth({
-        connections: () => connections.list(),
-        token: (id) => connections.token(id),
-        connectionIdFor: (cwd) => connectionIdForPath(store.state, cwd),
+        connections: () => {
+          const home = brainHome.get();
+          return [
+            ...connections.list(),
+            ...(home
+              ? [
+                  {
+                    id: BRAIN_HOME_CONNECTION_ID,
+                    organizationUrl: home.organizationUrl,
+                    project: home.project,
+                  },
+                ]
+              : []),
+          ];
+        },
+        token: (id) =>
+          id === BRAIN_HOME_CONNECTION_ID
+            ? brainHome.token()
+            : connections.token(id),
+        connectionIdFor: (cwd) =>
+          connectionIdForBrain(brains.list(), cwd) ??
+          connectionIdForPath(store.state, cwd),
       }),
     });
     const platform = createPlatform();
@@ -1119,6 +1151,7 @@ async function boot(): Promise<void> {
       brainTerminals,
       brain: {
         store: brains,
+        home: brainHome,
         runner: brainRunner,
         ledgerToday: brainToday,
         userData,

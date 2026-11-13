@@ -217,6 +217,7 @@ import type { TimeBooking } from '../../shared/time';
 import { errorMessage } from '../../shared/errors';
 import type { createBrainTerminals } from '../brain/brainTerminal';
 import { BrainStore } from '../brain/BrainStore';
+import { BrainHomeStore } from '../brain/share/BrainHomeStore';
 import { createBrainHandlers, type BrainRunner } from '../brain/brainHandlers';
 import { createRasterizer } from '../brain/convert/raster';
 import { mirrorAuthFor } from '../brain/wikiAccess';
@@ -249,6 +250,7 @@ export type Services = {
    */
   brain?: {
     store: BrainStore;
+    home: BrainHomeStore;
     runner: BrainRunner;
     ledgerToday: (brainId: string) => { tokens: number; costEur: number };
     userData: string;
@@ -836,6 +838,15 @@ export function createHandlers(s: Services): Handlers {
 
   const brain = s.brain ?? {
     store: new BrainStore(path.join(s.usageDir, 'brains.json')),
+    home: new BrainHomeStore(
+      path.join(s.usageDir, 'brain-home.json'),
+      // Tests have no safeStorage: saving a home is refused there.
+      {
+        available: async () => false,
+        encrypt: () => Promise.reject(new Error('No encryption here')),
+        decrypt: () => Promise.reject(new Error('No encryption here')),
+      },
+    ),
     runner: {
       enqueue: () => {
         throw new Error('Brain jobs are not available here');
@@ -893,6 +904,7 @@ export function createHandlers(s: Services): Handlers {
 
   const brainHandlers = createBrainHandlers({
     brains: brain.store,
+    home: brain.home,
     rasterize: createRasterizer({ platform: s.platform, run: runWithInput }),
     git: s.git,
     runner: brain.runner,

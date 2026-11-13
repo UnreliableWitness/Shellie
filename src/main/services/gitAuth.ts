@@ -4,7 +4,9 @@
  * `GIT_CONFIG_*` environment variables, never on the command line, so it is not in GitError messages or logs.
  */
 
+import type { Brain } from '../../shared/brain';
 import type { Connection, Repo, Task } from '../../shared/types';
+import { BRAIN_HOME_CONNECTION_ID } from '../brain/share/BrainHomeStore';
 import { taskWorkspaces } from '../../shared/workspaces';
 import { samePath } from '../paths';
 import {
@@ -78,6 +80,21 @@ export function connectionIdForPath(
       return undefined;
     })();
   return repo?.connectionId ?? null;
+}
+
+/**
+ * The connection a brain folder's git signs in with: the brain home for a brain shared in the company's
+ * organization, else the brain's own connection; null when `cwd` is not a brain folder.
+ */
+export function connectionIdForBrain(
+  brains: Pick<Brain, 'path' | 'sharing' | 'connectionId'>[],
+  cwd: string,
+): string | null {
+  const brain = brains.find((b) => samePath(b.path, cwd));
+  if (!brain) return null;
+  return brain.sharing?.home === 'company'
+    ? BRAIN_HOME_CONNECTION_ID
+    : brain.connectionId;
 }
 
 /**

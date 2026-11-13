@@ -83,3 +83,16 @@ export function parseJoinLink(
 
 export const isKeeper = (origin: Origin, installId: string): boolean =>
   origin.keeper.installId === installId;
+
+/** Where this person's shared brains live when the company hosts them: an organization, a project and a PAT (never sent to the renderer). */
+export type BrainHome = {
+  organizationUrl: string;
+  project: string;
+  user: string | null;
+};
+
+export type BrainHomeInput = {
+  organizationUrl: string;
+  project: string;
+  pat: string;
+};

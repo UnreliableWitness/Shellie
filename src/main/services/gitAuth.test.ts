@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Repo, Task } from '../../shared/types';
 import {
   azureHeaderScope,
+  connectionIdForBrain,
   connectionIdForPath,
   createGitAuth,
   extraHeaderEnv,
 } from './gitAuth';
 import { TokenUnavailableError } from './ConnectionStore';
+import { BRAIN_HOME_CONNECTION_ID } from '../brain/share/BrainHomeStore';
 
 const PAT = 'pat-secret-123';
 const B64 = Buffer.from(`:${PAT}`).toString('base64');
@@ -191,5 +193,56 @@ describe('connectionIdForPath', () => {
     expect(connectionIdForPath(state, '/src/app.worktrees/t1')).toBe('c1');
     expect(connectionIdForPath(state, '/src/lib.worktrees/t1')).toBe('c2');
     expect(connectionIdForPath(state, '/elsewhere')).toBeNull();
+  });
+});
+
+describe('brain home sign-in', () => {
+  const sharing = (home: 'customer' | 'company') =>
+    ({ home }) as NonNullable<
+      Parameters<typeof connectionIdForBrain>[0][number]['sharing']
+    >;
+  const brain = (
+    p: string,
+    home: 'customer' | 'company' | null,
+  ): Parameters<typeof connectionIdForBrain>[0][number] => ({
+    path: p,
+    connectionId: 'c1',
+    sharing: home ? sharing(home) : null,
+  });
+
+  it('names the home for a company brain and the brain connection otherwise', () => {
+    const brains = [
+      brain('/b/company', 'company'),
+      brain('/b/customer', 'customer'),
+      brain('/b/plain', null),
+    ];
+    expect(connectionIdForBrain(brains, '/b/company')).toBe(
+      BRAIN_HOME_CONNECTION_ID,
+    );
+    expect(connectionIdForBrain(brains, '/b/customer')).toBe('c1');
+    expect(connectionIdForBrain(brains, '/b/plain')).toBe('c1');
+    expect(connectionIdForBrain(brains, '/elsewhere')).toBeNull();
+  });
+
+  it('a company brain uses the home token even with a customer connection in the same organization', async () => {
+    const brains = [brain('/b/company', 'company')];
+    const auth = createGitAuth({
+      connections: () => [
+        conn('c1', 'https://dev.azure.com/acme'),
+        conn(BRAIN_HOME_CONNECTION_ID, 'https://dev.azure.com/acme', 'Brains'),
+      ],
+      token: async (id) => (id === BRAIN_HOME_CONNECTION_ID ? 'home-pat' : PAT),
+      connectionIdFor: (cwd) => connectionIdForBrain(brains, cwd),
+      base: {},
+    });
+    const r = await auth({
+      cwd: '/b/company',
+      remote: 'origin',
+      url: 'https://dev.azure.com/acme/Brains/_git/brain',
+    });
+    expect(r.connectionId).toBe(BRAIN_HOME_CONNECTION_ID);
+    expect(r.env.GIT_CONFIG_VALUE_0).toBe(
+      `Authorization: Basic ${Buffer.from(':home-pat').toString('base64')}`,
+    );
   });
 });

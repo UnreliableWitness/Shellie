@@ -127,6 +127,13 @@ describe('brain handlers', () => {
           return true;
         },
       },
+      home: {
+        get: () => null,
+        save: async () => {
+          throw new Error('not here');
+        },
+        remove: async () => undefined,
+      },
       mirrorAuth: () => async () => ({}),
       tracker: () => ({
         wikis: async () => [],
