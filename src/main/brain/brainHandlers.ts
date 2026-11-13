@@ -193,6 +193,8 @@ export type BrainHandlerDeps = {
   /** shell.openPath: resolves to an error message, empty on success. */
   openPath: (absPath: string) => Promise<string>;
   userData: string;
+  /** This install's id, read once by main (getInstallId); tests leave it out and it is read from userData. */
+  installId?: string;
   /** Telemetry scrubs these from now on (a brain's name and path). */
   remember: (values: string[]) => void;
   event: (name: string, props?: TelemetryProps) => void;
@@ -486,7 +488,10 @@ export function createBrainHandlers(
   const changed = (brainId: string) =>
     d.broadcast('brain:changed', { brainId });
   let installId: Promise<string> | null = null;
-  const myInstall = () => (installId ??= getInstallId(d.userData));
+  const myInstall = () =>
+    (installId ??= d.installId
+      ? Promise.resolve(d.installId)
+      : getInstallId(d.userData));
   const joinDeps: JoinDeps = {
     brains: d.brains,
     git: d.git,

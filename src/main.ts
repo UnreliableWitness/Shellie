@@ -1233,6 +1233,7 @@ async function boot(): Promise<void> {
         runner: brainRunner,
         ledgerToday: brainToday,
         userData,
+        installId: installIdHere,
         sync: brainSync,
         takePendingJoin: () => {
           const link = pendingJoin;

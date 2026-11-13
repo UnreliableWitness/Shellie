@@ -258,6 +258,7 @@ export type Services = {
     runner: BrainRunner;
     ledgerToday: (brainId: string) => { tokens: number; costEur: number };
     userData: string;
+    installId?: string;
     sync?: BrainHandlerDeps['sync'];
     takePendingJoin?: BrainHandlerDeps['takePendingJoin'];
   };
@@ -925,6 +926,7 @@ export function createHandlers(s: Services): Handlers {
     pickFolder: s.pickFolder,
     openPath,
     userData: brain.userData,
+    installId: brain.installId,
     remember: (values) => s.rememberSensitive?.(values),
     event: (n, p) => tel.event(n, p),
     sync: brain.sync,
