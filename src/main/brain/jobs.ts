@@ -160,9 +160,10 @@ type Lane = {
   retry: ReturnType<typeof setTimeout> | null;
 };
 
-/** What a job's commit subject names after its kind: a write's target, another job's source. */
+/** What a job's commit subject names after its kind: a write's target, a settle's conflict id, another job's source. */
 const jobArgument = (j: BrainJob) => {
-  const arg = j.kind === 'write' ? j.target : j.source;
+  const arg =
+    j.kind === 'write' ? j.target : j.kind === 'settle' ? j.conflict : j.source;
   return arg ? ` ${arg}` : '';
 };
 

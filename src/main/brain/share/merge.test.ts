@@ -102,6 +102,14 @@ describe('parseJobSubject', () => {
     });
   });
 
+  it('reads a settle job with its conflict id as the target', () => {
+    expect(parseJobSubject('Brain: settle c1')).toEqual({
+      kind: 'settle',
+      source: null,
+      target: 'c1',
+    });
+  });
+
   it('is null for other commits', () => {
     for (const s of [
       'Brain: index',
@@ -365,6 +373,38 @@ describe('mergeServer', () => {
     expect(commits.split('\n')).toHaveLength(1);
     expect(await read(a, 'sources/n.md')).toBe('a note\n');
     expect(await read(a, 'wiki/x.md')).toContain('TWO by B');
+    await expectCleanTree(a);
+  });
+
+  it("counts neither an earlier merge nor Shellie's own commits as an outside edit", async () => {
+    await write(
+      a,
+      'wiki/x.md',
+      PAGE(['one', 'TWO by A', 'three', 'four', 'five']),
+    );
+    await commit(a, 'Brain: capture sources/a.md');
+    await write(b, 'sources/b.md', 'B\n');
+    await commit(b, 'Brain: add source b.md');
+    expect((await serverThenMerge()).notes).toEqual([]);
+    await write(
+      a,
+      'wiki/x.md',
+      PAGE(['one', 'TWO by A', 'three', 'four', 'five', 'verified']),
+    );
+    await commit(a, 'Brain: verified wiki/x.md');
+    await git.run(b, ['pull', '-q', 'origin', 'main']);
+    await write(
+      b,
+      'wiki/x.md',
+      PAGE(['one', 'TWO by B', 'three', 'four', 'five']),
+    );
+    await commit(b, 'Brain: capture sources/b.md');
+    const r = await serverThenMerge();
+    expect(r).toEqual({
+      merged: true,
+      rerun: [{ kind: 'capture', source: 'sources/a.md', target: null }],
+      notes: [],
+    });
     await expectCleanTree(a);
   });
 

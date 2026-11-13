@@ -14,6 +14,7 @@ import {
 import { MembersSchema, SharedFactsSchema } from '../../../shared/brainShare';
 import type { GitClient } from '../../services/GitClient';
 import type { ConflictsFile } from '../conflicts';
+import { isBrainCommit } from '../health';
 import { rebuildIndex } from '../indexPage';
 import { absPath } from '../paths';
 import { renderSource, sha256, slugify, sourceFileName } from '../sourceFile';
@@ -30,6 +31,7 @@ import {
 export type JobRef = {
   kind: BrainJobKind;
   source: string | null;
+  /** A write job's target, or a settle job's conflict id (`BrainJob.conflict`). */
   target: string | null;
 };
 
@@ -50,8 +52,8 @@ const JOB_KINDS: ReadonlySet<string> = new Set<BrainJobKind>([
 ]);
 
 /**
- * The job a commit subject came from (`runSkill`'s `Brain: <kind>[ <source or target>]`), or null for any other
- * commit: an outside edit, `Brain: index`, `Brain: settle conflict`.
+ * The job a commit subject came from (`runSkill`'s `Brain: <kind>[ <source, target or conflict id>]`), or null for
+ * any other commit: an outside edit, `Brain: index`, `Brain: settle conflict` (the Settle view's own commit).
  */
 export function parseJobSubject(subject: string): JobRef | null {
   const m = /^Brain: ([a-z]+)(?: (.+))?$/.exec(subject.trim());
@@ -60,6 +62,8 @@ export function parseJobSubject(subject: string): JobRef | null {
   const rest = m[2] ?? null;
   if (rest === null) return { kind, source: null, target: null };
   if (kind === 'write') return { kind, source: null, target: rest };
+  if (kind === 'settle')
+    return rest === 'conflict' ? null : { kind, source: null, target: rest };
   if (SOURCE_JOB_KINDS.has(kind) && rest.startsWith('sources/'))
     return { kind, source: rest, target: null };
   return null;
@@ -320,6 +324,7 @@ async function resolveConflicts(
         await git.run(dir, [
           ...RAW,
           'log',
+          '--no-merges',
           `${base}..HEAD`,
           '--format=%s',
           '--',
@@ -331,7 +336,8 @@ async function resolveConflicts(
       let outsideEdit = false;
       for (const s of subjects) {
         const job = parseJobSubject(s);
-        if (!job) outsideEdit = true;
+        // Shellie's other commits (`Brain: verified`, `Brain: scrub`) are not a person's text.
+        if (!job) outsideEdit ||= !isBrainCommit(s);
         else if (!rerun.some((r) => sameJob(r, job))) rerun.push(job);
       }
       if (outsideEdit && ours !== null)

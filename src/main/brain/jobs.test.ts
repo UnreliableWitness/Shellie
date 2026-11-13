@@ -721,6 +721,19 @@ describe('jobs on the brain agent', () => {
     ]);
   });
 
+  it('a settle job names its conflict id in its commit', async () => {
+    const committed: string[] = [];
+    const r = runner({
+      promptFor: async () => '/settle c1',
+      commit: async (_id, message) => {
+        committed.push(message);
+      },
+    });
+    r.enqueue('b1', 'settle', null, { conflict: 'c1' });
+    await idle(r, 'b1');
+    expect(committed).toEqual(['Brain: settle c1']);
+  });
+
   it('an OpenCode write job gets its prompt without the command as its arguments', async () => {
     run = async () => oc('ok');
     const r = runner({
