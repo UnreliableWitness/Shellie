@@ -14,6 +14,40 @@ export const asksHandOver = (brain: BrainView): boolean =>
 export const isMember = (brain: BrainView): boolean =>
   !!brain.sharing && !!brain.keeper && !brain.keeper.me;
 
+/** A label and a select of the members the keeper can hand over to. */
+function MemberPicker({
+  id,
+  label,
+  members,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  members: { installId: string; name: string }[];
+  value: string;
+  onChange: (installId: string) => void;
+}) {
+  return (
+    <>
+      <label htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        className="field"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Pick a member</option>
+        {members.map((m) => (
+          <option key={m.installId} value={m.installId}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
+
 /**
  * Asks the keeper to hand over before they stop, archive or delete, so the brain-wide automatic jobs keep running for
  * the colleagues: a member to pick and Hand over, or `<anyway>` to go on without.
@@ -53,20 +87,13 @@ export function HandOverFirst({
         You keep this brain. Hand over first, so the digest, /sync and the other
         automatic jobs keep running for your colleagues.
       </span>
-      <label htmlFor={id}>New keeper</label>
-      <select
+      <MemberPicker
         id={id}
-        className="field"
+        label="New keeper"
+        members={members}
         value={member}
-        onChange={(e) => setMember(e.target.value)}
-      >
-        <option value="">Pick a member</option>
-        {members.map((m) => (
-          <option key={m.installId} value={m.installId}>
-            {m.name}
-          </option>
-        ))}
-      </select>
+        onChange={setMember}
+      />
       <button
         type="button"
         className="btn btn-sm"
@@ -131,20 +158,13 @@ export function SharingControls({ brain }: { brain: BrainView }) {
       <div className="row">
         {keeper.me && keeper.members.length > 0 && (
           <>
-            <label htmlFor={id}>Hand over to</label>
-            <select
+            <MemberPicker
               id={id}
-              className="field"
+              label="Hand over to"
+              members={keeper.members}
               value={member}
-              onChange={(e) => setMember(e.target.value)}
-            >
-              <option value="">Pick a member</option>
-              {keeper.members.map((m) => (
-                <option key={m.installId} value={m.installId}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+              onChange={setMember}
+            />
             <button
               type="button"
               className="btn btn-ghost btn-sm"
