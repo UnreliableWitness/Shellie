@@ -5,16 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitClient } from '../../services/GitClient';
 import { OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { scaffoldBrain } from '../scaffold';
-import { SQUASH_MESSAGE } from './BrainSync';
-import { JOIN_MESSAGE } from './join';
-import { KEEPER_MESSAGE, SHARED_FACTS_MESSAGE } from './keeper';
 import {
   isPersonFree,
+  JOIN_MESSAGE,
+  KEEPER_MESSAGE,
   MERGE_MESSAGE,
-  mergeServer,
   parseJobSubject,
-} from './merge';
-import { SHARE_MESSAGE } from './share';
+  SHARE_MESSAGE,
+  SHARED_FACTS_MESSAGE,
+  SQUASH_MESSAGE,
+} from '../brainCommits';
+import { mergeServer } from './merge';
 
 // real git, many subprocesses per test: slow under load and on the Windows runner
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });

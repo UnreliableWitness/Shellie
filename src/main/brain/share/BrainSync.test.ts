@@ -14,12 +14,8 @@ import { onBrainGitIdle, withBrainGit } from '../gitMutex';
 import { scaffoldBrain } from '../scaffold';
 import { scrubBrain } from '../scrub';
 import { acquireLock, readState, releaseLock, writeState } from '../state';
-import {
-  BrainSync,
-  RAN_AGAIN,
-  SQUASH_MESSAGE,
-  type SyncRunner,
-} from './BrainSync';
+import { SQUASH_MESSAGE } from '../brainCommits';
+import { BrainSync, RAN_AGAIN, type SyncRunner } from './BrainSync';
 import { writeOrigin } from './files';
 
 // real git, many subprocesses per test: slow under load and on the Windows runner

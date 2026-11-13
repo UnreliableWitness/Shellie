@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isFile } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
+import { CREATED_MESSAGE } from './brainCommits';
 import { withBrainGit } from './gitMutex';
 import { absPath } from './paths';
 import {
@@ -39,7 +40,7 @@ export async function scaffoldBrain(
     await git.run(dir, ['config', 'user.name', 'Shellie']);
     await git.run(dir, ['config', 'user.email', 'shellie@localhost']);
     await git.run(dir, ['add', '-A']);
-    await git.run(dir, ['commit', '-m', 'Brain created']);
+    await git.run(dir, ['commit', '-m', CREATED_MESSAGE]);
   });
 }
 

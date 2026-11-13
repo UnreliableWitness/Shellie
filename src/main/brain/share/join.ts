@@ -23,6 +23,7 @@ import { AdoClient, AdoError } from '../../services/AdoClient';
 import { organizationOf } from '../../services/azureRepos';
 import { GitError, type GitClient } from '../../services/GitClient';
 import { azureHeaderScope, extraHeaderEnv } from '../../services/gitAuth';
+import { JOIN_MESSAGE } from '../brainCommits';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { isBrainFolder } from '../scaffold';
@@ -30,7 +31,6 @@ import type { BrainHomeStore } from './BrainHomeStore';
 import { parseOrigin, readShared, upsertMember } from './files';
 import { setCommitIdentity } from './keeper';
 
-export const JOIN_MESSAGE = 'Brain: joined';
 const ORIGIN_PATH = '/brain/origin.json';
 /** A clone no one watches gives up after this long (a credential prompt may be waiting). */
 const CLONE_TIMEOUT_MS = 10 * 60_000;

@@ -9,6 +9,7 @@ import type { Connection } from '../../../shared/types';
 import { AdoClient } from '../../services/AdoClient';
 import type { GitClient } from '../../services/GitClient';
 import { PENDING } from '../bookPass';
+import { LEAVE_MESSAGE, SHARE_MESSAGE } from '../brainCommits';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { isSyncCommit, outsideEdits } from '../health';
@@ -35,8 +36,6 @@ import {
 import { setCommitIdentity } from './keeper';
 import { CHUNK_BYTES, treeSecretFiles } from './secretScan';
 
-export const SHARE_MESSAGE = 'Brain: shared';
-export const LEAVE_MESSAGE = 'Brain: left';
 const BUSY = 'A brain job is running; try again later';
 const SHARE_FILES = [
   'brain/origin.json',

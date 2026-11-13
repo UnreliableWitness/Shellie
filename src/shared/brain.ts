@@ -341,18 +341,20 @@ export const BrainStateSchema = z.object({
 export type BrainState = z.infer<typeof BrainStateSchema>;
 
 /** `capture`, `retract`, `lessons` and `pictures` take a source path; the others run on the whole brain. */
-export type BrainJobKind =
-  | 'capture'
-  | 'sync'
-  | 'lint'
-  | 'digest'
-  | 'retract'
-  | 'lessons'
-  | 'pictures'
+export const BRAIN_JOB_KINDS = [
+  'capture',
+  'sync',
+  'lint',
+  'digest',
+  'retract',
+  'lessons',
+  'pictures',
   /** A conflict the person settled: runs `/settle` with the decision kept in brain/conflicts.json. */
-  | 'settle'
+  'settle',
   /** A long read written or brought up to date: runs `/write` on the job's `target`. */
-  | 'write';
+  'write',
+] as const;
+export type BrainJobKind = (typeof BRAIN_JOB_KINDS)[number];
 export const SOURCE_JOB_KINDS: ReadonlySet<BrainJobKind> = new Set([
   'capture',
   'retract',

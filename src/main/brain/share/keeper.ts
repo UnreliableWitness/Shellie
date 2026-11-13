@@ -13,6 +13,7 @@ import {
   type SharedFacts,
 } from '../../../shared/brainShare';
 import { GitAuthError, type GitClient } from '../../services/GitClient';
+import { KEEPER_MESSAGE, SHARED_FACTS_MESSAGE } from '../brainCommits';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import { TEMPLATES_VERSION } from '../templates';
@@ -25,8 +26,6 @@ import {
 } from './files';
 import { isAncestor, SERVER, succeeds } from './gitUtil';
 
-export const SHARED_FACTS_MESSAGE = 'Brain: shared facts';
-export const KEEPER_MESSAGE = 'Brain: keeper';
 /** A member may take over once the keeper's machine has sent nothing for this long. */
 const TAKE_OVER_MS = 14 * 24 * 3600 * 1000;
 export const UNREACHABLE = "Can't reach the brain's server; try again.";

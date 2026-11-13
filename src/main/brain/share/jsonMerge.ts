@@ -45,20 +45,11 @@ function splitLog(text: string): { head: string[]; entries: string[] } {
  * Union of both sides' entries, no entry twice (exact text), newest first by the date at the start of the entry.
  * When an entry has no date, the order is ours first, then the entries only theirs has.
  */
-export function mergeLog(
-  _base: string | null,
-  ours: string,
-  theirs: string,
-): string {
+export function mergeLog(ours: string, theirs: string): string {
   const o = splitLog(ours);
   const t = splitLog(theirs);
-  const seen = new Set<string>();
-  const all: string[] = [];
-  for (const e of [...o.entries, ...t.entries]) {
-    if (seen.has(e)) continue;
-    seen.add(e);
-    all.push(e);
-  }
+  // A Set keeps the first of each text, in order: ours, then the entries only theirs has.
+  const all = [...new Set([...o.entries, ...t.entries])];
   const dates = all.map((e) => ENTRY_DATE.exec(e)?.[1]);
   if (dates.every(Boolean)) {
     const order = all
@@ -70,7 +61,7 @@ export function mergeLog(
   let head = o.head.some((l) => l.trim()) ? o.head : t.head;
   if (!head.some((l) => l.trim())) head = ['# Log', ''];
   const body = all.map((e) => e.replace(/\n/g, eol));
-  return [...head.map((l) => l), ...body].join(eol) + eol;
+  return [...head, ...body].join(eol) + eol;
 }
 
 /** captured: union, the later `at` wins; findings and lastLintAt from the later lint; lastSyncCommit the descendant, else the base's. */

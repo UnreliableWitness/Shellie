@@ -17,13 +17,12 @@ import {
   writeOrigin,
   writeShared,
 } from './files';
+import { KEEPER_MESSAGE, SHARED_FACTS_MESSAGE } from '../brainCommits';
 import {
   handOver,
   isAutomatic,
-  KEEPER_MESSAGE,
   keeperOf,
   patchFacts,
-  SHARED_FACTS_MESSAGE,
   shellieOutdated,
   takeOver,
   UNREACHABLE,

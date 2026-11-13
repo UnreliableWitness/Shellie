@@ -60,6 +60,7 @@ import {
 import { unsentCount } from './share/gitUtil';
 import { joinLink, NEWER_SHELLIE } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
+import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import {
@@ -312,7 +313,7 @@ export async function refreshIndex(
       'commit',
       '-q',
       '-m',
-      'Brain: index',
+      INDEX_MESSAGE,
       '--',
       'index.md',
     ]);
@@ -416,7 +417,7 @@ export async function verifyPage(
       'commit',
       '-q',
       '-m',
-      `Brain: verified ${rel}`,
+      `${VERIFIED_PREFIX}${rel}`,
       '--',
       rel,
     ]);

@@ -5,20 +5,23 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {
-  BrainStateSchema,
-  SOURCE_JOB_KINDS,
-  type BrainBook,
-  type BrainJobKind,
-} from '../../../shared/brain';
+import { BrainStateSchema, type BrainBook } from '../../../shared/brain';
 import { MembersSchema, SharedFactsSchema } from '../../../shared/brainShare';
 import type { GitClient } from '../../services/GitClient';
+import {
+  isPersonFree,
+  MERGE_MESSAGE,
+  parseJobSubject,
+  SCRUB_MESSAGE,
+  type JobRef,
+} from '../brainCommits';
 import type { ConflictsFile } from '../conflicts';
 import { rebuildIndex } from '../indexPage';
 import { pathExists } from '../../fsRetry';
 import { absPath } from '../paths';
 import { REDACTED } from '../scrub';
 import { renderSource, sha256, slugify, sourceFileName } from '../sourceFile';
+import { isAncestor, isRecord } from './gitUtil';
 import {
   mergeBook,
   mergeConflicts,
@@ -29,67 +32,9 @@ import {
   mergeState,
 } from './jsonMerge';
 
-export type JobRef = {
-  kind: BrainJobKind;
-  source: string | null;
-  /** A write job's target, or a settle job's conflict id (`BrainJob.conflict`). */
-  target: string | null;
-};
-
 export type MergeResult = { merged: boolean; rerun: JobRef[]; notes: string[] };
 
-export const MERGE_MESSAGE = 'Brain: merge from colleagues';
-
-const JOB_KINDS: ReadonlySet<string> = new Set<BrainJobKind>([
-  'capture',
-  'sync',
-  'lint',
-  'digest',
-  'retract',
-  'lessons',
-  'pictures',
-  'settle',
-  'write',
-]);
-
-/**
- * The job a commit subject came from (`runSkill`'s `Brain: <kind>[ <source, target or conflict id>]`), or null for
- * any other commit: an outside edit, `Brain: index`, `Brain: settle conflict` (the Settle view's own commit).
- */
-export function parseJobSubject(subject: string): JobRef | null {
-  const m = /^Brain: ([a-z]+)(?: (.+))?$/.exec(subject.trim());
-  if (!m || !JOB_KINDS.has(m[1])) return null;
-  const kind = m[1] as BrainJobKind;
-  const rest = m[2] ?? null;
-  if (rest === null) return { kind, source: null, target: null };
-  if (kind === 'write') return { kind, source: null, target: rest };
-  if (kind === 'settle')
-    return rest === 'conflict' ? null : { kind, source: null, target: rest };
-  if (SOURCE_JOB_KINDS.has(kind) && rest.startsWith('sources/'))
-    return { kind, source: rest, target: null };
-  return null;
-}
-
 const RAW = ['-c', 'core.quotepath=off'];
-
-/**
- * Shellie commits with no person's text in them (the index, a verified stamp, merges, the share files): a clash on
- * their page loses nothing. Kept as text here, not imported, so this module stays free of the sync's own imports;
- * merge.test.ts checks them against the constants. Any other commit that is not a job's counts as an outside edit,
- * the fold (`Brain: changes since the last send`) and `Brain: scrub` included.
- */
-const PERSON_FREE = new Set([
-  'Brain created',
-  'Brain: index',
-  'Brain: merge from colleagues',
-  'Brain: shared facts',
-  'Brain: keeper',
-  'Brain: joined',
-  'Brain: shared',
-]);
-export const isPersonFree = (subject: string) =>
-  PERSON_FREE.has(subject.trim()) || subject.startsWith('Brain: verified ');
-const SCRUB_SUBJECT = 'Brain: scrub';
 
 /** The template files the skills live in: the side with the higher `templatesVersion` wins them. */
 const isSkillsPath = (p: string) =>
@@ -100,8 +45,6 @@ const isSkillsPath = (p: string) =>
   p.startsWith('.opencode/');
 
 const jsonText = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * Merges `ref` (the server's branch, fetched) into the brain at `dir`. Runs inside the caller's `withBrainGit`.
@@ -115,16 +58,11 @@ export async function mergeServer(
   now: Date = new Date(),
 ): Promise<MergeResult> {
   const nothing: MergeResult = { merged: false, rerun: [], notes: [] };
-  const isAncestor = (a: string, b: string) =>
-    git.run(dir, ['merge-base', '--is-ancestor', a, b]).then(
-      () => true,
-      () => false,
-    );
   const theirsId = (
     await git.run(dir, ['rev-parse', '--verify', `${ref}^{commit}`])
   ).trim();
-  if (await isAncestor(theirsId, 'HEAD')) return nothing;
-  if (await isAncestor('HEAD', theirsId)) {
+  if (await isAncestor(git, dir, theirsId, 'HEAD')) return nothing;
+  if (await isAncestor(git, dir, 'HEAD', theirsId)) {
     await git.run(dir, ['merge', '-q', '--ff-only', theirsId]);
     return { merged: true, rerun: [], notes: [] };
   }
@@ -166,6 +104,113 @@ async function unmerged(
   return out;
 }
 
+/** The three sides of a conflicted JSON file, parsed (a missing side is null). */
+type JsonSides = { base: unknown; ours: unknown; theirs: unknown };
+type JsonRule = (
+  s: JsonSides,
+  git: GitClient,
+  dir: string,
+) => unknown | Promise<unknown>;
+
+/** A map of keyed records (`{ at }` each), merged key by key. */
+const keyedMap = (v: unknown) =>
+  (isRecord(v) ? v : {}) as Record<string, { at?: string }>;
+const keyedMapRule: JsonRule = ({ ours, theirs }) =>
+  mergeKeyedMap(keyedMap(ours), keyedMap(theirs));
+
+/** The brain's own JSON files, each merged by its rule of the spec's table. */
+const JSON_RULES: Record<string, JsonRule> = {
+  'brain/state.json': async ({ base, ours, theirs }, git, dir) => {
+    const o = BrainStateSchema.parse(ours);
+    const t = BrainStateSchema.parse(theirs);
+    const b =
+      base === null ? null : (BrainStateSchema.safeParse(base).data ?? null);
+    // mergeState asks synchronously: settle the two commits' ancestry with git first.
+    const known = new Map<string, boolean>();
+    const pair = [o.lastSyncCommit, t.lastSyncCommit];
+    if (pair[0] && pair[1])
+      for (const [x, y] of [pair, [pair[1], pair[0]]] as [string, string][])
+        known.set(`${x} ${y}`, await isAncestor(git, dir, x, y));
+    const merged = mergeState(
+      b,
+      o,
+      t,
+      (x, y) => known.get(`${x} ${y}`) ?? false,
+    );
+    // Keys the schema does not know (a newer Shellie's) are kept, as writeState keeps them.
+    return { ...(theirs as object), ...merged };
+  },
+  'brain/conflicts.json': ({ ours, theirs }) => {
+    const file = (v: unknown): ConflictsFile => ({
+      version: 1,
+      conflicts:
+        isRecord(v) && isRecord(v.conflicts)
+          ? (v.conflicts as ConflictsFile['conflicts'])
+          : {},
+    });
+    return mergeConflicts(file(ours), file(theirs));
+  },
+  'brain/reads.json': ({ ours, theirs }) => {
+    const reads = (v: unknown) => keyedMap(isRecord(v) ? v.reads : null);
+    return {
+      ...(theirs as object),
+      reads: mergeKeyedMap(reads(ours), reads(theirs)),
+    };
+  },
+  'brain/pictures-skipped.json': keyedMapRule,
+  'brain/pictures-dropped.json': keyedMapRule,
+  'brain/book.json': ({ ours, theirs }) => {
+    const book = (v: unknown): BrainBook => ({
+      chapters:
+        isRecord(v) && Array.isArray(v.chapters)
+          ? (v.chapters as BrainBook['chapters'])
+          : [],
+    });
+    return mergeBook(book(ours), book(theirs));
+  },
+  'brain/shared.json': ({ ours, theirs }) =>
+    mergeShared(SharedFactsSchema.parse(ours), SharedFactsSchema.parse(theirs)),
+  'brain/members.json': ({ base, ours, theirs }) =>
+    mergeMembers(
+      MembersSchema.parse(ours),
+      MembersSchema.parse(theirs),
+      base === null ? null : (MembersSchema.safeParse(base).data ?? null),
+    ),
+};
+
+/** Resolves one conflicted path; the context the rules share. */
+type Conflict = {
+  git: GitClient;
+  dir: string;
+  /** The merge base. */
+  base: string;
+  now: Date;
+  stages: Set<number>;
+  stage: (n: 1 | 2 | 3) => Promise<string | null>;
+  take: (side: 'ours' | 'theirs') => Promise<void>;
+  put: (text: string) => Promise<void>;
+  skillsWinner: () => Promise<'ours' | 'theirs'>;
+  rerun: JobRef[];
+  notes: string[];
+};
+
+/** The other paths, by prefix or test, in order: the first that matches resolves it. */
+const PATH_RULES: [
+  (p: string) => boolean,
+  (p: string, c: Conflict) => Promise<void>,
+][] = [
+  // Rebuilt from the pages after the merge.
+  [(p) => p === 'index.md', (_, c) => c.take('theirs')],
+  [isSkillsPath, async (_, c) => c.take(await c.skillsWinner())],
+  // The mirror: the next refresh brings either side up to date.
+  [(p) => p.startsWith('sources/wiki/'), (_, c) => c.take('theirs')],
+  [
+    (p) => p.startsWith('sources/'),
+    (p, c) => keepBothSources(c.git, c.dir, p, c.stages),
+  ],
+  [(p) => p.startsWith('wiki/') || p.startsWith('reads/'), resolvePage],
+];
+
 async function resolveConflicts(
   git: GitClient,
   dir: string,
@@ -177,47 +222,6 @@ async function resolveConflicts(
   const notes: string[] = [];
   const conflicted = await unmerged(git, dir);
   if (!conflicted.size) return { rerun, notes };
-
-  const stage = (p: string, n: 1 | 2 | 3) =>
-    conflicted.get(p)?.has(n)
-      ? git.run(dir, [...RAW, 'show', `:${n}:${p}`])
-      : Promise.resolve(null);
-  const take = async (p: string, side: 'ours' | 'theirs') => {
-    if (conflicted.get(p)?.has(side === 'ours' ? 2 : 3)) {
-      await git.run(dir, ['checkout', `--${side}`, '--', p]);
-      await git.run(dir, ['add', '--', p]);
-    } else {
-      await git.run(dir, ['rm', '-q', '-f', '--', p]);
-    }
-  };
-  const put = async (p: string, text: string) => {
-    await fs.writeFile(absPath(dir, p), text);
-    await git.run(dir, ['add', '--', p]);
-  };
-  /** Both sides parsed as JSON (a missing side is null); a side that is not JSON throws. */
-  const sides = async (p: string) => {
-    const parse = (t: string | null): unknown =>
-      t === null ? null : JSON.parse(t);
-    return {
-      base: parse(await stage(p, 1)),
-      ours: parse(await stage(p, 2)),
-      theirs: parse(await stage(p, 3)),
-    };
-  };
-  /** Merges a JSON file with `fn` when both sides have it; otherwise the side that has it. */
-  const mergeJson = async (
-    p: string,
-    fn: (s: {
-      base: unknown;
-      ours: unknown;
-      theirs: unknown;
-    }) => unknown | Promise<unknown>,
-  ) => {
-    const s = await sides(p);
-    if (s.ours === null || s.theirs === null)
-      return take(p, s.theirs === null ? 'ours' : 'theirs');
-    await put(p, jsonText(await fn(s)));
-  };
 
   let skillsSide: 'ours' | 'theirs' | null = null;
   const skillsWinner = async () => {
@@ -236,162 +240,107 @@ async function resolveConflicts(
   };
 
   for (const p of [...conflicted.keys()].sort()) {
+    const stages = conflicted.get(p) ?? new Set<number>();
+    const c: Conflict = {
+      git,
+      dir,
+      base,
+      now,
+      stages,
+      stage: (n) =>
+        stages.has(n)
+          ? git.run(dir, [...RAW, 'show', `:${n}:${p}`])
+          : Promise.resolve(null),
+      take: async (side) => {
+        if (stages.has(side === 'ours' ? 2 : 3)) {
+          await git.run(dir, ['checkout', `--${side}`, '--', p]);
+          await git.run(dir, ['add', '--', p]);
+        } else {
+          await git.run(dir, ['rm', '-q', '-f', '--', p]);
+        }
+      },
+      put: async (text) => {
+        await fs.writeFile(absPath(dir, p), text);
+        await git.run(dir, ['add', '--', p]);
+      },
+      skillsWinner,
+      rerun,
+      notes,
+    };
+    const json = JSON_RULES[p];
     if (p === 'log.md') {
-      await put(
-        p,
-        mergeLog(
-          await stage(p, 1),
-          (await stage(p, 2)) ?? '',
-          (await stage(p, 3)) ?? '',
-        ),
-      );
-    } else if (p === 'brain/state.json') {
-      await mergeJson(p, async ({ base, ours, theirs }) => {
-        const o = BrainStateSchema.parse(ours);
-        const t = BrainStateSchema.parse(theirs);
-        const b =
-          base === null
-            ? null
-            : (BrainStateSchema.safeParse(base).data ?? null);
-        // mergeState asks synchronously: settle the two commits' ancestry with git first.
-        const known = new Map<string, boolean>();
-        const pair = [o.lastSyncCommit, t.lastSyncCommit];
-        if (pair[0] && pair[1])
-          for (const [x, y] of [pair, [pair[1], pair[0]]] as [string, string][])
-            known.set(
-              `${x} ${y}`,
-              await git.run(dir, ['merge-base', '--is-ancestor', x, y]).then(
-                () => true,
-                () => false,
-              ),
-            );
-        const merged = mergeState(
-          b,
-          o,
-          t,
-          (x, y) => known.get(`${x} ${y}`) ?? false,
-        );
-        // Keys the schema does not know (a newer Shellie's) are kept, as writeState keeps them.
-        return { ...(theirs as object), ...merged };
-      });
-    } else if (p === 'brain/conflicts.json') {
-      await mergeJson(p, ({ ours, theirs }) => {
-        const file = (v: unknown): ConflictsFile => ({
-          version: 1,
-          conflicts:
-            isRecord(v) && isRecord(v.conflicts)
-              ? (v.conflicts as ConflictsFile['conflicts'])
-              : {},
-        });
-        return mergeConflicts(file(ours), file(theirs));
-      });
-    } else if (p === 'brain/reads.json') {
-      await mergeJson(p, ({ ours, theirs }) => {
-        const map = (v: unknown) =>
-          (isRecord(v) && isRecord(v.reads) ? v.reads : {}) as Record<
-            string,
-            { at?: string }
-          >;
-        return {
-          ...(theirs as object),
-          reads: mergeKeyedMap(map(ours), map(theirs)),
-        };
-      });
-    } else if (
-      p === 'brain/pictures-skipped.json' ||
-      p === 'brain/pictures-dropped.json'
-    ) {
-      await mergeJson(p, ({ ours, theirs }) => {
-        const map = (v: unknown) =>
-          (isRecord(v) ? v : {}) as Record<string, { at?: string }>;
-        return mergeKeyedMap(map(ours), map(theirs));
-      });
-    } else if (p === 'brain/book.json') {
-      await mergeJson(p, ({ ours, theirs }) => {
-        const book = (v: unknown): BrainBook => ({
-          chapters:
-            isRecord(v) && Array.isArray(v.chapters)
-              ? (v.chapters as BrainBook['chapters'])
-              : [],
-        });
-        return mergeBook(book(ours), book(theirs));
-      });
-    } else if (p === 'brain/shared.json') {
-      await mergeJson(p, ({ ours, theirs }) =>
-        mergeShared(
-          SharedFactsSchema.parse(ours),
-          SharedFactsSchema.parse(theirs),
-        ),
-      );
-    } else if (p === 'brain/members.json') {
-      await mergeJson(p, ({ base, ours, theirs }) =>
-        mergeMembers(
-          MembersSchema.parse(ours),
-          MembersSchema.parse(theirs),
-          base === null ? null : (MembersSchema.safeParse(base).data ?? null),
-        ),
-      );
-    } else if (p === 'index.md') {
-      // Rebuilt from the pages after the merge.
-      await take(p, 'theirs');
-    } else if (isSkillsPath(p)) {
-      await take(p, await skillsWinner());
-    } else if (p.startsWith('sources/wiki/')) {
-      // The mirror: the next refresh brings either side up to date.
-      await take(p, 'theirs');
-    } else if (p.startsWith('sources/')) {
-      await keepBothSources(git, dir, p, conflicted.get(p) ?? new Set());
-    } else if (p.startsWith('wiki/') || p.startsWith('reads/')) {
-      const ours = await stage(p, 2);
-      const log = (
-        await git.run(dir, [
-          ...RAW,
-          'log',
-          '--no-merges',
-          `${base}..HEAD`,
-          '--format=%H %s',
-          '--',
-          p,
-        ])
-      )
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => ({
-          id: l.slice(0, l.indexOf(' ')),
-          subject: l.slice(l.indexOf(' ') + 1),
-        }));
-      // A scrub took a value out here: a server page that still holds it would bring it back, so ours stays.
-      const scrubs = log.filter((c) => c.subject === SCRUB_SUBJECT);
-      const theirs = scrubs.length ? await stage(p, 3) : null;
-      if (
-        theirs !== null &&
-        (
-          await scrubbedValues(
-            git,
-            dir,
-            scrubs.map((c) => c.id),
-            p,
-          )
-        ).some((v) => theirs.includes(v))
-      ) {
-        await take(p, 'ours');
-        continue;
-      }
-      await take(p, 'theirs');
-      let outsideEdit = false;
-      for (const { subject } of log) {
-        const job = parseJobSubject(subject);
-        if (!job) outsideEdit ||= !isPersonFree(subject);
-        else if (!rerun.some((r) => sameJob(r, job))) rerun.push(job);
-      }
-      if (outsideEdit && ours !== null)
-        notes.push(await writeLocalNote(git, dir, p, ours, now));
+      const [ours, theirs] = await Promise.all([c.stage(2), c.stage(3)]);
+      await c.put(mergeLog(ours ?? '', theirs ?? ''));
+    } else if (json) {
+      // Both sides parsed (a side that is not JSON throws); a side missing takes the side that has it.
+      const [b, o, t] = await Promise.all([c.stage(1), c.stage(2), c.stage(3)]);
+      const parse = (x: string | null): unknown =>
+        x === null ? null : JSON.parse(x);
+      const s = { base: parse(b), ours: parse(o), theirs: parse(t) };
+      if (s.ours === null || s.theirs === null)
+        await c.take(s.theirs === null ? 'ours' : 'theirs');
+      else await c.put(jsonText(await json(s, git, dir)));
     } else {
+      const rule = PATH_RULES.find(([match]) => match(p));
       // Not in the rule table (brain/origin.json, anything new): the server's side.
-      await take(p, 'theirs');
+      if (rule) await rule[1](p, c);
+      else await c.take('theirs');
     }
   }
   return { rerun, notes };
+}
+
+/**
+ * A wiki page or a long read both sides changed: the server's side, and the jobs whose output lost run again; an
+ * outside edit of ours becomes a note source. A page a scrub of ours took a value out of stays ours while the
+ * server's side still holds that value.
+ */
+async function resolvePage(p: string, c: Conflict): Promise<void> {
+  const { git, dir } = c;
+  const ours = await c.stage(2);
+  const log = (
+    await git.run(dir, [
+      ...RAW,
+      'log',
+      '--no-merges',
+      `${c.base}..HEAD`,
+      '--format=%H %s',
+      '--',
+      p,
+    ])
+  )
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => ({
+      id: l.slice(0, l.indexOf(' ')),
+      subject: l.slice(l.indexOf(' ') + 1),
+    }));
+  // A scrub took a value out here: a server page that still holds it would bring it back, so ours stays.
+  const scrubs = log.filter((x) => x.subject === SCRUB_MESSAGE);
+  const theirs = scrubs.length ? await c.stage(3) : null;
+  if (
+    theirs !== null &&
+    (
+      await scrubbedValues(
+        git,
+        dir,
+        scrubs.map((x) => x.id),
+        p,
+      )
+    ).some((v) => theirs.includes(v))
+  ) {
+    await c.take('ours');
+    return;
+  }
+  await c.take('theirs');
+  let outsideEdit = false;
+  for (const { subject } of log) {
+    const job = parseJobSubject(subject);
+    if (!job) outsideEdit ||= !isPersonFree(subject);
+    else if (!c.rerun.some((r) => sameJob(r, job))) c.rerun.push(job);
+  }
+  if (outsideEdit && ours !== null)
+    c.notes.push(await writeLocalNote(git, dir, p, ours, c.now));
 }
 
 const sameJob = (a: JobRef, b: JobRef) =>

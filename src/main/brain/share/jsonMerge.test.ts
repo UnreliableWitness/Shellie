@@ -24,24 +24,23 @@ const state = (o: Partial<BrainState> = {}): BrainState => ({
 describe('mergeLog', () => {
   const head = '# Log\n\n';
   it('keeps both sides new entries, newest first, without duplicates', () => {
-    const base = `${head}- 2026-11-01T10:00:00.000Z old\n`;
     const ours = `${head}- 2026-11-03T10:00:00.000Z ours\n- 2026-11-01T10:00:00.000Z old\n`;
     const theirs = `${head}- 2026-11-04T10:00:00.000Z theirs\n- 2026-11-01T10:00:00.000Z old\n`;
-    expect(mergeLog(base, ours, theirs)).toBe(
+    expect(mergeLog(ours, theirs)).toBe(
       `${head}- 2026-11-04T10:00:00.000Z theirs\n- 2026-11-03T10:00:00.000Z ours\n- 2026-11-01T10:00:00.000Z old\n`,
     );
   });
   it('merges ## blocks with their body lines', () => {
     const ours = '# Log\n\n## 2026-11-02 a\nbody a\n';
     const theirs = '# Log\n\n## 2026-11-03 b\nbody b\n';
-    expect(mergeLog(null, ours, theirs)).toBe(
+    expect(mergeLog(ours, theirs)).toBe(
       '# Log\n\n## 2026-11-03 b\nbody b\n## 2026-11-02 a\nbody a\n',
     );
   });
   it('without dates keeps ours first, then theirs only', () => {
     const ours = '# Log\n\n- x\n- y\n';
     const theirs = '# Log\n\n- z\n- y\n';
-    expect(mergeLog(null, ours, theirs)).toBe('# Log\n\n- x\n- y\n- z\n');
+    expect(mergeLog(ours, theirs)).toBe('# Log\n\n- x\n- y\n- z\n');
   });
 });
 

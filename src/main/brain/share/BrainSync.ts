@@ -10,6 +10,12 @@ import type { TelemetryProps } from '../../../shared/telemetry';
 import { samePath } from '../../paths';
 import { GitAuthError, type GitClient } from '../../services/GitClient';
 import { PENDING } from '../bookPass';
+import {
+  jobTarget,
+  jobTargetOpts,
+  SQUASH_MESSAGE,
+  type JobRef,
+} from '../brainCommits';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
 import type { BrainJobRunner } from '../jobs';
@@ -30,7 +36,7 @@ import {
   withPrivateIndex,
 } from './gitUtil';
 import { factsFromShared, isAutomatic } from './keeper';
-import { mergeServer, type JobRef } from './merge';
+import { mergeServer } from './merge';
 import { unsentSecretFile } from './secretScan';
 
 export const RAN_AGAIN =
@@ -42,7 +48,6 @@ const PUSH_DELAY_MS = 2000;
 const UNCAPTURED_MS = 3600_000;
 /** The brain's history from before it was shared (`shareBrain`), dropped after the first successful pull. */
 export const PRE_SHARE_REF = 'refs/shellie/pre-share';
-export const SQUASH_MESSAGE = 'Brain: changes since the last send';
 
 export type SyncRunner = Pick<
   BrainJobRunner,
@@ -69,13 +74,7 @@ export type BrainSyncDeps = {
 };
 
 const sameJob = (j: BrainJob, r: JobRef) =>
-  j.kind === r.kind &&
-  j.source === r.source &&
-  (r.kind === 'write'
-    ? (j.target ?? null) === r.target
-    : r.kind === 'settle'
-      ? (j.conflict ?? null) === r.target
-      : true);
+  j.kind === r.kind && j.source === r.source && jobTarget(j) === r.target;
 
 const rejected = (e: unknown) =>
   /\[rejected\]|non-fast-forward|fetch first/i.test((e as Error).message);
@@ -319,10 +318,7 @@ export class BrainSync {
       runner.enqueue(id, ref.kind, ref.source, {
         front: true,
         replays: replays + 1,
-        ...(ref.kind === 'write' && ref.target ? { target: ref.target } : {}),
-        ...(ref.kind === 'settle' && ref.target
-          ? { conflict: ref.target }
-          : {}),
+        ...jobTargetOpts(ref.kind, ref.target),
       });
       queued++;
     }

@@ -12,13 +12,8 @@ import { scaffoldBrain } from '../scaffold';
 import { readState, writeState } from '../state';
 import { BrainSync, PRE_SHARE_REF, type SyncRunner } from './BrainSync';
 import { readMembers, readOrigin, readShared, upsertMember } from './files';
-import {
-  LEAVE_MESSAGE,
-  leaveBrain,
-  shareBrain,
-  stopSharing,
-  type ShareDeps,
-} from './share';
+import { LEAVE_MESSAGE } from '../brainCommits';
+import { leaveBrain, shareBrain, stopSharing, type ShareDeps } from './share';
 
 // real git, many subprocesses per test: slow under load and on the Windows runner
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });

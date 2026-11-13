@@ -17,6 +17,7 @@ import {
   ExitError,
   type runWithInput,
 } from '../services/prSummary';
+import { jobSubject } from './brainCommits';
 import { opencodeResultWithSession } from './opencodeResult';
 import { acquireLock, releaseLock, writeState } from './state';
 import { brainOpencodePermission } from './templates';
@@ -158,13 +159,6 @@ type Lane = {
   /** Queued jobs wait for Update skills. */
   held: boolean;
   retry: ReturnType<typeof setTimeout> | null;
-};
-
-/** What a job's commit subject names after its kind: a write's target, a settle's conflict id, another job's source. */
-const jobArgument = (j: BrainJob) => {
-  const arg =
-    j.kind === 'write' ? j.target : j.kind === 'settle' ? j.conflict : j.source;
-  return arg ? ` ${arg}` : '';
 };
 
 const prompt = (j: BrainJob) =>
@@ -570,8 +564,8 @@ export class BrainJobRunner {
     }
     await d.commit(
       brainId,
-      // parseJobSubject (share/merge.ts) reads this back to run the job again after a clash.
-      `Brain: ${job.kind}${jobArgument(job)}`,
+      // parseJobSubject reads this back to run the job again after a clash.
+      jobSubject(job),
       job,
     );
   }
