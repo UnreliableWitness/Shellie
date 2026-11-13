@@ -1437,6 +1437,10 @@ describe('handlers: the brain at setup', () => {
     const flags = calls.at(-1)!.flags;
     const at = flags.indexOf('--add-dir');
     expect(flags.slice(at, at + 2)).toEqual(['--add-dir', brain.path]);
+    // Claude starts knowing to read the brain, without the user asking (#289).
+    expect(calls.at(-1)!.prompt).toContain(
+      `The project's brain (Acme) is at ${brain.path}, read-only. Before answering questions about this project or starting work, read its index.md`,
+    );
     await hx.terminals.killAllForTask(t.id);
   });
 
@@ -1541,6 +1545,7 @@ describe('handlers: the brain at setup', () => {
     expect(md).not.toContain('## Context');
     expect(state?.steps.map((s) => s.def.kind)).not.toContain('brain');
     expect(calls.at(-1)!.flags).not.toContain('--add-dir');
+    expect(calls.at(-1)!.prompt).not.toContain('brain');
     await hx.terminals.killAllForTask(t.id);
   });
 
