@@ -135,7 +135,7 @@ async function smokePty(o: {
     });
     // `echo` exists in sh, zsh and PowerShell (alias of Write-Output).
     const cmd = o.platform.runCommand(`echo ${MARKER}`);
-    terminals.spawn({
+    await terminals.spawn({
       id,
       taskId: 'shellie-smoke',
       cwd: os.homedir(),

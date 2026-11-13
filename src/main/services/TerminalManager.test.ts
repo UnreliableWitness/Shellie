@@ -7,6 +7,7 @@ import {
   sleepCmd,
   testPlatform,
 } from '../test-helpers/shell';
+import { inProcessPtyHost } from '../test-helpers/ptyHost';
 import { LeakMatcher } from '../secrets/LeakMatcher';
 import {
   mergeEnv,
@@ -27,7 +28,7 @@ const create = (o?: {
   now?: () => number;
   flushMs?: number;
 }) => {
-  const m = new TerminalManager(o);
+  const m = new TerminalManager(inProcessPtyHost(), o);
   managers.push(m);
   return m;
 };
@@ -278,7 +279,7 @@ describe('TerminalManager', () => {
     if (!entry) throw new Error('missing entry');
     // node-pty reports a bad cwd asynchronously (exit 1), so force a synchronous spawn error instead.
     entry.options = { ...entry.options, args: [1 as unknown as string] };
-    expect(() => m.restart('f')).toThrow();
+    await expect(m.restart('f')).rejects.toThrow();
     expect(m.isRunning('f')).toBe(false);
     expect(m.buffer('f')).toContain('before');
   });

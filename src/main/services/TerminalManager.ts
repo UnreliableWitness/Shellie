@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
-import * as pty from 'node-pty';
 import type { ColorScheme } from '../../shared/theme';
 import { withTimeout } from '../async';
+import type { PtyHost, PtyProcess } from '../ptyHost/client';
 
 export type SpawnOptions = {
   id: string;
@@ -29,7 +29,7 @@ export type OutputFilter = (
 
 type Entry = {
   options: SpawnOptions;
-  proc: pty.IPty;
+  proc: PtyProcess;
   exited: boolean;
   buffer: string;
   /** The program turned on colour scheme reports (DEC private mode 2031), so a scheme change is pushed to it. */
@@ -112,7 +112,9 @@ export class TerminalManager extends EventEmitter<{
   private readonly flushMs: number;
   private filter: OutputFilter | null = null;
 
+  /** `host` starts the ptys: the pty host's utility process in the app, so a slow spawn never blocks main (#271). */
   constructor(
+    private readonly host: PtyHost,
     o: { killWaitMs?: number; now?: () => number; flushMs?: number } = {},
   ) {
     super();
@@ -126,7 +128,11 @@ export class TerminalManager extends EventEmitter<{
     this.filter = filter;
   }
 
-  spawn(options: SpawnOptions): void {
+  /**
+   * Starts a terminal. The id is known at once (write and resize follow the spawn in order); the promise rejects
+   * when the process could not be started, and the terminal is then forgotten again.
+   */
+  spawn(options: SpawnOptions): Promise<void> {
     if (this.entries.has(options.id))
       throw new Error(`Terminal ${options.id} already exists`);
     const env = mergeEnv(
@@ -142,24 +148,40 @@ export class TerminalManager extends EventEmitter<{
     env.MIAC_TASK_ID = options.taskId; // for scripts written before the rename
     env.SHELLIE_TERMINAL_ID = options.id;
     const size = this.sizes.get(options.id);
-    const proc = pty.spawn(options.command, options.args, {
-      name: 'xterm-256color',
-      cols: size?.cols ?? options.cols ?? 120,
-      rows: size?.rows ?? options.rows ?? 30,
-      cwd: options.cwd,
-      env,
-      // Windows: the bundled conpty.dll. The default (system ConPTY) kill path forks a helper with
-      // child_process.fork, which the RunAsNode fuse turns into a second Shellie.exe launch.
-      // node-pty is pinned to 1.2.0-beta.15 or later: 1.1.0 has a data race on its Windows pty handle
-      // list (microsoft/node-pty#921, fixed in 1.2.0-beta.13) that crashes the process with an access
-      // violation when one pty exits while another is spawned, resized or killed.
-      ...(process.platform === 'win32' ? { useConptyDll: true } : {}),
-    });
     let exitResolve = () => {};
     const exit = new Promise<void>((r) => {
       exitResolve = r;
     });
-    const entry: Entry = {
+    // Set right below, before the host can answer.
+    let entry!: Entry;
+    const { proc, started } = this.host.spawn(
+      {
+        file: options.command,
+        args: options.args,
+        cols: size?.cols ?? options.cols ?? 120,
+        rows: size?.rows ?? options.rows ?? 30,
+        cwd: options.cwd,
+        env,
+      },
+      {
+        data: (data) => {
+          if (this.entries.get(options.id) !== entry) return;
+          const seen = entry.tail + data;
+          entry.schemeReports = schemeReportsAfter(entry.schemeReports, seen);
+          entry.tail = seen.slice(-TAIL);
+          this.deliver(entry, this.filtered(entry, data, false));
+        },
+        exit: (exitCode) => {
+          exitResolve();
+          if (this.entries.get(options.id) !== entry) return;
+          if (entry.carry) this.deliver(entry, this.filtered(entry, '', true));
+          entry.exited = true;
+          entry.exitedAt = this.now();
+          this.emit('exit', options.id, normaliseExitCode(exitCode));
+        },
+      },
+    );
+    entry = {
       options,
       proc,
       exited: false,
@@ -171,20 +193,13 @@ export class TerminalManager extends EventEmitter<{
       carry: '',
     };
     this.entries.set(options.id, entry);
-    proc.onData((data) => {
-      if (this.entries.get(options.id) !== entry) return;
-      const seen = entry.tail + data;
-      entry.schemeReports = schemeReportsAfter(entry.schemeReports, seen);
-      entry.tail = seen.slice(-TAIL);
-      this.deliver(entry, this.filtered(entry, data, false));
-    });
-    proc.onExit(({ exitCode }) => {
+    return started.catch((error: unknown) => {
       exitResolve();
-      if (this.entries.get(options.id) !== entry) return;
-      if (entry.carry) this.deliver(entry, this.filtered(entry, '', true));
-      entry.exited = true;
-      entry.exitedAt = this.now();
-      this.emit('exit', options.id, normaliseExitCode(exitCode));
+      if (this.entries.get(options.id) === entry) {
+        this.entries.delete(options.id);
+        clearTimeout(entry.flushTimer);
+      }
+      throw error;
     });
   }
 
@@ -261,26 +276,36 @@ export class TerminalManager extends EventEmitter<{
     if (!e) return Promise.resolve();
     this.entries.delete(id);
     clearTimeout(e.flushTimer);
-    if (e.exited) return Promise.resolve();
     try {
+      // An exited one is only forgotten by the host.
       e.proc.kill();
     } catch {
       // Already gone; the exit (or the timeout) settles the wait.
     }
+    if (e.exited) return Promise.resolve();
     return withTimeout(e.exit, this.killWaitMs, () => undefined);
   }
 
-  restart(id: string): void {
+  /** Spawns the terminal again with its options; rejects as spawn does. */
+  restart(id: string): Promise<void> {
     const old = this.get(id);
     void this.kill(id);
-    try {
-      this.spawn(old.options);
-    } catch (error) {
-      // Keep the terminal known (and its scrollback readable) when the respawn fails.
+    // Keep the terminal known (and its scrollback readable) when the respawn fails.
+    const keep = () => {
       old.exited = true;
       this.entries.set(id, old);
+    };
+    let started: Promise<void>;
+    try {
+      started = this.spawn(old.options);
+    } catch (error) {
+      keep();
       throw error;
     }
+    return started.catch((error: unknown) => {
+      if (!this.entries.has(id)) keep();
+      throw error;
+    });
   }
 
   /** Kills every terminal of a task. Resolves when they have all exited (see kill). */

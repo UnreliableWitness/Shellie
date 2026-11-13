@@ -107,6 +107,12 @@ const config: ForgeConfig = {
           target: 'main',
         },
         {
+          // The pty host's utility process: terminals and headless brain jobs start there, not in main (#271).
+          entry: 'src/ptyHost.ts',
+          config: 'vite.main.config.mts',
+          target: 'main',
+        },
+        {
           entry: 'src/preload.ts',
           config: 'vite.preload.config.mts',
           target: 'preload',

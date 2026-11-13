@@ -11,6 +11,7 @@ import { OFFICIAL_RATES } from '../pricing/officialRates';
 import { TaskStore } from '../services/TaskStore';
 import { NoopTelemetry, type Telemetry } from '../telemetry/AppInsightsClient';
 import { TerminalManager } from '../services/TerminalManager';
+import { inProcessPtyHost } from '../test-helpers/ptyHost';
 import { makeRepo } from '../test-helpers/gitRepo';
 import {
   echoCmd,
@@ -71,7 +72,7 @@ describe('handlers: after a relaunch', () => {
     await done;
     const shellId = store.state.tasks[0].terminals[0].id;
     terminals.killAllForTask(t.id);
-    const fresh = new TerminalManager();
+    const fresh = new TerminalManager(inProcessPtyHost());
     allTerminals.push(fresh);
     const h2 = createHandlers({ ...services, terminals: fresh });
     expect(fresh.runningCount(t.id)).toBe(0);
