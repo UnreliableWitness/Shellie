@@ -16,6 +16,7 @@ export type AdoErrorKind =
   | 'unauthorized'
   | 'not-found'
   | 'unreachable'
+  | 'conflict'
   | 'http';
 
 export class AdoError extends Error {
@@ -801,6 +802,105 @@ export class AdoClient {
       { code: true },
     );
     return data.id;
+  }
+
+  /** Creates a Git repository; `project` is the project id from `projects()`. */
+  async createRepository(
+    project: string,
+    name: string,
+  ): Promise<{ id: string; remoteUrl: string }> {
+    try {
+      const data = await this.send<{ id: string; remoteUrl: string }>(
+        'POST',
+        `/${encodeURIComponent(project)}/_apis/git/repositories?${API}`,
+        { name, project: { id: project } },
+        { write: true, code: true },
+      );
+      return { id: data.id, remoteUrl: data.remoteUrl };
+    } catch (e) {
+      if (e instanceof AdoError && e.status === 409)
+        throw new AdoError(
+          'conflict',
+          e.path,
+          `A repo with that name already exists in ${project}`,
+          409,
+        );
+      throw e;
+    }
+  }
+
+  async repositories(project: string): Promise<
+    {
+      id: string;
+      name: string;
+      remoteUrl: string;
+      defaultBranch: string | null;
+    }[]
+  > {
+    const data = await this.request<{
+      value: {
+        id: string;
+        name: string;
+        remoteUrl: string;
+        defaultBranch?: string;
+      }[];
+    }>(
+      `/${encodeURIComponent(project)}/_apis/git/repositories?${API}`,
+      {},
+      { code: true },
+    );
+    return data.value.map((r) => ({
+      id: r.id,
+      name: r.name,
+      remoteUrl: r.remoteUrl,
+      defaultBranch: r.defaultBranch ?? null,
+    }));
+  }
+
+  async repositoryById(id: string): Promise<{
+    id: string;
+    name: string;
+    remoteUrl: string;
+    project: string;
+    defaultBranch: string | null;
+  }> {
+    const r = await this.request<{
+      id: string;
+      name: string;
+      remoteUrl: string;
+      project: { name: string };
+      defaultBranch?: string;
+    }>(
+      `/_apis/git/repositories/${encodeURIComponent(id)}?${API}`,
+      {},
+      { code: true },
+    );
+    return {
+      id: r.id,
+      name: r.name,
+      remoteUrl: r.remoteUrl,
+      project: r.project.name,
+      defaultBranch: r.defaultBranch ?? null,
+    };
+  }
+
+  /** A file's text on the default branch, or null when the file (or the whole branch of an empty repo) is not there. */
+  async itemText(
+    project: string,
+    repositoryId: string,
+    path: string,
+  ): Promise<string | null> {
+    try {
+      const data = await this.request<{ content?: string }>(
+        `/${encodeURIComponent(project)}/_apis/git/repositories/${encodeURIComponent(repositoryId)}/items?path=${encodeURIComponent(path)}&includeContent=true&${API}`,
+        {},
+        { code: true },
+      );
+      return data.content ?? null;
+    } catch (e) {
+      if (e instanceof AdoError && e.kind === 'not-found') return null;
+      throw e;
+    }
   }
 
   async wikis(project: string): Promise<AdoWiki[]> {

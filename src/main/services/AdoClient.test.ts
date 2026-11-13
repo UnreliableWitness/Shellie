@@ -1738,3 +1738,106 @@ describe('Home calls', () => {
     });
   });
 });
+
+describe('AdoClient repo calls', () => {
+  const org = '/unreliablewitness';
+  it('creates a repository in a project by its id', async () => {
+    server.route('POST', `${org}/p1/_apis/git/repositories`, {
+      body: { id: 'r1', name: 'brain', remoteUrl: 'https://x/_git/brain' },
+    });
+    expect(await client.createRepository('p1', 'brain')).toEqual({
+      id: 'r1',
+      remoteUrl: 'https://x/_git/brain',
+    });
+    const req = server.requests.at(-1)!;
+    expect(req.path).toBe(`${org}/p1/_apis/git/repositories?api-version=7.1`);
+    expect(JSON.parse(req.body)).toEqual({
+      name: 'brain',
+      project: { id: 'p1' },
+    });
+  });
+  it('maps a 409 on create to a conflict', async () => {
+    server.route('POST', `${org}/p1/_apis/git/repositories`, {
+      status: 409,
+      body: { message: 'exists' },
+    });
+    const err = await client.createRepository('p1', 'brain').catch((e) => e);
+    expect(err).toBeInstanceOf(AdoError);
+    expect(err.kind).toBe('conflict');
+    expect(err.message).toBe('A repo with that name already exists in p1');
+  });
+  it('gives the code-write message on a 403 on create', async () => {
+    server.route('POST', `${org}/p1/_apis/git/repositories`, {
+      status: 403,
+      body: {},
+    });
+    const err = await client.createRepository('p1', 'brain').catch((e) => e);
+    expect(err.kind).toBe('unauthorized');
+    expect(err.message).toBe(CODE_WRITE_DENIED);
+  });
+  it('lists repositories with their default branch or null for an empty repo', async () => {
+    server.route('GET', `${org}/p1/_apis/git/repositories`, {
+      body: {
+        value: [
+          {
+            id: 'r1',
+            name: 'brain',
+            remoteUrl: 'u1',
+            defaultBranch: 'refs/heads/main',
+          },
+          { id: 'r2', name: 'empty', remoteUrl: 'u2' },
+        ],
+      },
+    });
+    expect(await client.repositories('p1')).toEqual([
+      {
+        id: 'r1',
+        name: 'brain',
+        remoteUrl: 'u1',
+        defaultBranch: 'refs/heads/main',
+      },
+      { id: 'r2', name: 'empty', remoteUrl: 'u2', defaultBranch: null },
+    ]);
+    expect(server.requests.at(-1)!.path).toBe(
+      `${org}/p1/_apis/git/repositories?api-version=7.1`,
+    );
+  });
+  it('reads a repository by id with its project name', async () => {
+    server.route('GET', `${org}/_apis/git/repositories/r1`, {
+      body: {
+        id: 'r1',
+        name: 'brain',
+        remoteUrl: 'u1',
+        project: { id: 'p1', name: 'Home' },
+      },
+    });
+    expect(await client.repositoryById('r1')).toEqual({
+      id: 'r1',
+      name: 'brain',
+      remoteUrl: 'u1',
+      project: 'Home',
+      defaultBranch: null,
+    });
+    expect(server.requests.at(-1)!.path).toBe(
+      `${org}/_apis/git/repositories/r1?api-version=7.1`,
+    );
+  });
+  it('reads a file as text from the default branch', async () => {
+    server.route('GET', `${org}/p1/_apis/git/repositories/r1/items`, {
+      body: { path: '/share.json', content: '{"format":1}' },
+    });
+    expect(await client.itemText('p1', 'r1', '/share.json')).toBe(
+      '{"format":1}',
+    );
+    expect(server.requests.at(-1)!.path).toBe(
+      `${org}/p1/_apis/git/repositories/r1/items?path=%2Fshare.json&includeContent=true&${'api-version=7.1'}`,
+    );
+  });
+  it('returns null for a missing file or an empty repo', async () => {
+    server.route('GET', `${org}/p1/_apis/git/repositories/r2/items`, {
+      status: 404,
+      body: {},
+    });
+    expect(await client.itemText('p1', 'r2', '/share.json')).toBeNull();
+  });
+});
