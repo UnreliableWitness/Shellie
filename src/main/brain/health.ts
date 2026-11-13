@@ -32,7 +32,7 @@ const RAW = ['-c', 'core.quotepath=off'];
  * there is none), plus uncommitted changes there. Outside edits a job start commits ('Edited outside a capture')
  * stay listed until a /sync.
  */
-async function outsideEdits(brainDir: string, git: GitClient) {
+export async function outsideEdits(brainDir: string, git: GitClient) {
   const found = new Set<string>();
   const log = await git
     .run(brainDir, [

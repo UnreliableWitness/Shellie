@@ -135,6 +135,9 @@ describe('brain handlers', () => {
           throw new Error('not here');
         },
         remove: async () => undefined,
+        token: async () => {
+          throw new Error('not here');
+        },
       },
       mirrorAuth: () => async () => ({}),
       tracker: () => ({
@@ -147,7 +150,9 @@ describe('brain handlers', () => {
             id: 'c1',
             organizationUrl: 'https://dev.azure.com/org/',
             project: 'Default',
+            user: null,
           }) as ReturnType<BrainHandlerDeps['connections']['get']>,
+        token: async () => 'token',
       },
       task: (id) => {
         const t = tasks.find((x) => x.id === id);

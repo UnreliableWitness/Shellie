@@ -35,6 +35,9 @@ import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
 import type { BrainHomeStore } from './share/BrainHomeStore';
 import type { BrainSync } from './share/BrainSync';
+import { shareBrain, stopSharing, type ShareDeps } from './share/share';
+import { joinLink } from '../../shared/brainShare';
+import { getInstallId } from '../installId';
 import type { BrainStore } from './BrainStore';
 import type { createBrainTerminals } from './brainTerminal';
 import { imagesBucket, pagesBucket, sizeBucket } from './brainTelemetry';
@@ -97,6 +100,9 @@ export type BrainChannels =
   | 'brain:run'
   | 'brain:resumeQueue'
   | 'brain:syncNow'
+  | 'brain:share'
+  | 'brain:joinLink'
+  | 'brain:stopSharing'
   | 'brain:sources'
   | 'brain:counts'
   | 'brain:files'
@@ -132,7 +138,7 @@ export type BrainRunner = Pick<
 
 export type BrainHandlerDeps = {
   brains: BrainStore;
-  home: Pick<BrainHomeStore, 'get' | 'save' | 'remove'>;
+  home: Pick<BrainHomeStore, 'get' | 'save' | 'remove' | 'token'>;
   /** Converts pictures in formats the agent cannot view (createRasterizer); absent in tests. */
   rasterize?: Rasterize;
   git: GitClient;
@@ -142,7 +148,8 @@ export type BrainHandlerDeps = {
   mirrorAuth: (connectionId: string, gitUrl: string) => MirrorAuth;
   tracker: (connectionId: string) => Pick<Tracker, 'wikis' | 'wikiPages'>;
   connections: {
-    get(id: string): Pick<Connection, 'organizationUrl' | 'project'>;
+    get(id: string): Pick<Connection, 'organizationUrl' | 'project' | 'user'>;
+    token(id: string): Promise<string>;
   };
   task: (taskId: string) => Task;
   repos: () => Pick<Repo, 'id' | 'connectionId'>[];
@@ -157,6 +164,8 @@ export type BrainHandlerDeps = {
   event: (name: string, props?: TelemetryProps) => void;
   /** Keeps shared brains in step with their server (BrainSync); absent in tests that do not share. */
   sync?: Pick<BrainSync, 'pull' | 'push' | 'squashUnsent'>;
+  /** Creates the repo a brain is shared to; tests pass a fake (default: AdoClient). */
+  ado?: ShareDeps['ado'];
   now?: () => Date;
 };
 
@@ -862,6 +871,38 @@ export function createBrainHandlers(
       if (!live(id).sharing || !d.sync) return;
       await d.sync.pull(id);
       await d.sync.push(id);
+    },
+    'brain:share': async (input) => {
+      live(input.brainId);
+      const r = await shareBrain(
+        {
+          brains: d.brains,
+          git: d.git,
+          home: d.home,
+          connections: d.connections,
+          runner: d.runner,
+          installId: () => getInstallId(d.userData),
+          ado: d.ado,
+          now: d.now,
+        },
+        input,
+      );
+      changed(input.brainId);
+      return r;
+    },
+    'brain:joinLink': async (id) => {
+      const sharing = brainOf(id).sharing;
+      if (!sharing) throw new Error('This brain is not shared');
+      return joinLink({
+        organizationUrl: sharing.homeOrganizationUrl,
+        project: sharing.homeProject,
+        repositoryId: sharing.repositoryId,
+      });
+    },
+    'brain:stopSharing': async (id) => {
+      brainOf(id);
+      await stopSharing(d, id);
+      changed(id);
     },
     'brain:counts': async (id) => {
       const b = brainOf(id);

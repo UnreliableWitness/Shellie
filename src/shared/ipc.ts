@@ -767,6 +767,27 @@ export type Channels = {
   'brain:resumeQueue': { args: [brainId: string]; result: void };
   /** A shared brain pulls the server's changes and sends its own now; a sync error shows in its status, never throws. */
   'brain:syncNow': { args: [brainId: string]; result: void };
+  /**
+   * Shares a local brain: a repo in the home, one fresh commit pushed. `syncing`: a /sync was queued first, ask again
+   * when it is done; `secrets`: the files that may hold one.
+   */
+  'brain:share': {
+    args: [
+      input: {
+        brainId: string;
+        home: 'customer' | 'company';
+        repoName: string;
+      },
+    ];
+    result:
+      | { status: 'shared'; joinLink: string }
+      | { status: 'secrets'; files: string[] }
+      | { status: 'syncing' };
+  };
+  /** The `shellie://join?…` link of a shared brain (no token in it). */
+  'brain:joinLink': { args: [brainId: string]; result: string };
+  /** Makes a shared brain local again; its folder, history and origin.json stay. */
+  'brain:stopSharing': { args: [brainId: string]; result: void };
   /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
   'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
   /** How many wiki pages and sources a brain has, without the health check's git and lint work. */

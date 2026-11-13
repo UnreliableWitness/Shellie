@@ -30,6 +30,8 @@ const UNCAPTURED_MS = 3600_000;
 const SERVER = 'origin/main';
 /** A fetch no one watches gives up after this long (a hung network or a sign-in prompt). */
 const FETCH_TIMEOUT_MS = 120_000;
+/** The brain's history from before it was shared (`shareBrain`), dropped after the first successful pull. */
+export const PRE_SHARE_REF = 'refs/shellie/pre-share';
 export const SQUASH_MESSAGE = 'Brain: changes since the last send';
 /** git's empty tree: what a brain is compared with before the server has a main. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -245,9 +247,14 @@ export class BrainSync {
           timeoutMs: this.d.fetchTimeoutMs ?? FETCH_TIMEOUT_MS,
         }),
       );
-      const r = await withBrainGit(dir, () =>
-        mergeServer(this.d.git, dir, SERVER, this.now()),
-      );
+      const r = await withBrainGit(dir, async () => {
+        const merged = await mergeServer(this.d.git, dir, SERVER, this.now());
+        // The history from before the share is no longer needed once a pull went through.
+        await this.d.git
+          .run(dir, ['update-ref', '-d', PRE_SHARE_REF])
+          .catch(() => undefined);
+        return merged;
+      });
       this.runAgain(id, r.rerun);
       await this.pickUpUncaptured(id, dir);
       const status = this.d.brains.get(id)?.sharing?.status;
