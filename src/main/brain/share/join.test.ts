@@ -17,6 +17,9 @@ import {
   type JoinDeps,
 } from './join';
 
+// real git, many subprocesses per test: slow under load and on the Windows runner
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const git = new GitClient();
 const NOW = new Date('2026-11-13T12:00:00.000Z');
 const CUSTOMER = 'https://dev.azure.com/customer';

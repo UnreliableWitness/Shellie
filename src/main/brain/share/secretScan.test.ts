@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitClient } from '../../services/GitClient';
 import {
   secretsInDiff,
@@ -9,6 +9,9 @@ import {
   unquoteGitPath,
   unsentSecretFile,
 } from './secretScan';
+
+// real git, many subprocesses per test: slow under load and on the Windows runner
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const git = new GitClient();
 const TOKEN = `ghp_${'a1B2c3D4e5'.repeat(4)}`;

@@ -22,6 +22,9 @@ import {
 } from './BrainSync';
 import { writeOrigin } from './files';
 
+// real git, many subprocesses per test: slow under load and on the Windows runner
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const git = new GitClient();
 const TOKEN = `ghp_${'a1B2c3D4e5'.repeat(4)}`;
 

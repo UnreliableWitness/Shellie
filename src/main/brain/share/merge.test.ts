@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitClient } from '../../services/GitClient';
 import { OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { scaffoldBrain } from '../scaffold';
@@ -15,6 +15,9 @@ import {
   parseJobSubject,
 } from './merge';
 import { SHARE_MESSAGE } from './share';
+
+// real git, many subprocesses per test: slow under load and on the Windows runner
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const git = new GitClient();
 const NOW = new Date('2026-11-13T10:00:00Z');

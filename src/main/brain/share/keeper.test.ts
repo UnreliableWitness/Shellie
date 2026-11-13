@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrainSchema, type Brain, type BrainJob } from '../../../shared/brain';
 import { GitClient } from '../../services/GitClient';
 import { BrainStore } from '../BrainStore';
@@ -28,6 +28,9 @@ import {
   takeOver,
   UNREACHABLE,
 } from './keeper';
+
+// real git, many subprocesses per test: slow under load and on the Windows runner
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const git = new GitClient();
 const DAY = 24 * 3600 * 1000;
