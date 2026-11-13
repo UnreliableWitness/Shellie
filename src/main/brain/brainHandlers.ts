@@ -156,7 +156,7 @@ export type BrainHandlerDeps = {
   remember: (values: string[]) => void;
   event: (name: string, props?: TelemetryProps) => void;
   /** Keeps shared brains in step with their server (BrainSync); absent in tests that do not share. */
-  sync?: Pick<BrainSync, 'pull' | 'push'>;
+  sync?: Pick<BrainSync, 'pull' | 'push' | 'squashUnsent'>;
   now?: () => Date;
 };
 
@@ -912,6 +912,15 @@ export function createBrainHandlers(
         throw new Error(
           'The scrub stopped halfway; check the brain folder with git status and try again',
         );
+      }
+      // A shared brain held for a secret: the unsent commits fold into one, so the scrubbed text never goes out.
+      if (d.sync && d.brains.get(id)?.sharing?.status === 'held') {
+        await d.sync
+          .squashUnsent(id)
+          .catch((e: unknown) =>
+            console.error('[brain] fold unsent commits', (e as Error).message),
+          );
+        void d.sync.push(id);
       }
       changed(id);
       return r;

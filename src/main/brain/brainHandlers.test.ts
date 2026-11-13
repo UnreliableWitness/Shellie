@@ -190,7 +190,7 @@ describe('brain handlers', () => {
     expect(remembered).toEqual(expect.arrayContaining(['Acme', v.path]));
   });
 
-  it('syncNow pulls then pushes a shared brain, and leaves a local one alone', async () => {
+  it('syncNow pulls then pushes a shared brain, and leaves a local one alone; a scrub of a held one folds and sends', async () => {
     const calls: string[] = [];
     const hs = createBrainHandlers({
       ...deps,
@@ -200,6 +200,10 @@ describe('brain handlers', () => {
         },
         push: async (id) => {
           calls.push(`push ${id}`);
+        },
+        squashUnsent: async (id) => {
+          calls.push(`squash ${id}`);
+          return true;
         },
       },
     });
@@ -223,6 +227,17 @@ describe('brain handlers', () => {
     });
     await hs['brain:syncNow'](v.id);
     expect(calls).toEqual([`pull ${v.id}`, `push ${v.id}`]);
+    // A scrub of a brain whose push is held folds the unsent commits, then sends.
+    calls.length = 0;
+    await hs['brain:scrub'](v.id, 'not-in-this-brain-1234');
+    expect(calls).toEqual([]);
+    const held = brains.get(v.id)?.sharing;
+    if (held)
+      await brains.patch(v.id, {
+        sharing: { ...held, status: 'held', heldFile: 'sources/s.md' },
+      });
+    await hs['brain:scrub'](v.id, 'not-in-this-brain-1234');
+    expect(calls).toEqual([`squash ${v.id}`, `push ${v.id}`]);
   });
 
   it('create stores the chosen agent and OpenCode model', async () => {

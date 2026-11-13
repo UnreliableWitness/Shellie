@@ -1028,6 +1028,10 @@ async function boot(): Promise<void> {
       git,
       runner: () => brainRunner,
       changed: (brainId) => broadcast('brain:changed', { brainId }),
+      commitOutsideEdits: async (id) => {
+        const b = brainOf(id);
+        await commitJobOutput(git, b.path, OUTSIDE_EDIT_MESSAGE, b.name);
+      },
       installId: await getInstallId(userData),
     });
     const stopSyncListener = onBrainGitIdle((dir) => brainSync.afterGit(dir));

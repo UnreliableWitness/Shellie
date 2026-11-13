@@ -606,6 +606,48 @@ describe('GitClient push from the GUI', () => {
   it('waits 120 s for a push by default', () => {
     expect(new GitClient().pushTimeoutMs).toBe(120_000);
   });
+
+  /** A repo whose origin is an ssh url, with an `ssh` on PATH that runs `script` (OUT is a file it can write to). */
+  function repoWithFakeSsh(script: string): { repo: string; out: string } {
+    const repo = makeRepo();
+    git(repo, 'remote', 'add', 'origin', 'ssh://example.invalid/r.git');
+    const bin = path.join(path.dirname(repo), 'bin');
+    mkdirSync(bin, { recursive: true });
+    const out = path.join(path.dirname(repo), 'ssh-out.txt');
+    const ssh = path.join(bin, 'ssh');
+    writeFileSync(ssh, `#!/bin/sh\n${script.replace('OUT', out)}\n`);
+    chmodSync(ssh, 0o755);
+    vi.stubEnv('PATH', `${bin}${path.delimiter}${process.env.PATH ?? ''}`);
+    return { repo, out };
+  }
+
+  it.skipIf(process.platform === 'win32')(
+    'an unattended fetch runs ssh in batch mode',
+    async () => {
+      isolate();
+      const { repo, out } = repoWithFakeSsh('echo "$@" > "OUT"; exit 1');
+      await expect(
+        client.fetch(repo, 'origin/main', { timeoutMs: 5000 }),
+      ).rejects.toThrow();
+      expect(readFileSync(out, 'utf8')).toContain('-o BatchMode=yes');
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'gives up on an unattended fetch that hangs',
+    async () => {
+      isolate();
+      const { repo } = repoWithFakeSsh('exec sleep 10');
+      const started = Date.now();
+      const err = await client
+        .fetch(repo, 'origin/main', { timeoutMs: 300 })
+        .catch((e: unknown) => e);
+      expect(Date.now() - started).toBeLessThan(5000);
+      expect((err as Error).message).toBe(
+        'git fetch timed out after 0.3 s (a credential prompt may be waiting)',
+      );
+    },
+  );
 });
 
 describe('GitClient worktree helpers', () => {

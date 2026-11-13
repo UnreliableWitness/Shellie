@@ -279,17 +279,37 @@ export class GitClient {
       .filter(Boolean);
   }
 
-  /** `origin/main` fetches `main` from `origin`. A ref without a known remote prefix is left alone. Returns whether it fetched. */
-  async fetch(cwd: string, baseRef: string): Promise<boolean> {
+  /**
+   * `origin/main` fetches `main` from `origin`. A ref without a known remote prefix is left alone. Returns whether it
+   * fetched. With `timeoutMs` (a fetch no one watches) ssh runs in batch mode, as for a push, and a fetch that hangs
+   * gives up after that long.
+   */
+  async fetch(
+    cwd: string,
+    baseRef: string,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<boolean> {
     if (baseRef.indexOf('/') <= 0) return false;
     const split = splitRemoteRef(baseRef, await this.remotes(cwd));
     if (!split) return false;
     const ctx = await this.remoteAuth(cwd, split.remote);
+    const unattended = opts.timeoutMs !== undefined;
+    const env: Record<string, string> = {
+      ...(unattended && !(await this.hasOwnSshCommand(cwd))
+        ? { GIT_SSH_COMMAND: BATCH_SSH }
+        : {}),
+      ...ctx.auth.env,
+    };
     try {
       await this.run(cwd, ['fetch', '--quiet', split.remote, split.branch], {
-        env: ctx.auth.env,
+        env,
+        timeoutMs: opts.timeoutMs,
       });
     } catch (e) {
+      if (e instanceof GitTimeoutError)
+        throw new Error(
+          `git fetch timed out after ${(opts.timeoutMs ?? 0) / 1000} s (a credential prompt may be waiting)`,
+        );
       if (e instanceof GitError && /couldn't find remote ref/i.test(e.stderr)) {
         const fallback = await this.defaultBaseRef(cwd);
         const real = fallback.startsWith(`${split.remote}/`)

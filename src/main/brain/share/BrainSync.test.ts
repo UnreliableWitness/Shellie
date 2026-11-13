@@ -9,10 +9,18 @@ import {
 } from '../../../shared/brain';
 import { GitAuthError, GitClient } from '../../services/GitClient';
 import { BrainStore } from '../BrainStore';
+import { commitJobOutput, OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { onBrainGitIdle, withBrainGit } from '../gitMutex';
 import { scaffoldBrain } from '../scaffold';
-import { acquireLock, releaseLock } from '../state';
-import { BrainSync, RAN_AGAIN, type SyncRunner } from './BrainSync';
+import { scrubBrain } from '../scrub';
+import { acquireLock, readState, releaseLock, writeState } from '../state';
+import {
+  BrainSync,
+  RAN_AGAIN,
+  SQUASH_MESSAGE,
+  unquoteGitPath,
+  type SyncRunner,
+} from './BrainSync';
 import { writeOrigin } from './files';
 
 const git = new GitClient();
@@ -48,6 +56,8 @@ const head = async (dir: string) =>
   (await git.run(dir, ['rev-parse', 'HEAD'])).trim();
 const serverHead = async () =>
   (await git.run(root, ['--git-dir', server, 'rev-parse', 'main'])).trim();
+const serverLog = () =>
+  git.run(root, ['--git-dir', server, 'log', '-p', '--all']);
 const PAGE = (line: string) =>
   `---\ntype: topic\n---\n# X\n\none\n${line}\nthree\n`;
 
@@ -56,6 +66,7 @@ function fakeRunner() {
   const list: BrainJob[] = [];
   const queued: [BrainJobKind, string | null, unknown][] = [];
   const failed: [string, string][] = [];
+  const state = { busy: false };
   let n = 0;
   const runner: SyncRunner = {
     enqueue: (brainId, kind, source = null, opts) => {
@@ -66,7 +77,7 @@ function fakeRunner() {
       return job;
     },
     jobs: () => [...list],
-    running: () => false,
+    running: () => state.busy,
     fail: (_id, jobId, error) => {
       failed.push([jobId, error]);
       return true;
@@ -102,7 +113,7 @@ function fakeRunner() {
     list.unshift(job);
     return job;
   };
-  return { runner, queued, failed, ran };
+  return { runner, queued, failed, ran, state };
 }
 
 let fake: ReturnType<typeof fakeRunner>;
@@ -115,6 +126,13 @@ function sync(
     git,
     runner: () => fake.runner,
     changed: (id) => changed.push(id),
+    commitOutsideEdits: (id) =>
+      commitJobOutput(
+        git,
+        brains.get(id)?.path ?? '',
+        OUTSIDE_EDIT_MESSAGE,
+        'Acme',
+      ),
     pushDelayMs: 20,
     ...over,
   });
@@ -241,8 +259,8 @@ describe('BrainSync', () => {
     ]);
   });
 
-  it('fails the job on its third clash instead of running it again', async () => {
-    const job = fake.ran('capture', 'sources/a.md', 2);
+  it('fails the job on its second clash instead of running it again', async () => {
+    const job = fake.ran('capture', 'sources/a.md', 1);
     await write(a, 'wiki/x.md', PAGE('TWO by A'));
     await commit(a, 'Brain: capture sources/a.md');
     await write(b, 'wiki/x.md', PAGE('TWO by B'));
@@ -256,21 +274,128 @@ describe('BrainSync', () => {
     );
   });
 
-  it('holds a push with a secret until the line is scrubbed', async () => {
+  it('holds a push with a secret; a scrub folds the unsent commits so the secret never reaches the server', async () => {
     const before = await serverHead();
     await write(a, 'sources/s.md', `token ${TOKEN}\n`);
     await commit(a, 'Brain: add source s.md');
+    const secret = await head(a);
+    await writeState(a, (st) => ({ ...st, lastSyncCommit: secret }));
+    await write(
+      a,
+      'brain/reads.json',
+      JSON.stringify({
+        reads: { 'reads/r.md': { at: 'x', commit: secret, pages: {} } },
+      }),
+    );
+    await commit(a, 'Brain: sync');
     await sync().push('a');
     expect(await serverHead()).toBe(before);
     expect(sharing()).toMatchObject({
       status: 'held',
       heldFile: 'sources/s.md',
     });
-    await write(a, 'sources/s.md', 'token [removed]\n');
-    await commit(a, 'Brain: scrub sources/s.md');
+    await scrubBrain(git, a, TOKEN);
+    // The scrub's commit takes the line out, but the first commit still adds it: still held.
+    await sync().push('a');
+    expect(await serverHead()).toBe(before);
+    expect(sharing()?.status).toBe('held');
+    expect(await sync().squashUnsent('a')).toBe(true);
+    const subjects = (
+      await git.run(a, ['log', '--format=%s', `${before}..HEAD`])
+    )
+      .trim()
+      .split('\n');
+    expect(subjects).toEqual([
+      'Brain: records moved to the changes since the last send',
+      SQUASH_MESSAGE,
+    ]);
+    const squash = (await git.run(a, ['rev-parse', 'HEAD~1'])).trim();
+    expect((await readState(a)).state?.lastSyncCommit).toBe(squash);
+    const reads = JSON.parse(
+      await fs.readFile(path.join(a, 'brain', 'reads.json'), 'utf8'),
+    ) as { reads: Record<string, { commit: string }> };
+    expect(reads.reads['reads/r.md'].commit).toBe(squash);
+    expect(await git.run(a, ['status', '--porcelain'])).toBe('');
     await sync().push('a');
     expect(await serverHead()).toBe(await head(a));
     expect(sharing()).toMatchObject({ status: 'ok', heldFile: null });
+    expect(await serverLog()).not.toContain(TOKEN);
+  });
+
+  it('scans a file whose name git quotes', async () => {
+    const before = await serverHead();
+    await write(a, 'sources/a"b.md', `token ${TOKEN}\n`);
+    await commit(a, 'Brain: add source a"b.md');
+    await sync().push('a');
+    expect(await serverHead()).toBe(before);
+    expect(sharing()).toMatchObject({
+      status: 'held',
+      heldFile: 'sources/a"b.md',
+    });
+    expect(unquoteGitPath('"b/a\\"b\\\\c\\tq\\303\\251.md"')).toBe(
+      'b/a"b\\c\tq\u00e9.md',
+    );
+  });
+
+  it('pushes the commit it scanned, not one made while it scanned', async () => {
+    class Racing extends GitClient {
+      raced = false;
+      override async run(
+        cwd: string,
+        args: string[],
+        opts?: { timeoutMs?: number; env?: Record<string, string> },
+      ): Promise<string> {
+        const out = await super.run(cwd, args, opts);
+        if (!this.raced && args.includes('log') && args.includes('-p')) {
+          this.raced = true;
+          await write(a, 'sources/late.md', `late ${TOKEN}\n`);
+          await super.run(a, ['add', '-A']);
+          await super.run(a, [
+            'commit',
+            '-q',
+            '-m',
+            'Brain: add source late.md',
+          ]);
+        }
+        return out;
+      }
+    }
+    await write(a, 'sources/n.md', 'a note\n');
+    await commit(a, 'Brain: add source n.md');
+    const scanned = await head(a);
+    await sync({ git: new Racing() }).push('a');
+    expect(await serverHead()).toBe(scanned);
+    expect(await head(a)).not.toBe(scanned);
+    expect(await serverLog()).not.toContain(TOKEN);
+  });
+
+  it('skips a pull while a job of its runner runs, even past the stale lock hour', async () => {
+    await write(b, 'sources/b.md', 'from B\n');
+    await commit(b, 'Brain: add source b.md');
+    await pushB();
+    const before = await head(a);
+    fake.state.busy = true;
+    await sync().pull('a');
+    expect(await head(a)).toBe(before);
+    expect(await exists(a, 'brain/lock')).toBe(false);
+    fake.state.busy = false;
+    await sync().pull('a');
+    expect(await exists(a, 'sources/b.md')).toBe(true);
+  });
+
+  it('commits outside edits before a pull of its own, then merges', async () => {
+    await write(b, 'sources/b.md', 'from B\n');
+    await commit(b, 'Brain: add source b.md');
+    await pushB();
+    await write(a, 'wiki/x.md', PAGE('TWO by hand'));
+    await sync().pull('a');
+    const subjects = (await git.run(a, ['log', '--format=%s', '-3']))
+      .trim()
+      .split('\n');
+    expect(subjects).toContain(OUTSIDE_EDIT_MESSAGE);
+    expect(await exists(a, 'sources/b.md')).toBe(true);
+    expect(await git.run(a, ['status', '--porcelain'])).toBe('');
+    expect(sharing()?.lastPullAt).not.toBeNull();
   });
 
   it('skips a pull while a job holds the lock, and pulls when the job says it holds it', async () => {

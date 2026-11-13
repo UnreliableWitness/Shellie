@@ -1,8 +1,10 @@
 /**
  * Keeps a shared brain's folder in step with its server repo (the shared-brains spec, "Sync"): pull before jobs and
  * every 15 minutes, push after every brain commit, hold a push that would send a secret, and queue again the jobs
- * whose output lost a clash with a colleague's change. Only fetches, merges and adds commits: nothing is rewritten.
+ * whose output lost a clash with a colleague's change. Only fetches, merges and adds commits; the one exception is
+ * `squashUnsent`, which folds commits that never left the machine into one after a scrub.
  */
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Brain, BrainJob, BrainSharing } from '../../../shared/brain';
 import { isKeeper } from '../../../shared/brainShare';
@@ -12,18 +14,25 @@ import { withBrainGit } from '../gitMutex';
 import type { BrainJobRunner } from '../jobs';
 import { TICK_MS } from '../scheduler';
 import { findSecrets } from '../secrets';
-import { acquireLock, readState, releaseLock } from '../state';
+import { absPath } from '../paths';
+import { READS_RECORD } from '../reads';
+import { acquireLock, readState, releaseLock, writeState } from '../state';
 import { readOrigin } from './files';
 import { mergeServer, type JobRef } from './merge';
 
 export const RAN_AGAIN =
   'Ran again: a colleague changed the brain at the same time';
-/** A job runs again at most this many times after a clash; the next clash fails it. */
-const MAX_REPLAYS = 2;
+/** A job runs again at most this many times after a clash; the next clash fails it (two runs that both clashed). */
+const MAX_REPLAYS = 1;
 const PUSH_DELAY_MS = 2000;
 /** A colleague's source still uncaptured this long after it arrived is captured by the keeper. */
 const UNCAPTURED_MS = 3600_000;
 const SERVER = 'origin/main';
+/** A fetch no one watches gives up after this long (a hung network or a sign-in prompt). */
+const FETCH_TIMEOUT_MS = 120_000;
+export const SQUASH_MESSAGE = 'Brain: changes since the last send';
+const RECORDS_MESSAGE =
+  'Brain: records moved to the changes since the last send';
 /** git's empty tree: what a brain is compared with before the server has a main. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const PENDING: ReadonlySet<BrainJob['status']> = new Set([
@@ -43,11 +52,14 @@ export type BrainSyncDeps = {
   runner: () => SyncRunner;
   /** Tells the windows the brain changed (`brain:changed`). */
   changed: (brainId: string) => void;
+  /** Commits edits made outside a job (`commitJobOutput` with OUTSIDE_EDIT_MESSAGE), so a merge runs on a clean tree. */
+  commitOutsideEdits: (brainId: string) => Promise<void>;
   /** This install's id: the keeper picks up colleagues' sources left uncaptured. Absent: never the keeper. */
   installId?: string;
   now?: () => Date;
   pushDelayMs?: number;
   tickMs?: number;
+  fetchTimeoutMs?: number;
 };
 
 const sameJob = (j: BrainJob, r: JobRef) =>
@@ -74,6 +86,39 @@ const server = <T>(p: Promise<T>): Promise<T> =>
   p.catch((e: unknown) => {
     throw e instanceof GitAuthError ? e : new ServerError(e);
   });
+/** A path as git prints it in a diff header: C-quoted (`"b/a\"b.md"`) when it holds a quote, a backslash or a control character. */
+/** A path as git prints it in a diff header: C-quoted (`"b/a\\"b.md"`) when it holds a quote, a backslash or a control character. */
+export function unquoteGitPath(name: string): string {
+  if (!name.startsWith('"') || name.length < 2) return name;
+  const chars = Array.from(name.slice(1, name.lastIndexOf('"')));
+  const escapes: Record<string, number> = {
+    a: 7,
+    b: 8,
+    t: 9,
+    n: 10,
+    v: 11,
+    f: 12,
+    r: 13,
+    '"': 34,
+    '\\': 92,
+  };
+  const bytes: number[] = [];
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    if (c !== '\\' || i + 1 >= chars.length) {
+      bytes.push(...Buffer.from(c, 'utf8'));
+      continue;
+    }
+    const n = chars[++i];
+    const octal = chars.slice(i, i + 3).join('');
+    if (Object.hasOwn(escapes, n)) bytes.push(escapes[n]);
+    else if (/^[0-7]{3}$/.test(octal)) {
+      bytes.push(parseInt(octal, 8));
+      i += 2;
+    } else bytes.push(...Buffer.from(n, 'utf8'));
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
 
 /** The status a failed sync leaves: a sign-in the server refused, a push it still refuses, or no server at all. */
 function failureStatus(e: unknown): BrainSharing['status'] | null {
@@ -186,14 +231,22 @@ export class BrainSync {
     if (!b) return;
     const dir = b.path;
     if (!lockHeld) {
+      // A job of this runner holds the brain (even past the lock's stale hour): it pulls itself before it starts.
+      if (this.d.runner().running(id)) return;
       const took = await acquireLock(dir, process.pid, this.now).catch(
         () => false,
       );
-      // A job holds the brain: it pulls itself before it starts.
+      // A job of another process holds the brain.
       if (!took) return;
     }
     try {
-      await server(this.d.git.fetch(dir, SERVER));
+      // The job's own pull comes after beforeJob committed them; any other pull commits them here.
+      if (!lockHeld) await this.d.commitOutsideEdits(id);
+      await server(
+        this.d.git.fetch(dir, SERVER, {
+          timeoutMs: this.d.fetchTimeoutMs ?? FETCH_TIMEOUT_MS,
+        }),
+      );
       const r = await withBrainGit(dir, () =>
         mergeServer(this.d.git, dir, SERVER, this.now()),
       );
@@ -205,7 +258,7 @@ export class BrainSync {
         status:
           status === 'held'
             ? 'held'
-            : (await this.ahead(dir, await this.base(dir)))
+            : (await this.ahead(dir, await this.base(dir), 'HEAD'))
               ? 'pending'
               : 'ok',
       });
@@ -286,29 +339,89 @@ export class BrainSync {
     const b = this.shared(id);
     if (!b) return;
     const dir = b.path;
-    if (!(await this.ahead(dir, await this.base(dir)))) {
+    // One commit id for the check, the scan and the push: a commit made meanwhile waits for the next push.
+    let sha = await this.head(dir);
+    if (!(await this.ahead(dir, await this.base(dir), sha))) {
       // Nothing waits: no push to hold or to send.
       const status = this.d.brains.get(id)?.sharing?.status;
       if (status === 'held' || status === 'pending')
         await this.patch(id, { status: 'ok', heldFile: null });
       return;
     }
-    if (await this.hold(id, dir)) return;
-    const send = () => server(this.d.git.push(dir, 'origin', 'HEAD:main'));
+    if (await this.hold(id, dir, sha)) return;
+    const send = (c: string) =>
+      server(this.d.git.push(dir, 'origin', `${c}:refs/heads/main`));
     try {
-      await send();
+      await send(sha);
     } catch (e) {
       if (!(e instanceof ServerError) || !rejected(e)) throw e;
       // Someone pushed first: merge their changes, then send ours on top, once.
       await this.pullNow(id, false);
-      if (await this.hold(id, dir)) return;
-      await send();
+      sha = await this.head(dir);
+      if (await this.hold(id, dir, sha)) return;
+      await send(sha);
     }
     await this.patch(id, {
       status: 'ok',
       heldFile: null,
       lastPushAt: this.now().toISOString(),
     });
+  }
+
+  /**
+   * After a scrub of a held brain: the commits the server lacks become one commit of the tree as it is now, on top of
+   * the server's main, so the secret an earlier one added never leaves the machine. Records that named a folded
+   * commit (`lastSyncCommit`, a long read's `commit`) move to the new one. Never while a job runs. True when it folded.
+   */
+  async squashUnsent(id: string): Promise<boolean> {
+    const b = this.shared(id);
+    if (!b || this.d.runner().running(id)) return false;
+    const dir = b.path;
+    const git = this.d.git;
+    return withBrainGit(dir, async () => {
+      const head = await this.head(dir);
+      const onServer =
+        (await this.base(dir)) === SERVER
+          ? (await git.run(dir, ['rev-parse', `${SERVER}^{commit}`])).trim()
+          : null;
+      const folded = (
+        await git.run(dir, [
+          'rev-list',
+          onServer ? `${onServer}..${head}` : head,
+        ])
+      )
+        .split('\n')
+        .filter(Boolean);
+      if (!folded.length) return false;
+      const tree = (await git.run(dir, ['rev-parse', `${head}^{tree}`])).trim();
+      const squash = (
+        await git.run(dir, [
+          'commit-tree',
+          tree,
+          ...(onServer ? ['-p', onServer] : []),
+          '-m',
+          SQUASH_MESSAGE,
+        ])
+      ).trim();
+      await git.run(dir, ['reset', '-q', '--soft', squash]);
+      const moved = await moveRecords(dir, folded, squash);
+      if (moved.length) {
+        await git.run(dir, ['add', '--', ...moved]);
+        await git.run(dir, [
+          'commit',
+          '-q',
+          '-m',
+          RECORDS_MESSAGE,
+          '--',
+          ...moved,
+        ]);
+      }
+      return true;
+    });
+  }
+
+  private async head(dir: string): Promise<string> {
+    return (await this.d.git.run(dir, ['rev-parse', 'HEAD'])).trim();
   }
 
   /** What the brain is compared with: the server's main, or the empty tree before it has one. */
@@ -321,54 +434,122 @@ export class BrainSync {
       );
   }
 
-  private async ahead(dir: string, base: string): Promise<boolean> {
-    const range = base === EMPTY_TREE ? 'HEAD' : `${base}..HEAD`;
+  /** The commits from `base` to `tip` the server lacks: a range for rev-list and log. */
+  private range(base: string, tip: string): string {
+    return base === EMPTY_TREE ? tip : `${base}..${tip}`;
+  }
+
+  private async ahead(
+    dir: string,
+    base: string,
+    tip: string,
+  ): Promise<boolean> {
     const n = Number(
-      (await this.d.git.run(dir, ['rev-list', '--count', range])).trim(),
+      (
+        await this.d.git.run(dir, [
+          'rev-list',
+          '--count',
+          this.range(base, tip),
+        ])
+      ).trim(),
     );
     return n > 0;
   }
 
-  /** Holds the push when the text the server lacks holds a possible secret; true when held. */
-  private async hold(id: string, dir: string): Promise<boolean> {
-    const file = await this.secretFile(dir, await this.base(dir));
+  /** Holds the push when a commit the server lacks adds a possible secret; true when held. */
+  private async hold(id: string, dir: string, tip: string): Promise<boolean> {
+    const file = await this.secretFile(dir, await this.base(dir), tip);
     if (!file) return false;
     await this.patch(id, { status: 'held', heldFile: file });
     return true;
   }
 
-  /** The first file whose lines added since `base` hold a possible secret, or null. */
-  private async secretFile(dir: string, base: string): Promise<string | null> {
-    const diff = await this.d.git.run(dir, [
+  /**
+   * The first file a commit between `base` and `tip` adds a possible secret to, or null. Each commit on its own: a
+   * line a later commit took out still goes to the server in the earlier one. A merge adds nothing of its own here
+   * (its local side was scanned in the commits it merged).
+   */
+  private async secretFile(
+    dir: string,
+    base: string,
+    tip: string,
+  ): Promise<string | null> {
+    const log = await this.d.git.run(dir, [
       '-c',
       'core.quotepath=off',
-      'diff',
+      'log',
+      '-p',
+      '--format=',
       '--no-color',
       '--no-ext-diff',
       '-U0',
-      base,
-      'HEAD',
+      this.range(base, tip),
     ]);
-    const added = new Map<string, string[]>();
     let file: string | null = null;
+    let lines: string[] = [];
     let header = false;
-    for (const line of diff.split('\n')) {
+    const hit = () => !!file && findSecrets(lines.join('\n')).length > 0;
+    for (const line of log.split('\n')) {
       if (line.startsWith('diff --git ')) {
+        if (hit()) return file;
         header = true;
         file = null;
+        lines = [];
       } else if (header && line.startsWith('+++ ')) {
-        const name = line.slice(4).replace(/\t$/, '');
-        file = name.startsWith('b/') ? name.slice(2) : null;
+        const name = unquoteGitPath(line.slice(4).replace(/\t$/, ''));
+        file =
+          name === '/dev/null'
+            ? null
+            : name.startsWith('b/')
+              ? name.slice(2)
+              : name;
       } else if (line.startsWith('@@')) {
         header = false;
       } else if (!header && file && line.startsWith('+')) {
-        const lines = added.get(file) ?? [];
         lines.push(line.slice(1));
-        added.set(file, lines);
       }
     }
-    for (const [f, lines] of added)
-      if (findSecrets(lines.join('\n')).length) return f;
-    return null;
+    return hit() ? file : null;
   }
+}
+
+/** Moves `lastSyncCommit` and the long reads' `commit` off the folded commits onto `to`; the paths it changed. */
+async function moveRecords(
+  dir: string,
+  folded: string[],
+  to: string,
+): Promise<string[]> {
+  const isFolded = (c: unknown) =>
+    typeof c === 'string' &&
+    c.length >= 4 &&
+    folded.some((f) => f.startsWith(c));
+  const moved: string[] = [];
+  const { state } = await readState(dir);
+  if (state && isFolded(state.lastSyncCommit)) {
+    await writeState(dir, (s) => ({ ...s, lastSyncCommit: to }));
+    moved.push('brain/state.json');
+  }
+  const file = absPath(dir, READS_RECORD);
+  // Read loosely and written back whole: only the commit ids change.
+  const raw: unknown = await fs
+    .readFile(file, 'utf8')
+    .then((t) => JSON.parse(t) as unknown)
+    .catch(() => null);
+  const reads =
+    raw && typeof raw === 'object' ? (raw as { reads?: unknown }).reads : null;
+  if (reads && typeof reads === 'object') {
+    let changed = false;
+    for (const r of Object.values(reads as Record<string, unknown>)) {
+      const rec = r as { commit?: unknown } | null;
+      if (rec && typeof rec === 'object' && isFolded(rec.commit)) {
+        rec.commit = to;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await fs.writeFile(file, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+      moved.push(READS_RECORD);
+    }
+  }
+  return moved;
 }
