@@ -58,7 +58,26 @@ export function joinLink(o: {
   return `${JOIN_PREFIX}org=${encodeURIComponent(o.organizationUrl)}&project=${encodeURIComponent(o.project)}&repo=${encodeURIComponent(o.repositoryId)}`;
 }
 
-/** The parts of a join link; null for anything else, including an organization that is not https. */
+/**
+ * An https Azure DevOps organization: `https://dev.azure.com/<org>` or `https://<org>.visualstudio.com`. A join
+ * link to any other host is refused, so a typed PAT never goes anywhere else.
+ */
+function isAzureOrganization(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port)
+    return false;
+  const host = u.hostname.toLowerCase();
+  if (host === 'dev.azure.com')
+    return u.pathname.split('/').filter(Boolean).length > 0;
+  return /^[a-z0-9-]+\.visualstudio\.com$/.test(host);
+}
+
+/** The parts of a join link; null for anything else, including an organization that is not Azure DevOps over https. */
 export function parseJoinLink(
   url: string,
 ): { organizationUrl: string; project: string; repositoryId: string } | null {
@@ -73,11 +92,7 @@ export function parseJoinLink(
   const project = u.searchParams.get('project');
   const repositoryId = u.searchParams.get('repo');
   if (!organizationUrl || !project || !repositoryId) return null;
-  try {
-    if (new URL(organizationUrl).protocol !== 'https:') return null;
-  } catch {
-    return null;
-  }
+  if (!isAzureOrganization(organizationUrl)) return null;
   return { organizationUrl, project, repositoryId };
 }
 

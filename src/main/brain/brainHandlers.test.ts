@@ -246,6 +246,21 @@ describe('brain handlers', () => {
     expect(calls).toEqual([`squash ${v.id}`, `push ${v.id}`]);
   });
 
+  it('pendingJoin hands over the link opened before the renderer asked, once', async () => {
+    expect(await h['brain:pendingJoin']()).toBeNull();
+    let pending: string | null = 'shellie://join?x';
+    h = createBrainHandlers({
+      ...deps,
+      takePendingJoin: () => {
+        const link = pending;
+        pending = null;
+        return link;
+      },
+    });
+    expect(await h['brain:pendingJoin']()).toBe('shellie://join?x');
+    expect(await h['brain:pendingJoin']()).toBeNull();
+  });
+
   it('create stores the chosen agent and OpenCode model', async () => {
     const v = await h['brain:create']({
       ...NEW,

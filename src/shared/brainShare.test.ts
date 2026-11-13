@@ -21,6 +21,18 @@ describe('join link', () => {
     ).toBeNull();
     expect(parseJoinLink('not a url')).toBeNull();
   });
+  it('accepts only an Azure DevOps organization', () => {
+    const link = (organizationUrl: string) =>
+      parseJoinLink(
+        joinLink({ organizationUrl, project: 'p', repositoryId: 'r' }),
+      );
+    expect(link('https://evil.example/x')).toBeNull();
+    expect(link('https://dev.azure.com.evil.example/x')).toBeNull();
+    expect(link('https://dev.azure.com/')).toBeNull();
+    expect(link('https://user:pw@dev.azure.com/x')).toBeNull();
+    expect(link('https://dev.azure.com/contoso')).not.toBeNull();
+    expect(link('https://contoso.visualstudio.com')).not.toBeNull();
+  });
 });
 
 describe('BrainSchema.sharing', () => {

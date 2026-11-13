@@ -99,17 +99,25 @@ function tokenFor(
   link: { organizationUrl: string; project: string },
   pat: string | undefined,
 ): (() => Promise<string>) | null {
-  const typed = pat?.trim();
-  if (typed) return async () => typed;
   const inOrg = d.connections
     .list()
     .filter((c) => sameOrg(c.organizationUrl, link.organizationUrl));
+  const home = d.home.get();
+  // One brain home per person for now: a brain in another organization nothing reaches could never sync.
+  if (
+    !inOrg.length &&
+    home &&
+    !sameOrg(home.organizationUrl, link.organizationUrl)
+  )
+    throw new Error(
+      `This brain is in ${link.organizationUrl}. Your brain home is ${home.organizationUrl}; Shellie has one brain home for now.`,
+    );
+  const typed = pat?.trim();
+  if (typed) return async () => typed;
   const c =
     inOrg.find((x) => sameName(x.project, link.project)) ?? inOrg[0] ?? null;
   if (c) return () => d.connections.token(c.id);
-  const home = d.home.get();
-  if (home && sameOrg(home.organizationUrl, link.organizationUrl))
-    return () => d.home.token();
+  if (home) return () => d.home.token();
   return null;
 }
 
@@ -244,13 +252,6 @@ export async function joinBrain(
     const shared = await readShared(dir);
     const installId = await d.installId();
     const person = connection.user ?? 'Shellie';
-    const typed = o.pat?.trim();
-    if (typed && !d.home.get())
-      await d.home.save({
-        organizationUrl: i.link.organizationUrl,
-        project: i.link.project,
-        pat: typed,
-      });
     const home: BrainSharing['home'] =
       sameOrg(i.link.organizationUrl, origin.organizationUrl) &&
       sameName(i.link.project, origin.project)
@@ -299,6 +300,19 @@ export async function joinBrain(
         throw new Error('You already have a brain for this project');
       // Recorded last, inside the git queue: BrainSync's push after it finds a shared brain.
       await d.brains.add(brain);
+      // A typed token becomes the brain home, never a customer organization, and only once the join has worked.
+      const typed = o.pat?.trim();
+      if (typed && home === 'company' && !d.home.get())
+        try {
+          await d.home.save({
+            organizationUrl: i.link.organizationUrl,
+            project: i.link.project,
+            pat: typed,
+          });
+        } catch (e) {
+          await d.brains.remove(id);
+          throw e;
+        }
     });
     return brain;
   } catch (e) {

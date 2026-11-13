@@ -800,6 +800,8 @@ export type Channels = {
   };
   /** Clones the shared brain of a join link and records it on the person's connection; a typed `pat` becomes the brain home when there is none. */
   'brain:join': { args: [link: string, pat?: string]; result: BrainView };
+  /** The join link opened before the renderer was listening (a cold start), cleared once returned; null when none. */
+  'brain:pendingJoin': { args: []; result: string | null };
   /** The shared brains in a connection's project (the Join card), kept for the app session; `refresh` looks again. */
   'brain:discover': {
     args: [connectionId: string, refresh?: boolean];

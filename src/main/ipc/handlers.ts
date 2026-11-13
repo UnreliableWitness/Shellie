@@ -259,6 +259,7 @@ export type Services = {
     ledgerToday: (brainId: string) => { tokens: number; costEur: number };
     userData: string;
     sync?: BrainHandlerDeps['sync'];
+    takePendingJoin?: BrainHandlerDeps['takePendingJoin'];
   };
   /** What needs the developer's attention (main); absent in tests. */
   attention?: Pick<AttentionHub, 'setView' | 'snapshot'>;
@@ -927,6 +928,7 @@ export function createHandlers(s: Services): Handlers {
     remember: (values) => s.rememberSensitive?.(values),
     event: (n, p) => tel.event(n, p),
     sync: brain.sync,
+    takePendingJoin: brain.takePendingJoin,
   });
   /** The brain a new task's summary names: by the work item's project when it is known (no network). */
   const summaryBrain = (

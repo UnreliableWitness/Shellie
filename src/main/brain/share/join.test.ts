@@ -283,6 +283,42 @@ describe('previewJoin', () => {
     );
   });
 
+  it('makes no Azure DevOps call for a link to another host', async () => {
+    const evil = joinLink({
+      organizationUrl: 'https://evil.example/x',
+      project: 'Brains',
+      repositoryId: 'repo-1',
+    });
+    await expect(previewJoin(deps(), evil, { pat: 'typed' })).rejects.toThrow(
+      'not a Shellie join link',
+    );
+    await expect(joinBrain(deps(), evil, { pat: 'typed' })).rejects.toThrow(
+      'not a Shellie join link',
+    );
+    expect(calls).toEqual([]);
+    expect(saved).toEqual([]);
+  });
+
+  it('refuses a brain in another organization than the brain home, with nothing to reach it', async () => {
+    const elsewhere = joinLink({
+      organizationUrl: 'https://dev.azure.com/elsewhere',
+      project: 'Brains',
+      repositoryId: 'repo-1',
+    });
+    const message =
+      'This brain is in https://dev.azure.com/elsewhere. Your brain home is https://dev.azure.com/company; Shellie has one brain home for now.';
+    await expect(
+      previewJoin(deps(), elsewhere, { pat: 'typed' }),
+    ).rejects.toThrow(message);
+    await expect(
+      joinBrain(deps(), elsewhere, { pat: 'typed' }),
+    ).rejects.toThrow(message);
+    expect(calls).toEqual([]);
+    expect(saved).toEqual([]);
+    expect(brains.list()).toEqual([]);
+    expect(await brainFolders()).toEqual([]);
+  });
+
   it('knows when the person already has a brain for that connection and project', async () => {
     await brains.add(
       BrainSchema.parse({
@@ -412,6 +448,39 @@ describe('joinBrain', () => {
     expect(saved).toEqual([
       { organizationUrl: COMPANY, project: 'Brains', pat: 'typed' },
     ]);
+  });
+
+  it('never makes a customer organization the brain home', async () => {
+    home = null;
+    const b = await joinBrain(deps(), customerLink, { pat: 'typed' });
+    expect(b.sharing?.home).toBe('customer');
+    expect(saved).toEqual([]);
+  });
+
+  it('saves no brain home when the join fails after the clone', async () => {
+    home = null;
+    const d = deps({
+      installId: async () => {
+        throw new Error('disk full');
+      },
+    });
+    await expect(joinBrain(d, companyLink, { pat: 'typed' })).rejects.toThrow(
+      'disk full',
+    );
+    expect(saved).toEqual([]);
+  });
+
+  it('records nothing when the brain home cannot be saved', async () => {
+    home = null;
+    const d = deps();
+    d.home.save = async () => {
+      throw new Error('Token encryption is not available');
+    };
+    await expect(joinBrain(d, companyLink, { pat: 'typed' })).rejects.toThrow(
+      'Token encryption is not available',
+    );
+    expect(brains.list()).toEqual([]);
+    expect(await brainFolders()).toEqual([]);
   });
 
   it('keeps an existing brain home when a token is typed', async () => {

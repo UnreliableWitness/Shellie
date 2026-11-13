@@ -283,7 +283,10 @@ let mainWindow: BrowserWindow | null = null;
 let splashWin: BrowserWindow | null = null;
 /** True until the main window is revealed (stays true after a boot failure). */
 let booting = true;
-/** A `shellie://join?…` link opened before the main window loaded; sent to it once it has. */
+/**
+ * A `shellie://join?…` link opened before the main window loaded: sent once it has, and handed to the renderer's
+ * `brain:pendingJoin` on mount (whichever comes first takes it).
+ */
 let pendingJoin: string | null = null;
 
 /** The `shellie://join?…` link among a launch's arguments (Windows hands the link to the app that way). */
@@ -1220,6 +1223,11 @@ async function boot(): Promise<void> {
         ledgerToday: brainToday,
         userData,
         sync: brainSync,
+        takePendingJoin: () => {
+          const link = pendingJoin;
+          pendingJoin = null;
+          return link;
+        },
       },
       terminalFailures,
       budget,

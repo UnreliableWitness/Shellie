@@ -113,6 +113,7 @@ export type BrainChannels =
   | 'brain:previewJoin'
   | 'brain:join'
   | 'brain:discover'
+  | 'brain:pendingJoin'
   | 'brain:sources'
   | 'brain:counts'
   | 'brain:files'
@@ -182,6 +183,8 @@ export type BrainHandlerDeps = {
   ) => ReturnType<NonNullable<ShareDeps['ado']>> &
     ReturnType<NonNullable<JoinDeps['ado']>>;
   now?: () => Date;
+  /** Returns and clears the join link opened before the renderer asked (main); absent in tests. */
+  takePendingJoin?: () => string | null;
 };
 
 const ROOT_FILES = new Set(['index.md', 'log.md', 'SCHEMA.md']);
@@ -938,6 +941,7 @@ export function createBrainHandlers(
       changed(b.id);
       return view(b);
     },
+    'brain:pendingJoin': async () => d.takePendingJoin?.() ?? null,
     'brain:discover': (connectionId, refresh) =>
       discoverCustomerBrains(joinDeps, connectionId, {
         cache: discovered,
