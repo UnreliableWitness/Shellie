@@ -716,7 +716,7 @@ describe('jobs on the brain agent', () => {
     ]);
     expect(timeouts).toEqual([1_200_000, 600_000]);
     expect(committed).toEqual([
-      'Brain: write <- chapter:Orders',
+      'Brain: write chapter:Orders <- chapter:Orders',
       'Brain: sync <- undefined',
     ]);
   });
