@@ -77,6 +77,8 @@ export const BrainSharingSchema = z.object({
   lastPushAt: z.string().nullable(),
   status: z.enum(['ok', 'pending', 'held', 'unreachable', 'unauthorized']),
   heldFile: z.string().nullable(),
+  /** Commits not yet on the server (`origin/main..HEAD`). Filled in when a view is built; never stored. */
+  ahead: z.number().int().optional(),
 });
 export type BrainSharing = z.infer<typeof BrainSharingSchema>;
 

@@ -1045,6 +1045,22 @@ describe('brain handlers', () => {
       me: false,
     });
 
+    // Commits not on the server yet: all of them before the first fetch, then those past origin/main.
+    const total = Number(
+      (await git.run(existing, ['rev-list', '--count', 'HEAD'])).trim(),
+    );
+    expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(total);
+    await git.run(existing, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(0);
+    await git.run(existing, [
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'one more',
+    ]);
+    expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(1);
+
     await brains.patch(v.id, { templatesVersion: TEMPLATES_VERSION + 1 });
     expect((await h['brain:get'](v.id)).newerShellie).toBe(true);
     await expect(

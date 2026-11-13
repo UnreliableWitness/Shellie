@@ -506,8 +506,9 @@ describe('ProjectScreen join card', () => {
       ],
     });
     render(<Shell />);
+    // In the project's Brains band and in the nav.
     expect(
-      await screen.findByText('Your team has a brain for Shellie. Join?'),
-    ).toBeInTheDocument();
+      await screen.findAllByText('Your team has a brain for Shellie. Join?'),
+    ).toHaveLength(2);
   });
 });

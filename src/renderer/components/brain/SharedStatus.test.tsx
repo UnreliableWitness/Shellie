@@ -30,8 +30,13 @@ describe('SharedStatus', () => {
   });
   it.each([
     [{ status: 'ok' as const }, 'Shared · up to date'],
-    [{ status: 'pending' as const }, 'Sending changes'],
-    [{ status: 'unreachable' as const }, "Can't reach acme"],
+    [{ status: 'pending' as const, ahead: 3 }, 'Sending 3 changes'],
+    [{ status: 'pending' as const, ahead: 1 }, 'Sending 1 change'],
+    [
+      { status: 'unreachable' as const, ahead: 3 },
+      "Can't reach acme · 3 changes waiting",
+    ],
+    [{ status: 'unauthorized' as const }, "Can't sign in to acme"],
     [
       { status: 'held' as const, heldFile: 'sources/a.md' },
       'Held: possible secret in sources/a.md',
@@ -40,9 +45,58 @@ describe('SharedStatus', () => {
     text(over);
     expect(screen.getByRole('status')).toHaveTextContent(expected);
   });
-  it('says a capture ran again', () => {
-    text({}, { jobs: [brainJob({ kind: 'capture', replays: 1 })] });
-    expect(screen.getByRole('status')).toHaveTextContent('Ran a capture again');
+  it('says a capture ran again while it is running, or within the hour', () => {
+    const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+    for (const job of [
+      brainJob({
+        kind: 'capture',
+        replays: 1,
+        status: 'running',
+        endedAt: null,
+      }),
+      brainJob({
+        kind: 'capture',
+        replays: 1,
+        status: 'done',
+        endedAt: ago(60_000),
+      }),
+    ]) {
+      const { unmount } = render(
+        <SharedStatus
+          brain={brainView({ sharing: sharing({}), jobs: [job] })}
+        />,
+      );
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Ran a capture again',
+      );
+      unmount();
+    }
+  });
+  it('stops saying it an hour after the capture ended, and for jobs that did not replay', () => {
+    const old = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    text(
+      {},
+      {
+        jobs: [
+          brainJob({
+            kind: 'capture',
+            replays: 1,
+            status: 'done',
+            endedAt: old,
+          }),
+          brainJob({
+            id: 'j2',
+            kind: 'capture',
+            replays: 0,
+            status: 'running',
+            endedAt: null,
+          }),
+        ],
+      },
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent(
+      'Ran a capture again',
+    );
   });
   it('says a newer Shellie is around', () => {
     text({}, { newerShellie: true });

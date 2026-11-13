@@ -242,6 +242,20 @@ const JOB_OUTPUT = [
 /** The message of the commit a job start makes of edits done outside a job; not 'Brain:', so Health keeps them. */
 export const OUTSIDE_EDIT_MESSAGE = 'Edited outside a capture';
 
+/** Commits the server does not have yet: `origin/main..HEAD`, or every commit before the first push. */
+async function commitsAhead(git: GitClient, brainDir: string): Promise<number> {
+  const count = async (range: string) =>
+    Number.parseInt(
+      (await git.run(brainDir, ['rev-list', '--count', range])).trim(),
+      10,
+    );
+  try {
+    return await count('origin/main..HEAD');
+  } catch {
+    return await count('HEAD').catch(() => 0);
+  }
+}
+
 /** The job output paths git can stage: on disk, or tracked (deleted since). An adopted brain may lack some. */
 async function stageable(git: GitClient, brainDir: string): Promise<string[]> {
   const tracked = (await git.run(brainDir, ['ls-files', '--', ...JOB_OUTPUT]))
@@ -528,6 +542,9 @@ export function createBrainHandlers(
       health.queueHeld = NEWER_SHELLIE;
     return {
       ...b,
+      sharing: b.sharing
+        ? { ...b.sharing, ahead: await commitsAhead(d.git, b.path) }
+        : null,
       health,
       jobs,
       keeper: b.sharing ? await keeperOf(b.path, await myInstall()) : null,

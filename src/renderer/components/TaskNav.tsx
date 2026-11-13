@@ -34,6 +34,7 @@ import {
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { useBrains } from '../hooks/useBrains';
+import { JoinCard } from './brain/JoinCard';
 import { useReading, useReadingNudges } from '../hooks/useReadingFeed';
 import { useTaskCosts } from '../hooks/useTaskCosts';
 import { hasEvent } from '../readingFeed';
@@ -586,6 +587,9 @@ export function TaskNav() {
         current={screen.kind === 'sprint'}
         onClick={() => go({ kind: 'sprint' })}
       />
+      {!rail && connection && (
+        <JoinCard connectionId={connection.id} project={connection.project} />
+      )}
       {brains.map((b) => (
         <NavItem
           key={b.id}
