@@ -19,7 +19,12 @@ import type {
   SourcePictures,
   SourceType,
 } from './brain';
-import type { BrainHome, BrainHomeInput } from './brainShare';
+import type {
+  BrainHome,
+  BrainHomeInput,
+  DiscoveredBrain,
+  JoinPreview,
+} from './brainShare';
 import type { ColorScheme } from './theme';
 import type {
   DiscoverResult,
@@ -788,6 +793,18 @@ export type Channels = {
   'brain:joinLink': { args: [brainId: string]; result: string };
   /** Makes a shared brain local again; its folder, history and origin.json stay. */
   'brain:stopSharing': { args: [brainId: string]; result: void };
+  /** What a `shellie://join?…` link leads to; `pat` is a token typed for the link's organization (never stored here). */
+  'brain:previewJoin': {
+    args: [link: string, pat?: string];
+    result: JoinPreview;
+  };
+  /** Clones the shared brain of a join link and records it on the person's connection; a typed `pat` becomes the brain home when there is none. */
+  'brain:join': { args: [link: string, pat?: string]; result: BrainView };
+  /** The shared brains in a connection's project (the Join card), kept for the app session; `refresh` looks again. */
+  'brain:discover': {
+    args: [connectionId: string, refresh?: boolean];
+    result: DiscoveredBrain[];
+  };
   /** The brain's sources (the wiki mirror's pages included), newest first, with whether each was captured. */
   'brain:sources': { args: [brainId: string]; result: BrainSourceRow[] };
   /** How many wiki pages and sources a brain has, without the health check's git and lint work. */
@@ -879,6 +896,8 @@ export type Events = {
   'window:fullScreen': boolean;
   /** A brain's store entry, jobs, state, files or mirror changed; the renderer fetches `brain:get` again. */
   'brain:changed': { brainId: string };
+  /** A `shellie://join?…` link was opened (macOS open-url, Windows argv); the renderer shows the join screen. */
+  'brain:openJoin': { link: string };
 };
 
 /** `version` is null when the release name holds none. */

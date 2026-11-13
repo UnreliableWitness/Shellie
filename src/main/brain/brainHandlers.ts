@@ -35,6 +35,13 @@ import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
 import type { BrainHomeStore } from './share/BrainHomeStore';
 import type { BrainSync } from './share/BrainSync';
+import {
+  discoverCustomerBrains,
+  joinBrain,
+  previewJoin,
+  type DiscoverCache,
+  type JoinDeps,
+} from './share/join';
 import { shareBrain, stopSharing, type ShareDeps } from './share/share';
 import { joinLink } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
@@ -103,6 +110,9 @@ export type BrainChannels =
   | 'brain:share'
   | 'brain:joinLink'
   | 'brain:stopSharing'
+  | 'brain:previewJoin'
+  | 'brain:join'
+  | 'brain:discover'
   | 'brain:sources'
   | 'brain:counts'
   | 'brain:files'
@@ -149,6 +159,7 @@ export type BrainHandlerDeps = {
   tracker: (connectionId: string) => Pick<Tracker, 'wikis' | 'wikiPages'>;
   connections: {
     get(id: string): Pick<Connection, 'organizationUrl' | 'project' | 'user'>;
+    list(): Pick<Connection, 'id' | 'organizationUrl' | 'project' | 'user'>[];
     token(id: string): Promise<string>;
   };
   task: (taskId: string) => Task;
@@ -164,8 +175,12 @@ export type BrainHandlerDeps = {
   event: (name: string, props?: TelemetryProps) => void;
   /** Keeps shared brains in step with their server (BrainSync); absent in tests that do not share. */
   sync?: Pick<BrainSync, 'pull' | 'push' | 'squashUnsent'>;
-  /** Creates the repo a brain is shared to; tests pass a fake (default: AdoClient). */
-  ado?: ShareDeps['ado'];
+  /** Creates the repo a brain is shared to, and reads one to join; tests pass a fake (default: AdoClient). */
+  ado?: (
+    organizationUrl: string,
+    token: () => Promise<string>,
+  ) => ReturnType<NonNullable<ShareDeps['ado']>> &
+    ReturnType<NonNullable<JoinDeps['ado']>>;
   now?: () => Date;
 };
 
@@ -431,6 +446,18 @@ export function createBrainHandlers(
   };
   const changed = (brainId: string) =>
     d.broadcast('brain:changed', { brainId });
+  const joinDeps: JoinDeps = {
+    brains: d.brains,
+    git: d.git,
+    home: d.home,
+    connections: d.connections,
+    userData: d.userData,
+    installId: () => getInstallId(d.userData),
+    ado: d.ado,
+    now: d.now,
+  };
+  /** The shared brains found per connection this app session (the Join card). */
+  const discovered: DiscoverCache = new Map();
   const brainOf = (id: string): Brain => {
     const b = d.brains.get(id);
     if (!b) throw new Error(`Unknown brain ${id}`);
@@ -904,6 +931,18 @@ export function createBrainHandlers(
       await stopSharing(d, id);
       changed(id);
     },
+    'brain:previewJoin': (link, pat) => previewJoin(joinDeps, link, { pat }),
+    'brain:join': async (link, pat) => {
+      const b = await joinBrain(joinDeps, link, { pat });
+      d.remember([b.name, b.path]);
+      changed(b.id);
+      return view(b);
+    },
+    'brain:discover': (connectionId, refresh) =>
+      discoverCustomerBrains(joinDeps, connectionId, {
+        cache: discovered,
+        refresh,
+      }),
     'brain:counts': async (id) => {
       const b = brainOf(id);
       const { state } = await readState(b.path);

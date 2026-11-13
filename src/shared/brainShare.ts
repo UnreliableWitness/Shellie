@@ -96,3 +96,25 @@ export type BrainHomeInput = {
   project: string;
   pat: string;
 };
+
+/**
+ * What a join link leads to (`brain:previewJoin`): the brain's name and customer project, the person's connection for
+ * that project (null: add the project first), and whether they already have a brain for it. With `needsToken` no
+ * connection or brain home reaches the link's organization (then `organizationUrl` is the link's, `name` and
+ * `project` are empty).
+ */
+export type JoinPreview = {
+  name: string;
+  organizationUrl: string;
+  project: string;
+  connectionId: string | null;
+  needsToken: boolean;
+  alreadyHave: boolean;
+};
+
+/** A shared brain found in a connection's project (the Join card). */
+export type DiscoveredBrain = {
+  repositoryId: string;
+  name: string;
+  joinLink: string;
+};

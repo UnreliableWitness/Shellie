@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { promises as fs, writeFileSync } from 'node:fs';
+import { existsSync, promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -24,6 +24,7 @@ import {
 import started from 'electron-squirrel-startup';
 import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
+import { parseJoinLink } from './shared/brainShare';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
@@ -282,6 +283,42 @@ let mainWindow: BrowserWindow | null = null;
 let splashWin: BrowserWindow | null = null;
 /** True until the main window is revealed (stays true after a boot failure). */
 let booting = true;
+/** A `shellie://join?…` link opened before the main window loaded; sent to it once it has. */
+let pendingJoin: string | null = null;
+
+/** The `shellie://join?…` link among a launch's arguments (Windows hands the link to the app that way). */
+const joinLinkIn = (argv: string[]): string | null =>
+  argv.find((a) => parseJoinLink(a) !== null) ?? null;
+
+/**
+ * Makes Shellie the handler of shellie:// links. On Windows the registry points at Squirrel's stub one folder up,
+ * which starts the newest version, so an update does not leave the link on a removed app-<version> folder.
+ */
+function registerJoinScheme(): void {
+  const stub = path.resolve(
+    path.dirname(process.execPath),
+    '..',
+    path.basename(process.execPath),
+  );
+  if (process.platform === 'win32' && existsSync(stub))
+    app.setAsDefaultProtocolClient('shellie', stub);
+  else app.setAsDefaultProtocolClient('shellie');
+}
+
+/** Shows the join screen for a link now, or once the main window has loaded. */
+function openJoinLink(link: string): void {
+  if (!parseJoinLink(link)) return;
+  const w = mainWindow;
+  if (!w || w.isDestroyed() || w.webContents.isLoading()) {
+    pendingJoin = link;
+    return;
+  }
+  send('brain:openJoin', { link });
+  if (booting) return;
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+}
 /** Starts terminals and headless brain jobs in a utility process, so a slow Windows spawn never blocks main (#271). */
 const ptyHost = new PtyHostClient(
   utilityPtyHost(path.join(__dirname, 'ptyHost.cjs')),
@@ -402,6 +439,12 @@ function createWindow(): BrowserWindow {
   win.on('enter-full-screen', sendFullScreen);
   win.on('leave-full-screen', sendFullScreen);
   win.webContents.on('did-finish-load', sendFullScreen);
+  win.webContents.on('did-finish-load', () => {
+    if (!pendingJoin || mainWindow !== win) return;
+    const link = pendingJoin;
+    pendingJoin = null;
+    send('brain:openJoin', { link });
+  });
   win.on('focus', () => onWindowFocus(true));
   win.on('blur', () => onWindowFocus(false));
   win.on('minimize', () => onWindowFocus(false));
@@ -1614,7 +1657,18 @@ if (process.env.SHELLIE_SMOKE === '1') {
   // A second Shellie (a double launch, or a stray relaunch of Shellie.exe) hands over to the first one.
   app.quit();
 } else if (!started) {
-  app.on('second-instance', () => {
+  // shellie:// links open Shellie (the join link). Packaged builds only: a dev run would take the link from the
+  // installed app; it takes one as an argument instead. macOS also has the scheme in Info.plist (forge.config.mts).
+  if (app.isPackaged) registerJoinScheme();
+  pendingJoin = joinLinkIn(process.argv);
+  // macOS hands the link over here, also on a cold start (before ready).
+  app.on('open-url', (e, url) => {
+    e.preventDefault();
+    openJoinLink(url);
+  });
+  app.on('second-instance', (_e, argv) => {
+    const link = joinLinkIn(argv);
+    if (link) openJoinLink(link);
     // The splash while booting (nothing when it is off: the main window is still hidden), else the main window.
     const win = booting ? splashWin : mainWindow;
     const target = win && !win.isDestroyed() ? win : null;

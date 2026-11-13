@@ -152,6 +152,7 @@ describe('brain handlers', () => {
             project: 'Default',
             user: null,
           }) as ReturnType<BrainHandlerDeps['connections']['get']>,
+        list: () => [],
         token: async () => 'token',
       },
       task: (id) => {
