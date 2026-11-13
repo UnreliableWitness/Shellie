@@ -196,7 +196,12 @@ beforeEach(async () => {
 
 afterEach(async () => {
   offs.forEach((off) => off());
-  await fs.rm(root, { recursive: true, force: true });
+  await fs.rm(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 100,
+  });
 });
 
 describe('BrainSync', () => {
@@ -305,21 +310,57 @@ describe('BrainSync', () => {
     )
       .trim()
       .split('\n');
-    expect(subjects).toEqual([
-      'Brain: records moved to the changes since the last send',
-      SQUASH_MESSAGE,
-    ]);
-    const squash = (await git.run(a, ['rev-parse', 'HEAD~1'])).trim();
-    expect((await readState(a)).state?.lastSyncCommit).toBe(squash);
+    expect(subjects).toEqual([SQUASH_MESSAGE]);
+    expect((await git.run(a, ['rev-parse', 'HEAD~1'])).trim()).toBe(before);
+    // The records point before the fold, so /sync and the long reads read the folded changes again.
+    expect((await readState(a)).state?.lastSyncCommit).toBe(before);
     const reads = JSON.parse(
       await fs.readFile(path.join(a, 'brain', 'reads.json'), 'utf8'),
     ) as { reads: Record<string, { commit: string }> };
-    expect(reads.reads['reads/r.md'].commit).toBe(squash);
+    expect(reads.reads['reads/r.md'].commit).toBe(before);
     expect(await git.run(a, ['status', '--porcelain'])).toBe('');
     await sync().push('a');
     expect(await serverHead()).toBe(await head(a));
     expect(sharing()).toMatchObject({ status: 'ok', heldFile: null });
     expect(await serverLog()).not.toContain(TOKEN);
+  });
+
+  it("folds on top of the server commit the brain holds, so a fetched colleague's change is not undone", async () => {
+    await write(a, 'sources/s.md', `token ${TOKEN}\n`);
+    await commit(a, 'Brain: add source s.md');
+    await sync().push('a');
+    expect(sharing()?.status).toBe('held');
+    await write(b, 'sources/b.md', 'from B\n');
+    await commit(b, 'Brain: add source b.md');
+    await pushB();
+    // Fetched, not merged: as when a scrub lands between a pull's fetch and its merge.
+    await git.run(a, ['fetch', '-q', 'origin']);
+    await scrubBrain(git, a, TOKEN);
+    expect(await sync().squashUnsent('a')).toBe(true);
+    await sync().push('a');
+    expect(await serverHead()).toBe(await head(a));
+    const onServer = await git.run(root, [
+      '--git-dir',
+      server,
+      'show',
+      'main:sources/b.md',
+    ]);
+    expect(onServer).toBe('from B\n');
+    expect(await serverLog()).not.toContain(TOKEN);
+    expect(sharing()).toMatchObject({ status: 'ok', heldFile: null });
+  });
+
+  it('does not fold while the brain lock is held', async () => {
+    await write(a, 'sources/s.md', `token ${TOKEN}\n`);
+    await commit(a, 'Brain: add source s.md');
+    const before = await head(a);
+    expect(await acquireLock(a)).toBe(true);
+    try {
+      expect(await sync().squashUnsent('a')).toBe(false);
+      expect(await head(a)).toBe(before);
+    } finally {
+      await releaseLock(a);
+    }
   });
 
   it('scans a file whose name git quotes', async () => {

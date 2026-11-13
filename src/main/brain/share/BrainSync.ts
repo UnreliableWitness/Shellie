@@ -16,7 +16,7 @@ import { TICK_MS } from '../scheduler';
 import { findSecrets } from '../secrets';
 import { absPath } from '../paths';
 import { READS_RECORD } from '../reads';
-import { acquireLock, readState, releaseLock, writeState } from '../state';
+import { acquireLock, readState, releaseLock } from '../state';
 import { readOrigin } from './files';
 import { mergeServer, type JobRef } from './merge';
 
@@ -31,8 +31,6 @@ const SERVER = 'origin/main';
 /** A fetch no one watches gives up after this long (a hung network or a sign-in prompt). */
 const FETCH_TIMEOUT_MS = 120_000;
 export const SQUASH_MESSAGE = 'Brain: changes since the last send';
-const RECORDS_MESSAGE =
-  'Brain: records moved to the changes since the last send';
 /** git's empty tree: what a brain is compared with before the server has a main. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const PENDING: ReadonlySet<BrainJob['status']> = new Set([
@@ -86,8 +84,8 @@ const server = <T>(p: Promise<T>): Promise<T> =>
   p.catch((e: unknown) => {
     throw e instanceof GitAuthError ? e : new ServerError(e);
   });
+
 /** A path as git prints it in a diff header: C-quoted (`"b/a\"b.md"`) when it holds a quote, a backslash or a control character. */
-/** A path as git prints it in a diff header: C-quoted (`"b/a\\"b.md"`) when it holds a quote, a backslash or a control character. */
 export function unquoteGitPath(name: string): string {
   if (!name.startsWith('"') || name.length < 2) return name;
   const chars = Array.from(name.slice(1, name.lastIndexOf('"')));
@@ -370,54 +368,92 @@ export class BrainSync {
 
   /**
    * After a scrub of a held brain: the commits the server lacks become one commit of the tree as it is now, on top of
-   * the server's main, so the secret an earlier one added never leaves the machine. Records that named a folded
-   * commit (`lastSyncCommit`, a long read's `commit`) move to the new one. Never while a job runs. True when it folded.
+   * the last server commit the brain already holds (the merge base, so no colleague's change is undone), and the secret
+   * an earlier one added never leaves the machine. Records that named a folded commit (`lastSyncCommit`, a long read's
+   * `commit`) move to that server commit, inside the fold, so `/sync` and the long reads read the folded changes again.
+   * Never while a job runs or holds the lock. True when it folded.
    */
   async squashUnsent(id: string): Promise<boolean> {
     const b = this.shared(id);
     if (!b || this.d.runner().running(id)) return false;
     const dir = b.path;
+    const took = await acquireLock(dir, process.pid, this.now).catch(
+      () => false,
+    );
+    if (!took) return false;
+    try {
+      return await withBrainGit(dir, () => this.fold(dir));
+    } finally {
+      await releaseLock(dir).catch(() => undefined);
+    }
+  }
+
+  private async fold(dir: string): Promise<boolean> {
     const git = this.d.git;
-    return withBrainGit(dir, async () => {
-      const head = await this.head(dir);
-      const onServer =
-        (await this.base(dir)) === SERVER
-          ? (await git.run(dir, ['rev-parse', `${SERVER}^{commit}`])).trim()
-          : null;
-      const folded = (
-        await git.run(dir, [
-          'rev-list',
-          onServer ? `${onServer}..${head}` : head,
-        ])
-      )
-        .split('\n')
-        .filter(Boolean);
-      if (!folded.length) return false;
-      const tree = (await git.run(dir, ['rev-parse', `${head}^{tree}`])).trim();
-      const squash = (
-        await git.run(dir, [
-          'commit-tree',
-          tree,
-          ...(onServer ? ['-p', onServer] : []),
-          '-m',
-          SQUASH_MESSAGE,
-        ])
-      ).trim();
-      await git.run(dir, ['reset', '-q', '--soft', squash]);
-      const moved = await moveRecords(dir, folded, squash);
-      if (moved.length) {
-        await git.run(dir, ['add', '--', ...moved]);
-        await git.run(dir, [
-          'commit',
-          '-q',
-          '-m',
-          RECORDS_MESSAGE,
-          '--',
-          ...moved,
-        ]);
+    const head = await this.head(dir);
+    const parent =
+      (await this.base(dir)) === SERVER
+        ? await git
+            .run(dir, ['merge-base', head, SERVER])
+            .then((o) => o.trim() || null)
+            .catch(() => null)
+        : null;
+    const folded = (
+      await git.run(dir, ['rev-list', parent ? `${parent}..${head}` : head])
+    )
+      .split('\n')
+      .filter(Boolean);
+    if (!folded.length) return false;
+    const records = await movedRecords(git, dir, head, folded, parent);
+    let tree = (await git.run(dir, ['rev-parse', `${head}^{tree}`])).trim();
+    if (records.length) {
+      // HEAD's tree with the records replaced, built in an index of its own: the person's staged work stays out.
+      const index = path.resolve(
+        dir,
+        (
+          await git.run(dir, ['rev-parse', '--git-path', 'shellie-fold-index'])
+        ).trim(),
+      );
+      const env = { GIT_INDEX_FILE: index };
+      try {
+        await git.run(dir, ['read-tree', head], { env });
+        for (const r of records) {
+          await fs.writeFile(`${index}.blob`, r.text, 'utf8');
+          const blob = (
+            await git.run(dir, ['hash-object', '-w', `${index}.blob`])
+          ).trim();
+          await git.run(
+            dir,
+            ['update-index', '--cacheinfo', `100644,${blob},${r.path}`],
+            { env },
+          );
+        }
+        tree = (await git.run(dir, ['write-tree'], { env })).trim();
+      } finally {
+        await fs.rm(index, { force: true });
+        await fs.rm(`${index}.blob`, { force: true });
       }
-      return true;
-    });
+    }
+    const squash = (
+      await git.run(dir, [
+        'commit-tree',
+        tree,
+        ...(parent ? ['-p', parent] : []),
+        '-m',
+        SQUASH_MESSAGE,
+      ])
+    ).trim();
+    await git.run(dir, ['reset', '-q', '--soft', squash]);
+    if (records.length) {
+      await git.run(dir, ['reset', '-q', '--', ...records.map((r) => r.path)]);
+      // The working copy follows, unless the person changed the file since.
+      for (const r of records) {
+        const file = absPath(dir, r.path);
+        const now = await fs.readFile(file, 'utf8').catch(() => null);
+        if (now === r.before) await fs.writeFile(file, r.text, 'utf8');
+      }
+    }
+    return true;
   }
 
   private async head(dir: string): Promise<string> {
@@ -513,43 +549,59 @@ export class BrainSync {
   }
 }
 
-/** Moves `lastSyncCommit` and the long reads' `commit` off the folded commits onto `to`; the paths it changed. */
-async function moveRecords(
+/**
+ * `brain/state.json` and `brain/reads.json` as HEAD has them, with `lastSyncCommit` and each long read's `commit` that
+ * named a folded commit moved to `to` (null before the server has a main); only the files that changed.
+ */
+async function movedRecords(
+  git: GitClient,
   dir: string,
+  head: string,
   folded: string[],
-  to: string,
-): Promise<string[]> {
+  to: string | null,
+): Promise<{ path: string; before: string; text: string }[]> {
   const isFolded = (c: unknown) =>
     typeof c === 'string' &&
     c.length >= 4 &&
     folded.some((f) => f.startsWith(c));
-  const moved: string[] = [];
-  const { state } = await readState(dir);
-  if (state && isFolded(state.lastSyncCommit)) {
-    await writeState(dir, (s) => ({ ...s, lastSyncCommit: to }));
-    moved.push('brain/state.json');
-  }
-  const file = absPath(dir, READS_RECORD);
-  // Read loosely and written back whole: only the commit ids change.
-  const raw: unknown = await fs
-    .readFile(file, 'utf8')
-    .then((t) => JSON.parse(t) as unknown)
-    .catch(() => null);
-  const reads =
-    raw && typeof raw === 'object' ? (raw as { reads?: unknown }).reads : null;
-  if (reads && typeof reads === 'object') {
+  const out: { path: string; before: string; text: string }[] = [];
+  const edit = async (rel: string, change: (v: unknown) => boolean) => {
+    const before = await git
+      .run(dir, ['show', `${head}:${rel}`])
+      .catch(() => null);
+    if (before === null) return;
+    let value: unknown;
+    try {
+      value = JSON.parse(before);
+    } catch {
+      return;
+    }
+    if (change(value))
+      out.push({
+        path: rel,
+        before,
+        text: `${JSON.stringify(value, null, 2)}\n`,
+      });
+  };
+  const record = (v: unknown) =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  await edit('brain/state.json', (v) => {
+    const st = record(v);
+    if (!st || !isFolded(st.lastSyncCommit)) return false;
+    st.lastSyncCommit = to;
+    return true;
+  });
+  await edit(READS_RECORD, (v) => {
+    const reads = record(record(v)?.reads);
     let changed = false;
-    for (const r of Object.values(reads as Record<string, unknown>)) {
-      const rec = r as { commit?: unknown } | null;
-      if (rec && typeof rec === 'object' && isFolded(rec.commit)) {
+    for (const r of Object.values(reads ?? {})) {
+      const rec = record(r);
+      if (rec && isFolded(rec.commit)) {
         rec.commit = to;
         changed = true;
       }
     }
-    if (changed) {
-      await fs.writeFile(file, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
-      moved.push(READS_RECORD);
-    }
-  }
-  return moved;
+    return changed;
+  });
+  return out;
 }
