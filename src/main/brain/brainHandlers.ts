@@ -43,6 +43,7 @@ import {
   type JoinDeps,
 } from './share/join';
 import {
+  leaveBrain,
   shareBrain,
   stopSharing,
   type ShareDeps,
@@ -130,6 +131,7 @@ export type BrainChannels =
   | 'brain:share'
   | 'brain:joinLink'
   | 'brain:stopSharing'
+  | 'brain:leave'
   | 'brain:handOver'
   | 'brain:takeOver'
   | 'brain:previewJoin'
@@ -492,6 +494,22 @@ export function createBrainHandlers(
     (installId ??= d.installId
       ? Promise.resolve(d.installId)
       : getInstallId(d.userData));
+  /** The brain's record goes, and its folder too when asked (only a brain folder, or an empty one). */
+  const deleteBrain = async (id: string, deleteFolder: boolean) => {
+    const b = brainOf(id);
+    if (
+      deleteFolder &&
+      !(await isEmptyOrMissing(b.path)) &&
+      !(await isBrainFolder(b.path))
+    )
+      throw new Error('The folder is not a brain; it was not deleted');
+    if (b.terminal) await d.terminals?.kill(b.terminal.id);
+    // Queued jobs of the brain stay in the runner; they fail on the missing folder or brain.
+    await d.brains.remove(id);
+    if (deleteFolder) await fs.rm(b.path, { recursive: true, force: true });
+    d.event('brain.deleted', { folder: deleteFolder });
+    changed(id);
+  };
   const joinDeps: JoinDeps = {
     brains: d.brains,
     git: d.git,
@@ -736,21 +754,7 @@ export function createBrainHandlers(
       changed(id);
       return view(updated);
     },
-    'brain:delete': async (id, deleteFolder) => {
-      const b = brainOf(id);
-      if (
-        deleteFolder &&
-        !(await isEmptyOrMissing(b.path)) &&
-        !(await isBrainFolder(b.path))
-      )
-        throw new Error('The folder is not a brain; it was not deleted');
-      if (b.terminal) await d.terminals?.kill(b.terminal.id);
-      // Queued jobs of the brain stay in the runner; they fail on the missing folder or brain.
-      await d.brains.remove(id);
-      if (deleteFolder) await fs.rm(b.path, { recursive: true, force: true });
-      d.event('brain.deleted', { folder: deleteFolder });
-      changed(id);
-    },
+    'brain:delete': (id, deleteFolder) => deleteBrain(id, deleteFolder),
     'brain:pickFolder': () => d.pickFolder(),
     'brain:wikis': (connectionId, project) =>
       d.tracker(connectionId).wikis(project),
@@ -1006,6 +1010,16 @@ export function createBrainHandlers(
       brainOf(id);
       await stopSharing(d, id);
       changed(id);
+    },
+    'brain:leave': async (id, then, deleteFolder) => {
+      if (d.runner.running(id)) throw new Error(BUSY);
+      await leaveBrain({ ...d, installId: myInstall }, id);
+      changed(id);
+      if (then === 'delete') await deleteBrain(id, deleteFolder === true);
+      else {
+        await d.brains.patch(id, { archived: true });
+        changed(id);
+      }
     },
     'brain:handOver': async (id, target) => {
       const b = live(id);

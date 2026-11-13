@@ -223,6 +223,31 @@ describe('mergeShared', () => {
 });
 
 describe('mergeMembers', () => {
+  it('drops a member one side took out (they left), while the other side added someone', () => {
+    const m = (ids: string[]): Members => ({
+      format: 1,
+      members: ids.map((id) => ({
+        installId: id,
+        name: id,
+        joinedAt: '2026-11-01',
+      })),
+    });
+    expect(
+      mergeMembers(m(['k']), m(['k', 'b', 'c']), m(['k', 'b'])).members.map(
+        (x) => x.installId,
+      ),
+    ).toEqual(['k', 'c']);
+    const again: Members = {
+      format: 1,
+      members: [{ installId: 'b', name: 'b', joinedAt: '2026-11-09' }],
+    };
+    expect(
+      mergeMembers(m(['k']), again, m(['k', 'b'])).members.map(
+        (x) => x.installId,
+      ),
+    ).toEqual(['b']);
+  });
+
   it('unions by installId and keeps the earlier joinedAt', () => {
     const m = (list: Members['members']): Members => ({
       format: 1,

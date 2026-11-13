@@ -160,6 +160,7 @@ const defaults: FakeHandlers = {
   'brain:share': () => ({ status: 'syncing' }),
   'brain:joinLink': () => 'shellie://join?org=o&project=p&repo=r',
   'brain:stopSharing': () => undefined,
+  'brain:leave': () => undefined,
   'brain:handOver': () => undefined,
   'brain:takeOver': () => undefined,
   'brain:updateTemplates': () => undefined,

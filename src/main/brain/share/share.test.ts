@@ -11,8 +11,10 @@ import { commitJobOutput, OUTSIDE_EDIT_MESSAGE } from '../brainHandlers';
 import { scaffoldBrain } from '../scaffold';
 import { readState, writeState } from '../state';
 import { BrainSync, type SyncRunner } from './BrainSync';
-import { readMembers, readOrigin, readShared } from './files';
+import { readMembers, readOrigin, readShared, upsertMember } from './files';
 import {
+  LEAVE_MESSAGE,
+  leaveBrain,
   PRE_SHARE_REF,
   shareBrain,
   stopSharing,
@@ -215,6 +217,32 @@ describe('shareBrain', () => {
     await expect(
       shareBrain(deps(), { brainId: 'a', home: 'company', repoName: 'x' }),
     ).rejects.toThrow('Already shared');
+  });
+
+  it("moves long reads' commits off the old history, so /write update never names an unknown commit", async () => {
+    const old = await head();
+    await write(
+      'brain/reads.json',
+      JSON.stringify({
+        reads: { 'reads/r.md': { at: 'x', commit: old, pages: {} } },
+        extra: 'kept',
+      }),
+    );
+    await write('reads/r.md', 'A read\n');
+    await writeState(dir, (s) => ({ ...s, lastSyncCommit: old }));
+    await commit('Brain: sync');
+    const r = await shareBrain(deps(), {
+      brainId: 'a',
+      home: 'company',
+      repoName: 'Acme brain',
+    });
+    expect(r.status).toBe('shared');
+    const onMain = JSON.parse(
+      await onServer(['show', 'main:brain/reads.json']),
+    ) as { reads: Record<string, { commit: string | null }>; extra: string };
+    expect(onMain.reads['reads/r.md'].commit).toBeNull();
+    expect(onMain.extra).toBe('kept');
+    expect((await git.run(dir, ['status', '--porcelain'])).trim()).toBe('');
   });
 
   it('creates the repo through the home for the company home and through the connection for the customer', async () => {
@@ -431,6 +459,85 @@ describe('stopSharing', () => {
     expect(brains.get('a')?.sharing).toBeNull();
     expect(await git.remotes(dir)).toEqual([]);
     expect(await exists('brain/origin.json')).toBe(true);
+  });
+});
+
+describe('leaveBrain', () => {
+  const syncFor = () =>
+    new BrainSync({
+      brains,
+      git,
+      runner: () => ({
+        enqueue: vi.fn(),
+        jobs: () => [],
+        running: () => false,
+        fail: () => false,
+        release: () => undefined,
+      }),
+      changed: () => undefined,
+      commitOutsideEdits: (id) =>
+        commitJobOutput(git, brains.get(id)?.path ?? '', OUTSIDE_EDIT_MESSAGE),
+    });
+  const shareWithMember = async () => {
+    await shareBrain(deps(), {
+      brainId: 'a',
+      home: 'company',
+      repoName: 'Acme brain',
+    });
+    await upsertMember(dir, {
+      installId: 'member-2',
+      name: 'Anna',
+      joinedAt: NOW.toISOString(),
+    });
+    await commit('Brain: joined');
+    await git.push(dir, 'origin', 'HEAD:main');
+  };
+  const serverMembers = async () =>
+    (
+      JSON.parse(await onServer(['show', 'main:brain/members.json'])) as {
+        members: { installId: string }[];
+      }
+    ).members.map((m) => m.installId);
+
+  it("takes the member's line out on the server, then makes the brain local", async () => {
+    await shareWithMember();
+    expect(await serverMembers()).toEqual([INSTALL, 'member-2']);
+    await leaveBrain(
+      { brains, git, sync: syncFor(), installId: async () => 'member-2' },
+      'a',
+    );
+    expect(await serverMembers()).toEqual([INSTALL]);
+    expect((await onServer(['log', '-1', '--format=%s', 'main'])).trim()).toBe(
+      LEAVE_MESSAGE,
+    );
+    expect(brains.get('a')?.sharing).toBeNull();
+    expect(await git.remotes(dir)).toEqual([]);
+  });
+
+  it('still leaves when the server is out of reach', async () => {
+    await shareWithMember();
+    await git.run(dir, [
+      'remote',
+      'set-url',
+      'origin',
+      path.join(root, 'gone.git'),
+    ]);
+    await leaveBrain(
+      { brains, git, sync: syncFor(), installId: async () => 'member-2' },
+      'a',
+    );
+    expect(brains.get('a')?.sharing).toBeNull();
+  });
+
+  it('refuses the keeper: they hand over or stop sharing', async () => {
+    await shareWithMember();
+    await expect(
+      leaveBrain(
+        { brains, git, sync: syncFor(), installId: async () => INSTALL },
+        'a',
+      ),
+    ).rejects.toThrow('You keep this brain: hand over first, or stop sharing');
+    expect(brains.get('a')?.sharing).not.toBeNull();
   });
 });
 

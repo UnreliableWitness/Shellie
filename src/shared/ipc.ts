@@ -793,6 +793,14 @@ export type Channels = {
   'brain:joinLink': { args: [brainId: string]; result: string };
   /** Makes a shared brain local again; its folder, history and origin.json stay. */
   'brain:stopSharing': { args: [brainId: string]; result: void };
+  /**
+   * A member leaves a shared brain: their members.json line is taken out by a last push when the server is reachable,
+   * the brain becomes local, then it is archived or deleted (`deleteFolder` as for brain:delete). Refused for the keeper.
+   */
+  'brain:leave': {
+    args: [brainId: string, then: 'archive' | 'delete', deleteFolder?: boolean];
+    result: void;
+  };
   /** The keeper names a member (by install id, from `BrainView.keeper.members`) as the new keeper. */
   'brain:handOver': {
     args: [brainId: string, installId: string];

@@ -324,8 +324,12 @@ async function resolveConflicts(
         ),
       );
     } else if (p === 'brain/members.json') {
-      await mergeJson(p, ({ ours, theirs }) =>
-        mergeMembers(MembersSchema.parse(ours), MembersSchema.parse(theirs)),
+      await mergeJson(p, ({ base, ours, theirs }) =>
+        mergeMembers(
+          MembersSchema.parse(ours),
+          MembersSchema.parse(theirs),
+          base === null ? null : (MembersSchema.safeParse(base).data ?? null),
+        ),
       );
     } else if (p === 'index.md') {
       // Rebuilt from the pages after the merge.

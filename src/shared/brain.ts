@@ -519,7 +519,7 @@ export type BrainView = Brain & {
   newerShellie: boolean;
 };
 
-/** Who keeps a shared brain (`me`: this install) and who joined it, for the Brain page's keeper choices. */
+/** Who keeps a shared brain (`me`: this install) and the members who could take it over (the keeper left out). */
 export type BrainKeeper = {
   installId: string;
   name: string;

@@ -30,7 +30,12 @@ import { acquireLock, releaseLock } from './state';
 import { brainHealth } from './health';
 import { isBrainFolder, scaffoldBrain } from './scaffold';
 import { TEMPLATES_VERSION } from './templates';
-import { readShared, writeOrigin } from './share/files';
+import {
+  readMembers,
+  readShared,
+  upsertMember,
+  writeOrigin,
+} from './share/files';
 import { NEWER_SHELLIE, SHARED_FACTS_MESSAGE } from './share/keeper';
 
 const NEW = {
@@ -41,6 +46,12 @@ const NEW = {
   wiki: null,
   agent: 'claude' as const,
 };
+
+const isEmptyOrMissingDir = (dir: string) =>
+  fs.readdir(dir).then(
+    (l) => l.length === 0,
+    () => true,
+  );
 
 describe('brain handlers', () => {
   const git = new GitClient();
@@ -1031,6 +1042,68 @@ describe('brain handlers', () => {
     expect(brains.get(v.id)?.templatesVersion).toBe(TEMPLATES_VERSION);
     expect(released).toEqual([v.id]);
   });
+
+  it.each(['archive', 'delete'] as const)(
+    'leave takes the member out, pushes, makes the brain local, then %s',
+    async (then) => {
+      const existing = path.join(userData, 'joined');
+      await scaffoldBrain(git, existing, 'Acme');
+      const v = await h['brain:create']({ ...NEW, path: existing });
+      await writeOrigin(existing, {
+        format: 1,
+        organizationUrl: 'https://dev.azure.com/org',
+        project: 'Default',
+        name: 'Acme',
+        keeper: { installId: 'someone-else', name: 'Dries' },
+        sharedAt: '2026-11-13T09:00:00.000Z',
+      });
+      await upsertMember(existing, {
+        installId: 'me-1',
+        name: 'Ann',
+        joinedAt: '2026-11-13T09:00:00.000Z',
+      });
+      await git.run(existing, ['add', '-A']);
+      await git.run(existing, ['commit', '-q', '-m', 'Brain: joined']);
+      await brains.patch(v.id, {
+        sharing: {
+          home: 'company',
+          remoteUrl: 'https://dev.azure.com/org/Default/_git/acme',
+          repositoryId: 'r',
+          homeOrganizationUrl: 'https://dev.azure.com/org',
+          homeProject: 'Default',
+          joinedAt: '2026-11-13T09:00:00.000Z',
+          lastPullAt: null,
+          lastPushAt: null,
+          status: 'ok',
+          heldFile: null,
+        },
+      });
+      const pushed: string[] = [];
+      const hs = createBrainHandlers({
+        ...deps,
+        installId: 'me-1',
+        sync: {
+          pull: async () => undefined,
+          push: async (id) => {
+            pushed.push(id);
+          },
+          squashUnsent: async () => false,
+        },
+      });
+      await hs['brain:leave'](v.id, then, true);
+      expect(pushed).toEqual([v.id]);
+      expect((await readMembers(existing))?.members ?? []).toEqual([]);
+      if (then === 'archive')
+        expect(brains.get(v.id)).toMatchObject({
+          archived: true,
+          sharing: null,
+        });
+      else {
+        expect(brains.get(v.id)).toBeUndefined();
+        expect(await isEmptyOrMissingDir(existing)).toBe(true);
+      }
+    },
+  );
 
   it('on a shared brain, updateTemplates sends the version to everyone, and a newer brain refuses it', async () => {
     const existing = path.join(userData, 'shared');

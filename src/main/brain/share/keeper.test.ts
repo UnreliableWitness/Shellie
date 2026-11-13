@@ -293,10 +293,8 @@ describe('the keeper', () => {
       installId: MEMBER,
       name: 'Ann',
       me: true,
-      members: [
-        { installId: KEEPER, name: 'Dries' },
-        { installId: MEMBER, name: 'Ann' },
-      ],
+      // Whom the keeper can hand over to: never themself.
+      members: [{ installId: KEEPER, name: 'Dries' }],
     });
   });
 

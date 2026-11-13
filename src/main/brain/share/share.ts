@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BrainJob, BrainSharing } from '../../../shared/brain';
-import { joinLink } from '../../../shared/brainShare';
+import { isKeeper, joinLink } from '../../../shared/brainShare';
 import type { Connection } from '../../../shared/types';
 import { AdoClient } from '../../services/AdoClient';
 import type { GitClient } from '../../services/GitClient';
@@ -14,16 +14,24 @@ import { withBrainGit } from '../gitMutex';
 import { isSyncCommit, outsideEdits } from '../health';
 import type { BrainJobRunner } from '../jobs';
 import { absPath } from '../paths';
+import { READS_RECORD } from '../reads';
 import { acquireLock, readState, releaseLock, writeState } from '../state';
 import type { BrainHomeStore } from './BrainHomeStore';
-import { PRE_SHARE_REF } from './BrainSync';
+import { PRE_SHARE_REF, type BrainSync } from './BrainSync';
 
 export { PRE_SHARE_REF };
-import { upsertMember, writeOrigin, writeShared } from './files';
+import {
+  readOrigin,
+  removeMember,
+  upsertMember,
+  writeOrigin,
+  writeShared,
+} from './files';
 import { installEmail } from './keeper';
 import { CHUNK_BYTES, treeSecretFiles } from './secretScan';
 
 export const SHARE_MESSAGE = 'Brain: shared';
+export const LEAVE_MESSAGE = 'Brain: left';
 const BUSY = 'A brain job is running; try again later';
 const SHARE_FILES = [
   'brain/origin.json',
@@ -179,7 +187,7 @@ export async function shareBrain(
         name: await localConfig(git, dir, 'user.name'),
       };
       const kept = await Promise.all(
-        SHARE_FILES.map(async (rel) => ({
+        [...SHARE_FILES, READS_RECORD].map(async (rel) => ({
           rel,
           text: await fs.readFile(absPath(dir, rel), 'utf8').catch(() => null),
         })),
@@ -218,6 +226,9 @@ export async function shareBrain(
         );
         // The old history's commits are not in the shared one; null makes /sync start from its first commit, the share.
         await writeState(dir, (s) => ({ ...s, lastSyncCommit: null }));
+        // Likewise a long read's commit: null makes /write update compare with the share commit (the file's last).
+        const reads = await movedReads(dir);
+        const toAdd = reads ? [...SHARE_FILES, READS_RECORD] : SHARE_FILES;
         // HEAD's tree plus the share files, built in an index of its own: the person's staged work stays out.
         const index = path.resolve(
           dir,
@@ -233,7 +244,7 @@ export async function shareBrain(
         try {
           const env = { GIT_INDEX_FILE: index };
           await git.run(dir, ['read-tree', before], { env });
-          await git.run(dir, ['add', '--', ...SHARE_FILES], { env });
+          await git.run(dir, ['add', '--', ...toAdd], { env });
           tree = (await git.run(dir, ['write-tree'], { env })).trim();
         } finally {
           await fs.rm(index, { force: true });
@@ -302,6 +313,31 @@ export async function shareBrain(
   };
 }
 
+/**
+ * `brain/reads.json` with every long read's `commit` set to null (unknown keys kept); false when there is no record
+ * or it cannot be read, and then it is left as it is.
+ */
+async function movedReads(dir: string): Promise<boolean> {
+  const file = absPath(dir, READS_RECORD);
+  const text = await fs.readFile(file, 'utf8').catch(() => null);
+  if (text === null) return false;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const reads =
+    value && typeof value === 'object'
+      ? (value as { reads?: unknown }).reads
+      : null;
+  if (!reads || typeof reads !== 'object') return false;
+  for (const r of Object.values(reads as Record<string, unknown>))
+    if (r && typeof r === 'object') (r as { commit?: unknown }).commit = null;
+  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  return true;
+}
+
 /** Puts the brain back as it was before a share that failed: its branch, files, identity, no remote. */
 async function restore(
   git: GitClient,
@@ -344,4 +380,48 @@ export async function stopSharing(
       await d.git.run(b.path, ['remote', 'remove', 'origin']);
   });
   await d.brains.patch(brainId, { sharing: null });
+}
+
+/**
+ * A member leaves a shared brain (the spec, "Leaving and stopping"): their line in `brain/members.json` is taken out
+ * by a last commit, sent when the server is reachable (a push that fails or is held leaves it there), and the brain
+ * becomes local on this machine, so an archived copy never syncs again. The caller then archives or deletes it. The
+ * keeper is refused: they hand over first, or stop sharing.
+ */
+export async function leaveBrain(
+  d: Pick<ShareDeps, 'brains' | 'git' | 'installId'> & {
+    sync?: Pick<BrainSync, 'push'>;
+  },
+  brainId: string,
+): Promise<void> {
+  const b = d.brains.get(brainId);
+  if (!b) throw new Error(`Unknown brain ${brainId}`);
+  if (!b.sharing) return;
+  const dir = b.path;
+  const installId = await d.installId();
+  const origin = await readOrigin(dir).catch(() => null);
+  if (origin && isKeeper(origin, installId))
+    throw new Error('You keep this brain: hand over first, or stop sharing');
+  const committed = await withBrainGit(dir, async () => {
+    await removeMember(dir, installId);
+    const rel = 'brain/members.json';
+    const tracked = await d.git
+      .run(dir, ['ls-files', '--error-unmatch', '--', rel])
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!tracked) return false;
+    const changed = await d.git.run(dir, ['diff', '--quiet', '--', rel]).then(
+      () => false,
+      () => true,
+    );
+    if (!changed) return false;
+    await d.git.run(dir, ['add', '--', rel]);
+    await d.git.run(dir, ['commit', '-q', '-m', LEAVE_MESSAGE, '--', rel]);
+    return true;
+  });
+  // Never throws: offline, the line stays on the server and the person still leaves.
+  if (committed) await d.sync?.push(brainId);
+  await stopSharing(d, brainId);
 }

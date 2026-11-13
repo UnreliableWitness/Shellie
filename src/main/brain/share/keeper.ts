@@ -125,7 +125,10 @@ export function factsFromShared(
   return Object.keys(out).length ? out : null;
 }
 
-/** Who keeps the brain and who joined it, as the Brain page shows it; null for a brain without an origin. */
+/**
+ * Who keeps the brain and whom they can hand over to: the members who joined and have not left, the keeper left out.
+ * Null for a brain without an origin.
+ */
 export async function keeperOf(
   dir: string,
   installId: string,
@@ -136,7 +139,9 @@ export async function keeperOf(
   return {
     ...origin.keeper,
     me: isKeeper(origin, installId),
-    members: members.map((m) => ({ installId: m.installId, name: m.name })),
+    members: members
+      .filter((m) => m.installId !== origin.keeper.installId)
+      .map((m) => ({ installId: m.installId, name: m.name })),
   };
 }
 

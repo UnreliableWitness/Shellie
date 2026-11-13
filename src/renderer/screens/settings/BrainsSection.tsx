@@ -16,7 +16,12 @@ import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { defaultBrainAgent } from '../../brainAgent';
 import { keeperElsewhere } from '../../components/brain/sharing';
-import { SharingControls } from '../../components/brain/SharingControls';
+import {
+  asksHandOver,
+  HandOverFirst,
+  isMember,
+  SharingControls,
+} from '../../components/brain/SharingControls';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
 import { useReaderStatus } from '../../components/PhoneSection';
 import { useBrains } from '../../hooks/useBrains';
@@ -337,6 +342,8 @@ function BrainCard({ brain }: { brain: BrainView }) {
   const [confirming, setConfirming] = useState(false);
   const [withFolder, setWithFolder] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** The keeper's Archive or Delete waiting on the hand-over question. */
+  const [asking, setAsking] = useState<'archive' | 'delete' | null>(null);
 
   /** One call at a time per card; `action` null: not counted (a read that is not the use itself). */
   const run = async (
@@ -373,6 +380,12 @@ function BrainCard({ brain }: { brain: BrainView }) {
     if (Number.isInteger(n) && n > 0 && n !== brain.options.dailyTokenCap)
       void update({ dailyTokenCap: n });
   };
+  const archive = () =>
+    run(brain.archived ? 'restore' : 'archive', () =>
+      api().invoke('brain:update', brain.id, {
+        archived: !brain.archived,
+      }),
+    );
   const toApply = (diff ?? [])
     .filter((d) => d.status !== 'same')
     .map((d) => d.path);
@@ -502,27 +515,44 @@ function BrainCard({ brain }: { brain: BrainView }) {
         >
           Update skills
         </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() =>
-            run(brain.archived ? 'restore' : 'archive', () =>
-              api().invoke('brain:update', brain.id, {
-                archived: !brain.archived,
-              }),
-            )
-          }
-        >
-          {brain.archived ? 'Restore' : 'Archive'}
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setConfirming(true)}
-        >
-          Delete
-        </button>
+        {/* A member leaves instead (Leave, above): their line goes from the members list first. */}
+        {!isMember(brain) && (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                !brain.archived && asksHandOver(brain)
+                  ? setAsking('archive')
+                  : void archive()
+              }
+            >
+              {brain.archived ? 'Restore' : 'Archive'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                asksHandOver(brain) ? setAsking('delete') : setConfirming(true)
+              }
+            >
+              Delete
+            </button>
+          </>
+        )}
       </div>
+      {asking ? (
+        <HandOverFirst
+          brain={brain}
+          anyway={asking === 'archive' ? 'Archive anyway' : 'Delete anyway'}
+          onAnyway={() => {
+            setAsking(null);
+            if (asking === 'archive') void archive();
+            else setConfirming(true);
+          }}
+          onCancel={() => setAsking(null)}
+        />
+      ) : null}
       {diff ? (
         <div className="conn-confirm" role="status">
           {toApply.length === 0 ? (
@@ -537,6 +567,12 @@ function BrainCard({ brain }: { brain: BrainView }) {
               ))}
             </ul>
           )}
+          {toApply.length > 0 && brain.sharing ? (
+            <span className="small">
+              This brain is shared: applying updates the skills for everyone who
+              shares it.
+            </span>
+          ) : null}
           {toApply.length > 0 ? (
             <button
               type="button"

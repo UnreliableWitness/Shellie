@@ -182,10 +182,33 @@ export function mergeShared(
   return out;
 }
 
-/** brain/members.json: union by installId, the earlier `joinedAt` (and its row) kept. */
-export function mergeMembers(ours: Members, theirs: Members): Members {
+/**
+ * brain/members.json: union by installId, the earlier `joinedAt` (and its row) kept; a member the base had and one
+ * side took out (they left) stays out, unless the other side has them joined again.
+ */
+export function mergeMembers(
+  ours: Members,
+  theirs: Members,
+  base: Members | null = null,
+): Members {
+  const row = (list: Members, id: string) =>
+    list.members.find((m) => m.installId === id);
+  // Out on one side, unchanged on the other: they left. A new joinedAt on the other side is a join again.
+  const left = new Set(
+    (base?.members ?? [])
+      .filter((b) => {
+        const o = row(ours, b.installId);
+        const t = row(theirs, b.installId);
+        return (
+          (!o && (!t || t.joinedAt === b.joinedAt)) ||
+          (!t && (!o || o.joinedAt === b.joinedAt))
+        );
+      })
+      .map((b) => b.installId),
+  );
   const byId = new Map<string, Members['members'][number]>();
   for (const m of [...ours.members, ...theirs.members]) {
+    if (left.has(m.installId)) continue;
     const have = byId.get(m.installId);
     if (!have || after(have.joinedAt, m.joinedAt)) byId.set(m.installId, m);
   }
