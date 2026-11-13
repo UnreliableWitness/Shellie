@@ -493,3 +493,21 @@ describe('Project page', () => {
     });
   });
 });
+
+describe('ProjectScreen join card', () => {
+  it('offers to join the project’s shared brain', async () => {
+    useStore.setState({
+      connections: [connection],
+      screen: { kind: 'project' },
+    });
+    installFakeApi({
+      'brain:discover': () => [
+        { repositoryId: 'r', name: 'Acme', joinLink: 'shellie://join?a' },
+      ],
+    });
+    render(<Shell />);
+    expect(
+      await screen.findByText('Your team has a brain for Shellie. Join?'),
+    ).toBeInTheDocument();
+  });
+});

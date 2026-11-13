@@ -108,6 +108,7 @@ export function BrainRead({
   jobs,
   skillsReady,
   canWrite = false,
+  shared = false,
   conflicts = [],
   onSettle,
 }: {
@@ -126,6 +127,8 @@ export function BrainRead({
   skillsReady?: boolean;
   /** Whether the brain's skills can write long reads (`writeReady`). */
   canWrite?: boolean;
+  /** The brain is shared: removing a source warns about the server's history. */
+  shared?: boolean;
   /** Open conflicts: a page in one says so above it, with Settle. */
   conflicts?: BrainConflictRow[];
   onSettle?: (conflictId: string) => void;
@@ -319,6 +322,7 @@ export function BrainRead({
             onRemoved={nav.home}
             jobs={jobs}
             skillsReady={skillsReady}
+            shared={shared}
           />
         ) : special === 'recent' ? (
           recent.length ? (

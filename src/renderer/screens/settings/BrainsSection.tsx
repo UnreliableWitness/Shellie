@@ -15,6 +15,8 @@ import type { Connection } from '../../../shared/types';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { defaultBrainAgent } from '../../brainAgent';
+import { keeperElsewhere } from '../../components/brain/sharing';
+import { SharingControls } from '../../components/brain/SharingControls';
 import { WikiRootPicker } from '../../components/brain/WikiRootPicker';
 import { useReaderStatus } from '../../components/PhoneSection';
 import { useBrains } from '../../hooks/useBrains';
@@ -395,17 +397,30 @@ function BrainCard({ brain }: { brain: BrainView }) {
           (t.key !== 'sendToPhone' ||
             phone?.connected === true ||
             brain.options.sendToPhone),
-      ).map((t) => (
-        <label key={t.key} className="row small">
-          <input
-            type="checkbox"
-            checked={brain.options[t.key]}
-            disabled={busy}
-            onChange={(e) => void update({ [t.key]: e.target.checked })}
-          />
-          {t.label}
-        </label>
-      ))}
+      ).map((t) =>
+        keeperElsewhere(brain) &&
+        (t.key === 'syncAfterRefresh' ||
+          t.key === 'weeklyDigest' ||
+          t.key === 'writeLongReads') ? (
+          <div key={t.key} className="row small">
+            <span>{t.label}</span>
+            <span className="muted">
+              Runs on {keeperElsewhere(brain)}&apos;s Shellie
+            </span>
+          </div>
+        ) : (
+          <label key={t.key} className="row small">
+            <input
+              type="checkbox"
+              checked={brain.options[t.key]}
+              disabled={busy}
+              onChange={(e) => void update({ [t.key]: e.target.checked })}
+            />
+            {t.label}
+          </label>
+        ),
+      )}
+      <SharingControls brain={brain} />
       <div className="row small">
         <label htmlFor={`${id}-cap`}>Daily token cap</label>
         <input

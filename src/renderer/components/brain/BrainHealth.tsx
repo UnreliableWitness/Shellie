@@ -12,6 +12,7 @@ import { api, tryInvoke } from '../../api';
 import { dateTime } from '../../format';
 import { useStore } from '../../store';
 import { openBrainTerminal, trackBrain } from './brainActions';
+import { SHARED_WARNING } from './sharing';
 import { interpreted, picturesJobComing } from './SourcePictures';
 
 /** Findings listed on the card; the rest is a count (a brain with thousands of broken links must still render). */
@@ -225,7 +226,7 @@ export function BrainHealth({
           {findings.length - shown.length} more not shown
         </p>
       )}
-      <ScrubForm brainId={brain.id} />
+      <ScrubForm brainId={brain.id} shared={brain.sharing !== null} />
     </section>
   );
 }
@@ -234,7 +235,7 @@ export function BrainHealth({
  * Redacts a value (a password, a token that slipped into a document) everywhere in the brain's text files. The
  * value goes to main and nowhere else; what comes back is a count.
  */
-function ScrubForm({ brainId }: { brainId: string }) {
+function ScrubForm({ brainId, shared }: { brainId: string; shared: boolean }) {
   const notify = useStore((s) => s.notify);
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
@@ -273,6 +274,7 @@ function ScrubForm({ brainId }: { brainId: string }) {
       >
         Scrub a value…
       </button>
+      {open && shared && <p className="small muted">{SHARED_WARNING}</p>}
       {open && (
         <form className="brain-ask" onSubmit={(e) => void submit(e)}>
           <input
