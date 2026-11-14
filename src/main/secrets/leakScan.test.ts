@@ -3,7 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LeakMatcher } from './LeakMatcher';
-import { branchLeaks, parseAddedLines } from './leakScan';
+import { branchLeaks, parseAddedLines, unquote } from './leakScan';
+
+describe('unquote', () => {
+  it('reads a C-quoted name', () => {
+    expect(unquote('"b/a\\"b\\\\c\\tq\\303\\251.md"')).toBe('b/a"b\\c\tqé.md');
+    expect(unquote('b/plain.md')).toBe('b/plain.md');
+  });
+});
 
 describe('parseAddedLines', () => {
   it('collects added lines per new path, never removed lines or headers', () => {
