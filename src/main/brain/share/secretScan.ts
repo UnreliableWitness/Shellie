@@ -60,6 +60,8 @@ export async function unsentSecretFile(
       '-p',
       '--reverse',
       '--no-merges',
+      // A root commit's diff, whatever the user's log.showRoot says.
+      '--root',
       '--format=%x01%H',
       ...DIFF_ARGS,
       range,

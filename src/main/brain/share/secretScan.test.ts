@@ -51,6 +51,15 @@ describe('unsentSecretFile', () => {
     expect(await unsentSecretFile(dir, `${base}..${tip}`)).toBe('big.md');
   });
 
+  it('scans the root commit even when log.showRoot is off', async () => {
+    await git.run(dir, ['config', 'log.showRoot', 'false']);
+    await commit({ 'root.md': `token ${TOKEN}\n` }, 'one');
+    const tip = await commit({ 'root.md': 'short\n' }, 'two');
+    const seen = new Set<string>();
+    expect(await unsentSecretFile(dir, tip, seen)).toBe('root.md');
+    expect(seen.size).toBe(0);
+  });
+
   it('finds a secret in a diff larger than a git output buffer', async () => {
     const base = await commit({ 'a.md': 'hello\n' }, 'one');
     const tip = await commit({ 'huge.md': OVER_BUFFER }, 'two');
