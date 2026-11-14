@@ -7,6 +7,7 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   TaskSchema,
@@ -72,6 +73,59 @@ const toolLine = (cwd: string, name: string, input: unknown) =>
     message: { content: [{ type: 'tool_use', name, input }] },
   });
 
+/** A minimal opencode.db with one top-level session in `dir` and its tool calls, as OpenCode writes them. */
+function openCodeDb(
+  dir: string,
+  calls: { tool: string; input: Record<string, unknown> }[],
+): string {
+  const file = path.join(tempDir('shellie-oc-'), 'opencode.db');
+  const db = new DatabaseSync(file);
+  db.exec(
+    'CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL, directory text NOT NULL, title text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)',
+  );
+  db.exec(
+    'CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+  );
+  db.exec(
+    'CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+  );
+  const t = Date.parse('2026-10-16T01:00:00.000Z');
+  db.prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+    'ses_1',
+    'p',
+    null,
+    's',
+    dir,
+    'New session',
+    '1',
+    t,
+    t,
+  );
+  db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(
+    'msg_1',
+    'ses_1',
+    t,
+    t,
+    JSON.stringify({ role: 'assistant' }),
+  );
+  calls.forEach(({ tool, input }, i) =>
+    db.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)').run(
+      `prt_${i}`,
+      'msg_1',
+      'ses_1',
+      t + i,
+      t + i,
+      JSON.stringify({
+        type: 'tool',
+        tool,
+        state: { status: 'completed', input, output: '' },
+      }),
+    ),
+  );
+  db.close();
+  return file;
+}
+
 async function setup(
   opts: { terminals?: TerminalDef[]; closedTerminals?: TerminalDef[] } = {},
 ) {
@@ -125,6 +179,7 @@ async function setup(
     repos,
     connections: () => connections,
     projectsDir: () => projectsDir,
+    openCodeDb: () => path.join(projectsDir, 'no-such', 'opencode.db'),
     notice: (m) => notices.push(m),
     event: (name, props) => events.push({ name, props }),
   });
@@ -255,6 +310,66 @@ describe('WorkspaceDetector.scan', () => {
     const bWt = worktree(repoB(), 'x');
     env.log(toolLine(env.homeWt, 'Edit', { file_path: path.join(bWt, 'a') }));
     expect((await env.detector.scan('t1')).added).toHaveLength(1);
+  });
+
+  it('joins a worktree OpenCode edited in another repo, from its database', async () => {
+    const opencodeTab: TerminalDef = {
+      id: 'o1',
+      kind: 'opencode',
+      label: 'OpenCode',
+    };
+    const env = await setup({ terminals: [opencodeTab] });
+    const bWt = worktree(repoB(), 'feature/other-name');
+    // The session runs in the task's worktree, which only exists after setup.
+    const file = openCodeDb(env.homeWt, [
+      { tool: 'edit', input: { filePath: path.join(bWt, 'README.md') } },
+    ]);
+    const detector = new WorkspaceDetector({
+      store: env.store,
+      git: new GitClient(),
+      repos: env.repos,
+      connections: () => [],
+      projectsDir: () => env.projectsDir,
+      openCodeDb: () => file,
+      notice: (m) => env.notices.push(m),
+      event: (name, props) => env.events.push({ name, props }),
+    });
+
+    const { added } = await detector.scan('t1');
+
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({
+      branch: 'feature/other-name',
+      worktreePath: bWt,
+      source: 'detected',
+    });
+    expect(env.events).toEqual([
+      { name: 'workspace.joined', props: { source: 'log' } },
+    ]);
+  });
+
+  it("adds nothing for OpenCode edits in the task's own worktree, or without a database", async () => {
+    const env = await setup({
+      terminals: [{ id: 'o1', kind: 'opencode', label: 'OpenCode' }],
+    });
+    // No database: nothing, and no error.
+    expect((await env.detector.scan('t1')).added).toEqual([]);
+    const file = openCodeDb(env.homeWt, [
+      { tool: 'edit', input: { filePath: path.join(env.homeWt, 'README.md') } },
+      { tool: 'bash', input: { command: 'git commit -am x' } },
+    ]);
+    const detector = new WorkspaceDetector({
+      store: env.store,
+      git: new GitClient(),
+      repos: env.repos,
+      connections: () => [],
+      projectsDir: () => env.projectsDir,
+      openCodeDb: () => file,
+      notice: () => undefined,
+      event: () => undefined,
+    });
+    expect((await detector.scan('t1')).added).toEqual([]);
+    expect(env.taskNow().extraWorkspaces).toEqual([]);
   });
 
   it('joins a worktree of a registered repo on the task branch without any log', async () => {

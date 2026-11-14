@@ -7,6 +7,7 @@ import type { BudgetRecord } from '../../shared/budget';
 import { PR_JOB_TITLE } from '../../shared/prDraft';
 import type { Turn } from '../brain/sessionDigest';
 import type { TurnAt } from '../sessions/claudeTranscript';
+import { writeHitsFromOpenCodeTool } from '../workspaces/sessionLog';
 
 const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
 
@@ -301,6 +302,41 @@ export class OpenCodeReader {
     }
   }
 
+  /**
+   * The paths written by tool calls (edit, write, patch, writing git commands) in the top-level sessions in one of
+   * `dirs` created at or after `since` (epoch ms), Shellie's own runs left out. Only those tool parts' inputs are
+   * selected (in SQL), so tool output never reaches JS.
+   */
+  writtenPaths(dirs: readonly string[], since = 0): string[] {
+    if (!existsSync(this.file) || dirs.length === 0) return [];
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      const ids = topSessions(db, dirs, since);
+      if (ids.length === 0) return [];
+      const tool = `(CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.tool') END)`;
+      const rows = db
+        .prepare(
+          `SELECT ${tool} AS tool, json_extract(part.data, '$.state.input') AS input, session.directory AS directory FROM part JOIN session ON session.id = part.session_id WHERE part.session_id IN (${ids.map(() => '?').join(', ')}) AND part.data LIKE '%"type":"tool"%' AND (CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.type') END) = 'tool' AND ${tool} IN (${WRITING_TOOLS.map(() => '?').join(', ')}) ORDER BY part.time_created, part.id`,
+        )
+        .all(...ids, ...WRITING_TOOLS) as {
+        tool: string;
+        input: string | null;
+        directory: string;
+      }[];
+      const paths: string[] = [];
+      for (const r of rows)
+        for (const hit of writeHitsFromOpenCodeTool(
+          r.tool,
+          json(r.input ?? ''),
+          r.directory || null,
+        ))
+          if (!paths.includes(hit.path)) paths.push(hit.path);
+      return paths;
+    } finally {
+      db.close();
+    }
+  }
+
   /** One session's turns from messages created at or after `since` (epoch ms), with when each was said. */
   turnsSince(sessionId: string, since = 0): TurnAt[] {
     if (!existsSync(this.file)) return [];
@@ -319,6 +355,16 @@ export class OpenCodeReader {
     }
   }
 }
+
+/** OpenCode's tools that can write in a folder; reads and searches are left out. */
+const WRITING_TOOLS = [
+  'edit',
+  'write',
+  'multiedit',
+  'patch',
+  'apply_patch',
+  'bash',
+];
 
 type TextRow = {
   session_id: string;

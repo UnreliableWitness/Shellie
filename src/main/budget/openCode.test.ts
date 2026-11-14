@@ -552,6 +552,45 @@ describe('OpenCodeReader session reads for the PR draft', () => {
     expect(new OpenCodeReader(file).turnsSince('ses_none', 0)).toEqual([]);
   });
 
+  it('writtenPaths gives the paths of edits, patches and writing git commands in the task sessions', () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_a', 100, 100);
+    session('ses_old', 50, 50);
+    session('ses_job', 120, 120, { title: 'Shellie brain job: capture' });
+    session('ses_far', 130, 130, { dir: '/elsewhere' });
+    const call = (tool: string, input: Record<string, unknown>) => ({
+      type: 'tool',
+      tool,
+      state: { status: 'completed', input, output: 'x'.repeat(100) },
+    });
+    say('ses_a', 'assistant', 100, [
+      'Editing.',
+      call('read', { filePath: '/r/read.md' }),
+      call('edit', { filePath: '/r/a.md', oldString: 'a', newString: 'b' }),
+      call('write', { filePath: 'rel/b.md', content: 'x' }),
+      call('patch', {
+        patchText:
+          '*** Begin Patch\n*** Update File: /p/c.ts\n@@\n-a\n+b\n*** Add File: /q/d.ts\n+x\n*** End Patch',
+      }),
+      call('bash', { command: 'git -C /g commit -am x' }),
+      call('bash', { command: 'git status', workdir: '/s' }),
+      call('bash', { command: 'git commit -am x', workdir: '/h' }),
+      call('edit', { filePath: '/r/a.md' }),
+    ]);
+    say('ses_old', 'assistant', 50, [call('edit', { filePath: '/old' })]);
+    say('ses_job', 'assistant', 120, [call('edit', { filePath: '/job' })]);
+    say('ses_far', 'assistant', 130, [call('edit', { filePath: '/far' })]);
+    close();
+    expect(new OpenCodeReader(file).writtenPaths(['/w'], 100)).toEqual(
+      ['/r/a.md', '/w/rel/b.md', '/p/c.ts', '/q/d.ts', '/g', '/h'].map((p) =>
+        path.resolve(p),
+      ),
+    );
+    expect(
+      new OpenCodeReader('/nope/opencode.db').writtenPaths(['/w']),
+    ).toEqual([]);
+  });
+
   it('sessionTexts leaves the PR run out like a brain job', () => {
     const { file, session, say, close } = makeDb();
     session('ses_a', 100, 100);
