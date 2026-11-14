@@ -19,7 +19,6 @@ export function pendingAfter(pending: boolean, data: string): boolean {
 type Tab = {
   /** The agent's last reported state since the tab (re)started; null when it reported none yet (a resumed tab). */
   state: AttentionState | null;
-  stateAt: number | null;
   lastOutput: number;
   /** Something was typed or pasted since the last Enter: the prompt box may hold text. */
   typed: boolean;
@@ -27,7 +26,6 @@ type Tab = {
 
 export type TabView = {
   state: AttentionState | null;
-  stateAt: number | null;
   typed: boolean;
   /** How long the tab printed nothing, in ms. */
   quietFor: number;
@@ -46,21 +44,17 @@ export class TabActivity {
 
   constructor(private readonly now: () => number) {}
 
+  private fresh(): Tab {
+    return { state: null, lastOutput: this.now(), typed: false };
+  }
+
   spawned(id: string): void {
-    this.tabs.set(id, {
-      state: null,
-      stateAt: null,
-      lastOutput: this.now(),
-      typed: false,
-    });
+    this.tabs.set(id, this.fresh());
   }
 
   private tab(id: string): Tab {
     let t = this.tabs.get(id);
-    if (!t) {
-      t = { state: null, stateAt: null, lastOutput: this.now(), typed: false };
-      this.tabs.set(id, t);
-    }
+    if (!t) this.tabs.set(id, (t = this.fresh()));
     return t;
   }
 
@@ -73,7 +67,6 @@ export class TabActivity {
   status(id: string, state: AttentionState): void {
     const t = this.tab(id);
     t.state = state;
-    t.stateAt = this.now();
     for (const l of this.listeners) l(id, state);
   }
 
@@ -91,7 +84,6 @@ export class TabActivity {
     if (!t) return null;
     return {
       state: t.state,
-      stateAt: t.stateAt,
       typed: t.typed,
       quietFor: this.now() - t.lastOutput,
     };

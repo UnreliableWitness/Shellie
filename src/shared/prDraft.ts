@@ -40,6 +40,19 @@ export type PrDraft = {
   note: string | null;
 };
 
+/** A draft with nothing in it yet, `status` as given (writing by default). */
+export const blankPrDraft = (
+  status: PrDraftStatus = 'writing',
+  error: string | null = null,
+): PrDraft => ({
+  status,
+  source: null,
+  tab: null,
+  text: '',
+  error,
+  note: null,
+});
+
 /** Whether the draft is still being written (Finish waits for it). */
 export const prDraftBusy = (d: PrDraft | undefined): boolean =>
   d?.status === 'asking-tab' ||

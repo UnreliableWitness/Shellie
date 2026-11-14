@@ -19,7 +19,7 @@ import { LEAK_IN_BRANCH, LEAK_UNCHECKED } from '../../shared/secrets';
 import { api, tryInvoke } from '../api';
 import { GitAuthNotice } from '../components/GitAuthNotice';
 import { PrDescriptionField } from '../components/PrDescriptionField';
-import { prDraftBusy, type PrDraft } from '../../shared/prDraft';
+import { blankPrDraft, prDraftBusy, type PrDraft } from '../../shared/prDraft';
 import { eur, plural } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { useTaskBrain } from '../hooks/useBrains';
@@ -439,14 +439,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
   const writeDraft = (workspaceId: string) => {
     const run = (draftRuns.current.get(workspaceId) ?? 0) + 1;
     draftRuns.current.set(workspaceId, run);
-    setDraft(workspaceId, {
-      status: 'writing',
-      source: null,
-      tab: null,
-      text: '',
-      error: null,
-      note: null,
-    });
+    setDraft(workspaceId, blankPrDraft());
     void api()
       .invoke('prDrafts:write', taskId, workspaceId)
       .catch((e: unknown): PrDraft => ({
@@ -470,14 +463,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     void api()
       .invoke('prDrafts:skip', taskId, workspaceId)
       .catch(() => undefined);
-    setDraft(workspaceId, {
-      status: 'skipped',
-      source: null,
-      tab: null,
-      text: '',
-      error: null,
-      note: null,
-    });
+    setDraft(workspaceId, blankPrDraft('skipped'));
   };
   const editDraft = (workspaceId: string, d: PrDraft, text: string) => {
     setDraft(workspaceId, { ...d, text });

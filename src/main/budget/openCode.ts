@@ -289,13 +289,12 @@ export class OpenCodeReader {
     if (!existsSync(this.file) || dirs.length === 0) return null;
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
+      const f = taskSessions(db, dirs, since);
       const row = db
         .prepare(
-          `SELECT id, time_updated AS updated FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_updated DESC, id DESC LIMIT 1`,
+          `SELECT id, time_updated AS updated FROM session WHERE ${f.where} ORDER BY time_updated DESC, id DESC LIMIT 1`,
         )
-        .get(...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`) as
-        | { id: string; updated: number }
-        | undefined;
+        .get(...f.params) as { id: string; updated: number } | undefined;
       return row ? { id: row.id, updatedAt: row.updated } : null;
     } finally {
       db.close();
@@ -331,7 +330,7 @@ type TextRow = {
 
 /**
  * The text parts matching `where`, in order. Only text parts are selected (in SQL), so tool output, often most of a
- * session's bytes, is neither loaded nor parsed.
+ * session's bytes, never reaches JS; a plain LIKE goes first so SQLite parses only the parts that may be text.
  */
 function textRows(
   db: DatabaseSync,
@@ -340,7 +339,7 @@ function textRows(
 ): TextRow[] {
   return db
     .prepare(
-      `SELECT part.session_id AS session_id, part.message_id AS message_id, message.time_created AS created, part.data AS data, message.data AS message FROM part JOIN message ON message.id = part.message_id WHERE ${where} AND (CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.type') END) = 'text' ORDER BY message.time_created, message.id, part.time_created, part.id`,
+      `SELECT part.session_id AS session_id, part.message_id AS message_id, message.time_created AS created, part.data AS data, message.data AS message FROM part JOIN message ON message.id = part.message_id WHERE ${where} AND part.data LIKE '%"type":"text"%' AND (CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.type') END) = 'text' ORDER BY message.time_created, message.id, part.time_created, part.id`,
     )
     .all(...params) as TextRow[];
 }
@@ -376,18 +375,29 @@ function textTurns(rows: TextRow[]): Map<string, TurnAt[]> {
   return bySession;
 }
 
-/** Top-level sessions in one of `dirs` created at or after `since`, oldest first, brain jobs (by title) left out. */
+/** The sessions a person had in one of `dirs` since `since`: top-level, not Shellie's own runs (by title). */
+function taskSessions(
+  db: DatabaseSync,
+  dirs: readonly string[],
+  since: number,
+): { where: string; params: (string | number)[] } {
+  return {
+    where: `directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''}`,
+    params: [...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`],
+  };
+}
+
+/** Top-level sessions in one of `dirs` created at or after `since`, oldest first, Shellie's own runs left out. */
 function topSessions(
   db: DatabaseSync,
   dirs: readonly string[],
   since: number,
 ): string[] {
+  const f = taskSessions(db, dirs, since);
   const rows = db
     .prepare(
-      `SELECT id FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_created, id`,
+      `SELECT id FROM session WHERE ${f.where} ORDER BY time_created, id`,
     )
-    .all(...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`) as {
-    id: string;
-  }[];
+    .all(...f.params) as { id: string }[];
   return rows.map((r) => r.id);
 }
