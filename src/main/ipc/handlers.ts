@@ -906,6 +906,7 @@ export function createHandlers(s: Services): Handlers {
           }
       return out;
     },
+    timing: (t) => tel.event('reading.listed', undefined, t),
   });
   s.onReading?.(reading);
 

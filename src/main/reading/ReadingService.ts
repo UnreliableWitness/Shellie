@@ -28,20 +28,31 @@ export type ReadingDeps = {
   workItems: () => Promise<ReadingWorkItem[]>;
   marks: (brainId: string) => ReaderMarkSet;
   now?: () => number;
+  /** How long a list took: the whole of it, the work items, and the brains it had to read (count and time). */
+  timing?: (t: ReadingTiming) => void;
+};
+
+export type ReadingTiming = {
+  ms: number;
+  workItemsMs: number;
+  coldBrains: number;
+  coldMs: number;
 };
 
 type Files = {
-  at: number;
   reads: BrainReadsAndPages;
   rows: BrainPageRow[];
   chapters: string[];
 };
 
+/** A brain's files as read, or being read, from `at` on. */
+type Kept = { at: number; files: Promise<Files> };
+
 /** A brain's files are read again when it changed, and after this long whatever happened. */
 const KEEP_MS = 5 * 60_000;
 
 export class ReadingService {
-  private readonly files = new Map<string, Promise<Files>>();
+  private readonly files = new Map<string, Kept>();
 
   constructor(private readonly d: ReadingDeps) {}
 
@@ -52,12 +63,39 @@ export class ReadingService {
 
   /** Every brain that is not archived and has a long read or a letter. */
   async list(): Promise<ReadingBrain[]> {
-    const items = await this.d.workItems().catch(() => []);
+    const t0 = performance.now();
+    let workItemsMs = 0;
+    let coldBrains = 0;
+    let coldMs = 0;
+    const brains = this.d.brains().filter((b) => !b.archived);
+    // The work items and every brain are read at the same time: a cold brain does not wait for the one before it.
+    const [items, files] = await Promise.all([
+      this.d
+        .workItems()
+        .catch(() => [])
+        .finally(() => (workItemsMs = performance.now() - t0)),
+      Promise.all(
+        brains.map((brain) => {
+          const { files, cold } = this.kept(brain);
+          if (cold) coldBrains++;
+          // A brain whose folder cannot be read has no list; the others still do.
+          return files
+            .catch(() => null)
+            .finally(() => {
+              if (cold) coldMs += performance.now() - t0;
+            });
+        }),
+      ),
+    ]);
+    this.d.timing?.({
+      ms: performance.now() - t0,
+      workItemsMs,
+      coldBrains,
+      coldMs,
+    });
     const out: ReadingBrain[] = [];
-    for (const brain of this.d.brains()) {
-      if (brain.archived) continue;
-      // A brain whose folder cannot be read has no list; the others still do.
-      const f = await this.of(brain).catch(() => null);
+    for (const [i, brain] of brains.entries()) {
+      const f = files[i];
       if (!f || !(f.reads.reads.length || f.reads.letters.length)) continue;
       const work = match(brain, items, f);
       out.push({
@@ -96,13 +134,17 @@ export class ReadingService {
   }
 
   private of(brain: Brain): Promise<Files> {
+    return this.kept(brain).files;
+  }
+
+  /** The brain's files, read again when they expired; `cold` when this ask started the read. */
+  private kept(brain: Brain): { files: Promise<Files>; cold: boolean } {
     const now = this.d.now?.() ?? Date.now();
     const kept = this.files.get(brain.id);
-    if (kept)
-      return kept.then((f) =>
-        now - f.at < KEEP_MS ? f : this.read(brain, now),
-      );
-    return this.read(brain, now);
+    // Checked and replaced at once, so callers asking together share one read.
+    if (kept && now - kept.at < KEEP_MS)
+      return { files: kept.files, cold: false };
+    return { files: this.read(brain, now), cold: true };
   }
 
   private read(brain: Brain, at: number): Promise<Files> {
@@ -110,15 +152,15 @@ export class ReadingService {
       brainReadsAndPages(brain.path),
       pageRows(brain.path),
     ]).then(([reads, rows]) => ({
-      at,
       reads,
       rows,
       chapters: chaptersOf(reads.book),
     }));
-    this.files.set(brain.id, p);
+    const entry = { at, files: p };
+    this.files.set(brain.id, entry);
     // A failed read is not kept: the next ask tries again.
     p.catch(() => {
-      if (this.files.get(brain.id) === p) this.files.delete(brain.id);
+      if (this.files.get(brain.id) === entry) this.files.delete(brain.id);
     });
     return p;
   }
