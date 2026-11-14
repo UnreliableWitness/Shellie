@@ -13,7 +13,6 @@ describe('TabActivity', () => {
     a.spawned('t');
     expect(a.view('t')).toEqual({
       state: null,
-      stateAt: null,
       typed: false,
       quietFor: 0,
     });
@@ -24,7 +23,6 @@ describe('TabActivity', () => {
     tick(2500);
     expect(a.view('t')).toEqual({
       state: 'done',
-      stateAt: 1500,
       typed: false,
       quietFor: 2500,
     });

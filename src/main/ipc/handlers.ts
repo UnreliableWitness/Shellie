@@ -242,7 +242,7 @@ import {
   type TurnAt,
 } from '../sessions/claudeTranscript';
 import { askTab } from '../prDraft/askTab';
-import { pickTab, type TabCandidate } from '../prDraft/pickTab';
+import { pickTab, tabVerdict, type TabCandidate } from '../prDraft/pickTab';
 import {
   PrDrafts,
   type HeadlessResult,
@@ -2005,7 +2005,9 @@ export function createHandlers(s: Services): Handlers {
       ),
     ];
     try {
-      return s.opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0);
+      return s
+        .opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0)
+        .map((turns) => withoutPrRequests(turns));
     } catch (e) {
       console.error('[brain] OpenCode sessions not read for lessons', e);
       return [];
@@ -2022,7 +2024,8 @@ export function createHandlers(s: Services): Handlers {
       const file = sessionFile(id);
       if (!file) continue;
       const { turns } = await readClaudeTurns(file);
-      if (turns.length > 0) out.push(turns);
+      // Shellie's own PR-description requests and their answers are never part of what was said.
+      if (turns.length > 0) out.push(withoutPrRequests(turns));
     }
     return out;
   };
@@ -2064,14 +2067,10 @@ export function createHandlers(s: Services): Handlers {
     if (options.captureLessons) {
       // What the developer and the agents said in the task's sessions (Claude's first), as a source the /lessons skill reads.
       try {
-        // Shellie's own PR-description requests and their answers are left out.
-        const digest = sessionDigest(
-          task.workItem?.title ?? task.name,
-          [
-            ...(await claudeSessionTurns(task)),
-            ...opencodeSessionTurns(task),
-          ].map((turns) => withoutPrRequests(turns)),
-        );
+        const digest = sessionDigest(task.workItem?.title ?? task.name, [
+          ...(await claudeSessionTurns(task)),
+          ...opencodeSessionTurns(task),
+        ]);
         if (digest)
           await addTempSource(b, `${task.slug}-session.md`, digest, 'lessons');
       } catch (e) {
@@ -2602,10 +2601,7 @@ export function createHandlers(s: Services): Handlers {
 
   /** What was said in the task's Claude Code and OpenCode sessions, oldest session first, Shellie's own PR requests left out. */
   const taskTurns = async (task: Task): Promise<Turn[]> =>
-    [
-      ...(await claudeSessionTurns(task)),
-      ...opencodeSessionTurns(task),
-    ].flatMap((turns) => withoutPrRequests(turns));
+    [...(await claudeSessionTurns(task)), ...opencodeSessionTurns(task)].flat();
 
   /** The PR heading the draft is written for: the work item, else the task name. */
   const prHeading = (task: Task) =>
@@ -2658,7 +2654,6 @@ export function createHandlers(s: Services): Handlers {
     ).text;
     const reasonOf = (error: string) =>
       /timed out/.test(error) ? 'timeout' : 'failed';
-    const notFound = programMissing;
     if (signal.aborted)
       return { error: 'Skipped', reason: 'skipped', agent: null };
     // Claude Code unless detection already said it is missing; a run that finds no claude goes on to OpenCode.
@@ -2692,7 +2687,7 @@ export function createHandlers(s: Services): Handlers {
         );
         return { text: claudeResult(out), agent: 'claude' };
       } catch (e) {
-        if (!notFound(e))
+        if (!programMissing(e))
           return {
             error: errorMessage(e),
             reason: reasonOf(errorMessage(e)),
@@ -2715,7 +2710,7 @@ export function createHandlers(s: Services): Handlers {
       );
       return { text: opencodeResultWithSession(out).result, agent: 'opencode' };
     } catch (e) {
-      if (notFound(e))
+      if (programMissing(e))
         return {
           error: 'Neither Claude Code nor OpenCode was found',
           reason: 'no-agent',
@@ -2748,37 +2743,50 @@ export function createHandlers(s: Services): Handlers {
       transcript: string | null;
       opencodeSession: string | null;
     };
-    const found: Found[] = [];
-    for (const def of task.terminals) {
-      if (def.kind !== 'claude' && def.kind !== 'opencode') continue;
-      const cwd = workspaceById(task, def.workspaceId ?? HOME_ID).worktreePath;
-      let lastAgentTurnAt: number | null = null;
-      let transcript: string | null = null;
-      let opencodeSession: string | null = null;
-      if (def.kind === 'claude') {
-        transcript = def.sessionId ? sessionFile(def.sessionId) : null;
-        lastAgentTurnAt = transcript
-          ? await lastClaudeTurnAt(transcript)
-          : null;
-      } else {
+    // The cheap checks first: only a tab that runs and is not paused has its session read, all at once.
+    const tabs = task.terminals.filter(
+      (def) =>
+        (def.kind === 'claude' || def.kind === 'opencode') &&
+        s.terminals.isRunning(def.id) &&
+        !leakWatch.isPaused(def.id),
+    );
+    const found: Found[] = await Promise.all(
+      tabs.map(async (def): Promise<Found> => {
+        const kind = def.kind as 'claude' | 'opencode';
+        const cwd = workspaceById(
+          task,
+          def.workspaceId ?? HOME_ID,
+        ).worktreePath;
+        const base = {
+          id: def.id,
+          label: def.label,
+          kind,
+          running: true,
+          paused: false,
+          activity: activity.view(def.id),
+          cwd,
+        };
+        if (kind === 'claude') {
+          const transcript = def.sessionId ? sessionFile(def.sessionId) : null;
+          return {
+            ...base,
+            transcript,
+            opencodeSession: null,
+            lastAgentTurnAt: transcript
+              ? await lastClaudeTurnAt(transcript)
+              : null,
+          };
+        }
         const latest =
           s.opencodeLatestSession?.(folderPaths(cwd), since) ?? null;
-        opencodeSession = latest?.id ?? null;
-        lastAgentTurnAt = latest?.updatedAt ?? null;
-      }
-      found.push({
-        id: def.id,
-        label: def.label,
-        kind: def.kind,
-        running: s.terminals.isRunning(def.id),
-        paused: leakWatch.isPaused(def.id),
-        lastAgentTurnAt,
-        activity: activity.view(def.id),
-        cwd,
-        transcript,
-        opencodeSession,
-      });
-    }
+        return {
+          ...base,
+          transcript: null,
+          opencodeSession: latest?.id ?? null,
+          lastAgentTurnAt: latest?.updatedAt ?? null,
+        };
+      }),
+    );
     const picked = pickTab(found, Date.now());
     if ('reason' in picked) return picked;
     const tab = picked.tab as Found;
@@ -2814,9 +2822,10 @@ export function createHandlers(s: Services): Handlers {
             begin: async () => {
               if (tab.kind === 'claude' && tab.transcript) {
                 const file = tab.transcript;
-                const { size } = await readClaudeTurns(file, {
-                  fromByte: Number.MAX_SAFE_INTEGER,
-                });
+                const size = await fs
+                  .stat(file)
+                  .then((st) => st.size)
+                  .catch(() => 0);
                 return async () =>
                   (await readClaudeTurns(file, { fromByte: size })).turns;
               }
@@ -2832,17 +2841,16 @@ export function createHandlers(s: Services): Handlers {
                   : [];
               };
             },
-            canType: () => {
-              const v = activity.view(tab.id);
-              return (
-                s.terminals.isRunning(tab.id) &&
-                !leakWatch.isPaused(tab.id) &&
-                !!v &&
-                !v.typed &&
-                v.state !== 'working' &&
-                v.state !== 'blocked'
-              );
-            },
+            canType: () =>
+              tabVerdict(
+                {
+                  ...tab,
+                  running: s.terminals.isRunning(tab.id),
+                  paused: leakWatch.isPaused(tab.id),
+                  activity: activity.view(tab.id),
+                },
+                Date.now(),
+              ) === 'ok',
             type: (data) => s.terminals.write(tab.id, data),
             mute: () => s.attention?.muteNextDone?.(tab.id),
             unmute: () => s.attention?.unmute?.(tab.id),
@@ -3095,9 +3103,7 @@ export function createHandlers(s: Services): Handlers {
         target: c.target,
         title: prTitle(task),
         description: prDescription({
-          heading: task.workItem
-            ? `${task.workItem.type} ${task.workItem.id}: ${task.workItem.title}`
-            : task.name,
+          heading: prHeading(task),
           commits: summary?.commits ?? [],
           commitCount: summary?.commitCount ?? 0,
           workItemUrl: c.linksWorkItem ? null : (task.workItem?.url ?? null),
@@ -3252,6 +3258,7 @@ export function createHandlers(s: Services): Handlers {
     });
     s.stopRuns?.(task.id, 'The task was finished in Shellie');
     leakWatch.dropTask(task.id);
+    prDrafts.forget(task.id);
     reportFinished(task, options, counts);
     await afterFinish(task.id, options);
   };
@@ -3505,7 +3512,7 @@ export function createHandlers(s: Services): Handlers {
       s.expiryTimers,
     );
 
-  const handlers: Handlers = {
+  return {
     ...brainHandlers,
     ...createReaderHandlers(s.reader),
     ...createDocsHandlers({
@@ -4103,6 +4110,7 @@ export function createHandlers(s: Services): Handlers {
         });
         setupStates.delete(taskId);
         finishResults.delete(taskId);
+        prDrafts.forget(taskId);
         // The AI usage stays: it was spent. The review notes have nothing left to point at.
         await reviewStore.remove(taskId).catch(() => undefined);
         await tasksChanged();
@@ -4958,17 +4966,4 @@ export function createHandlers(s: Services): Handlers {
       return saved;
     },
   };
-  // A finished or discarded task's PR drafts are not needed any more; a failed Finish keeps them for the next try.
-  for (const name of ['tasks:finish', 'tasks:discard'] as const) {
-    const inner = handlers[name] as (...a: unknown[]) => Promise<void>;
-    (handlers as Record<string, unknown>)[name] = async (
-      taskId: string,
-      ...rest: unknown[]
-    ) => {
-      await inner(taskId, ...rest);
-      const t = s.store.state.tasks.find((x) => x.id === taskId);
-      if (!t || t.status === 'done') prDrafts.forget(taskId);
-    };
-  }
-  return handlers;
 }

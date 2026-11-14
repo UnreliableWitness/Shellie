@@ -18,9 +18,10 @@ export type TabCandidate = {
   activity: TabView | null;
 };
 
-type Verdict = 'ok' | 'none' | 'stale' | 'busy' | 'typing';
+export type Verdict = 'ok' | 'none' | 'stale' | 'busy' | 'typing';
 
-function verdict(c: TabCandidate, now: number): Verdict {
+/** Whether Shellie may type into the tab now, else what stops it; the one rule for picking a tab and for typing. */
+export function tabVerdict(c: TabCandidate, now: number): Verdict {
   if (!c.running || c.paused || c.lastAgentTurnAt === null) return 'none';
   if (now - c.lastAgentTurnAt > RECENT_MS) return 'stale';
   const a = c.activity;
@@ -46,7 +47,7 @@ export function pickTab(
   | {
       reason: Extract<PrFallbackReason, 'no-tab' | 'busy' | 'stale' | 'typing'>;
     } {
-  const verdicts = candidates.map((c) => ({ c, v: verdict(c, now) }));
+  const verdicts = candidates.map((c) => ({ c, v: tabVerdict(c, now) }));
   const ok = verdicts
     .filter((x) => x.v === 'ok')
     .sort((a, b) => (b.c.lastAgentTurnAt ?? 0) - (a.c.lastAgentTurnAt ?? 0));

@@ -1,4 +1,6 @@
 import {
+  blankPrDraft,
+  prDraftBusy,
   PR_FALLBACK_NOTE,
   type PrDraft,
   type PrFallbackReason,
@@ -41,17 +43,11 @@ export type PrDraftsDeps = {
   now(): number;
 };
 
-const blank = (): PrDraft => ({
-  status: 'writing',
-  source: null,
-  tab: null,
-  text: '',
-  error: null,
-  note: null,
-});
+const blank = (): PrDraft => blankPrDraft();
 
+const prefix = (taskId: string) => `${taskId}\0`;
 const key = (taskId: string, workspaceId: string) =>
-  `${taskId}\0${workspaceId}`;
+  `${prefix(taskId)}${workspaceId}`;
 
 /**
  * The Finish page's PR drafts, kept in main so leaving the page (to look at the tab being asked) loses nothing. A
@@ -70,9 +66,9 @@ export class PrDrafts {
   /** The task's drafts by workspace id. */
   get(taskId: string): Record<string, PrDraft> {
     const out: Record<string, PrDraft> = {};
-    const prefix = `${taskId}\0`;
+    const p = prefix(taskId);
     for (const [k, v] of this.drafts)
-      if (k.startsWith(prefix)) out[k.slice(prefix.length)] = { ...v };
+      if (k.startsWith(p)) out[k.slice(p.length)] = { ...v };
     return out;
   }
 
@@ -127,26 +123,20 @@ export class PrDrafts {
   edit(taskId: string, workspaceId: string, text: string): void {
     const k = key(taskId, workspaceId);
     const d = this.drafts.get(k);
-    if (
-      !d ||
-      d.status === 'writing' ||
-      d.status === 'asking-tab' ||
-      d.status === 'tab-blocked'
-    )
-      return;
+    if (!d || prDraftBusy(d)) return;
     this.drafts.set(k, { ...d, text });
   }
 
   /** Drops a task's drafts (it finished or went away). */
   forget(taskId: string): void {
-    const prefix = `${taskId}\0`;
+    const p = prefix(taskId);
     for (const [k, ac] of this.running)
-      if (k.startsWith(prefix)) {
+      if (k.startsWith(p)) {
         ac.abort();
         this.running.delete(k);
       }
     for (const k of [...this.drafts.keys()])
-      if (k.startsWith(prefix)) this.drafts.delete(k);
+      if (k.startsWith(p)) this.drafts.delete(k);
   }
 
   private async run(

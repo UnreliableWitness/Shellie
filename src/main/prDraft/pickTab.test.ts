@@ -10,7 +10,6 @@ const tab = (o: Partial<TabCandidate> & { id: string }): TabCandidate => ({
   lastAgentTurnAt: NOW - 60_000,
   activity: {
     state: 'done',
-    stateAt: NOW - 60_000,
     typed: false,
     quietFor: 60_000,
   },
@@ -18,7 +17,6 @@ const tab = (o: Partial<TabCandidate> & { id: string }): TabCandidate => ({
 });
 const act = (o: Partial<NonNullable<TabCandidate['activity']>>) => ({
   state: 'done' as const,
-  stateAt: NOW,
   typed: false,
   quietFor: 60_000,
   ...o,
@@ -41,7 +39,7 @@ describe('pickTab', () => {
           tab({
             id: 'a',
             kind: 'opencode',
-            activity: act({ state: null, stateAt: null }),
+            activity: act({ state: null }),
           }),
         ],
         NOW,
