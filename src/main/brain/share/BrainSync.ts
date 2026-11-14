@@ -69,8 +69,8 @@ export type BrainSyncDeps = {
   now?: () => Date;
   pushDelayMs?: number;
   tickMs?: number;
-  /** Bytes one secrets-scan diff reads at most; a larger file is read on its own (tests make it small). */
-  scanChunkBytes?: number;
+  /** The secrets scan of the unsent commits (`unsentSecretFile`; tests pass one that fails or races). */
+  scanUnsent?: typeof unsentSecretFile;
 };
 
 const sameJob = (j: BrainJob, r: JobRef) =>
@@ -537,13 +537,7 @@ export class BrainSync {
     this.scannedClean.set(id, clean);
     let file: string | null;
     try {
-      file = await unsentSecretFile(
-        this.d.git,
-        dir,
-        range,
-        this.d.scanChunkBytes,
-        clean,
-      );
+      file = await (this.d.scanUnsent ?? unsentSecretFile)(dir, range, clean);
     } catch (e) {
       console.error('[brain] secrets scan failed', (e as Error).message);
       await this.patch(id, {

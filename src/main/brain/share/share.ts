@@ -34,7 +34,7 @@ import {
   withPrivateIndex,
 } from './gitUtil';
 import { setCommitIdentity } from './keeper';
-import { CHUNK_BYTES, treeSecretFiles } from './secretScan';
+import { treeSecretFiles } from './secretScan';
 
 const BUSY = 'A brain job is running; try again later';
 const SHARE_FILES = [
@@ -60,8 +60,6 @@ export type ShareDeps = {
     token: () => Promise<string>,
   ) => Pick<AdoClient, 'createRepository'>;
   now?: () => Date;
-  /** Blobs read together per diff, and the size over which one is read on its own (tests make it small). */
-  scanChunkBytes?: number;
 };
 
 export type ShareResult =
@@ -125,7 +123,6 @@ export async function shareBrain(
   const dir = b.path;
   if (d.runner.running(b.id)) throw new Error(BUSY);
 
-  const chunkBytes = d.scanChunkBytes ?? CHUNK_BYTES;
   if (await needsSync(d.git, dir)) {
     const waiting = d.runner
       .jobs(b.id)
@@ -134,7 +131,7 @@ export async function shareBrain(
     return { status: 'syncing' };
   }
   const scanned = await headOf(d.git, dir);
-  const files = await treeSecretFiles(d.git, dir, scanned, chunkBytes);
+  const files = await treeSecretFiles(dir, scanned);
   if (files.length) return { status: 'secrets', files };
   if ((await d.git.remotes(dir)).includes('origin'))
     throw new Error(
@@ -175,7 +172,7 @@ export async function shareBrain(
         if (
           before !== scanned &&
           ((await needsSync(git, dir)) ||
-            (await treeSecretFiles(git, dir, before, chunkBytes)).length)
+            (await treeSecretFiles(dir, before)).length)
         )
           throw new Error(
             'The brain changed while it was being shared; share again',

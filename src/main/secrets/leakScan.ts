@@ -14,7 +14,7 @@ const gravest = (hits: LeakHit[]): Environment | null =>
 const MAX_UNTRACKED_BYTES = 2 * 1024 * 1024;
 
 /** A path as git prints it in a header: C-quoted when it has special characters (octal escapes are UTF-8 bytes). */
-function unquote(p: string): string {
+export function unquote(p: string): string {
   if (!p.startsWith('"')) return p;
   const bytes: number[] = [];
   const simple: Record<string, number> = {
@@ -66,7 +66,8 @@ class DiffReader {
       this.file = null;
       this.inHunk = false;
     } else if (!this.inHunk && line.startsWith('+++ ')) {
-      const p = unquote(line.slice(4));
+      // git ends the name with a tab when it holds a space.
+      const p = unquote(line.slice(4).replace(/\t$/, ''));
       this.file = p === '/dev/null' ? null : p.replace(/^b\//, '');
     } else if (line.startsWith('@@')) this.inHunk = true;
     else if (this.inHunk && this.file !== null && line.startsWith('+'))
@@ -143,6 +144,125 @@ const SCAN_AT = 4 * 1024 * 1024;
 const KEEP = 64 * 1024;
 /** A `git log` that has not answered by then is given up on: Finish treats it as an unchecked branch. */
 const GIT_LOG_TIMEOUT_MS = 60_000;
+/**
+ * The line `--format=%x01%H` prints before each commit's diff. No diff line starts with it: they start with a
+ * header word, `+`, `-`, a space or `\`.
+ */
+const COMMIT_MARK = '\x01';
+
+export type DiffScan = {
+  /** Whether a file's added text (a big file's in pieces of SCAN_AT, each after the last KEEP of the one before) hits. */
+  match: (text: string) => boolean;
+  /** Every file with a hit, in diff order; otherwise git is stopped at the first. */
+  all?: boolean;
+  /** Called on each commit's `\x01<sha>` line (from `--format=%x01%H`); false skips that commit's lines. */
+  commit?: (sha: string) => boolean;
+  /** None: no limit. */
+  timeoutMs?: number;
+  git?: string;
+};
+
+/**
+ * The files whose added lines `match`, in the diff a git command prints (`args`, from the subcommand on, made with
+ * `a/` and `b/` prefixes). Streamed, so a big diff does not hit a buffer limit. Rejects (without git's output) when
+ * git fails, cannot start or does not finish within `timeoutMs`.
+ */
+export function diffStreamHits(
+  worktree: string,
+  args: string[],
+  scan: DiffScan,
+): Promise<string[]> {
+  const name = `git ${args[0]}`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      scan.git ?? 'git',
+      ['--no-optional-locks', '-c', 'core.quotepath=off', ...args],
+      {
+        cwd: worktree,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    const hits: string[] = [];
+    let stopped = false;
+    let settled = false;
+    const timer =
+      scan.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            child.kill();
+            reject(new Error(`${name} timed out`));
+          }, scan.timeoutMs);
+    timer?.unref?.();
+    child.on('exit', () => clearTimeout(timer));
+    let file: string | null = null;
+    let text = '';
+    let skip = false;
+    const check = () => {
+      if (!stopped && file !== null && text && scan.match(text)) {
+        if (!hits.includes(file)) hits.push(file);
+        if (!scan.all) {
+          stopped = settled = true;
+          clearTimeout(timer);
+          child.kill();
+          resolve(hits);
+        }
+      }
+      text = '';
+    };
+    const reader = new DiffReader(
+      (f, line) => {
+        if (skip) return;
+        file = f;
+        text += `${line}\n`;
+        if (text.length > SCAN_AT) {
+          const tail = text.slice(-KEEP);
+          check();
+          text = tail;
+        }
+      },
+      () => {
+        check();
+        file = null;
+      },
+    );
+    const line = (l: string) => {
+      if (!l.startsWith(COMMIT_MARK)) return reader.line(l);
+      check();
+      file = null;
+      if (!stopped) skip = scan.commit?.(l.slice(1)) === false;
+    };
+    let rest = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      if (stopped) return;
+      const lines = (rest + chunk).split('\n');
+      rest = lines.pop() ?? '';
+      for (const l of lines) {
+        line(l);
+        if (stopped) return;
+      }
+    });
+    child.on('error', () => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      reject(new Error(`${name} could not start`));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      if (code !== 0) return reject(new Error(`${name} failed (${code})`));
+      line(rest);
+      check();
+      resolve(hits);
+    });
+  });
+}
 
 /**
  * Whether any commit a push would send (`base..HEAD`, merges left out) adds a stored value, also one a later
@@ -151,95 +271,38 @@ const GIT_LOG_TIMEOUT_MS = 60_000;
  * that file's hits (null for none). Rejects (without git's output) when git fails or does not finish within
  * `timeoutMs` (the push is then refused as unchecked, never let through).
  */
-export function branchLeaks(
+export async function branchLeaks(
   worktree: string,
   base: string,
   matcher: LeakMatcher,
   opts: { timeoutMs?: number; git?: string } = {},
 ): Promise<Environment | null> {
-  if (matcher.empty) return Promise.resolve(null);
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      opts.git ?? 'git',
-      [
-        '--no-optional-locks',
-        '-c',
-        'core.quotepath=off',
-        'log',
-        '-p',
-        '-U0',
-        '--no-merges',
-        '--format=',
-        '--no-color',
-        '--no-ext-diff',
-        '--no-textconv',
-        '--src-prefix=a/',
-        '--dst-prefix=b/',
-        `${base}..HEAD`,
-        '--',
-      ],
-      {
-        cwd: worktree,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'ignore'],
+  if (matcher.empty) return null;
+  let found: Environment | null = null;
+  await diffStreamHits(
+    worktree,
+    [
+      'log',
+      '-p',
+      '-U0',
+      '--no-merges',
+      '--format=',
+      '--no-color',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      `${base}..HEAD`,
+      '--',
+    ],
+    {
+      match: (text) => {
+        found = gravest(matcher.find(text));
+        return found !== null;
       },
-    );
-    let found: Environment | null = null;
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill();
-      reject(new Error('git log timed out'));
-    }, opts.timeoutMs ?? GIT_LOG_TIMEOUT_MS);
-    timer.unref?.();
-    child.on('exit', () => clearTimeout(timer));
-    let text = '';
-    let rest = '';
-    const scan = () => {
-      const env = !found && text ? gravest(matcher.find(text)) : null;
-      if (env !== null) {
-        found = env;
-        settled = true;
-        clearTimeout(timer);
-        child.kill();
-        resolve(env);
-      }
-      text = '';
-    };
-    const reader = new DiffReader((_file, line) => {
-      text += `${line}\n`;
-      if (text.length > SCAN_AT) {
-        const tail = text.slice(-KEEP);
-        scan();
-        text = tail;
-      }
-    }, scan);
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      if (found) return;
-      const lines = (rest + chunk).split('\n');
-      rest = lines.pop() ?? '';
-      for (const line of lines) {
-        reader.line(line);
-        if (found) return;
-      }
-    });
-    child.on('error', () => {
-      clearTimeout(timer);
-      if (settled) return;
-      settled = true;
-      reject(new Error('git log could not start'));
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (settled) return;
-      settled = true;
-      if (code !== 0) return reject(new Error(`git log failed (${code})`));
-      reader.line(rest);
-      scan();
-      resolve(found);
-    });
-  });
+      timeoutMs: opts.timeoutMs ?? GIT_LOG_TIMEOUT_MS,
+      git: opts.git,
+    },
+  );
+  return found;
 }

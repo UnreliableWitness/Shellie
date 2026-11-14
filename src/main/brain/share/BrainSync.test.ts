@@ -17,6 +17,7 @@ import { acquireLock, readState, releaseLock, writeState } from '../state';
 import { SQUASH_MESSAGE } from '../brainCommits';
 import { BrainSync, RAN_AGAIN, type SyncRunner } from './BrainSync';
 import { writeOrigin } from './files';
+import { unsentSecretFile } from './secretScan';
 
 // real git, many subprocesses per test: slow under load and on the Windows runner
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -385,9 +386,8 @@ describe('BrainSync', () => {
     },
   );
 
-  it('scans a file over the chunk size on its own, and each commit by itself', async () => {
+  it('scans each commit by itself', async () => {
     const before = await serverHead();
-    // Over the 64-byte chunk: read on its own, not in one diff with the rest.
     await write(
       a,
       'sources/big.md',
@@ -398,7 +398,7 @@ describe('BrainSync', () => {
     // A later commit taking the line out does not clear the earlier one.
     await write(a, 'sources/big.md', 'short now\n');
     await commit(a, 'Brain: scrub');
-    await sync({ scanChunkBytes: 64 }).push('a');
+    await sync().push('a');
     expect(await serverHead()).toBe(before);
     expect(sharing()).toMatchObject({
       status: 'held',
@@ -407,22 +407,16 @@ describe('BrainSync', () => {
   });
 
   it('holds the push when the scan itself fails, never sending unscanned commits', async () => {
-    class Failing extends GitClient {
-      override async run(
-        cwd: string,
-        args: string[],
-        opts?: { timeoutMs?: number; env?: Record<string, string> },
-      ): Promise<string> {
-        // What an over-full output buffer looks like: not a server error.
-        if (args.includes('--no-ext-diff'))
-          throw new Error('stdout maxBuffer length exceeded');
-        return super.run(cwd, args, opts);
-      }
-    }
     const before = await serverHead();
     await write(a, 'sources/n.md', 'a note\n');
     await commit(a, 'Brain: add source n.md');
-    await sync({ git: new Failing() }).push('a');
+    // A git that cannot start: not a server error.
+    await sync({
+      scanUnsent: (dir, range, clean) =>
+        unsentSecretFile(dir, range, clean, {
+          git: path.join(dir, 'no-such-git'),
+        }),
+    }).push('a');
     expect(await serverHead()).toBe(before);
     expect(sharing()).toMatchObject({
       status: 'held',
@@ -436,32 +430,20 @@ describe('BrainSync', () => {
   });
 
   it('pushes the commit it scanned, not one made while it scanned', async () => {
-    class Racing extends GitClient {
-      raced = false;
-      override async run(
-        cwd: string,
-        args: string[],
-        opts?: { timeoutMs?: number; env?: Record<string, string> },
-      ): Promise<string> {
-        const out = await super.run(cwd, args, opts);
-        if (!this.raced && args.includes('--no-ext-diff')) {
-          this.raced = true;
-          await write(a, 'sources/late.md', `late ${TOKEN}\n`);
-          await super.run(a, ['add', '-A']);
-          await super.run(a, [
-            'commit',
-            '-q',
-            '-m',
-            'Brain: add source late.md',
-          ]);
-        }
-        return out;
+    let raced = false;
+    const racing: typeof unsentSecretFile = async (dir, range, clean) => {
+      const out = await unsentSecretFile(dir, range, clean);
+      if (!raced) {
+        raced = true;
+        await write(a, 'sources/late.md', `late ${TOKEN}\n`);
+        await commit(a, 'Brain: add source late.md');
       }
-    }
+      return out;
+    };
     await write(a, 'sources/n.md', 'a note\n');
     await commit(a, 'Brain: add source n.md');
     const scanned = await head(a);
-    await sync({ git: new Racing() }).push('a');
+    await sync({ scanUnsent: racing }).push('a');
     expect(await serverHead()).toBe(scanned);
     expect(await head(a)).not.toBe(scanned);
     expect(await serverLog()).not.toContain(TOKEN);

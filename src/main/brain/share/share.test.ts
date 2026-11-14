@@ -348,12 +348,12 @@ describe('shareBrain', () => {
     expect(made).toEqual([]);
   });
 
-  it('scans a large file as committed, not as it is on disk', async () => {
+  it('scans a file as committed, not as it is on disk', async () => {
     await write('sources/big.md', `${'filler line\n'.repeat(200)}${TOKEN}\n`);
     await commit('Brain: add source big.md');
     await write('sources/big.md', 'cleaned on disk only\n');
     expect(
-      await shareBrain(deps({ scanChunkBytes: 1000 }), {
+      await shareBrain(deps(), {
         brainId: 'a',
         home: 'company',
         repoName: 'x',
