@@ -8,7 +8,12 @@ import {
   runWithInput,
   ExitError,
   tidySummary,
-  userRequests,
+  TURN_CUT,
+  TURNS_MAX,
+  WORK_ITEM_MAX,
+  prOpencodeArgs,
+  prOpencodeEnv,
+  programMissing,
   type PrSummaryContext,
 } from './prSummary';
 
@@ -18,15 +23,30 @@ const ctx: PrSummaryContext = {
   log: '- abc1234 Map each colour to its own SKU\n  The selector reused the first variant.',
   stat: ' src/variant.ts | 12 ++++++------\n 1 file changed',
   diff: 'diff --git a/src/variant.ts b/src/variant.ts\n+const sku = variant.sku;',
-  requests: ['The colour buttons all open the same SKU, fix that'],
+  workItem:
+    '## Work item\n\n### Description\n\nEvery colour button opens the first SKU.\n\n### Acceptance criteria\n\nEach colour opens its own SKU.',
+  turns: [
+    {
+      who: 'Developer',
+      text: 'The colour buttons all open the same SKU, fix that',
+    },
+    {
+      who: 'Claude',
+      text: 'The selector reused variants[0]; I map each colour to its SKU and added a test.',
+    },
+  ],
   style: null,
 };
 
 describe('prSummaryPrompt', () => {
-  it('holds the work item, the requests, the commits, the stat and the diff', () => {
+  it('holds the work item text, the session, the commits, the stat and the diff', () => {
     const p = prSummaryPrompt(ctx);
     expect(p).toContain(ctx.heading);
-    expect(p).toContain('The colour buttons all open the same SKU');
+    expect(p).toContain('Each colour opens its own SKU.');
+    expect(p).toContain('Developer: The colour buttons all open the same SKU');
+    expect(p).toContain('Agent: The selector reused variants[0]');
+    expect(p).toContain('## How it works');
+    expect(p).toContain('## How it was verified');
     expect(p).toContain('Map each colour to its own SKU');
     expect(p).toContain('1 file changed');
     expect(p).toContain('+const sku = variant.sku;');
@@ -40,9 +60,40 @@ describe('prSummaryPrompt', () => {
     expect(p).toContain('Write in Dutch.');
   });
 
-  it('says so when there are no requests', () => {
-    expect(prSummaryPrompt({ ...ctx, requests: [] })).toContain(
-      '(none recorded)',
+  it('says so when nothing was said in the sessions', () => {
+    expect(prSummaryPrompt({ ...ctx, turns: [] })).toContain('(none recorded)');
+  });
+
+  it('keeps the newest turns within the budget, oldest first, each cut', () => {
+    const turns = Array.from({ length: 100 }, (_, i) => ({
+      who: i % 2 ? ('Agent' as const) : ('Developer' as const),
+      text: `turn-${i} ${'x'.repeat(2000)}`,
+    }));
+    const p = prSummaryPrompt({ ...ctx, turns });
+    const section = p.slice(
+      p.indexOf('# What was done'),
+      p.indexOf('# Commits'),
+    );
+    expect(section.length).toBeLessThan(TURNS_MAX + 200);
+    expect(section).toContain('turn-99');
+    expect(section).not.toContain('turn-0 ');
+    expect(section).toMatch(/earlier turns left out/);
+    expect(section.indexOf('turn-98')).toBeLessThan(section.indexOf('turn-99'));
+    const line = section.split('\n').find((l) => l.includes('turn-99'))!;
+    expect(line.length).toBeLessThanOrEqual('Agent: '.length + TURN_CUT);
+  });
+
+  it('cuts a long work item', () => {
+    const p = prSummaryPrompt({ ...ctx, workItem: 'w'.repeat(50_000) });
+    expect(p.split('w'.repeat(100)).length).toBeLessThan(
+      WORK_ITEM_MAX / 100 + 2,
+    );
+    expect(p).toContain('[cut]');
+  });
+
+  it('works without a work item file', () => {
+    expect(prSummaryPrompt({ ...ctx, workItem: null })).toContain(
+      `# Work item\n${ctx.heading}\n\n# What was done`,
     );
   });
 
@@ -51,76 +102,16 @@ describe('prSummaryPrompt', () => {
       ...ctx,
       diff: 'd'.repeat(500_000),
       log: 'l'.repeat(100_000),
-      requests: Array.from({ length: 200 }, () => 'r'.repeat(800)),
+      workItem: 'w'.repeat(100_000),
+      turns: Array.from({ length: 200 }, () => ({
+        who: 'Developer' as const,
+        text: 'r'.repeat(800),
+      })),
     });
     expect(p.length).toBeLessThanOrEqual(PR_PROMPT_MAX);
     expect(p).toContain('[cut]');
     expect(p).toContain(ctx.heading);
     expect(p).toContain('## Why');
-  });
-});
-
-describe('userRequests', () => {
-  const line = (o: object) => JSON.stringify(o);
-  it('keeps what the developer typed, not tool results, commands or meta lines', () => {
-    const lines = [
-      line({
-        type: 'user',
-        message: { role: 'user', content: 'Fix the colour selector' },
-      }),
-      line({
-        type: 'user',
-        isMeta: true,
-        message: { role: 'user', content: 'caveat' },
-      }),
-      line({
-        type: 'user',
-        message: {
-          role: 'user',
-          content: '<command-name>/clear</command-name>',
-        },
-      }),
-      line({
-        type: 'user',
-        message: {
-          role: 'user',
-          content: [{ type: 'tool_result', content: 'output' }],
-        },
-      }),
-      line({
-        type: 'user',
-        isSidechain: true,
-        message: { role: 'user', content: 'subagent prompt' },
-      }),
-      line({
-        type: 'assistant',
-        message: { role: 'assistant', content: 'Sure' },
-      }),
-      line({
-        type: 'user',
-        message: {
-          role: 'user',
-          content: [{ type: 'text', text: 'Also keep the size picker' }],
-        },
-      }),
-      'not json',
-      line({
-        type: 'user',
-        message: { role: 'user', content: 'Fix the colour selector' },
-      }),
-    ];
-    expect(userRequests(lines)).toEqual([
-      'Fix the colour selector',
-      'Also keep the size picker',
-    ]);
-  });
-
-  it('shortens long messages', () => {
-    const [r] = userRequests([
-      line({ type: 'user', message: { content: 'x'.repeat(5000) } }),
-    ]);
-    expect(r.length).toBeLessThanOrEqual(801);
-    expect(r.endsWith('…')).toBe(true);
   });
 });
 
@@ -202,6 +193,38 @@ describe('prSummaryFlags', () => {
     // Flags only: the prompt goes through stdin, never the command line.
     expect(f.every((x) => x.length < 40)).toBe(true);
   });
+
+  it('runs the chosen model, Sonnet by default', () => {
+    expect(prSummaryFlags().join(' ')).toContain('--model sonnet');
+    expect(prSummaryFlags('haiku').join(' ')).toContain('--model haiku');
+    expect(prSummaryFlags('haiku').join(' ')).toContain(
+      '--max-budget-usd 0.50',
+    );
+  });
+});
+
+describe('the OpenCode writer', () => {
+  it('runs once with json events and its own title, prompt on stdin', () => {
+    expect(prOpencodeArgs()).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--title',
+      'Shellie PR description',
+    ]);
+  });
+
+  it('may only read: edit, bash and webfetch are denied', () => {
+    const env = prOpencodeEnv({ A: '1' });
+    expect(env.A).toBe('1');
+    expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT)).toEqual({
+      permission: { edit: 'deny', bash: 'deny', webfetch: 'deny' },
+    });
+    expect(
+      JSON.parse(prOpencodeEnv({}, ['.env']).OPENCODE_CONFIG_CONTENT).permission
+        .read,
+    ).toEqual({ '*': 'allow', '.env': 'deny' });
+  });
 });
 
 describe('runWithInput', () => {
@@ -268,5 +291,48 @@ describe('runWithInput', () => {
         { cwd: process.cwd(), input: '', timeoutMs: 200 },
       ),
     ).rejects.toThrow(/timed out/);
+  });
+});
+
+describe('programMissing', () => {
+  it('knows a missing program from a failing one', () => {
+    expect(
+      programMissing(Object.assign(new Error('spawn'), { code: 'ENOENT' })),
+    ).toBe(true);
+    expect(
+      programMissing(
+        new ExitError('Claude Code (claude) was not found', 127, ''),
+      ),
+    ).toBe(true);
+    expect(
+      programMissing(
+        new ExitError(
+          "claude : The term 'claude' is not recognized as the name of a cmdlet, function, script file",
+          1,
+          '',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      programMissing(new ExitError('model not found: claude-x', 1, '')),
+    ).toBe(false);
+    expect(
+      programMissing(new Error('Claude Code (claude) was not found')),
+    ).toBe(false);
+  });
+});
+
+describe('runWithInput abort', () => {
+  it('kills the run and rejects with stopped', async () => {
+    const ac = new AbortController();
+    const p = runWithInput(
+      {
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 10000)'],
+      },
+      { cwd: process.cwd(), input: '', timeoutMs: 20_000, signal: ac.signal },
+    );
+    setTimeout(() => ac.abort(), 50);
+    await expect(p).rejects.toThrow('stopped');
   });
 });

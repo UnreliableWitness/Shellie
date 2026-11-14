@@ -9,6 +9,7 @@ import {
 import type { DefaultTerminals } from '../../shared/terminals';
 import { type AppSettings, defaultSettings } from '../../shared/usage';
 import { pretick } from '../agentsPretick';
+import type { PrSummaryModel } from '../../shared/prDraft';
 import { api, saveSettings, tryInvoke } from '../api';
 import { useStore } from '../store';
 import { SettingRow, SettingsCategory } from './settings/SettingRow';
@@ -31,6 +32,7 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
   const [tabs, setTabs] = useState<DefaultTerminals | null>(null);
   const [detected, setDetected] = useState<AgentsDetected | null>(null);
   const [checking, setChecking] = useState(false);
+  const [prModel, setPrModel] = useState<PrSummaryModel | null>(null);
   const started = useRef(false);
 
   useEffect(() => {
@@ -42,6 +44,7 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
         tryInvoke(() => api().invoke('agents:detect', false), notify),
       ]);
       if (!s) return;
+      setPrModel(s.prSummaryModel ?? 'sonnet');
       if (d) setDetected(d);
       if (d && s.onboarding.agentsCheckedAt === null) {
         const ticks = pretick(d);
@@ -62,6 +65,11 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
       }
     })();
   }, [notify]);
+
+  const choosePrModel = async (model: PrSummaryModel) => {
+    setPrModel(model);
+    await tryInvoke(() => saveSettings({ prSummaryModel: model }), notify);
+  };
 
   const toggle = async (key: keyof DefaultTerminals, on: boolean) => {
     if (!tabs) return;
@@ -249,6 +257,26 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
         onReset={() => void reset()}
       >
         {body ?? <div className="muted small">Loading&hellip;</div>}
+      </SettingRow>
+      <SettingRow
+        id="user-terminals-pr-model"
+        category="Agents and terminals"
+        title="PR description model"
+        description="When Finish cannot ask the task's own agent tab for the pull request description, Claude Code writes it in the background with this model. Haiku costs about a third of Sonnet. OpenCode uses its own default model."
+        keywords={['pull request', 'description', 'Sonnet', 'Haiku', 'Finish']}
+        modified={prModel !== null && prModel !== 'sonnet'}
+        onReset={() => void choosePrModel('sonnet')}
+      >
+        <select
+          className="field"
+          aria-label="PR description model"
+          value={prModel ?? 'sonnet'}
+          disabled={prModel === null}
+          onChange={(e) => void choosePrModel(e.target.value as PrSummaryModel)}
+        >
+          <option value="sonnet">Sonnet</option>
+          <option value="haiku">Haiku (cheaper)</option>
+        </select>
       </SettingRow>
     </SettingsCategory>
   );

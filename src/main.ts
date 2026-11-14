@@ -68,6 +68,7 @@ import {
   recoverInterruptedTasks,
 } from './main/ipc/handlers';
 import { AttentionHub } from './main/attention/AttentionHub';
+import { TabActivity } from './main/attention/TabActivity';
 import {
   lostConfig,
   OPENCODE_PLUGIN_SOURCE,
@@ -834,8 +835,10 @@ async function boot(): Promise<void> {
             console.error('[terminals] could not resume Claude Code', err),
         ),
     });
+    const tabActivity = new TabActivity(Date.now);
     const attention = new AttentionHub({
       now: Date.now,
+      observed: (id, state) => tabActivity.status(id, state),
       write: (id, data) => terminals.write(id, data),
       terminal: (id) => {
         for (const t of store.state.tasks) {
@@ -1253,6 +1256,9 @@ async function boot(): Promise<void> {
       claudeThemeSettings: claudeSettings,
       opencodeSessionTexts: (dirs, since) =>
         openCodeSessions.sessionTexts(dirs, since),
+      opencodeLatestSession: (dirs, since) =>
+        openCodeSessions.latestSession(dirs, since),
+      opencodeTurnsSince: (id, since) => openCodeSessions.turnsSince(id, since),
       claudeSpawned: (id) =>
         retheme.spawned(
           id,
@@ -1300,7 +1306,10 @@ async function boot(): Promise<void> {
       onTerminalInput: (id, data) => {
         agentTimer.input(id, data);
         retheme.input(id, data);
+        tabActivity.input(id, data);
       },
+      agentSpawned: (id) => tabActivity.spawned(id),
+      tabActivity,
       settings,
       receiver,
       copilot,
@@ -1465,6 +1474,8 @@ async function boot(): Promise<void> {
     terminals.on('exit', (id) => attention.exit(id));
     terminals.on('data', (id) => retheme.output(id));
     terminals.on('exit', (id) => retheme.exit(id));
+    terminals.on('data', (id) => tabActivity.output(id));
+    terminals.on('exit', (id) => tabActivity.exit(id));
     nativeTheme.on('updated', () => retheme.tick());
     const retick = setInterval(() => retheme.tick(), 1000);
     const timeTick = setInterval(() => {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BudgetSettingsSchema, defaultBudgetSettings } from './budget';
 import { defaultEditorPrefs, EditorPrefsSchema } from './editors';
 import { defaultTerminals, DefaultTerminalsSchema } from './terminals';
+import { PR_SUMMARY_MODELS } from './prDraft';
 import { THEMES } from './theme';
 import { WorkHoursSchema } from './time';
 
@@ -86,6 +87,8 @@ export const AppSettingsSchema = z.object({
   showSplash: z.boolean().default(true),
   /** Notify when an agent finishes its turn (blocked agents always notify). */
   notifyOnDone: z.boolean().default(true),
+  /** The model of the headless Claude Code run that writes a PR description when the task's tab cannot be asked; Sonnet when unset. */
+  prSummaryModel: z.enum(PR_SUMMARY_MODELS).optional(),
   /**
    * Say what there is to read in a brain: Home's Reading band, the dot on a brain in the nav, "Before you start" on
    * a task and the notice when a build brings something. The reading list itself stays.

@@ -439,3 +439,128 @@ describe('OpenCodeReader.sessionTexts', () => {
     ).toEqual([]);
   });
 });
+
+describe('OpenCodeReader session reads for the PR draft', () => {
+  const makeDb = () => {
+    const file = path.join(
+      mkdtempSync(path.join(os.tmpdir(), 'oc-pr-')),
+      'opencode.db',
+    );
+    const db = new DatabaseSync(file);
+    db.exec(
+      'CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL, directory text NOT NULL, title text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)',
+    );
+    db.exec(
+      'CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+    );
+    db.exec(
+      'CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+    );
+    const session = (
+      id: string,
+      created: number,
+      updated: number,
+      o: { parent?: string; title?: string; dir?: string } = {},
+    ) =>
+      db
+        .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(
+          id,
+          'p',
+          o.parent ?? null,
+          id,
+          o.dir ?? '/w',
+          o.title ?? 'New session',
+          '1',
+          created,
+          updated,
+        );
+    let n = 0;
+    const say = (
+      sessionId: string,
+      role: string,
+      t: number,
+      parts: (string | Record<string, unknown>)[],
+    ) => {
+      const id = `msg_${++n}`;
+      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(
+        id,
+        sessionId,
+        t,
+        t,
+        JSON.stringify({ role }),
+      );
+      parts.forEach((p, i) =>
+        db
+          .prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)')
+          .run(
+            `prt_${n}_${i}`,
+            id,
+            sessionId,
+            t + i,
+            t + i,
+            JSON.stringify(
+              typeof p === 'string' ? { type: 'text', text: p } : p,
+            ),
+          ),
+      );
+    };
+    return { file, session, say, close: () => db.close() };
+  };
+
+  it('latestSession picks the top-level session updated last, not jobs, children or the PR run', () => {
+    const { file, session, close } = makeDb();
+    session('ses_old', 100, 500);
+    session('ses_new', 200, 900);
+    session('ses_child', 210, 990, { parent: 'ses_new' });
+    session('ses_pr', 220, 995, { title: 'Shellie PR description' });
+    session('ses_job', 230, 999, { title: 'Shellie brain job: capture' });
+    session('ses_far', 240, 999, { dir: '/elsewhere' });
+    close();
+    const r = new OpenCodeReader(file);
+    expect(r.latestSession(['/w'])).toEqual({ id: 'ses_new', updatedAt: 900 });
+    expect(r.latestSession(['/w'], 150)).toEqual({
+      id: 'ses_new',
+      updatedAt: 900,
+    });
+    expect(r.latestSession(['/w'], 300)).toBeNull();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').latestSession(['/w']),
+    ).toBeNull();
+  });
+
+  it('turnsSince gives the turns from a time on, with when each was said', () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_a', 100, 100);
+    say('ses_a', 'user', 100, ['Fix it']);
+    say('ses_a', 'assistant', 110, ['Fixed.']);
+    say('ses_a', 'user', 200, ['Shellie: write the pull request description']);
+    say('ses_a', 'assistant', 210, [
+      'Reading.',
+      { type: 'tool', tool: 'read', state: { output: 'x'.repeat(1000) } },
+      'Here it is.',
+    ]);
+    close();
+    expect(new OpenCodeReader(file).turnsSince('ses_a', 200)).toEqual([
+      {
+        who: 'Developer',
+        text: 'Shellie: write the pull request description',
+        at: 200,
+      },
+      { who: 'Agent', text: 'Reading.\nHere it is.', at: 210 },
+    ]);
+    expect(new OpenCodeReader(file).turnsSince('ses_none', 0)).toEqual([]);
+  });
+
+  it('sessionTexts leaves the PR run out like a brain job', () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_a', 100, 100);
+    session('ses_pr', 120, 120, { title: 'Shellie PR description' });
+    say('ses_a', 'user', 100, ['Mine']);
+    say('ses_pr', 'user', 120, ['The prompt']);
+    close();
+    expect(new OpenCodeReader(file).sessionTexts(['/w'])).toEqual([
+      [{ who: 'Developer', text: 'Mine' }],
+    ]);
+  });
+});

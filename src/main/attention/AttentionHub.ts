@@ -31,6 +31,8 @@ type HubDeps = {
   open: (taskId: string, terminalId: string) => void;
   /** A program's own status report (OSC 7501), for whoever else needs to know it is busy. */
   status?: (terminalId: string, state: AttentionState) => void;
+  /** Every agent state report, Claude's (OSC 7501) and OpenCode's (plugin) alike, muted or not. */
+  observed?: (terminalId: string, state: AttentionState) => void;
 };
 
 /** The notification text for a terminal's tab label and what it waits for. */
@@ -57,6 +59,8 @@ export class AttentionHub {
   /** Terminals that reported OSC 7501 status: their bells are not a signal. */
   private readonly reporting = new Set<string>();
   private readonly lastBell = new Map<string, number>();
+  /** Terminals whose next finished turn is Shellie's own request (the PR draft): it neither notifies nor badges. */
+  private readonly muted = new Set<string>();
   private readonly shown = new Map<string, { close(): void }>();
   private readonly tracker: AttentionTracker;
 
@@ -95,7 +99,7 @@ export class AttentionHub {
         const s = programStatusSignal(ev.fields);
         if (s) {
           this.d.status?.(terminalId, s.state);
-          this.tracker.signal(terminalId, s);
+          this.pass(terminalId, s);
         }
       } else this.bell(terminalId);
     }
@@ -104,11 +108,37 @@ export class AttentionHub {
   /** A signal from the receiver; false when the terminal is unknown. */
   signal(terminalId: string, s: AttentionSignal): boolean {
     if (!this.d.terminal(terminalId)) return false;
-    this.tracker.signal(terminalId, s);
+    this.pass(terminalId, s);
     return true;
   }
 
+  /**
+   * The next `done` or `idle` of the terminal ends a turn Shellie asked for: it reaches the tracker as `idle`, so it
+   * clears what the turn raised (a permission prompt) without a notification or badge of its own.
+   */
+  muteNextDone(terminalId: string): void {
+    this.muted.add(terminalId);
+  }
+
+  unmute(terminalId: string): void {
+    this.muted.delete(terminalId);
+  }
+
+  private pass(terminalId: string, s: AttentionSignal): void {
+    this.d.observed?.(terminalId, s.state);
+    if (
+      this.muted.has(terminalId) &&
+      (s.state === 'done' || s.state === 'idle')
+    ) {
+      this.muted.delete(terminalId);
+      this.tracker.signal(terminalId, { state: 'idle' });
+      return;
+    }
+    this.tracker.signal(terminalId, s);
+  }
+
   exit(terminalId: string): void {
+    this.muted.delete(terminalId);
     this.scanners.delete(terminalId);
     this.reporting.delete(terminalId);
     this.lastBell.delete(terminalId);
@@ -118,6 +148,7 @@ export class AttentionHub {
   /** Forgets every terminal not in `ids` (closed tabs, finished tasks: kill emits no exit). */
   retain(ids: ReadonlySet<string>): void {
     for (const id of this.scanners.keys()) if (!ids.has(id)) this.exit(id);
+    for (const id of this.muted) if (!ids.has(id)) this.muted.delete(id);
     this.tracker.retain(ids);
   }
 

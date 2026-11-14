@@ -1,10 +1,14 @@
 import { spawn } from 'node:child_process';
+import { PR_JOB_TITLE, type PrSummaryModel } from '../../shared/prDraft';
+import { clip } from '../../shared/text';
+import type { Turn } from '../brain/sessionDigest';
 import type { Command } from '../platform/Platform';
 
 /**
- * The "what changed and why" of a draft pull request (#111), written at Finish by Claude Code in print mode from the
- * branch (commits with their bodies, diff stat and diff), the work item and what the developer asked their Claude
- * sessions. The Finish page shows it for editing; the PR description puts it above the commit list.
+ * The "what changed and why" of a draft pull request (#111), written at Finish. This module is the headless writer
+ * (Claude Code in print mode, else OpenCode) used when the task's own agent tab cannot be asked (src/main/prDraft):
+ * from the work item, what was said in the task's sessions, the commits and the diff. The Finish page shows it for
+ * editing; the PR description puts it above the commit list.
  */
 
 /** The written text's limit: room is left for the heading, the commits and the cost line under PR_DESCRIPTION_MAX. */
@@ -17,21 +21,26 @@ export const PR_STYLE_FILE = '.shellie-pr.md';
 const STYLE_MAX = 4_000;
 const LOG_MAX = 12_000;
 const STAT_MAX = 6_000;
-const REQUESTS_MAX = 8_000;
-const REQUEST_MAX = 800;
+/** The work item text (task.md: description, acceptance criteria, repro steps, comments). */
+export const WORK_ITEM_MAX = 6_000;
+/** What was said in the task's sessions: newest turns first until this, each turn cut at TURN_CUT. */
+export const TURNS_MAX = 14_000;
+export const TURN_CUT = 1_200;
 const CUT = '\n[cut]';
 
 export type PrSummaryContext = {
   /** e.g. "Bug 42: Fix it", or the task name. */
   heading: string;
+  /** The task's `.shellie/task.md` (the whole work item and its comments), null when there is none. */
+  workItem: string | null;
   /** `git log` of the branch with commit bodies. */
   log: string;
   /** `git diff --stat` of the branch. */
   stat: string;
   /** The branch's diff (lock files left out). */
   diff: string;
-  /** What the developer typed in the task's Claude Code sessions, oldest first. */
-  requests: string[];
+  /** What the developer and the agents said in the task's sessions, oldest first, Shellie's own requests left out. */
+  turns: readonly Turn[];
   /** The repo's PR_STYLE_FILE, when it has one. */
   style: string | null;
 };
@@ -39,27 +48,47 @@ export type PrSummaryContext = {
 const cut = (text: string, max: number): string =>
   text.length <= max ? text : text.slice(0, max - CUT.length) + CUT;
 
-const INSTRUCTIONS = `You write the description of a pull request for its reviewers. You get the work item, what the developer asked their coding agent during the task, the commits and the diff. You may read files in the current folder (the branch's worktree) when the diff alone does not explain a change.
-
-Write Markdown in this shape:
+/** The description's shape and rules: the headless prompt and the request to a tab both use them. */
+export const PR_SHAPE = `Write Markdown in this shape:
 ## What changed
 2 to 6 bullets in plain words, grouped by behaviour or area, not file by file.
 ## Why
-1 to 3 sentences: the problem or goal, taken from the work item, the requests and the commit bodies.
+1 to 3 sentences: the problem or goal, from the work item (its description and acceptance criteria), the session and the commit bodies.
+## How it works
+Only when the approach is not obvious from the bullets: the solution chosen, and what was tried or ruled out, in 2 to 4 sentences.
+## How it was verified
+Only when the session shows it: the tests or checks that ran and what they showed, and what was not verified.
 ## How to review
-Only when something needs a reviewer's attention (a risky spot, a migration, a manual step, a known gap); leave the section out otherwise.
+Only when something needs a reviewer's attention (a risky spot, a migration, a manual step, a known gap).
 
-Rules: at most ${PR_SUMMARY_MAX - 500} characters; no title line (the PR has its own); no commit list and no cost line (both are added below your text); do not mention AI, agents or this prompt; do not invent anything the material does not show; write in the language of the commits. Reply with the description only.`;
+Rules: at most ${PR_SUMMARY_MAX - 500} characters; no title line (the PR has its own); no commit list and no cost line (both are added below your text); do not mention AI, agents or how this description was written; do not invent anything the material does not show; write in the language of the commits.`;
 
-/** The prompt for Claude Code, within PR_PROMPT_MAX: the diff gets what the other parts leave. */
-export function prSummaryPrompt(c: PrSummaryContext): string {
-  const requests: string[] = [];
+const INSTRUCTIONS = `You write the description of a pull request for its reviewers. You get the work item, what the developer and their coding agent said during the task (how the problem was solved and checked), the commits and the diff. You may read files in the current folder (the branch's worktree) when the material does not explain a change.
+
+${PR_SHAPE} Reply with the description only.`;
+
+/** The session's turns within TURNS_MAX: the newest kept first, shown oldest first. */
+function turnsSection(turns: readonly Turn[]): string {
+  const kept: string[] = [];
   let used = 0;
-  for (const r of c.requests) {
-    if (used + r.length > REQUESTS_MAX) break;
-    requests.push(`- ${r.replace(/\n/g, '\n  ')}`);
-    used += r.length;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    const who = t.who === 'Developer' ? 'Developer' : 'Agent';
+    const line = `${who}: ${clip(t.text.trim(), TURN_CUT).replace(/\n/g, '\n  ')}`;
+    if (used + line.length > TURNS_MAX) break;
+    kept.push(line);
+    used += line.length + 1;
   }
+  if (kept.length === 0) return '(none recorded)';
+  const left = turns.length - kept.length;
+  return [
+    ...(left > 0 ? [`(${left} earlier turns left out)`] : []),
+    ...kept.reverse(),
+  ].join('\n');
+}
+
+/** The prompt for the headless writer, within PR_PROMPT_MAX: the diff gets what the other parts leave. */
+export function prSummaryPrompt(c: PrSummaryContext): string {
   const parts = [
     INSTRUCTIONS,
     ...(c.style?.trim()
@@ -67,8 +96,8 @@ export function prSummaryPrompt(c: PrSummaryContext): string {
           `The repo's own style guide for descriptions (it wins over the shape above):\n${cut(c.style.trim(), STYLE_MAX)}`,
         ]
       : []),
-    `# Work item\n${c.heading}`,
-    `# What the developer asked\n${requests.length > 0 ? requests.join('\n') : '(none recorded)'}`,
+    `# Work item\n${c.heading}${c.workItem?.trim() ? `\n\n${cut(c.workItem.trim(), WORK_ITEM_MAX)}` : ''}`,
+    `# What was done (the task's sessions)\n${turnsSection(c.turns)}`,
     `# Commits\n${cut(c.log.trim(), LOG_MAX) || '(none)'}`,
     `# Files changed\n${cut(c.stat.trim(), STAT_MAX) || '(none)'}`,
   ];
@@ -77,63 +106,51 @@ export function prSummaryPrompt(c: PrSummaryContext): string {
   return `${parts.join('\n\n')}\n\n# Diff\n${diff}`;
 }
 
-type TranscriptLine = {
-  type?: string;
-  isMeta?: boolean;
-  isSidechain?: boolean;
-  message?: { content?: unknown };
-};
+/** `opencode run` for the headless writer: json events, titled so the task's own sessions leave it out; the prompt goes on stdin. */
+export function prOpencodeArgs(): string[] {
+  return ['run', '--format', 'json', '--title', PR_JOB_TITLE];
+}
 
-/** Lines that are Claude Code's own (slash commands, shell escapes, reminders), not the developer's words. */
-const MACHINE =
-  /^<(command-|local-command-|bash-|system-reminder|task-notification)/;
-
-/** What the developer typed in a Claude Code transcript (`.jsonl` lines), oldest first, each once. */
-export function userRequests(lines: string[]): string[] {
-  const out: string[] = [];
-  for (const raw of lines) {
-    let l: TranscriptLine;
-    try {
-      l = JSON.parse(raw) as TranscriptLine;
-    } catch {
-      continue;
-    }
-    if (l.type !== 'user' || l.isMeta || l.isSidechain) continue;
-    const content = l.message?.content;
-    const text =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter(
-                (p): p is { type: 'text'; text: string } =>
-                  typeof p === 'object' &&
-                  p !== null &&
-                  (p as { type?: unknown }).type === 'text' &&
-                  typeof (p as { text?: unknown }).text === 'string',
-              )
-              .map((p) => p.text)
-              .join('\n')
-          : '';
-    const t = text.trim();
-    if (!t || MACHINE.test(t) || t.startsWith('[Request interrupted')) continue;
-    const short = t.length > REQUEST_MAX ? `${t.slice(0, REQUEST_MAX)}…` : t;
-    if (!out.includes(short)) out.push(short);
-  }
-  return out;
+/**
+ * The OpenCode writer only reads: editing, shell commands and fetching are denied in its inline config, and so is
+ * reading `denyRead` (the worktree's secret files, as patterns relative to it).
+ */
+export function prOpencodeEnv(
+  base: Record<string, string> = {},
+  denyRead: readonly string[] = [],
+): Record<string, string> {
+  return {
+    ...base,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      permission: {
+        edit: 'deny',
+        bash: 'deny',
+        webfetch: 'deny',
+        // The last matching rule wins: everything may be read but the secret files.
+        ...(denyRead.length > 0
+          ? {
+              read: {
+                '*': 'allow',
+                ...Object.fromEntries(denyRead.map((p) => [p, 'deny'])),
+              },
+            }
+          : {}),
+      },
+    }),
+  };
 }
 
 /**
  * The flags for one print-mode run: JSON out, read-only tools, no MCP servers (their tool lists can be most of the
  * context), no saved session, a spending cap. Measured on a 48k-character prompt: about 23k tokens, 10 s, $0.10.
  */
-export function prSummaryFlags(): string[] {
+export function prSummaryFlags(model: PrSummaryModel = 'sonnet'): string[] {
   return [
     '-p',
     '--output-format',
     'json',
     '--model',
-    'sonnet',
+    model,
     '--tools',
     'Read,Grep,Glob',
     '--strict-mcp-config',
@@ -212,6 +229,22 @@ export function tidySummary(text: string): string {
   return `${(nl > PR_SUMMARY_MAX / 2 ? head.slice(0, nl) : head).trimEnd()}…`;
 }
 
+/**
+ * Whether a failed run means the program is not installed: the spawn found nothing, the login shell said so (exit
+ * 127), or Windows PowerShell could not resolve the command. A real error of the program (say, an unknown model) is
+ * not.
+ */
+export function programMissing(e: unknown): boolean {
+  if ((e as NodeJS.ErrnoException | null)?.code === 'ENOENT') return true;
+  if (!(e instanceof ExitError)) return false;
+  return (
+    e.exitCode === 127 ||
+    /is not recognized as (the )?name of a cmdlet|CommandNotFoundException/i.test(
+      e.message,
+    )
+  );
+}
+
 /** A run that exited non-zero: the message as before, plus the exit code and what the program printed on stdout. */
 export class ExitError extends Error {
   constructor(
@@ -235,9 +268,12 @@ export function runWithInput(
     input: string;
     timeoutMs: number;
     env?: Record<string, string>;
+    /** Stops the run: the process is killed and the promise rejects with `stopped`. */
+    signal?: AbortSignal;
   },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (o.signal?.aborted) return reject(new Error('stopped'));
     const child = spawn(command, args, {
       cwd: o.cwd,
       env: { ...process.env, ...o.env, ...env },
@@ -247,10 +283,16 @@ export function runWithInput(
     let out = '';
     let err = '';
     let timedOut = false;
+    let stopped = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, o.timeoutMs);
+    const onAbort = () => {
+      stopped = true;
+      child.kill();
+    };
+    o.signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (d: Buffer) => {
       if (out.length < 4_000_000) out += d.toString();
     });
@@ -259,10 +301,13 @@ export function runWithInput(
     });
     child.on('error', (e) => {
       clearTimeout(timer);
+      o.signal?.removeEventListener('abort', onAbort);
       reject(e);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      o.signal?.removeEventListener('abort', onAbort);
+      if (stopped) return reject(new Error('stopped'));
       if (timedOut)
         return reject(
           new Error(`timed out after ${Math.round(o.timeoutMs / 1000)} s`),

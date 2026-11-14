@@ -18,10 +18,8 @@ import { gitAuthHintFromText, remoteHost } from '../../shared/gitAuth';
 import { LEAK_IN_BRANCH, LEAK_UNCHECKED } from '../../shared/secrets';
 import { api, tryInvoke } from '../api';
 import { GitAuthNotice } from '../components/GitAuthNotice';
-import {
-  PrDescriptionField,
-  type PrDraft,
-} from '../components/PrDescriptionField';
+import { PrDescriptionField } from '../components/PrDescriptionField';
+import { prDraftBusy, type PrDraft } from '../../shared/prDraft';
 import { eur, plural } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { useTaskBrain } from '../hooks/useBrains';
@@ -86,15 +84,6 @@ const actionOf = (
   if (!on) return 'keep';
   return noChanges(c) ? 'drop' : c.pr.available ? 'pr' : 'push';
 };
-
-/**
- * The PR descriptions written on the Finish page, per `<taskId>:<workspaceId>`, kept for the app session so leaving
- * the page and coming back does not ask Claude Code again (Write again does).
- */
-const prDrafts = new Map<string, PrDraft>();
-export function clearPrDrafts(): void {
-  prDrafts.clear();
-}
 
 const G = {
   WARN: String.fromCharCode(0x26a0),
@@ -419,37 +408,58 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
         : pr?.available && prChoice
           ? [HOME_ID]
           : [];
-  const [drafts, setDrafts] = useState<Record<string, PrDraft>>(() =>
-    Object.fromEntries(
-      [...prDrafts]
-        .filter(([k]) => k.startsWith(`${taskId}:`))
-        .map(([k, d]) => [k.slice(taskId.length + 1), d]),
-    ),
-  );
+  // The PR drafts live in main (prDrafts:*), so leaving the page to look at the tab being asked loses nothing.
+  const [drafts, setDrafts] = useState<Record<string, PrDraft>>({});
+  const [draftsLoaded, setDraftsLoaded] = useState(false);
   // A newer request (Write again) or Skip makes an older answer stale.
   const draftRuns = useRef(new Map<string, number>());
-  const setDraft = (workspaceId: string, d: PrDraft) => {
-    prDrafts.set(`${taskId}:${workspaceId}`, d);
+  const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    let live = true;
+    setDraftsLoaded(false);
+    void api()
+      .invoke('prDrafts:get', taskId)
+      .catch(() => ({}) as Record<string, PrDraft>)
+      .then((all) => {
+        if (!live) return;
+        setDrafts(all);
+        setDraftsLoaded(true);
+      });
+    const off = api().on('prDrafts:changed', (e) => {
+      if (e.taskId !== taskId) return;
+      setDrafts((all) => ({ ...all, [e.workspaceId]: e.draft }));
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, [taskId]);
+  const setDraft = (workspaceId: string, d: PrDraft) =>
     setDrafts((all) => ({ ...all, [workspaceId]: d }));
-  };
   const writeDraft = (workspaceId: string) => {
     const run = (draftRuns.current.get(workspaceId) ?? 0) + 1;
     draftRuns.current.set(workspaceId, run);
-    setDraft(workspaceId, { status: 'writing', text: '', error: null });
+    setDraft(workspaceId, {
+      status: 'writing',
+      source: null,
+      tab: null,
+      text: '',
+      error: null,
+      note: null,
+    });
     void api()
-      .invoke('tasks:prSummary', taskId, workspaceId)
-      .catch((e: unknown) => ({
-        text: null,
+      .invoke('prDrafts:write', taskId, workspaceId)
+      .catch((e: unknown): PrDraft => ({
+        status: 'failed',
+        source: null,
+        tab: null,
+        text: '',
         error: e instanceof Error ? e.message : 'unknown error',
+        note: null,
       }))
-      .then((r) => {
+      .then((d) => {
         if (draftRuns.current.get(workspaceId) !== run) return;
-        setDraft(
-          workspaceId,
-          r.text
-            ? { status: 'ready', text: r.text, error: null }
-            : { status: 'failed', text: '', error: r.error },
-        );
+        setDraft(workspaceId, d);
       });
   };
   const skipDraft = (workspaceId: string) => {
@@ -457,18 +467,39 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
       workspaceId,
       (draftRuns.current.get(workspaceId) ?? 0) + 1,
     );
-    setDraft(workspaceId, { status: 'skipped', text: '', error: null });
+    void api()
+      .invoke('prDrafts:skip', taskId, workspaceId)
+      .catch(() => undefined);
+    setDraft(workspaceId, {
+      status: 'skipped',
+      source: null,
+      tab: null,
+      text: '',
+      error: null,
+      note: null,
+    });
+  };
+  const editDraft = (workspaceId: string, d: PrDraft, text: string) => {
+    setDraft(workspaceId, { ...d, text });
+    const timers = editTimers.current;
+    clearTimeout(timers.get(workspaceId));
+    timers.set(
+      workspaceId,
+      setTimeout(() => {
+        void api()
+          .invoke('prDrafts:edit', taskId, workspaceId, text)
+          .catch(() => undefined);
+      }, 300),
+    );
   };
   const prWorkspacesKey = prWorkspaces.join('|');
   useEffect(() => {
-    for (const id of prWorkspaces)
-      if (!prDrafts.has(`${taskId}:${id}`)) writeDraft(id);
-    // Runs when the set of PR workspaces changes; writeDraft only closes over taskId.
+    if (!draftsLoaded) return;
+    for (const id of prWorkspaces) if (!drafts[id]) writeDraft(id);
+    // Runs when the set of PR workspaces changes or the drafts arrived; writeDraft only closes over taskId.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prWorkspacesKey, taskId]);
-  const draftWriting = prWorkspaces.some(
-    (id) => drafts[id]?.status === 'writing',
-  );
+  }, [prWorkspacesKey, taskId, draftsLoaded]);
+  const draftWriting = prWorkspaces.some((id) => prDraftBusy(drafts[id]));
   const prSummaries = Object.fromEntries(
     prWorkspaces
       .map((id) => [id, drafts[id]?.text.trim() ?? ''] as const)
@@ -480,9 +511,10 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     return (
       <PrDescriptionField
         draft={d}
-        onChange={(text) => setDraft(workspaceId, { ...d, text })}
+        onChange={(text) => editDraft(workspaceId, d, text)}
         onRewrite={() => writeDraft(workspaceId)}
         onSkip={() => skipDraft(workspaceId)}
+        onShowTab={(tabId) => useStore.getState().openTab(taskId, tabId)}
       />
     );
   };

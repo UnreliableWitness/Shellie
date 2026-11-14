@@ -250,4 +250,27 @@ describe('AgentsSection', () => {
     const row = (await screen.findByText('OpenCode')).closest('tr');
     expect(row).toHaveTextContent('Default agent');
   });
+
+  it('saves the PR description model, Sonnet until chosen', async () => {
+    const { calls } = installFakeApi(
+      settingsWith('2026-10-22T09:00:00.000Z', {
+        claude: true,
+        copilot: false,
+        opencode: false,
+        shell: true,
+      }),
+    );
+    render(<AgentsSection />);
+    const select = await screen.findByRole('combobox', {
+      name: 'PR description model',
+    });
+    await waitFor(() => expect(select).not.toBeDisabled());
+    expect(select).toHaveValue('sonnet');
+    await userEvent.selectOptions(select, 'haiku');
+    await waitFor(() =>
+      expect(saves(calls).at(-1)).toEqual(
+        expect.objectContaining({ prSummaryModel: 'haiku' }),
+      ),
+    );
+  });
 });

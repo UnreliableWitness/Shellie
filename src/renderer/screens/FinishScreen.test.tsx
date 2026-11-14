@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,7 +7,7 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   FinishRowResult,
   TaskView,
@@ -17,7 +18,25 @@ import { readPrChoice, readPushChoice, writePrChoice } from '../uiPrefs';
 import { CHANGES_TAB, useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { emptyTime, emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
-import { clearPrDrafts, FinishScreen } from './FinishScreen';
+import { FinishScreen } from './FinishScreen';
+import type { PrDraft } from '../../shared/prDraft';
+
+const ready = (text: string): PrDraft => ({
+  status: 'ready',
+  source: 'headless',
+  tab: null,
+  text,
+  error: null,
+  note: null,
+});
+const failed = (error: string): PrDraft => ({
+  status: 'failed',
+  source: 'headless',
+  tab: null,
+  text: '',
+  error,
+  note: null,
+});
 
 const task: TaskView = {
   id: 'a',
@@ -87,7 +106,6 @@ const clean = {
 
 beforeEach(() => {
   localStorage.clear();
-  clearPrDrafts();
   useStore.setState({
     repos: [],
     tasks: [task],
@@ -679,10 +697,7 @@ describe('FinishScreen pull request description', () => {
       ...available,
       'tasks:finishChecks': () => clean,
       'tasks:finish': () => undefined,
-      'tasks:prSummary': () => ({
-        text: '## What changed\n- Dates',
-        error: null,
-      }),
+      'prDrafts:write': () => ready('## What changed\n- Dates'),
     });
     render(<FinishScreen taskId="a" />);
     // Not asked for while no PR is wanted.
@@ -693,7 +708,7 @@ describe('FinishScreen pull request description', () => {
     const box = await screen.findByLabelText('Pull request description');
     await waitFor(() => expect(box).toHaveValue('## What changed\n- Dates'));
     expect(
-      calls.filter((c) => c.channel === 'tasks:prSummary').map((c) => c.args),
+      calls.filter((c) => c.channel === 'prDrafts:write').map((c) => c.args),
     ).toEqual([['a', 'home']]);
     await userEvent.type(box, '\n- Edited');
     await userEvent.click(
@@ -712,12 +727,10 @@ describe('FinishScreen pull request description', () => {
       ...available,
       'tasks:finishChecks': () => clean,
       'tasks:finish': () => undefined,
-      'tasks:prSummary': () => new Promise(() => {}),
+      'prDrafts:write': () => new Promise(() => {}),
     });
     render(<FinishScreen taskId="a" />);
-    expect(
-      await screen.findByText(/Claude Code is writing it/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Writing it/)).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Finish and clean up' }),
     ).toBeDisabled();
@@ -735,10 +748,10 @@ describe('FinishScreen pull request description', () => {
     const { calls } = installFakeApi({
       ...available,
       'tasks:finishChecks': () => clean,
-      'tasks:prSummary': () =>
+      'prDrafts:write': () =>
         n++ === 0
-          ? { text: null, error: 'Claude Code (claude) was not found' }
-          : { text: 'Second try', error: null },
+          ? failed('Claude Code (claude) was not found')
+          : ready('Second try'),
     });
     render(<FinishScreen taskId="a" />);
     expect(
@@ -750,8 +763,79 @@ describe('FinishScreen pull request description', () => {
         'Second try',
       ),
     );
-    expect(calls.filter((c) => c.channel === 'tasks:prSummary')).toHaveLength(
-      2,
+    expect(calls.filter((c) => c.channel === 'prDrafts:write')).toHaveLength(2);
+  });
+
+  it('shows the tab being asked, lets the user look at it, and picks up after a remount', async () => {
+    writePrChoice('r1', true);
+    const asking: PrDraft = {
+      status: 'asking-tab',
+      source: 'tab',
+      tab: { id: 'c1', label: 'Claude Code' },
+      text: '',
+      error: null,
+      note: null,
+    };
+    const openTab = vi.fn();
+    const realOpenTab = useStore.getState().openTab;
+    useStore.setState({ openTab });
+    const fake = installFakeApi({
+      ...available,
+      'tasks:finishChecks': () => clean,
+      'prDrafts:get': () => ({ home: asking }),
+      'prDrafts:write': () => new Promise(() => {}),
+    });
+    const first = render(<FinishScreen taskId="a" />);
+    expect(await screen.findByText('Asking Claude Code…')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Finish and clean up' }),
+    ).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Show tab' }));
+    expect(openTab).toHaveBeenCalledWith('a', 'c1');
+    first.unmount();
+    // Back on the page: still asking (from main), not stuck, and not asked again.
+    render(<FinishScreen taskId="a" />);
+    expect(await screen.findByText('Asking Claude Code…')).toBeInTheDocument();
+    expect(
+      fake.calls.filter((c) => c.channel === 'prDrafts:write'),
+    ).toHaveLength(0);
+    act(() =>
+      fake.emit('prDrafts:changed', {
+        taskId: 'a',
+        workspaceId: 'home',
+        draft: {
+          ...asking,
+          status: 'ready',
+          text: 'From the tab',
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText('Pull request description')).toHaveValue(
+        'From the tab',
+      ),
+    );
+    expect(
+      screen.getByText("Written by Claude Code from this task's session."),
+    ).toBeInTheDocument();
+    useStore.setState({ openTab: realOpenTab });
+  });
+
+  it('Skip tells main, and an edit is kept in main', async () => {
+    writePrChoice('r1', true);
+    const fake = installFakeApi({
+      ...available,
+      'tasks:finishChecks': () => clean,
+      'prDrafts:write': () => ready('Text'),
+    });
+    render(<FinishScreen taskId="a" />);
+    const box = await screen.findByLabelText('Pull request description');
+    await waitFor(() => expect(box).toHaveValue('Text'));
+    await userEvent.type(box, '!');
+    await waitFor(() =>
+      expect(
+        fake.calls.filter((c) => c.channel === 'prDrafts:edit').at(-1)?.args,
+      ).toEqual(['a', 'home', 'Text!']),
     );
   });
 });
@@ -1301,7 +1385,7 @@ describe('FinishScreen with several repos', () => {
     const { calls } = installFakeApi({
       'tasks:finishChecks': () => checks(),
       'tasks:finish': () => undefined,
-      'tasks:prSummary': (_t, ws) => ({ text: `About ${ws}`, error: null }),
+      'prDrafts:write': (_t, ws) => ready(`About ${ws}`),
     });
     render(<FinishScreen taskId="a" />);
     await screen.findByRole('group', { name: 'api' });

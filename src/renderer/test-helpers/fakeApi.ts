@@ -91,7 +91,17 @@ const defaults: FakeHandlers = {
   'reader:marks': (_brainId, marks) => marks,
   'reading:get': () => [],
   // Finish asks for a PR description when a PR is ticked; tests that care give their own.
-  'tasks:prSummary': () => ({ text: null, error: 'not in tests' }),
+  'prDrafts:get': () => ({}),
+  'prDrafts:write': () => ({
+    status: 'failed',
+    source: null,
+    tab: null,
+    text: '',
+    error: 'not in tests',
+    note: null,
+  }),
+  'prDrafts:skip': () => undefined,
+  'prDrafts:edit': () => undefined,
   'home:refresh': () => ({
     version: 1,
     builtAt: '2026-10-17T09:00:00.000Z',

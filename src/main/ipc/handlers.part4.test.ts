@@ -3,6 +3,7 @@ import {
   appendFileSync,
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -17,6 +18,7 @@ import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { GitAuthError, GitClient } from '../services/GitClient';
 import { TaskStore } from '../services/TaskStore';
 import { NoopTelemetry } from '../telemetry/AppInsightsClient';
+import { ExitError } from '../services/prSummary';
 import type { WorkspaceDetector } from '../workspaces/WorkspaceDetector';
 import { addOrigin, commitFile, git, makeRepo } from '../test-helpers/gitRepo';
 import { AdoError, CODE_WRITE_DENIED } from '../services/AdoClient';
@@ -257,7 +259,7 @@ describe('handlers: finish with a pull request', () => {
     expect(hx.store.state.tasks[0].status).toBe('done');
   });
 
-  describe('tasks:prSummary', () => {
+  describe('prDrafts:write (headless)', () => {
     const result = (text: string) =>
       JSON.stringify({
         type: 'result',
@@ -300,8 +302,13 @@ describe('handlers: finish with a pull request', () => {
         calls.push({ args: cmd.args, cwd: o.cwd, input: o.input, env: o.env });
         return result('```markdown\n## What changed\n- Dates\n```');
       };
-      const r = await hx.h['tasks:prSummary'](hx.t.id);
-      expect(r).toEqual({ text: '## What changed\n- Dates', error: null });
+      const r = await hx.h['prDrafts:write'](hx.t.id, 'home');
+      expect(r).toMatchObject({
+        status: 'ready',
+        source: 'headless',
+        text: '## What changed\n- Dates',
+        error: null,
+      });
       expect(calls).toHaveLength(1);
       expect(calls[0].cwd).toBe(hx.t.worktreePath);
       expect(calls[0].args.join(' ')).toContain('-p');
@@ -318,7 +325,7 @@ describe('handlers: finish with a pull request', () => {
       expect(calls[0].env?.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe('1');
       expect(events).toContainEqual([
         'pr.summary',
-        { ok: true, style: false },
+        { ok: true, source: 'headless', reason: 'no-tab', agent: 'claude' },
         expect.objectContaining({ chars: 23 }),
       ]);
     });
@@ -353,7 +360,7 @@ describe('handlers: finish with a pull request', () => {
         call = { args: cmd.args, input: o.input };
         return result(`## What changed\n- Uses ${value}`);
       };
-      const r = await hx.h['tasks:prSummary'](hx.t.id);
+      const r = await hx.h['prDrafts:write'](hx.t.id, 'home');
       expect(call!.input).not.toContain(value);
       expect(call!.input).toContain('[STRIPE_KEY]');
       expect(r.text).not.toContain(value);
@@ -378,11 +385,11 @@ describe('handlers: finish with a pull request', () => {
         input = o.input;
         return result('ok');
       };
-      await hx.h['tasks:prSummary'](hx.t.id);
+      await hx.h['prDrafts:write'](hx.t.id, 'home');
       expect(input).toContain('Always end with a Testing section.');
     });
 
-    it('gives the reason, never throws, when Claude Code fails', async () => {
+    it('gives the reason, never throws, when the writer fails', async () => {
       const events: [string, unknown][] = [];
       const hx = await prHarness(undefined, undefined, {
         telemetry: {
@@ -392,23 +399,160 @@ describe('handlers: finish with a pull request', () => {
       });
       commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
       hx.services.runAgent = async () => {
-        throw new Error('Claude Code (claude) was not found');
+        throw new ExitError('Claude Code (claude) was not found', 127, '');
       };
-      expect(await hx.h['tasks:prSummary'](hx.t.id)).toEqual({
-        text: null,
-        error: 'Claude Code (claude) was not found',
+      expect(await hx.h['prDrafts:write'](hx.t.id, 'home')).toMatchObject({
+        status: 'failed',
+        text: '',
+        error: 'Neither Claude Code nor OpenCode was found',
       });
       hx.services.runAgent = async () => {
         throw new Error('timed out after 120 s');
       };
-      await hx.h['tasks:prSummary'](hx.t.id);
+      await hx.h['prDrafts:write'](hx.t.id, 'home');
       hx.services.runAgent = async () => result('   ');
-      expect((await hx.h['tasks:prSummary'](hx.t.id)).text).toBeNull();
-      expect(events.filter((e) => e[0] === 'pr.summary')).toEqual([
-        ['pr.summary', { ok: false, reason: 'no-agent', style: false }],
-        ['pr.summary', { ok: false, reason: 'timeout', style: false }],
-        ['pr.summary', { ok: false, reason: 'empty', style: false }],
+      expect((await hx.h['prDrafts:write'](hx.t.id, 'home')).status).toBe(
+        'failed',
+      );
+      expect(
+        events.filter((e) => e[0] === 'pr.summary').map((e) => e[1]),
+      ).toEqual([
+        {
+          ok: false,
+          source: 'headless',
+          reason: 'no-tab',
+          failure: 'no-agent',
+        },
+        {
+          ok: false,
+          source: 'headless',
+          reason: 'no-tab',
+          agent: 'claude',
+          failure: 'timeout',
+        },
+        {
+          ok: false,
+          source: 'headless',
+          reason: 'no-tab',
+          agent: 'claude',
+          failure: 'empty',
+        },
       ]);
+    });
+
+    it('writes with OpenCode when Claude Code is not installed, reading only', async () => {
+      const hx = await prHarness();
+      commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
+      writeFileSync(path.join(hx.t.worktreePath, '.env'), 'X=1\n');
+      const calls: {
+        command: string;
+        args: string[];
+        input: string;
+        env?: Record<string, string>;
+      }[] = [];
+      hx.services.runAgent = async (cmd, o) => {
+        calls.push({
+          command: cmd.command,
+          args: cmd.args,
+          input: o.input,
+          env: o.env,
+        });
+        if (calls.length === 1)
+          throw new ExitError('Claude Code (claude) was not found', 127, '');
+        return [
+          JSON.stringify({ type: 'step_start', sessionID: 'ses_1' }),
+          JSON.stringify({
+            type: 'text',
+            sessionID: 'ses_1',
+            part: { type: 'text', text: '## What changed\n- OpenCode' },
+          }),
+        ].join('\n');
+      };
+      const r = await hx.h['prDrafts:write'](hx.t.id, 'home');
+      expect(r).toMatchObject({
+        status: 'ready',
+        text: '## What changed\n- OpenCode',
+      });
+      expect(calls).toHaveLength(2);
+      expect([calls[1].command, ...calls[1].args].join(' ')).toMatch(
+        /opencode.*run.*--format.*json.*Shellie PR description/,
+      );
+      expect(calls[1].input).toContain('Add the feature');
+      const permission = JSON.parse(
+        calls[1].env!.OPENCODE_CONFIG_CONTENT,
+      ).permission;
+      expect(permission).toMatchObject({
+        edit: 'deny',
+        bash: 'deny',
+        webfetch: 'deny',
+      });
+      expect(Object.keys(permission.read ?? {})).toEqual(
+        expect.arrayContaining(['*']),
+      );
+    });
+
+    it("feeds the work item text and the agent's answers, not Shellie's own requests", async () => {
+      const hx = await prHarness();
+      commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
+      mkdirSync(path.join(hx.t.worktreePath, '.shellie'), { recursive: true });
+      writeFileSync(
+        path.join(hx.t.worktreePath, '.shellie', 'task.md'),
+        '## Work item\n\n### Acceptance criteria\n\nThe date shows under the price.\n',
+      );
+      const sessions = mkdtempSync(path.join(os.tmpdir(), 'shellie-sess-'));
+      const log = path.join(sessions, 'abc.jsonl');
+      const line = (type: string, content: unknown) =>
+        JSON.stringify({ type, message: { content } });
+      writeFileSync(
+        log,
+        [
+          line('user', 'Show the delivery date'),
+          line('assistant', [
+            {
+              type: 'text',
+              text: 'I read it from the stock API and cache it for 5 minutes.',
+            },
+          ]),
+          line(
+            'user',
+            'Shellie: write the pull request description as asked in .shellie/pr-request-1.md',
+          ),
+          line('assistant', [{ type: 'text', text: 'OLD REPLY' }]),
+        ].join('\n') + '\n',
+      );
+      hx.services.claudeSessionFile = (id) => (id === 'abc' ? log : null);
+      await hx.store.update((st) => {
+        st.tasks[0].terminals.push({
+          id: 'c1',
+          kind: 'claude',
+          label: 'Claude Code',
+          sessionId: 'abc',
+        });
+      });
+      let input = '';
+      hx.services.runAgent = async (_cmd, o) => {
+        input = o.input;
+        return result('ok');
+      };
+      await hx.h['prDrafts:write'](hx.t.id, 'home');
+      expect(input).toContain('The date shows under the price.');
+      expect(input).toContain('Agent: I read it from the stock API');
+      expect(input).not.toContain('OLD REPLY');
+      expect(input).not.toContain('pr-request-1.md');
+    });
+
+    it('keeps drafts for the page, and Skip ends one', async () => {
+      const hx = await prHarness();
+      commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
+      hx.services.runAgent = async () => result('Text');
+      await hx.h['prDrafts:write'](hx.t.id, 'home');
+      expect(await hx.h['prDrafts:get'](hx.t.id)).toEqual({
+        home: expect.objectContaining({ status: 'ready', text: 'Text' }),
+      });
+      await hx.h['prDrafts:edit'](hx.t.id, 'home', 'Mine');
+      expect((await hx.h['prDrafts:get'](hx.t.id)).home.text).toBe('Mine');
+      await hx.h['prDrafts:skip'](hx.t.id, 'home');
+      expect((await hx.h['prDrafts:get'](hx.t.id)).home.status).toBe('skipped');
     });
   });
 
