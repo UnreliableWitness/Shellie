@@ -4,6 +4,7 @@ import type { Turn } from '../brain/sessionDigest';
 import {
   askTab,
   POLL_MS,
+  LINE_WAIT_MS,
   SETTLE_MS,
   SUBMIT_DELAY_MS,
   TAB_TIMEOUT_MS,
@@ -160,6 +161,7 @@ describe('askTab', () => {
     const b = setup();
     const pb = askTab(b.d, new AbortController().signal);
     await started();
+    b.say({ who: 'Developer', text: line });
     await vi.advanceTimersByTimeAsync(TAB_TIMEOUT_MS);
     await expect(pb).resolves.toEqual({ reason: 'timeout' });
     expect(b.log).toContain('remove-request');
@@ -180,9 +182,29 @@ describe('askTab', () => {
     ac.abort();
     await vi.advanceTimersByTimeAsync(SUBMIT_DELAY_MS);
     await expect(p).resolves.toEqual({ aborted: true });
-    expect(u.log).not.toContain('type:\r');
+    // The typed line is always sent, so it never joins what comes next in the prompt box.
+    expect(u.log).toContain('type:\r');
     expect(u.log).toContain('unmute');
     expect(u.log).toContain('remove-request');
+  });
+
+  it('gives up when the request never shows up in the session', async () => {
+    const t = setup();
+    const p = askTab(t.d, new AbortController().signal);
+    await started();
+    await vi.advanceTimersByTimeAsync(LINE_WAIT_MS);
+    await expect(p).resolves.toEqual({ reason: 'no-reply' });
+  });
+
+  it('keeps waiting past that when the request is there', async () => {
+    const t = setup();
+    const p = askTab(t.d, new AbortController().signal);
+    await started();
+    t.say({ who: 'Developer', text: line });
+    await vi.advanceTimersByTimeAsync(LINE_WAIT_MS + POLL_MS);
+    t.say({ who: 'Claude', text: marked('Slow') });
+    t.emit('done');
+    await expect(p).resolves.toEqual({ text: 'Slow' });
   });
 
   it('ignores the answer after Skip', async () => {

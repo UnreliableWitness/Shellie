@@ -198,7 +198,7 @@ import { changedKeys } from '../telemetry/helpers';
 import { telemetryEnv } from '../usage/telemetryEnv';
 import {
   claudeResult,
-  ExitError,
+  programMissing,
   prOpencodeArgs,
   prOpencodeEnv,
   PR_STYLE_FILE,
@@ -429,6 +429,7 @@ export type Services = {
       input: string;
       timeoutMs: number;
       env?: Record<string, string>;
+      signal?: AbortSignal;
     },
   ) => Promise<string>;
   /** Whether Claude Code saved any session for this folder (default: looks in ~/.claude/projects). */
@@ -2657,10 +2658,7 @@ export function createHandlers(s: Services): Handlers {
     ).text;
     const reasonOf = (error: string) =>
       /timed out/.test(error) ? 'timeout' : 'failed';
-    const notFound = (e: unknown) =>
-      (e as NodeJS.ErrnoException).code === 'ENOENT' ||
-      (e instanceof ExitError && e.exitCode === 127) ||
-      /not found/.test(errorMessage(e));
+    const notFound = programMissing;
     if (signal.aborted)
       return { error: 'Skipped', reason: 'skipped', agent: null };
     // Claude Code unless detection already said it is missing; a run that finds no claude goes on to OpenCode.
@@ -2679,6 +2677,7 @@ export function createHandlers(s: Services): Handlers {
             cwd: w.worktreePath,
             input: prompt,
             timeoutMs: PR_SUMMARY_TIMEOUT_MS,
+            signal,
             // The run's cost is the task's, like its Claude Code tabs.
             env: {
               ...telemetryEnv(
@@ -2710,6 +2709,7 @@ export function createHandlers(s: Services): Handlers {
           cwd: w.worktreePath,
           input: prompt,
           timeoutMs: PR_SUMMARY_TIMEOUT_MS,
+          signal,
           env: prOpencodeEnv({}, deny),
         },
       );
@@ -2820,10 +2820,17 @@ export function createHandlers(s: Services): Handlers {
                 return async () =>
                   (await readClaudeTurns(file, { fromByte: size })).turns;
               }
-              const session = tab.opencodeSession;
               const from = Date.now() - 1000;
-              return async () =>
-                session ? (s.opencodeTurnsSince?.(session, from) ?? []) : [];
+              const dirs = folderPaths(tab.cwd);
+              // Looked up at each read: /new in the tab moves it to another session.
+              return async () => {
+                const session =
+                  s.opencodeLatestSession?.(dirs, since)?.id ??
+                  tab.opencodeSession;
+                return session
+                  ? (s.opencodeTurnsSince?.(session, from) ?? [])
+                  : [];
+              };
             },
             canType: () => {
               const v = activity.view(tab.id);

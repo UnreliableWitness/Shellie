@@ -26,7 +26,9 @@ descriptions were thin: they never said how the problem was solved or checked. I
   session itself (Claude: the transcript from the byte it had before the request; OpenCode: the session's turns from
   the request time). It wants the text between `<!-- shellie-pr -->` and `<!-- /shellie-pr -->`.
   - A finished turn without the markers falls back at once, after one more read 1.5 s later.
-  - A finished turn before the request line is even in the session does not count.
+  - A finished turn before the request line is even in the session does not count, but a line still missing after
+    20 s falls back: the tab moved to another session (`/clear`, `/resume`, OpenCode's `/new`) or it is another
+    tab's. For OpenCode, the session is looked up again at each read.
   - 3 minutes, or the tab exiting, also falls back.
   - The request file is removed in every case.
 - **No traces:**
@@ -43,7 +45,9 @@ descriptions were thin: they never said how the problem was solved or checked. I
   The writer:
   - Claude Code with the model from Settings › Agents and terminals › *PR description model* (Sonnet default, or
     Haiku).
-  - When Claude Code is missing (detection says so, or the run finds no `claude`), OpenCode:
+  - When Claude Code is missing, OpenCode. Missing means detection says so, or the run finds no `claude`:
+    `programMissing` checks ENOENT, exit 127, or PowerShell's "not recognized" / `CommandNotFoundException`; an
+    error such as "model not found" does not count. The OpenCode run:
     `opencode run --format json --title "Shellie PR description"`, prompt on stdin. Its inline config denies edit,
     bash and webfetch, and the worktree's secret files for read. Its session is left out of the task's own sessions
     by that title.
@@ -57,8 +61,10 @@ descriptions were thin: they never said how the problem was solved or checked. I
   - `PrDrafts` with the `prDrafts:get|write|skip|edit` channels and the `prDrafts:changed` event replace
     `tasks:prSummary` and the renderer's module map.
   - Leaving Finish to look at the tab ("Show tab") and coming back shows the live state.
-  - Skip aborts in main, so a late answer is ignored. Write again stops the running one.
-  - One task's repos are written one after the other, so a tab is never asked twice at once.
+  - Skip aborts in main, so a late answer is ignored. Write again stops the running one, and a headless process
+    is killed (`runWithInput` takes a signal).
+  - Only asking a tab is queued per task, so a tab is never asked for two repos at once. Headless runs for several
+    repos still run side by side.
   - Drafts are dropped once the task is done or discarded.
 - **Field:** "Asking Claude Code…" / "Claude Code is waiting for you" with Show tab and Skip; "Writing it without the
   agent tab…" after a fallback. When ready: "Written by <tab> from this task's session.", or the reason it was written
@@ -84,3 +90,7 @@ descriptions were thin: they never said how the problem was solved or checked. I
 - A tab resumed with `--continue` (no `sessionId`) is never asked.
 - An OpenCode tab's session is the newest in its folder, so two OpenCode tabs in one folder may read each other's.
 - A PR that Finish links (already open) still keeps its description.
+- The hub's mute is used up by the first `idle`/`done` after the request is typed, so a tab that reports one early
+  can still notify when the real answer ends (cosmetic).
+- Reviewed twice by a Fable advisor (plan and branch). Everything found was fixed except the cosmetic mute and the
+  unverified real-tab run above.

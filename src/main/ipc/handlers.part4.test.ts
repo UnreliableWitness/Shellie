@@ -18,6 +18,7 @@ import { fakeCrypto } from '../test-helpers/fakeCrypto';
 import { GitAuthError, GitClient } from '../services/GitClient';
 import { TaskStore } from '../services/TaskStore';
 import { NoopTelemetry } from '../telemetry/AppInsightsClient';
+import { ExitError } from '../services/prSummary';
 import type { WorkspaceDetector } from '../workspaces/WorkspaceDetector';
 import { addOrigin, commitFile, git, makeRepo } from '../test-helpers/gitRepo';
 import { AdoError, CODE_WRITE_DENIED } from '../services/AdoClient';
@@ -398,7 +399,7 @@ describe('handlers: finish with a pull request', () => {
       });
       commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
       hx.services.runAgent = async () => {
-        throw new Error('Claude Code (claude) was not found');
+        throw new ExitError('Claude Code (claude) was not found', 127, '');
       };
       expect(await hx.h['prDrafts:write'](hx.t.id, 'home')).toMatchObject({
         status: 'failed',
@@ -457,7 +458,7 @@ describe('handlers: finish with a pull request', () => {
           env: o.env,
         });
         if (calls.length === 1)
-          throw new Error('Claude Code (claude) was not found');
+          throw new ExitError('Claude Code (claude) was not found', 127, '');
         return [
           JSON.stringify({ type: 'step_start', sessionID: 'ses_1' }),
           JSON.stringify({

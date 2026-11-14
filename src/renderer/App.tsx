@@ -72,7 +72,7 @@ function Page() {
     case 'setup':
       return <SetupScreen taskId={screen.taskId} />;
     case 'finish':
-      return <FinishScreen taskId={screen.taskId} />;
+      return <FinishScreen key={screen.taskId} taskId={screen.taskId} />;
     case 'add-repo':
       return <AddRepoScreen key={screen.folder ?? ''} folder={screen.folder} />;
     case 'connect':

@@ -229,6 +229,22 @@ export function tidySummary(text: string): string {
   return `${(nl > PR_SUMMARY_MAX / 2 ? head.slice(0, nl) : head).trimEnd()}…`;
 }
 
+/**
+ * Whether a failed run means the program is not installed: the spawn found nothing, the login shell said so (exit
+ * 127), or Windows PowerShell could not resolve the command. A real error of the program (say, an unknown model) is
+ * not.
+ */
+export function programMissing(e: unknown): boolean {
+  if ((e as NodeJS.ErrnoException | null)?.code === 'ENOENT') return true;
+  if (!(e instanceof ExitError)) return false;
+  return (
+    e.exitCode === 127 ||
+    /is not recognized as (the )?name of a cmdlet|CommandNotFoundException/i.test(
+      e.message,
+    )
+  );
+}
+
 /** A run that exited non-zero: the message as before, plus the exit code and what the program printed on stdout. */
 export class ExitError extends Error {
   constructor(
@@ -252,9 +268,12 @@ export function runWithInput(
     input: string;
     timeoutMs: number;
     env?: Record<string, string>;
+    /** Stops the run: the process is killed and the promise rejects with `stopped`. */
+    signal?: AbortSignal;
   },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (o.signal?.aborted) return reject(new Error('stopped'));
     const child = spawn(command, args, {
       cwd: o.cwd,
       env: { ...process.env, ...o.env, ...env },
@@ -264,10 +283,16 @@ export function runWithInput(
     let out = '';
     let err = '';
     let timedOut = false;
+    let stopped = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, o.timeoutMs);
+    const onAbort = () => {
+      stopped = true;
+      child.kill();
+    };
+    o.signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (d: Buffer) => {
       if (out.length < 4_000_000) out += d.toString();
     });
@@ -276,10 +301,13 @@ export function runWithInput(
     });
     child.on('error', (e) => {
       clearTimeout(timer);
+      o.signal?.removeEventListener('abort', onAbort);
       reject(e);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      o.signal?.removeEventListener('abort', onAbort);
+      if (stopped) return reject(new Error('stopped'));
       if (timedOut)
         return reject(
           new Error(`timed out after ${Math.round(o.timeoutMs / 1000)} s`),

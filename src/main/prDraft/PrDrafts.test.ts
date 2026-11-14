@@ -182,27 +182,67 @@ describe('PrDrafts', () => {
     expect(drafts.get('T').home.text).toBe('Second');
   });
 
-  it("writes one task's repos one after the other", async () => {
+  it("asks the tab for one task's repos one after the other, but runs headless ones at once", async () => {
     const order: string[] = [];
-    const first = deferred<HeadlessResult>();
+    const first = deferred<AskTabResult>();
     const { drafts } = make({
-      headless: async (_t, ws) => {
-        order.push(`start:${ws}`);
-        const r =
-          ws === 'a'
-            ? await first.promise
-            : { text: ws, agent: 'claude' as const };
-        order.push(`end:${ws}`);
-        return r;
-      },
+      pick: async (_t, ws) =>
+        tabPick(async () => {
+          order.push(`ask:${ws}`);
+          const r = ws === 'a' ? await first.promise : { text: ws };
+          order.push(`answer:${ws}`);
+          return r;
+        }),
     });
     const a = drafts.write('T', 'a');
     const b = drafts.write('T', 'b');
     await new Promise((r) => setTimeout(r, 0));
-    expect(order).toEqual(['start:a']);
-    first.resolve({ text: 'a', agent: 'claude' });
+    expect(order).toEqual(['ask:a']);
+    first.resolve({ text: 'a' });
     await Promise.all([a, b]);
-    expect(order).toEqual(['start:a', 'end:a', 'start:b', 'end:b']);
+    expect(order).toEqual(['ask:a', 'answer:a', 'ask:b', 'answer:b']);
+
+    const slow = deferred<HeadlessResult>();
+    const started: string[] = [];
+    const h = make({
+      headless: async (_t, ws) => {
+        started.push(ws);
+        return ws === 'a' ? slow.promise : { text: ws, agent: 'claude' };
+      },
+    });
+    const ha = h.drafts.write('T', 'a');
+    expect(await h.drafts.write('T', 'b')).toMatchObject({ text: 'b' });
+    expect(started).toEqual(['a', 'b']);
+    slow.resolve({ text: 'a', agent: 'claude' });
+    await ha;
+  });
+
+  it('passes the abort to a headless run on Write again', async () => {
+    const signals: AbortSignal[] = [];
+    const { drafts } = make({
+      headless: (_t, _w, signal) => {
+        signals.push(signal);
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () =>
+            resolve({ error: 'stopped', reason: 'failed', agent: 'claude' }),
+          ),
+        );
+      },
+    });
+    const a = drafts.write('T', 'home');
+    await new Promise((r) => setTimeout(r, 0));
+    void drafts.write('T', 'home');
+    expect(signals[0].aborted).toBe(true);
+    await a;
+  });
+
+  it('a finish that throws does not leave the draft stuck', async () => {
+    const { drafts } = make({
+      finish: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(await drafts.write('T', 'home')).toMatchObject({ status: 'failed' });
   });
 
   it('keeps an edit, and forgets a task', async () => {

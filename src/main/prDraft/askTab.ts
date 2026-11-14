@@ -1,6 +1,6 @@
 import type { AttentionState } from '../../shared/attention';
 import type { Turn } from '../brain/sessionDigest';
-import { readReply } from './protocol';
+import { hasLine, readReply } from './protocol';
 
 /** How long Shellie waits for the tab's answer before writing the description without it. */
 export const TAB_TIMEOUT_MS = 180_000;
@@ -10,6 +10,11 @@ export const SUBMIT_DELAY_MS = 150;
 export const POLL_MS = 2_000;
 /** After a finished turn without the marked reply, the session is read again this long later before giving up. */
 export const SETTLE_MS = 1_500;
+/**
+ * A request line not in the session after this long went somewhere Shellie does not read (the tab moved to another
+ * session with /clear or /resume, or it is another tab's session): the description is then written without the tab.
+ */
+export const LINE_WAIT_MS = 20_000;
 
 export type AskTabDeps = {
   /** The request line typed into the tab. */
@@ -58,14 +63,16 @@ export async function askTab(
     d.mute();
     muted = true;
     d.type(d.line);
+    // Enter goes even after an abort: a line left in the prompt box would join the next thing typed there.
     await new Promise<void>((resolve) => {
       cleanups.push(d.setTimer(resolve, SUBMIT_DELAY_MS));
     });
-    if (signal.aborted) return { aborted: true };
     d.type('\r');
+    if (signal.aborted) return { aborted: true };
     const result = await new Promise<AskTabResult>((resolve) => {
       let done = false;
       let checking = false;
+      let seen = false;
       const finish = (r: AskTabResult) => {
         if (done) return;
         done = true;
@@ -76,17 +83,23 @@ export async function askTab(
         if (done || checking) return;
         checking = true;
         try {
-          const r = readReply(await read(), d.line);
+          const turns = await read();
+          if (!seen && hasLine(turns, d.line)) seen = true;
+          const r = readReply(turns, d.line);
           if (r.kind === 'reply') finish({ text: r.text });
           else if (r.kind === 'unmarked' && ended) {
             // The last text may not be written yet when the turn's end is reported: read once more a little later.
             cleanups.push(
               d.setTimer(() => {
                 void (async () => {
-                  const again = readReply(await read(), d.line);
-                  if (again.kind === 'reply') finish({ text: again.text });
-                  else if (again.kind === 'unmarked')
+                  try {
+                    const again = readReply(await read(), d.line);
+                    if (again.kind === 'reply') finish({ text: again.text });
+                    else if (again.kind === 'unmarked')
+                      finish({ reason: 'no-reply' });
+                  } catch {
                     finish({ reason: 'no-reply' });
+                  }
                 })();
               }, SETTLE_MS),
             );
@@ -126,6 +139,19 @@ export async function askTab(
           () => finish({ reason: 'timeout' }),
           d.timeoutMs ?? TAB_TIMEOUT_MS,
         ),
+      );
+      cleanups.push(
+        d.setTimer(() => {
+          void (async () => {
+            if (done || seen) return;
+            try {
+              if (hasLine(await read(), d.line)) seen = true;
+            } catch {
+              // Unreadable: treated as not there.
+            }
+            if (!seen) finish({ reason: 'no-reply' });
+          })();
+        }, LINE_WAIT_MS),
       );
     });
     // A turn that ended with the reply used up the mute; anything else may still be running.

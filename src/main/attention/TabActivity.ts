@@ -1,5 +1,20 @@
 import type { AttentionState } from '../../shared/attention';
-import { unsentAfter } from '../services/ClaudeRetheme';
+
+// eslint-disable-next-line no-control-regex -- matching escape sequences is the point
+const REPORTS = /\x1b\[[IO]|\x1b\[<[0-9;]*[Mm]|\x1b\[M[\s\S]{3}/g;
+
+/**
+ * Whether the prompt box may hold something after the developer's input `data`. Stricter than the theme restart's
+ * rule: any key since the last Enter or Ctrl+C counts, arrows too (Up recalls an earlier prompt, Esc opens a picker),
+ * so Shellie never types into a box that holds anything. Only focus and mouse reports are not keys.
+ */
+export function pendingAfter(pending: boolean, data: string): boolean {
+  const keys = data.replace(REPORTS, '');
+  if (!keys) return pending;
+  const end = Math.max(keys.lastIndexOf('\r'), keys.lastIndexOf('\x03'));
+  if (end < 0) return true;
+  return keys.length > end + 1;
+}
 
 type Tab = {
   /** The agent's last reported state since the tab (re)started; null when it reported none yet (a resumed tab). */
@@ -49,8 +64,10 @@ export class TabActivity {
     return t;
   }
 
+  /** Output of any terminal; only agent tabs (started through `spawned`) are kept. */
   output(id: string): void {
-    this.tab(id).lastOutput = this.now();
+    const t = this.tabs.get(id);
+    if (t) t.lastOutput = this.now();
   }
 
   status(id: string, state: AttentionState): void {
@@ -61,8 +78,8 @@ export class TabActivity {
   }
 
   input(id: string, data: string): void {
-    const t = this.tab(id);
-    t.typed = unsentAfter(t.typed, data);
+    const t = this.tabs.get(id);
+    if (t) t.typed = pendingAfter(t.typed, data);
   }
 
   exit(id: string): void {

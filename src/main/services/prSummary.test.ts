@@ -13,6 +13,7 @@ import {
   WORK_ITEM_MAX,
   prOpencodeArgs,
   prOpencodeEnv,
+  programMissing,
   type PrSummaryContext,
 } from './prSummary';
 
@@ -290,5 +291,48 @@ describe('runWithInput', () => {
         { cwd: process.cwd(), input: '', timeoutMs: 200 },
       ),
     ).rejects.toThrow(/timed out/);
+  });
+});
+
+describe('programMissing', () => {
+  it('knows a missing program from a failing one', () => {
+    expect(
+      programMissing(Object.assign(new Error('spawn'), { code: 'ENOENT' })),
+    ).toBe(true);
+    expect(
+      programMissing(
+        new ExitError('Claude Code (claude) was not found', 127, ''),
+      ),
+    ).toBe(true);
+    expect(
+      programMissing(
+        new ExitError(
+          "claude : The term 'claude' is not recognized as the name of a cmdlet, function, script file",
+          1,
+          '',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      programMissing(new ExitError('model not found: claude-x', 1, '')),
+    ).toBe(false);
+    expect(
+      programMissing(new Error('Claude Code (claude) was not found')),
+    ).toBe(false);
+  });
+});
+
+describe('runWithInput abort', () => {
+  it('kills the run and rejects with stopped', async () => {
+    const ac = new AbortController();
+    const p = runWithInput(
+      {
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 10000)'],
+      },
+      { cwd: process.cwd(), input: '', timeoutMs: 20_000, signal: ac.signal },
+    );
+    setTimeout(() => ac.abort(), 50);
+    await expect(p).rejects.toThrow('stopped');
   });
 });

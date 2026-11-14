@@ -89,15 +89,31 @@ export class PrDrafts {
     const ac = new AbortController();
     this.running.set(k, ac);
     this.set(taskId, workspaceId, blank());
-    const before = this.queues.get(taskId) ?? Promise.resolve();
-    const run = before
-      .catch(() => undefined)
-      .then(() => this.run(taskId, workspaceId, ac.signal));
-    this.queues.set(taskId, run);
-    return run.finally(() => {
+    return this.run(taskId, workspaceId, ac.signal).finally(() => {
       if (this.running.get(k) === ac) this.running.delete(k);
-      if (this.queues.get(taskId) === run) this.queues.delete(taskId);
     });
+  }
+
+  /** Runs `fn` after the task's earlier queued ones: a tab is asked for one repo at a time. */
+  private serial<T>(taskId: string, fn: () => Promise<T>): Promise<T> {
+    const before = this.queues.get(taskId) ?? Promise.resolve();
+    const run = before.catch(() => undefined).then(fn);
+    this.queues.set(taskId, run);
+    void run
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.queues.get(taskId) === run) this.queues.delete(taskId);
+      });
+    return run;
+  }
+
+  /** The written text as the PR gets it; empty when finishing it failed. */
+  private finished(taskId: string, ws: string, text: string): string {
+    try {
+      return this.d.finish(taskId, ws, text);
+    } catch {
+      return '';
+    }
   }
 
   skip(taskId: string, workspaceId: string): void {
@@ -147,50 +163,59 @@ export class PrDrafts {
         ...(chars !== undefined ? { chars } : {}),
       });
 
-    let reason: PrFallbackReason;
-    let picked: PickResult;
-    try {
-      picked = await this.d.pick(taskId, ws);
-    } catch {
-      picked = { reason: 'no-tab' };
-    }
-    if (signal.aborted) return current();
-    if ('tab' in picked) {
-      const tab = picked.tab;
-      this.set(taskId, ws, {
-        ...blank(),
-        status: 'asking-tab',
-        source: 'tab',
-        tab,
-      });
-      let r: AskTabResult;
-      try {
-        r = await picked.ask(signal, (blocked) => {
-          if (signal.aborted) return;
-          this.set(taskId, ws, {
-            ...current(),
-            status: blocked ? 'tab-blocked' : 'asking-tab',
-          });
+    // Only asking a tab waits for the task's other repos; a headless run never does.
+    const asked = await this.serial(
+      taskId,
+      async (): Promise<
+        { draft: PrDraft } | { reason: PrFallbackReason } | { aborted: true }
+      > => {
+        if (signal.aborted) return { aborted: true };
+        let picked: PickResult;
+        try {
+          picked = await this.d.pick(taskId, ws);
+        } catch {
+          picked = { reason: 'no-tab' };
+        }
+        if (signal.aborted) return { aborted: true };
+        if (!('tab' in picked)) return { reason: picked.reason };
+        const tab = picked.tab;
+        this.set(taskId, ws, {
+          ...blank(),
+          status: 'asking-tab',
+          source: 'tab',
+          tab,
         });
-      } catch {
-        r = { reason: 'no-reply' };
-      }
-      if (signal.aborted || 'aborted' in r) return current();
-      if ('text' in r) {
-        const text = this.d.finish(taskId, ws, r.text);
-        if (text) {
-          report({ ok: true, source: 'tab', agent: picked.agent }, text.length);
-          return this.set(taskId, ws, {
+        let r: AskTabResult;
+        try {
+          r = await picked.ask(signal, (blocked) => {
+            if (signal.aborted) return;
+            this.set(taskId, ws, {
+              ...current(),
+              status: blocked ? 'tab-blocked' : 'asking-tab',
+            });
+          });
+        } catch {
+          r = { reason: 'no-reply' };
+        }
+        if (signal.aborted || 'aborted' in r) return { aborted: true };
+        if (!('text' in r)) return { reason: r.reason };
+        const text = this.finished(taskId, ws, r.text);
+        if (!text) return { reason: 'no-reply' };
+        report({ ok: true, source: 'tab', agent: picked.agent }, text.length);
+        return {
+          draft: this.set(taskId, ws, {
             ...blank(),
             status: 'ready',
             source: 'tab',
             tab,
             text,
-          });
-        }
-        reason = 'no-reply';
-      } else reason = r.reason;
-    } else reason = picked.reason;
+          }),
+        };
+      },
+    );
+    if ('aborted' in asked) return current();
+    if ('draft' in asked) return asked.draft;
+    const reason = asked.reason;
 
     const words = PR_FALLBACK_NOTE[reason];
     const note = words ? `Written without the agent tab: ${words}.` : null;
@@ -205,7 +230,7 @@ export class PrDrafts {
     if (signal.aborted) return current();
     const base = { source: 'headless', reason } as const;
     if ('text' in h) {
-      const text = this.d.finish(taskId, ws, h.text);
+      const text = this.finished(taskId, ws, h.text);
       if (text) {
         report({ ok: true, ...base, agent: h.agent }, text.length);
         return this.set(taskId, ws, {

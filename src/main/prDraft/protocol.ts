@@ -48,6 +48,10 @@ export function betweenMarks(text: string): string | null {
   return inner || null;
 }
 
+/** Whether the session has the request typed as `line`. */
+export const hasLine = (turns: readonly Turn[], line: string): boolean =>
+  turns.some((t) => t.who === 'Developer' && t.text.trim() === line);
+
 /**
  * What the session answered to the request typed as `line`: `reply` (the marked text) once an agent turn after the
  * line has it; `unmarked` when the agent answered after the line without it (asked something, refused); `pending`

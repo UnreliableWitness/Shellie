@@ -40,9 +40,17 @@ describe('TabActivity', () => {
     a.input('t', 'x');
     a.input('t', '\x03');
     expect(a.view('t')?.typed).toBe(false);
-    // Arrow keys and focus reports change nothing.
-    a.input('t', '\x1b[A\x1b[I');
+    // Focus and mouse reports are not keys.
+    a.input('t', '\x1b[I\x1b[O\x1b[<0;10;5M');
     expect(a.view('t')?.typed).toBe(false);
+    // Up recalls an earlier prompt, Esc opens a picker: the box may hold something.
+    a.input('t', '\x1b[A');
+    expect(a.view('t')?.typed).toBe(true);
+    a.input('t', '\r');
+    a.input('t', '\x1b');
+    expect(a.view('t')?.typed).toBe(true);
+    a.input('t', 'sent\rnext');
+    expect(a.view('t')?.typed).toBe(true);
   });
 
   it('starts clean when the tab starts again, and forgets it on exit', () => {
@@ -65,5 +73,12 @@ describe('TabActivity', () => {
     off();
     a.status('t', 'done');
     expect(seen).toEqual(['t:working', 'u:done']);
+  });
+
+  it('keeps only agent tabs it was told about', () => {
+    const { a } = make();
+    a.output('shell');
+    a.input('shell', 'ls');
+    expect(a.view('shell')).toBeNull();
   });
 });
