@@ -8,8 +8,15 @@ import {
   SECRET_BYTES,
   type ReaderMarkSet,
 } from '../../shared/reader';
+import { brainReadsAndPages } from '../brain/reads';
 import { buildBrain } from '../reader/build';
 import { ReadingService, type ReadingWorkItem } from './ReadingService';
+
+vi.mock('../brain/reads', async (importOriginal) => {
+  const m = await importOriginal<typeof import('../brain/reads')>();
+  return { ...m, brainReadsAndPages: vi.fn(m.brainReadsAndPages) };
+});
+const readsOf = vi.mocked(brainReadsAndPages);
 
 let root: string;
 const write = async (dir: string, rel: string, text: string) => {
@@ -81,6 +88,7 @@ beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-reading-'));
 });
 afterEach(async () => {
+  readsOf.mockClear();
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -228,5 +236,73 @@ describe('ReadingService', () => {
     expect(await titles()).toEqual(['Returns, rewritten']);
     now = 6 * 60_000;
     expect(await titles()).toEqual(['Returns, once more']);
+  });
+
+  it('reads the brains at the same time, and lists them in their own order', async () => {
+    await fill('b1');
+    await fill('b2');
+    let open!: () => void;
+    const held = new Promise<void>((r) => (open = r));
+    const real = readsOf.getMockImplementation()!;
+    readsOf.mockImplementation(async (dir) => {
+      await held;
+      return real(dir);
+    });
+    try {
+      const service = new ReadingService({
+        brains: () => [brain('b1'), brain('b2')],
+        workItems: async () => [],
+        marks: () => ({}),
+      });
+      const listed = service.list();
+      await vi.waitFor(() => expect(readsOf).toHaveBeenCalledTimes(2));
+      open();
+      expect((await listed).map((b) => b.brainId)).toEqual(['b1', 'b2']);
+    } finally {
+      readsOf.mockImplementation(real);
+    }
+  });
+
+  it('reads an expired brain once for callers that ask at the same time', async () => {
+    await fill('b1');
+    let now = 0;
+    const service = new ReadingService({
+      brains: () => [brain('b1')],
+      workItems: async () => [],
+      marks: () => ({}),
+      now: () => now,
+    });
+    await service.list();
+    expect(readsOf).toHaveBeenCalledTimes(1);
+    now = 6 * 60_000;
+    const [a, b] = await Promise.all([service.list(), service.list()]);
+    expect(readsOf).toHaveBeenCalledTimes(2);
+    expect(a).toEqual(b);
+  });
+
+  it('times each list, with the brains it had to read', async () => {
+    await fill('b1');
+    await fill('b2');
+    const timing = vi.fn();
+    const service = new ReadingService({
+      brains: () => [
+        brain('b1'),
+        brain('b2'),
+        brain('old', { archived: true }),
+      ],
+      workItems: async () => [],
+      marks: () => ({}),
+      timing,
+    });
+    await service.list();
+    expect(timing).toHaveBeenCalledTimes(1);
+    expect(timing.mock.calls[0][0]).toMatchObject({ coldBrains: 2 });
+    service.brainChanged('b2');
+    await service.list();
+    expect(timing).toHaveBeenCalledTimes(2);
+    expect(timing.mock.calls[1][0]).toMatchObject({ coldBrains: 1 });
+    for (const [t] of timing.mock.calls)
+      for (const k of ['ms', 'workItemsMs', 'coldMs'])
+        expect(t[k]).toBeGreaterThanOrEqual(0);
   });
 });
