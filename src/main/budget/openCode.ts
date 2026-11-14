@@ -267,7 +267,11 @@ export class OpenCodeReader {
       const ids = topSessions(db, dirs, since);
       if (ids.length === 0) return [];
       const bySession = textTurns(
-        textRows(db, `part.session_id IN (${ids.map(() => '?').join(', ')})`, ids),
+        textRows(
+          db,
+          `part.session_id IN (${ids.map(() => '?').join(', ')})`,
+          ids,
+        ),
       );
       return ids.map((id) =>
         (bySession.get(id) ?? []).map(({ who, text }) => ({ who, text })),
@@ -360,7 +364,10 @@ function textTurns(rows: TextRow[]): Map<string, TurnAt[]> {
     let turns = bySession.get(r.session_id);
     if (!turns) bySession.set(r.session_id, (turns = []));
     const prev = turns.at(-1);
-    if (prev?.who === who && (who === 'Agent' || lastMessage === r.message_id)) {
+    if (
+      prev?.who === who &&
+      (who === 'Agent' || lastMessage === r.message_id)
+    ) {
       prev.text = `${prev.text}\n${text}`;
       prev.at = r.created;
     } else turns.push({ who, text, at: r.created });
@@ -379,6 +386,8 @@ function topSessions(
     .prepare(
       `SELECT id FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_created, id`,
     )
-    .all(...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`) as { id: string }[];
+    .all(...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`) as {
+    id: string;
+  }[];
   return rows.map((r) => r.id);
 }

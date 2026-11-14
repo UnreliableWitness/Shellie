@@ -464,15 +464,45 @@ describe('OpenCodeReader session reads for the PR draft', () => {
     ) =>
       db
         .prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, 'p', o.parent ?? null, id, o.dir ?? '/w', o.title ?? 'New session', '1', created, updated);
+        .run(
+          id,
+          'p',
+          o.parent ?? null,
+          id,
+          o.dir ?? '/w',
+          o.title ?? 'New session',
+          '1',
+          created,
+          updated,
+        );
     let n = 0;
-    const say = (sessionId: string, role: string, t: number, parts: (string | Record<string, unknown>)[]) => {
+    const say = (
+      sessionId: string,
+      role: string,
+      t: number,
+      parts: (string | Record<string, unknown>)[],
+    ) => {
       const id = `msg_${++n}`;
-      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(id, sessionId, t, t, JSON.stringify({ role }));
+      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(
+        id,
+        sessionId,
+        t,
+        t,
+        JSON.stringify({ role }),
+      );
       parts.forEach((p, i) =>
         db
           .prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)')
-          .run(`prt_${n}_${i}`, id, sessionId, t + i, t + i, JSON.stringify(typeof p === 'string' ? { type: 'text', text: p } : p)),
+          .run(
+            `prt_${n}_${i}`,
+            id,
+            sessionId,
+            t + i,
+            t + i,
+            JSON.stringify(
+              typeof p === 'string' ? { type: 'text', text: p } : p,
+            ),
+          ),
       );
     };
     return { file, session, say, close: () => db.close() };
@@ -489,9 +519,14 @@ describe('OpenCodeReader session reads for the PR draft', () => {
     close();
     const r = new OpenCodeReader(file);
     expect(r.latestSession(['/w'])).toEqual({ id: 'ses_new', updatedAt: 900 });
-    expect(r.latestSession(['/w'], 150)).toEqual({ id: 'ses_new', updatedAt: 900 });
+    expect(r.latestSession(['/w'], 150)).toEqual({
+      id: 'ses_new',
+      updatedAt: 900,
+    });
     expect(r.latestSession(['/w'], 300)).toBeNull();
-    expect(new OpenCodeReader('/nope/opencode.db').latestSession(['/w'])).toBeNull();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').latestSession(['/w']),
+    ).toBeNull();
   });
 
   it('turnsSince gives the turns from a time on, with when each was said', () => {
@@ -500,10 +535,18 @@ describe('OpenCodeReader session reads for the PR draft', () => {
     say('ses_a', 'user', 100, ['Fix it']);
     say('ses_a', 'assistant', 110, ['Fixed.']);
     say('ses_a', 'user', 200, ['Shellie: write the pull request description']);
-    say('ses_a', 'assistant', 210, ['Reading.', { type: 'tool', tool: 'read', state: { output: 'x'.repeat(1000) } }, 'Here it is.']);
+    say('ses_a', 'assistant', 210, [
+      'Reading.',
+      { type: 'tool', tool: 'read', state: { output: 'x'.repeat(1000) } },
+      'Here it is.',
+    ]);
     close();
     expect(new OpenCodeReader(file).turnsSince('ses_a', 200)).toEqual([
-      { who: 'Developer', text: 'Shellie: write the pull request description', at: 200 },
+      {
+        who: 'Developer',
+        text: 'Shellie: write the pull request description',
+        at: 200,
+      },
       { who: 'Agent', text: 'Reading.\nHere it is.', at: 210 },
     ]);
     expect(new OpenCodeReader(file).turnsSince('ses_none', 0)).toEqual([]);

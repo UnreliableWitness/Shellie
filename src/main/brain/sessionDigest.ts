@@ -40,9 +40,7 @@ const textOf = (content: unknown): string => {
 };
 
 /** One transcript line's turn, with when it was said (`timestamp`, epoch ms); null for anything that is not one. */
-export function lineTurn(
-  raw: string,
-): (Turn & { at: number | null }) | null {
+export function lineTurn(raw: string): (Turn & { at: number | null }) | null {
   let l: Line;
   try {
     l = JSON.parse(raw) as Line;

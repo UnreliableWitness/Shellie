@@ -39,7 +39,12 @@ describe('withoutPrRequests', () => {
 
   it('keeps it out of the lessons digest', () => {
     const digest = sessionDigest('T', [
-      withoutPrRequests([dev('Work'), claude('Done'), dev(line), claude(marked('secret sauce'))]),
+      withoutPrRequests([
+        dev('Work'),
+        claude('Done'),
+        dev(line),
+        claude(marked('secret sauce')),
+      ]),
     ]);
     expect(digest).not.toContain('secret sauce');
     expect(digest).not.toContain('Shellie: write');
@@ -48,7 +53,9 @@ describe('withoutPrRequests', () => {
 
 describe('betweenMarks', () => {
   it('takes the text between the markers, trimmed', () => {
-    expect(betweenMarks(marked(' ## What changed\n- a '))).toBe('## What changed\n- a');
+    expect(betweenMarks(marked(' ## What changed\n- a '))).toBe(
+      '## What changed\n- a',
+    );
   });
   it('is null without both markers or with nothing between them', () => {
     expect(betweenMarks('no markers')).toBeNull();
@@ -59,19 +66,25 @@ describe('betweenMarks', () => {
 
 describe('readReply', () => {
   it('is pending until the request line is in the session', () => {
-    expect(readReply([dev('Work'), claude('Done')], line)).toEqual({ kind: 'pending' });
+    expect(readReply([dev('Work'), claude('Done')], line)).toEqual({
+      kind: 'pending',
+    });
   });
   it('is pending when nothing came after the line yet', () => {
     expect(readReply([dev(line)], line)).toEqual({ kind: 'pending' });
   });
   it('finds the marked reply in any agent turn after the line', () => {
-    expect(readReply([dev(line), agent('Reading.'), agent(marked('Text'))], line)).toEqual({
+    expect(
+      readReply([dev(line), agent('Reading.'), agent(marked('Text'))], line),
+    ).toEqual({
       kind: 'reply',
       text: 'Text',
     });
   });
   it('is unmarked when the agent answered without the markers', () => {
-    expect(readReply([dev(line), claude('Which base branch?')], line)).toEqual({ kind: 'unmarked' });
+    expect(readReply([dev(line), claude('Which base branch?')], line)).toEqual({
+      kind: 'unmarked',
+    });
   });
   it('looks after the latest request line only', () => {
     const turns = [dev(line), claude(marked('Old')), dev(line)];

@@ -10,11 +10,21 @@ import {
   readClaudeTurns,
 } from './claudeTranscript';
 
-const at = (s: number) => new Date(Date.UTC(2026, 10, 14, 10, 0, s)).toISOString();
+const at = (s: number) =>
+  new Date(Date.UTC(2026, 10, 14, 10, 0, s)).toISOString();
 const user = (text: string, ts = at(0), extra: Record<string, unknown> = {}) =>
-  JSON.stringify({ type: 'user', timestamp: ts, message: { content: text }, ...extra });
+  JSON.stringify({
+    type: 'user',
+    timestamp: ts,
+    message: { content: text },
+    ...extra,
+  });
 const claude = (parts: unknown[], ts = at(1)) =>
-  JSON.stringify({ type: 'assistant', timestamp: ts, message: { content: parts } });
+  JSON.stringify({
+    type: 'assistant',
+    timestamp: ts,
+    message: { content: parts },
+  });
 const toolResult = (content: string) =>
   JSON.stringify({
     type: 'user',
@@ -36,10 +46,13 @@ describe('readClaudeTurns', () => {
   const lines = [
     user('<system-reminder>ignored</system-reminder>'),
     user('Fix the login bug', at(0)),
-    claude([
-      { type: 'text', text: 'Looking at auth.ts.' },
-      { type: 'tool_use', name: 'Read', input: {} },
-    ], at(1)),
+    claude(
+      [
+        { type: 'text', text: 'Looking at auth.ts.' },
+        { type: 'tool_use', name: 'Read', input: {} },
+      ],
+      at(1),
+    ),
     toolResult('file contents'),
     claude([{ type: 'text', text: 'The token expiry was off by one.' }], at(3)),
     user('meta', at(4), { isMeta: true }),
@@ -49,7 +62,9 @@ describe('readClaudeTurns', () => {
 
   it('gives the same turns as sessionTurns, with when each was said', async () => {
     const { turns } = await readClaudeTurns(file(lines));
-    expect(turns.map(({ who, text }) => ({ who, text }))).toEqual(sessionTurns(lines));
+    expect(turns.map(({ who, text }) => ({ who, text }))).toEqual(
+      sessionTurns(lines),
+    );
     expect(turns[0].at).toBe(Date.parse(at(0)));
     // Merged Claude texts carry the time of the last one.
     expect(turns[1].at).toBe(Date.parse(at(3)));
@@ -63,11 +78,20 @@ describe('readClaudeTurns', () => {
   it('skips tool output and over-long lines without parsing them', async () => {
     const big = toolResult('x'.repeat(200_000));
     const long = user('y'.repeat(LINE_MAX + 1));
-    const f = file([user('Hi'), big, long, claude([{ type: 'text', text: 'Hello' }])]);
+    const f = file([
+      user('Hi'),
+      big,
+      long,
+      claude([{ type: 'text', text: 'Hello' }]),
+    ]);
     const parse = vi.spyOn(JSON, 'parse');
     const { turns } = await readClaudeTurns(f);
     expect(turns.map((t) => t.text)).toEqual(['Hi', 'Hello']);
-    expect(parse.mock.calls.some(([s]) => typeof s === 'string' && s.length > 150_000)).toBe(false);
+    expect(
+      parse.mock.calls.some(
+        ([s]) => typeof s === 'string' && s.length > 150_000,
+      ),
+    ).toBe(false);
   });
 
   it('reads only what came after fromByte, and reports the size', async () => {
@@ -84,13 +108,18 @@ describe('readClaudeTurns', () => {
   });
 
   it('reads a missing file as no turns', async () => {
-    expect(await readClaudeTurns(path.join(dir, 'nope.jsonl'))).toEqual({ turns: [], size: 0 });
+    expect(await readClaudeTurns(path.join(dir, 'nope.jsonl'))).toEqual({
+      turns: [],
+      size: 0,
+    });
   });
 });
 
 describe('lastAgentTurnAt', () => {
   it('finds the last thing Claude said in the tail of a big file', async () => {
-    const filler = Array.from({ length: 40 }, () => toolResult('z'.repeat(20_000)));
+    const filler = Array.from({ length: 40 }, () =>
+      toolResult('z'.repeat(20_000)),
+    );
     const f = file([
       user('Start', at(0)),
       claude([{ type: 'text', text: 'Old' }], at(1)),

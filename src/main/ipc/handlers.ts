@@ -205,7 +205,6 @@ import {
   prSummaryPrompt,
   runWithInput,
   tidySummary,
-  userRequests,
 } from '../services/prSummary';
 import type { UsageReceiver } from '../usage/UsageReceiver';
 import type { UsageStore } from '../usage/UsageStore';
@@ -2566,14 +2565,12 @@ export function createHandlers(s: Services): Handlers {
       event: (n, p) => tel.event(n, p),
     });
 
-  /** What the developer typed in the task's Claude Code sessions, oldest session first (#111). */
-  const taskRequests = async (task: Task): Promise<string[]> => {
-    const out: string[] = [];
-    for (const turns of await claudeSessionTurns(task))
-      for (const t of turns)
-        if (t.who === 'Developer' && !out.includes(t.text)) out.push(t.text);
-    return out;
-  };
+  /** What was said in the task's Claude Code and OpenCode sessions, oldest session first, Shellie's own PR requests left out. */
+  const taskTurns = async (task: Task): Promise<Turn[]> =>
+    [
+      ...(await claudeSessionTurns(task)),
+      ...opencodeSessionTurns(task),
+    ].flatMap((turns) => withoutPrRequests(turns));
 
   /** What a workspace's branch did since its base; a summary must never block Finish, so a failure is null. */
   const summaryOf = (
@@ -3570,7 +3567,13 @@ export function createHandlers(s: Services): Handlers {
               ? `${task.workItem.type} ${task.workItem.id}: ${task.workItem.title}`
               : task.name,
             ...changes,
-            requests: await taskRequests(task),
+            workItem: await fs
+              .readFile(
+                path.join(task.worktreePath, '.shellie', 'task.md'),
+                'utf8',
+              )
+              .catch(() => null),
+            turns: await taskTurns(task),
             style,
           }),
         );
@@ -3583,7 +3586,7 @@ export function createHandlers(s: Services): Handlers {
             : null;
         const out = await runAgent(
           s.platform.claudeCommand(null, [
-            ...prSummaryFlags(),
+            ...prSummaryFlags(s.settings.get().prSummaryModel ?? 'sonnet'),
             ...(settings ? ['--settings', settings] : []),
           ]),
           {

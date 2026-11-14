@@ -6,6 +6,10 @@
 /** The title of Shellie's headless OpenCode run, so its session is left out of the task's own sessions. */
 export const PR_JOB_TITLE = 'Shellie PR description';
 
+/** The models the headless Claude Code writer may use (Settings › Agents and terminals). */
+export const PR_SUMMARY_MODELS = ['sonnet', 'haiku'] as const;
+export type PrSummaryModel = (typeof PR_SUMMARY_MODELS)[number];
+
 export type PrDraftStatus =
   | 'asking-tab'
   | 'tab-blocked'
