@@ -1,4 +1,5 @@
 import type { Turn } from '../brain/sessionDigest';
+import { PR_SHAPE } from '../services/prSummary';
 
 /**
  * How Shellie asks a task's agent tab for the PR description and reads the answer: one typed line that points to a
@@ -74,4 +75,38 @@ export function readReply(
     if (text) return { kind: 'reply', text };
   }
   return answered ? { kind: 'unmarked' } : { kind: 'pending' };
+}
+
+/** What the request file asks of the tab: the PR it is for, the shape and rules, and how to answer. */
+export function prRequestText(o: {
+  repo: string;
+  branch: string;
+  base: string | null;
+  worktree: string;
+  style: string | null;
+}): string {
+  return [
+    '# Pull request description',
+    '',
+    `Shellie is opening a pull request for the work in this session and asks you for its description.`,
+    '',
+    `- Repo: ${o.repo}`,
+    `- Branch: ${o.branch}${o.base ? ` (into ${o.base})` : ''}`,
+    `- Worktree: ${o.worktree}`,
+    '',
+    'Write it from what you know of this task: what was asked, how you solved it and why that way, and what you checked. Answer from the session; read a file only when you must.',
+    '',
+    PR_SHAPE,
+    ...(o.style?.trim()
+      ? [
+          '',
+          "The repo's own style guide for descriptions (it wins over the shape above):",
+          o.style.trim(),
+        ]
+      : []),
+    '',
+    'Do not edit, create or commit any file, and do not run anything that changes the repo.',
+    `Reply with the description only, between a line ${PR_MARK_OPEN} and a line ${PR_MARK_CLOSE}.`,
+    '',
+  ].join('\n');
 }

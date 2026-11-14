@@ -111,14 +111,31 @@ export function prOpencodeArgs(): string[] {
   return ['run', '--format', 'json', '--title', PR_JOB_TITLE];
 }
 
-/** The OpenCode writer only reads: editing, shell commands and fetching are denied in its inline config. */
+/**
+ * The OpenCode writer only reads: editing, shell commands and fetching are denied in its inline config, and so is
+ * reading `denyRead` (the worktree's secret files, as patterns relative to it).
+ */
 export function prOpencodeEnv(
   base: Record<string, string> = {},
+  denyRead: readonly string[] = [],
 ): Record<string, string> {
   return {
     ...base,
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
-      permission: { edit: 'deny', bash: 'deny', webfetch: 'deny' },
+      permission: {
+        edit: 'deny',
+        bash: 'deny',
+        webfetch: 'deny',
+        // The last matching rule wins: everything may be read but the secret files.
+        ...(denyRead.length > 0
+          ? {
+              read: {
+                '*': 'allow',
+                ...Object.fromEntries(denyRead.map((p) => [p, 'deny'])),
+              },
+            }
+          : {}),
+      },
     }),
   };
 }

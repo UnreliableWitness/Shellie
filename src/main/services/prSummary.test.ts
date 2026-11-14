@@ -219,6 +219,10 @@ describe('the OpenCode writer', () => {
     expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT)).toEqual({
       permission: { edit: 'deny', bash: 'deny', webfetch: 'deny' },
     });
+    expect(
+      JSON.parse(prOpencodeEnv({}, ['.env']).OPENCODE_CONFIG_CONTENT).permission
+        .read,
+    ).toEqual({ '*': 'allow', '.env': 'deny' });
   });
 });
 

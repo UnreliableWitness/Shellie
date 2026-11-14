@@ -198,6 +198,9 @@ import { changedKeys } from '../telemetry/helpers';
 import { telemetryEnv } from '../usage/telemetryEnv';
 import {
   claudeResult,
+  ExitError,
+  prOpencodeArgs,
+  prOpencodeEnv,
   PR_STYLE_FILE,
   PR_SUMMARY_ENV,
   PR_SUMMARY_TIMEOUT_MS,
@@ -233,9 +236,25 @@ import {
   contextSection,
 } from '../brain/context';
 import { sessionDigest, type Turn } from '../brain/sessionDigest';
-import { readClaudeTurns, type TurnAt } from '../sessions/claudeTranscript';
+import {
+  lastAgentTurnAt as lastClaudeTurnAt,
+  readClaudeTurns,
+  type TurnAt,
+} from '../sessions/claudeTranscript';
+import { askTab } from '../prDraft/askTab';
+import { pickTab, type TabCandidate } from '../prDraft/pickTab';
+import {
+  PrDrafts,
+  type HeadlessResult,
+  type PickResult,
+} from '../prDraft/PrDrafts';
+import { opencodeResultWithSession } from '../brain/opencodeResult';
 import type { TabActivity } from '../attention/TabActivity';
-import { withoutPrRequests } from '../prDraft/protocol';
+import {
+  prRequestLine,
+  prRequestText,
+  withoutPrRequests,
+} from '../prDraft/protocol';
 import { addSource } from '../brain/sources';
 import {
   isOpencodeModel,
@@ -393,6 +412,13 @@ export type Services = {
   claudeSessionExists?: (sessionId: string) => boolean;
   /** What was said in the top-level OpenCode sessions in `dirs` since `since` (epoch ms), oldest first (main); none when absent. */
   opencodeSessionTexts?: (dirs: readonly string[], since: number) => Turn[][];
+  /** The OpenCode session in `dirs` updated last, created since `since` (main); none when absent. */
+  opencodeLatestSession?: (
+    dirs: readonly string[],
+    since: number,
+  ) => { id: string; updatedAt: number } | null;
+  /** One OpenCode session's turns from `since` (epoch ms) on (main); none when absent. */
+  opencodeTurnsSince?: (sessionId: string, since: number) => Turn[];
   /** Where Claude Code saved a session id's transcript (default: looks in ~/.claude/projects). */
   claudeSessionFile?: (sessionId: string) => string | null;
   /** Runs a command with stdin and a time limit (default: runWithInput); tests stub Claude Code's print mode. */
@@ -2580,6 +2606,270 @@ export function createHandlers(s: Services): Handlers {
       ...opencodeSessionTurns(task),
     ].flatMap((turns) => withoutPrRequests(turns));
 
+  /** The PR heading the draft is written for: the work item, else the task name. */
+  const prHeading = (task: Task) =>
+    task.workItem
+      ? `${task.workItem.type} ${task.workItem.id}: ${task.workItem.title}`
+      : task.name;
+
+  /**
+   * The headless writer of a PR draft (#111): Claude Code in print mode, else OpenCode when Claude Code is not there,
+   * from the work item (task.md), what was said in the task's sessions, the commits and the diff. Stored secret
+   * values are sent as [NAME] and the agent may not read the worktree's secret files.
+   */
+  const prHeadless = async (
+    taskId: string,
+    workspaceId: string,
+    signal: AbortSignal,
+  ): Promise<HeadlessResult> => {
+    const task = taskById(taskId);
+    const w = workspaceById(task, workspaceId);
+    const [changes, style, workItem, turns, deny] = await Promise.all([
+      s.git.branchChanges(w.worktreePath, w),
+      fs
+        .readFile(path.join(w.worktreePath, PR_STYLE_FILE), 'utf8')
+        .catch(() => null),
+      fs
+        .readFile(path.join(task.worktreePath, '.shellie', 'task.md'), 'utf8')
+        .catch(() => null),
+      taskTurns(task),
+      existsSync(w.worktreePath)
+        ? worktreeDenyTargets(w.worktreePath)
+        : Promise.resolve([] as string[]),
+    ]);
+    if (!changes)
+      return {
+        error: 'Where the branch started is unknown',
+        reason: 'no-base',
+        agent: null,
+      };
+    const matcher = diffMatcher(task);
+    const prompt = matcher.mask(
+      prSummaryPrompt({
+        heading: prHeading(task),
+        ...changes,
+        workItem,
+        turns,
+        style,
+      }),
+      '',
+      true,
+    ).text;
+    const reasonOf = (error: string) =>
+      /timed out/.test(error) ? 'timeout' : 'failed';
+    const notFound = (e: unknown) =>
+      (e as NodeJS.ErrnoException).code === 'ENOENT' ||
+      (e instanceof ExitError && e.exitCode === 127) ||
+      /not found/.test(errorMessage(e));
+    if (signal.aborted)
+      return { error: 'Skipped', reason: 'skipped', agent: null };
+    // Claude Code unless detection already said it is missing; a run that finds no claude goes on to OpenCode.
+    if (agentsCache?.agents.claude.found !== false) {
+      try {
+        const settings =
+          deny.length > 0
+            ? (s.claudeThemeSettings?.(denyRulesFor(deny)) ?? null)
+            : null;
+        const out = await runAgent(
+          s.platform.claudeCommand(null, [
+            ...prSummaryFlags(s.settings.get().prSummaryModel ?? 'sonnet'),
+            ...(settings ? ['--settings', settings] : []),
+          ]),
+          {
+            cwd: w.worktreePath,
+            input: prompt,
+            timeoutMs: PR_SUMMARY_TIMEOUT_MS,
+            // The run's cost is the task's, like its Claude Code tabs.
+            env: {
+              ...telemetryEnv(
+                task.id,
+                s.settings.get().receiverPort,
+                s.usageDir,
+                'pr-summary',
+              ),
+              ...PR_SUMMARY_ENV,
+            },
+          },
+        );
+        return { text: claudeResult(out), agent: 'claude' };
+      } catch (e) {
+        if (!notFound(e))
+          return {
+            error: errorMessage(e),
+            reason: reasonOf(errorMessage(e)),
+            agent: 'claude',
+          };
+      }
+    }
+    if (signal.aborted)
+      return { error: 'Skipped', reason: 'skipped', agent: null };
+    try {
+      const out = await runAgent(
+        s.platform.opencodeCommand(undefined, prOpencodeArgs()),
+        {
+          cwd: w.worktreePath,
+          input: prompt,
+          timeoutMs: PR_SUMMARY_TIMEOUT_MS,
+          env: prOpencodeEnv({}, deny),
+        },
+      );
+      return { text: opencodeResultWithSession(out).result, agent: 'opencode' };
+    } catch (e) {
+      if (notFound(e))
+        return {
+          error: 'Neither Claude Code nor OpenCode was found',
+          reason: 'no-agent',
+          agent: null,
+        };
+      return {
+        error: errorMessage(e),
+        reason: reasonOf(errorMessage(e)),
+        agent: 'opencode',
+      };
+    }
+  };
+
+  let prRequestCount = 0;
+  /**
+   * The task's agent tab to ask for a PR draft, and how to ask it; else why none. A tab qualifies when it runs, is
+   * not paused, its session has an agent turn from the last hour, and it waits at an empty prompt (pickTab).
+   */
+  const prPick = async (
+    taskId: string,
+    workspaceId: string,
+  ): Promise<PickResult> => {
+    const task = taskById(taskId);
+    const activity = s.tabActivity;
+    if (!activity) return { reason: 'no-tab' };
+    const prWs = workspaceById(task, workspaceId);
+    const since = Date.parse(task.createdAt) || 0;
+    type Found = TabCandidate & {
+      cwd: string;
+      transcript: string | null;
+      opencodeSession: string | null;
+    };
+    const found: Found[] = [];
+    for (const def of task.terminals) {
+      if (def.kind !== 'claude' && def.kind !== 'opencode') continue;
+      const cwd = workspaceById(task, def.workspaceId ?? HOME_ID).worktreePath;
+      let lastAgentTurnAt: number | null = null;
+      let transcript: string | null = null;
+      let opencodeSession: string | null = null;
+      if (def.kind === 'claude') {
+        transcript = def.sessionId ? sessionFile(def.sessionId) : null;
+        lastAgentTurnAt = transcript
+          ? await lastClaudeTurnAt(transcript)
+          : null;
+      } else {
+        const latest =
+          s.opencodeLatestSession?.(folderPaths(cwd), since) ?? null;
+        opencodeSession = latest?.id ?? null;
+        lastAgentTurnAt = latest?.updatedAt ?? null;
+      }
+      found.push({
+        id: def.id,
+        label: def.label,
+        kind: def.kind,
+        running: s.terminals.isRunning(def.id),
+        paused: leakWatch.isPaused(def.id),
+        lastAgentTurnAt,
+        activity: activity.view(def.id),
+        cwd,
+        transcript,
+        opencodeSession,
+      });
+    }
+    const picked = pickTab(found, Date.now());
+    if ('reason' in picked) return picked;
+    const tab = picked.tab as Found;
+    const n = ++prRequestCount;
+    const rel = `.shellie/pr-request-${n}.md`;
+    const abs = path.join(tab.cwd, rel);
+    const style = await fs
+      .readFile(path.join(prWs.worktreePath, PR_STYLE_FILE), 'utf8')
+      .catch(() => null);
+    const line = prRequestLine(rel);
+    return {
+      tab: { id: tab.id, label: tab.label },
+      agent: tab.kind,
+      ask: (signal, onBlocked) =>
+        askTab(
+          {
+            line,
+            writeRequest: async () => {
+              await fs.mkdir(path.dirname(abs), { recursive: true });
+              await fs.writeFile(
+                abs,
+                prRequestText({
+                  repo: s.repos.repoName(prWs.repoId),
+                  branch: prWs.branch,
+                  base: prWs.baseRef ?? null,
+                  worktree: prWs.worktreePath,
+                  style,
+                }),
+              );
+            },
+            removeRequest: () =>
+              fs.rm(abs, { force: true }).catch(() => undefined),
+            begin: async () => {
+              if (tab.kind === 'claude' && tab.transcript) {
+                const file = tab.transcript;
+                const { size } = await readClaudeTurns(file, {
+                  fromByte: Number.MAX_SAFE_INTEGER,
+                });
+                return async () =>
+                  (await readClaudeTurns(file, { fromByte: size })).turns;
+              }
+              const session = tab.opencodeSession;
+              const from = Date.now() - 1000;
+              return async () =>
+                session ? (s.opencodeTurnsSince?.(session, from) ?? []) : [];
+            },
+            canType: () => {
+              const v = activity.view(tab.id);
+              return (
+                s.terminals.isRunning(tab.id) &&
+                !leakWatch.isPaused(tab.id) &&
+                !!v &&
+                !v.typed &&
+                v.state !== 'working' &&
+                v.state !== 'blocked'
+              );
+            },
+            type: (data) => s.terminals.write(tab.id, data),
+            mute: () => s.attention?.muteNextDone?.(tab.id),
+            unmute: () => s.attention?.unmute?.(tab.id),
+            onState: (listener) =>
+              activity.onState((id, state) => {
+                if (id === tab.id) listener(state);
+              }),
+            alive: () => s.terminals.isRunning(tab.id),
+            onBlocked,
+            setTimer: (fn, ms) => {
+              const t = setTimeout(fn, ms);
+              return () => clearTimeout(t);
+            },
+          },
+          signal,
+        ),
+    };
+  };
+
+  const prDrafts = new PrDrafts({
+    pick: prPick,
+    headless: prHeadless,
+    finish: (taskId, _ws, text) => {
+      const tidied = tidySummary(text);
+      return tidied
+        ? diffMatcher(taskById(taskId)).mask(tidied, '', true).text
+        : '';
+    },
+    changed: (taskId, workspaceId, draft) =>
+      s.broadcast('prDrafts:changed', { taskId, workspaceId, draft }),
+    event: (name, props, measures) => tel.event(name, props, measures),
+    now: Date.now,
+  });
+
   /** What a workspace's branch did since its base; a summary must never block Finish, so a failure is null. */
   const summaryOf = (
     w: Pick<WorkspaceView, 'worktreePath' | 'baseRef' | 'baseSha' | 'branch'>,
@@ -3208,7 +3498,7 @@ export function createHandlers(s: Services): Handlers {
       s.expiryTimers,
     );
 
-  return {
+  const handlers: Handlers = {
     ...brainHandlers,
     ...createReaderHandlers(s.reader),
     ...createDocsHandlers({
@@ -3545,95 +3835,13 @@ export function createHandlers(s: Services): Handlers {
       taskById(taskId);
       return cleanup.retryTask(taskId);
     },
-    'tasks:prSummary': async (taskId, workspaceId) => {
-      const task = taskById(taskId);
-      const w = workspaceById(task, workspaceId);
-      const started = Date.now();
-      let style: string | null = null;
-      const failed = (error: string, reason: string) => {
-        tel.event(
-          'pr.summary',
-          { ok: false, reason, style: style !== null },
-          { ms: Date.now() - started },
-        );
-        return { text: null, error };
-      };
-      try {
-        const changes = await s.git.branchChanges(w.worktreePath, w);
-        if (!changes)
-          return failed('Where the branch started is unknown', 'no-base');
-        style = await fs
-          .readFile(path.join(w.worktreePath, PR_STYLE_FILE), 'utf8')
-          .catch(() => null);
-        // Secrets: a stored value in the diff or the requests is sent as [NAME], and Claude's Read is denied the
-        // worktree's secret files, as in its tabs.
-        const matcher = diffMatcher(task);
-        const masked = (t: string) => matcher.mask(t, '', true).text;
-        const prompt = masked(
-          prSummaryPrompt({
-            heading: task.workItem
-              ? `${task.workItem.type} ${task.workItem.id}: ${task.workItem.title}`
-              : task.name,
-            ...changes,
-            workItem: await fs
-              .readFile(
-                path.join(task.worktreePath, '.shellie', 'task.md'),
-                'utf8',
-              )
-              .catch(() => null),
-            turns: await taskTurns(task),
-            style,
-          }),
-        );
-        const deny = existsSync(w.worktreePath)
-          ? await worktreeDenyTargets(w.worktreePath)
-          : [];
-        const settings =
-          deny.length > 0
-            ? (s.claudeThemeSettings?.(denyRulesFor(deny)) ?? null)
-            : null;
-        const out = await runAgent(
-          s.platform.claudeCommand(null, [
-            ...prSummaryFlags(s.settings.get().prSummaryModel ?? 'sonnet'),
-            ...(settings ? ['--settings', settings] : []),
-          ]),
-          {
-            cwd: w.worktreePath,
-            input: prompt,
-            timeoutMs: PR_SUMMARY_TIMEOUT_MS,
-            // The run's cost is the task's, like its Claude Code tabs.
-            env: {
-              ...telemetryEnv(
-                task.id,
-                s.settings.get().receiverPort,
-                s.usageDir,
-                'pr-summary',
-              ),
-              ...PR_SUMMARY_ENV,
-            },
-          },
-        );
-        const tidied = tidySummary(claudeResult(out));
-        const text = tidied ? masked(tidied) : tidied;
-        if (!text) return failed('Claude Code wrote nothing', 'empty');
-        tel.event(
-          'pr.summary',
-          { ok: true, style: style !== null },
-          { ms: Date.now() - started, chars: text.length },
-        );
-        return { text, error: null };
-      } catch (e) {
-        const error = errorMessage(e);
-        return failed(
-          error,
-          /not found/.test(error)
-            ? 'no-agent'
-            : /timed out/.test(error)
-              ? 'timeout'
-              : 'failed',
-        );
-      }
-    },
+    'prDrafts:get': async (taskId) => prDrafts.get(taskId),
+    'prDrafts:write': (taskId, workspaceId) =>
+      prDrafts.write(taskId, workspaceId),
+    'prDrafts:skip': async (taskId, workspaceId) =>
+      prDrafts.skip(taskId, workspaceId),
+    'prDrafts:edit': async (taskId, workspaceId, text) =>
+      prDrafts.edit(taskId, workspaceId, text),
     'tasks:reopen': async (taskId) => {
       claim(taskId, ['done'], 'reopen');
       let setup = false;
@@ -4743,4 +4951,17 @@ export function createHandlers(s: Services): Handlers {
       return saved;
     },
   };
+  // A finished or discarded task's PR drafts are not needed any more; a failed Finish keeps them for the next try.
+  for (const name of ['tasks:finish', 'tasks:discard'] as const) {
+    const inner = handlers[name] as (...a: unknown[]) => Promise<void>;
+    (handlers as Record<string, unknown>)[name] = async (
+      taskId: string,
+      ...rest: unknown[]
+    ) => {
+      await inner(taskId, ...rest);
+      const t = s.store.state.tasks.find((x) => x.id === taskId);
+      if (!t || t.status === 'done') prDrafts.forget(taskId);
+    };
+  }
+  return handlers;
 }

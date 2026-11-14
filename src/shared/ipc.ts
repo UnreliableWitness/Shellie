@@ -89,6 +89,7 @@ import type { BudgetView } from './budgetView';
 import type { CostServerStatus } from './costServer';
 import type { ReaderMarkSet, ReaderStatus } from './reader';
 import type { ReadingBrain } from './reading';
+import type { PrDraft } from './prDraft';
 import type { HomePeriod, HomeSnapshot, HomeStats } from './home';
 import type {
   FileContent,
@@ -437,13 +438,28 @@ export type Channels = {
     result: GitSummary;
   };
   'tasks:finishChecks': { args: [taskId: string]; result: FinishChecks };
+  /** The task's PR drafts (the "what changed and why" of each PR, #111) by workspace id; kept in main for the app session. */
+  'prDrafts:get': {
+    args: [taskId: string];
+    result: Record<string, PrDraft>;
+  };
   /**
-   * Writes the "what changed and why" of the workspace's PR with Claude Code (#111); `text` is null, with the reason
-   * in `error`, when it could not.
+   * Writes (or writes again) a workspace's PR draft: the task's idle agent tab is asked, else a headless Claude Code
+   * or OpenCode run writes it. Resolves with the draft once written, skipped or failed; progress is `prDrafts:changed`.
    */
-  'tasks:prSummary': {
-    args: [taskId: string, workspaceId?: string];
-    result: { text: string | null; error: string | null };
+  'prDrafts:write': {
+    args: [taskId: string, workspaceId: string];
+    result: PrDraft;
+  };
+  /** Stops a draft being written; a late answer is ignored. */
+  'prDrafts:skip': {
+    args: [taskId: string, workspaceId: string];
+    result: void;
+  };
+  /** The developer's own text for a draft, so it outlives the page. */
+  'prDrafts:edit': {
+    args: [taskId: string, workspaceId: string, text: string];
+    result: void;
   };
   /** Each row's outcome of the last Finish with workspaces (null before one ran); read after a failed Finish. */
   'tasks:finishResults': {
@@ -877,6 +893,8 @@ export type Channels = {
 export type Events = {
   setup: SetupEvent;
   'terminal:data': { id: string; data: string };
+  /** A PR draft changed (status, text): the Finish page shows it. */
+  'prDrafts:changed': { taskId: string; workspaceId: string; draft: PrDraft };
   'terminal:exit': { id: string; exitCode: number; failure?: TerminalFailure };
   /** Main started the terminal again by itself (a Claude Code tab resumed in the new theme): clear and size it. */
   'terminal:reset': { id: string };

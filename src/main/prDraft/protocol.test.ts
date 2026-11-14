@@ -6,6 +6,7 @@ import {
   PR_MARK_OPEN,
   betweenMarks,
   prRequestLine,
+  prRequestText,
   readReply,
   withoutPrRequests,
 } from './protocol';
@@ -89,5 +90,24 @@ describe('readReply', () => {
   it('looks after the latest request line only', () => {
     const turns = [dev(line), claude(marked('Old')), dev(line)];
     expect(readReply(turns, line)).toEqual({ kind: 'pending' });
+  });
+});
+
+describe('prRequestText', () => {
+  it('names the PR, gives the shape, forbids edits and asks for the markers', () => {
+    const t = prRequestText({
+      repo: 'shop',
+      branch: 'feature/x',
+      base: 'main',
+      worktree: '/w/x',
+      style: 'Write in Dutch.',
+    });
+    expect(t).toContain('- Repo: shop');
+    expect(t).toContain('- Branch: feature/x (into main)');
+    expect(t).toContain('## How it was verified');
+    expect(t).toContain('Write in Dutch.');
+    expect(t).toContain('Do not edit, create or commit any file');
+    expect(t).toContain(PR_MARK_OPEN);
+    expect(t).toContain(PR_MARK_CLOSE);
   });
 });

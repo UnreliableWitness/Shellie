@@ -1256,6 +1256,9 @@ async function boot(): Promise<void> {
       claudeThemeSettings: claudeSettings,
       opencodeSessionTexts: (dirs, since) =>
         openCodeSessions.sessionTexts(dirs, since),
+      opencodeLatestSession: (dirs, since) =>
+        openCodeSessions.latestSession(dirs, since),
+      opencodeTurnsSince: (id, since) => openCodeSessions.turnsSince(id, since),
       claudeSpawned: (id) =>
         retheme.spawned(
           id,
