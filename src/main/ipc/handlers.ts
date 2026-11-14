@@ -235,6 +235,7 @@ import {
 } from '../brain/context';
 import { sessionDigest, type Turn } from '../brain/sessionDigest';
 import { readClaudeTurns, type TurnAt } from '../sessions/claudeTranscript';
+import { withoutPrRequests } from '../prDraft/protocol';
 import { addSource } from '../brain/sources';
 import {
   isOpencodeModel,
@@ -2029,10 +2030,14 @@ export function createHandlers(s: Services): Handlers {
     if (options.captureLessons) {
       // What the developer and the agents said in the task's sessions (Claude's first), as a source the /lessons skill reads.
       try {
-        const digest = sessionDigest(task.workItem?.title ?? task.name, [
-          ...(await claudeSessionTurns(task)),
-          ...opencodeSessionTurns(task),
-        ]);
+        // Shellie's own PR-description requests and their answers are left out.
+        const digest = sessionDigest(
+          task.workItem?.title ?? task.name,
+          [
+            ...(await claudeSessionTurns(task)),
+            ...opencodeSessionTurns(task),
+          ].map((turns) => withoutPrRequests(turns)),
+        );
         if (digest)
           await addTempSource(b, `${task.slug}-session.md`, digest, 'lessons');
       } catch (e) {
