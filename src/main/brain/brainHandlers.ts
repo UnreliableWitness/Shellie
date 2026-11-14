@@ -576,16 +576,19 @@ export function createBrainHandlers(
     // Held for a newer Shellie, not for the skills: updating the skills here would not help.
     if (health && newerShellie && health.queueHeld)
       health.queueHeld = NEWER_SHELLIE;
-    // Commits the server does not have yet (every commit before the first push), and who keeps the brain.
+    // Who keeps the brain, and the commits the server does not have yet (every commit before the first push).
+    // Only the brain page (brain:get) reads ahead; the list refetches on every change and starts no git for it.
     const [ahead, keeper] = b.sharing
       ? await Promise.all([
-          unsentCount(d.git, b.path).catch(() => 0),
+          withHealth ? unsentCount(d.git, b.path).catch(() => 0) : undefined,
           myInstall().then((me) => keeperOf(b.path, me)),
         ])
-      : [0, null];
+      : [undefined, null];
     return {
       ...b,
-      sharing: b.sharing ? { ...b.sharing, ahead } : null,
+      sharing: b.sharing
+        ? { ...b.sharing, ...(ahead === undefined ? {} : { ahead }) }
+        : null,
       health,
       jobs,
       keeper,

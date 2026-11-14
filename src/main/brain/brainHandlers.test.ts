@@ -1161,6 +1161,18 @@ describe('brain handlers', () => {
     ]);
     expect((await h['brain:get'](v.id)).sharing?.ahead).toBe(1);
 
+    // The list refetches on every brain change: it names the keeper but starts no git to count.
+    const run = vi.spyOn(git, 'run');
+    const listed = (await h['brain:list']()).find((b) => b.id === v.id);
+    expect(listed?.sharing?.ahead).toBeUndefined();
+    expect(listed?.keeper).toMatchObject({ name: 'Dries' });
+    expect(
+      run.mock.calls.filter(([, args]) =>
+        ['rev-list', 'rev-parse'].includes(args[0]),
+      ),
+    ).toEqual([]);
+    run.mockRestore();
+
     await brains.patch(v.id, { templatesVersion: TEMPLATES_VERSION + 1 });
     expect((await h['brain:get'](v.id)).newerShellie).toBe(true);
     await expect(
