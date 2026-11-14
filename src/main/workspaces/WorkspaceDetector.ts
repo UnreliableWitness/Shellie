@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Connection, Task, Workspace } from '../../shared/types';
-import { hasNoRepo, HOME_ID } from '../../shared/workspaces';
+import { hasNoRepo, HOME_ID, taskWorkspaces } from '../../shared/workspaces';
+import { OpenCodeReader, openCodeDbPath } from '../budget/openCode';
 import { isFile } from '../fsRetry';
-import { isInside, samePath } from '../paths';
+import { folderPaths, isInside, samePath } from '../paths';
 import { matchConnection } from '../services/azureRepos';
 import type { GitClient } from '../services/GitClient';
 import type { RepoRegistry } from '../services/RepoRegistry';
@@ -26,6 +27,8 @@ export type WorkspaceDetectorDeps = {
   /** Claude Code's projects folder (`claudeProjectsDir()`). */
   projectsDir: () => string;
   reader?: SessionLogReader;
+  /** OpenCode's database (`openCodeDbPath()` by default). */
+  openCodeDb?: () => string;
   /** A quiet info notice in the notice corner. */
   notice: (message: string) => void;
   /** Telemetry; no paths or repo names. */
@@ -34,7 +37,7 @@ export type WorkspaceDetectorDeps = {
 
 type Source = 'log' | 'branch' | 'manual';
 
-/** Finds other repos' worktrees a task worked in (Claude's session logs, the task branch) and joins them. */
+/** Finds other repos' worktrees a task worked in (Claude's session logs, OpenCode's database, the task branch) and joins them. */
 export class WorkspaceDetector {
   private readonly reader: SessionLogReader;
   private readonly scans = new Map<string, Promise<{ added: Workspace[] }>>();
@@ -123,6 +126,8 @@ export class WorkspaceDetector {
 
     for (const c of await this.fromLogs(task))
       if (!seen(c.worktreePath)) found.push({ c, source: 'log' });
+    for (const c of await this.fromOpenCode(task))
+      if (!seen(c.worktreePath)) found.push({ c, source: 'log' });
     for (const c of await this.fromBranch(task))
       if (!seen(c.worktreePath)) found.push({ c, source: 'branch' });
 
@@ -159,11 +164,48 @@ export class WorkspaceDetector {
     for (const id of ids)
       for (const file of await sessionFiles(folders, id))
         for (const hit of writeHitsFromLines(await this.reader.readNew(file)))
-          if (
-            !isInside(task.worktreePath, hit.path) &&
-            !paths.some((p) => samePath(p, hit.path))
-          )
-            paths.push(hit.path);
+          paths.push(hit.path);
+    return this.candidates(task, paths, 'a session log');
+  }
+
+  /**
+   * Worktrees the task's OpenCode sessions wrote in, outside its home worktree: its top-level sessions in one of its
+   * worktrees since it was created (OpenCode tabs have no session id). None without an OpenCode tab or database.
+   */
+  private async fromOpenCode(task: Task): Promise<Candidate[]> {
+    if (
+      ![...task.terminals, ...task.closedTerminals].some(
+        (t) => t.kind === 'opencode',
+      )
+    )
+      return [];
+    const dirs = [
+      ...new Set(
+        taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
+      ),
+    ];
+    let paths: string[];
+    try {
+      paths = new OpenCodeReader(
+        (this.d.openCodeDb ?? openCodeDbPath)(),
+      ).writtenPaths(dirs, Date.parse(task.createdAt) || 0);
+    } catch (e) {
+      console.warn('[workspaces] OpenCode database not read', e);
+      return [];
+    }
+    return this.candidates(task, paths, "OpenCode's database");
+  }
+
+  /** The worktrees `paths` are in, outside the task's home worktree, each once; an odd path costs only itself. */
+  private async candidates(
+    task: Task,
+    hits: string[],
+    from: string,
+  ): Promise<Candidate[]> {
+    const paths: string[] = [];
+    for (const h of hits)
+      if (!isInside(task.worktreePath, h) && !paths.some((p) => samePath(p, h)))
+        paths.push(h);
     const out: Candidate[] = [];
     for (const p of paths) {
       try {
@@ -171,7 +213,7 @@ export class WorkspaceDetector {
         if (c && !out.some((o) => samePath(o.worktreePath, c.worktreePath)))
           out.push(c);
       } catch (e) {
-        console.warn('[workspaces] skipped a path from a session log', e);
+        console.warn(`[workspaces] skipped a path from ${from}`, e);
       }
     }
     return out;

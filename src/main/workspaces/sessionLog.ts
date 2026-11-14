@@ -187,6 +187,58 @@ export function writeHitsFromLines(lines: string[]): WriteHit[] {
   return hits;
 }
 
+/** OpenCode's tools that write one file, and the input key naming it. */
+const OPENCODE_EDIT_TOOLS: Record<string, string> = {
+  edit: 'filePath',
+  write: 'filePath',
+  multiedit: 'filePath',
+};
+
+/** The files a patch (OpenCode's `patch` and `apply_patch`) adds, updates, deletes or moves to. */
+function patchFiles(text: string): string[] {
+  const files: string[] = [];
+  for (const line of text.split('\n')) {
+    const m = /^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/.exec(
+      line.replace(/\r$/, ''),
+    );
+    if (m && m[1].trim()) files.push(m[1].trim());
+  }
+  return files;
+}
+
+/** The writes one OpenCode tool call makes, like `writeHitsFromLines` for Claude; `cwd` is its session's folder. */
+export function writeHitsFromOpenCodeTool(
+  tool: string,
+  input: unknown,
+  cwd: string | null,
+): WriteHit[] {
+  if (typeof input !== 'object' || !input) return [];
+  const i = input as Record<string, unknown>;
+  const key = OPENCODE_EDIT_TOOLS[tool];
+  if (key) {
+    const p = i[key];
+    const resolved = typeof p === 'string' && p ? resolveIn(cwd, p) : null;
+    return resolved ? [{ path: resolved, via: 'edit' }] : [];
+  }
+  if (
+    (tool === 'patch' || tool === 'apply_patch') &&
+    typeof i.patchText === 'string'
+  )
+    return patchFiles(i.patchText).flatMap((p) => {
+      const resolved = resolveIn(cwd, p);
+      return resolved ? [{ path: resolved, via: 'edit' as const }] : [];
+    });
+  if (tool === 'bash' && typeof i.command === 'string') {
+    // `workdir` is where OpenCode runs the command when given.
+    const dir =
+      typeof i.workdir === 'string' && i.workdir
+        ? resolveIn(cwd, i.workdir)
+        : cwd;
+    return writeHitsFromBash(i.command, dir);
+  }
+  return [];
+}
+
 /** `skipped`: bytes consumed without text (part of a line longer than the read cap). */
 export type ReadChunk = (
   file: string,
