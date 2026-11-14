@@ -233,7 +233,8 @@ import {
   closeLine,
   contextSection,
 } from '../brain/context';
-import { sessionDigest, sessionTurns, type Turn } from '../brain/sessionDigest';
+import { sessionDigest, type Turn } from '../brain/sessionDigest';
+import { readClaudeTurns, type TurnAt } from '../sessions/claudeTranscript';
 import { addSource } from '../brain/sources';
 import {
   isOpencodeModel,
@@ -1976,17 +1977,17 @@ export function createHandlers(s: Services): Handlers {
     }
   };
 
-  /** The transcripts of the task's Claude Code sessions (open and closed tabs), each as its lines; unsaved ones are skipped. */
-  const claudeSessionLines = async (task: Task): Promise<string[][]> => {
+  /** The turns of the task's Claude Code sessions (open and closed tabs), each session's in order; unsaved ones are skipped. */
+  const claudeSessionTurns = async (task: Task): Promise<TurnAt[][]> => {
     const ids = [...task.closedTerminals, ...task.terminals]
       .filter((t) => t.kind === 'claude' && t.sessionId)
       .map((t) => t.sessionId!);
-    const out: string[][] = [];
+    const out: TurnAt[][] = [];
     for (const id of new Set(ids)) {
       const file = sessionFile(id);
       if (!file) continue;
-      const text = await fs.readFile(file, 'utf8').catch(() => '');
-      if (text) out.push(text.split('\n'));
+      const { turns } = await readClaudeTurns(file);
+      if (turns.length > 0) out.push(turns);
     }
     return out;
   };
@@ -2029,7 +2030,7 @@ export function createHandlers(s: Services): Handlers {
       // What the developer and the agents said in the task's sessions (Claude's first), as a source the /lessons skill reads.
       try {
         const digest = sessionDigest(task.workItem?.title ?? task.name, [
-          ...(await claudeSessionLines(task)).map(sessionTurns),
+          ...(await claudeSessionTurns(task)),
           ...opencodeSessionTurns(task),
         ]);
         if (digest)
@@ -2563,8 +2564,9 @@ export function createHandlers(s: Services): Handlers {
   /** What the developer typed in the task's Claude Code sessions, oldest session first (#111). */
   const taskRequests = async (task: Task): Promise<string[]> => {
     const out: string[] = [];
-    for (const lines of await claudeSessionLines(task))
-      for (const r of userRequests(lines)) if (!out.includes(r)) out.push(r);
+    for (const turns of await claudeSessionTurns(task))
+      for (const t of turns)
+        if (t.who === 'Developer' && !out.includes(t.text)) out.push(t.text);
     return out;
   };
 

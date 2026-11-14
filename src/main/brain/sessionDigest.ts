@@ -17,6 +17,7 @@ type Line = {
   isMeta?: boolean;
   isCompactSummary?: boolean;
   isSidechain?: boolean;
+  timestamp?: unknown;
   message?: { content?: unknown };
 };
 
@@ -38,26 +39,40 @@ const textOf = (content: unknown): string => {
     .join('\n');
 };
 
+/** One transcript line's turn, with when it was said (`timestamp`, epoch ms); null for anything that is not one. */
+export function lineTurn(
+  raw: string,
+): (Turn & { at: number | null }) | null {
+  let l: Line;
+  try {
+    l = JSON.parse(raw) as Line;
+  } catch {
+    return null;
+  }
+  if (!l || typeof l !== 'object') return null;
+  if (l.isMeta || l.isSidechain || l.isCompactSummary) return null;
+  if (l.type !== 'user' && l.type !== 'assistant') return null;
+  const text = textOf(l.message?.content).trim();
+  if (!text || MACHINE.test(text)) return null;
+  const at = typeof l.timestamp === 'string' ? Date.parse(l.timestamp) : NaN;
+  return {
+    who: l.type === 'user' ? 'Developer' : 'Claude',
+    text,
+    at: Number.isFinite(at) ? at : null,
+  };
+}
+
 /** The developer's and Claude's turns of one transcript (the jsonl lines), in order. */
 export function sessionTurns(lines: string[]): Turn[] {
   const out: Turn[] = [];
   for (const raw of lines) {
-    let l: Line;
-    try {
-      l = JSON.parse(raw) as Line;
-    } catch {
-      continue;
-    }
-    if (l.isMeta || l.isSidechain || l.isCompactSummary) continue;
-    if (l.type !== 'user' && l.type !== 'assistant') continue;
-    const text = textOf(l.message?.content).trim();
-    if (!text || MACHINE.test(text)) continue;
-    const who = l.type === 'user' ? 'Developer' : 'Claude';
+    const t = lineTurn(raw);
+    if (!t) continue;
     // Consecutive Claude turns (text between tool calls) read as one.
     const last = out[out.length - 1];
-    if (last && last.who === who && who === 'Claude')
-      last.text = `${last.text}\n${text}`;
-    else out.push({ who, text });
+    if (last && last.who === t.who && t.who === 'Claude')
+      last.text = `${last.text}\n${t.text}`;
+    else out.push({ who: t.who, text: t.text });
   }
   return out;
 }

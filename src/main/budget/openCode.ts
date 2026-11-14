@@ -4,7 +4,9 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { BRAIN_JOB_TITLE } from '../../shared/brain';
 import type { BudgetRecord } from '../../shared/budget';
+import { PR_JOB_TITLE } from '../../shared/prDraft';
 import type { Turn } from '../brain/sessionDigest';
+import type { TurnAt } from '../sessions/claudeTranscript';
 
 const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
 
@@ -264,46 +266,107 @@ export class OpenCodeReader {
     try {
       const ids = topSessions(db, dirs, since);
       if (ids.length === 0) return [];
-      const rows = db
-        .prepare(
-          `SELECT part.session_id AS session_id, part.message_id AS message_id, part.data AS data, message.data AS message FROM part JOIN message ON message.id = part.message_id WHERE part.session_id IN (${ids.map(() => '?').join(', ')}) ORDER BY message.time_created, message.id, part.time_created, part.id`,
-        )
-        .all(...ids) as {
-        session_id: string;
-        message_id: string;
-        data: string;
-        message: string;
-      }[];
-      const bySession = new Map<string, Turn[]>(ids.map((id) => [id, []]));
-      let lastMessage = '';
-      for (const r of rows) {
-        const part = json(r.data);
-        if (
-          part.type !== 'text' ||
-          part.synthetic === true ||
-          typeof part.text !== 'string'
-        )
-          continue;
-        const text = part.text.trim();
-        const role = json(r.message).role;
-        if (!text || (role !== 'user' && role !== 'assistant')) continue;
-        const who = role === 'user' ? 'Developer' : 'Agent';
-        const turns = bySession.get(r.session_id)!;
-        const prev = turns.at(-1);
-        // The agent's texts between tool calls read as one turn, and so do the parts of one typed message.
-        if (
-          prev?.who === who &&
-          (who === 'Agent' || lastMessage === r.message_id)
-        )
-          prev.text = `${prev.text}\n${text}`;
-        else turns.push({ who, text });
-        lastMessage = r.message_id;
-      }
-      return ids.map((id) => bySession.get(id)!);
+      const bySession = textTurns(
+        textRows(db, `part.session_id IN (${ids.map(() => '?').join(', ')})`, ids),
+      );
+      return ids.map((id) =>
+        (bySession.get(id) ?? []).map(({ who, text }) => ({ who, text })),
+      );
     } finally {
       db.close();
     }
   }
+
+  /** The top-level session in one of `dirs` updated last, created at or after `since`; Shellie's own runs left out. */
+  latestSession(
+    dirs: readonly string[],
+    since = 0,
+  ): { id: string; updatedAt: number } | null {
+    if (!existsSync(this.file) || dirs.length === 0) return null;
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, time_updated AS updated FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_updated DESC, id DESC LIMIT 1`,
+        )
+        .get(...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`) as
+        | { id: string; updated: number }
+        | undefined;
+      return row ? { id: row.id, updatedAt: row.updated } : null;
+    } finally {
+      db.close();
+    }
+  }
+
+  /** One session's turns from messages created at or after `since` (epoch ms), with when each was said. */
+  turnsSince(sessionId: string, since = 0): TurnAt[] {
+    if (!existsSync(this.file)) return [];
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      return (
+        textTurns(
+          textRows(db, 'part.session_id = ? AND message.time_created >= ?', [
+            sessionId,
+            since,
+          ]),
+        ).get(sessionId) ?? []
+      );
+    } finally {
+      db.close();
+    }
+  }
+}
+
+type TextRow = {
+  session_id: string;
+  message_id: string;
+  created: number;
+  data: string;
+  message: string;
+};
+
+/**
+ * The text parts matching `where`, in order. Only text parts are selected (in SQL), so tool output, often most of a
+ * session's bytes, is neither loaded nor parsed.
+ */
+function textRows(
+  db: DatabaseSync,
+  where: string,
+  params: (string | number)[],
+): TextRow[] {
+  return db
+    .prepare(
+      `SELECT part.session_id AS session_id, part.message_id AS message_id, message.time_created AS created, part.data AS data, message.data AS message FROM part JOIN message ON message.id = part.message_id WHERE ${where} AND (CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.type') END) = 'text' ORDER BY message.time_created, message.id, part.time_created, part.id`,
+    )
+    .all(...params) as TextRow[];
+}
+
+/** Rows as turns per session: the agent's texts between tool calls read as one turn, and so do the parts of one typed message. */
+function textTurns(rows: TextRow[]): Map<string, TurnAt[]> {
+  const bySession = new Map<string, TurnAt[]>();
+  let lastMessage = '';
+  for (const r of rows) {
+    const part = json(r.data);
+    if (
+      part.type !== 'text' ||
+      part.synthetic === true ||
+      typeof part.text !== 'string'
+    )
+      continue;
+    const text = part.text.trim();
+    const role = json(r.message).role;
+    if (!text || (role !== 'user' && role !== 'assistant')) continue;
+    const who = role === 'user' ? 'Developer' : 'Agent';
+    let turns = bySession.get(r.session_id);
+    if (!turns) bySession.set(r.session_id, (turns = []));
+    const prev = turns.at(-1);
+    if (prev?.who === who && (who === 'Agent' || lastMessage === r.message_id)) {
+      prev.text = `${prev.text}\n${text}`;
+      prev.at = r.created;
+    } else turns.push({ who, text, at: r.created });
+    lastMessage = r.message_id;
+  }
+  return bySession;
 }
 
 /** Top-level sessions in one of `dirs` created at or after `since`, oldest first, brain jobs (by title) left out. */
@@ -314,8 +377,8 @@ function topSessions(
 ): string[] {
   const rows = db
     .prepare(
-      `SELECT id FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_created, id`,
+      `SELECT id FROM session WHERE directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''} ORDER BY time_created, id`,
     )
-    .all(...dirs, since, `${BRAIN_JOB_TITLE}%`) as { id: string }[];
+    .all(...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`) as { id: string }[];
   return rows.map((r) => r.id);
 }
