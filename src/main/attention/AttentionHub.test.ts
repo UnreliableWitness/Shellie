@@ -168,4 +168,68 @@ describe('notificationBody', () => {
       notificationBody('X', { reason: 'done', message: 'm', since: 0 }),
     ).toBe('X finished: m');
   });
+
+  describe('muteNextDone', () => {
+    const osc = (state: string, extra = '') =>
+      `${ESC}]7501;state=${state}:app=claude-code${extra}${BEL}`;
+
+    it('does not notify or badge the turn Shellie asked for, then notifies again', () => {
+      const h = hub();
+      h.muteNextDone('c1');
+      h.data('c1', osc('working'));
+      h.data('c1', osc('done'));
+      expect(shown).toHaveLength(0);
+      expect(badge).not.toBe(1);
+      h.data('c1', osc('working'));
+      h.data('c1', osc('done'));
+      expect(shown).toHaveLength(1);
+    });
+
+    it('still notifies a permission prompt during the muted turn, and clears it at its end', () => {
+      const h = hub();
+      h.muteNextDone('o1');
+      expect(h.signal('o1', { state: 'blocked', kind: 'permission' })).toBe(
+        true,
+      );
+      expect(shown).toHaveLength(1);
+      expect(badge).toBe(1);
+      h.signal('o1', { state: 'done' });
+      expect(badge).toBe(0);
+      expect(shown).toHaveLength(1);
+    });
+
+    it('reports every state to observed, muted or not, from both paths', () => {
+      const seen: [string, string][] = [];
+      const h = new AttentionHub({
+        now: () => now,
+        write: () => undefined,
+        terminal: (id) => terms[id] ?? null,
+        notifyOnDone: () => true,
+        show: () => ({ close: () => undefined }),
+        setBadgeCount: () => undefined,
+        changed: () => undefined,
+        open: () => undefined,
+        observed: (id, st) => seen.push([id, st]),
+      });
+      h.muteNextDone('c1');
+      h.data('c1', osc('done'));
+      h.signal('o1', { state: 'working' });
+      expect(seen).toEqual([
+        ['c1', 'done'],
+        ['o1', 'working'],
+      ]);
+    });
+
+    it('unmute and exit drop the mute', () => {
+      const h = hub();
+      h.muteNextDone('c1');
+      h.unmute('c1');
+      h.data('c1', osc('done'));
+      expect(shown).toHaveLength(1);
+      h.muteNextDone('o1');
+      h.exit('o1');
+      h.signal('o1', { state: 'done' });
+      expect(shown).toHaveLength(2);
+    });
+  });
 });

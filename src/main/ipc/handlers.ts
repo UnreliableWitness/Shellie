@@ -234,6 +234,7 @@ import {
 } from '../brain/context';
 import { sessionDigest, type Turn } from '../brain/sessionDigest';
 import { readClaudeTurns, type TurnAt } from '../sessions/claudeTranscript';
+import type { TabActivity } from '../attention/TabActivity';
 import { withoutPrRequests } from '../prDraft/protocol';
 import { addSource } from '../brain/sources';
 import {
@@ -264,7 +265,8 @@ export type Services = {
     takePendingJoin?: BrainHandlerDeps['takePendingJoin'];
   };
   /** What needs the developer's attention (main); absent in tests. */
-  attention?: Pick<AttentionHub, 'setView' | 'snapshot'>;
+  attention?: Pick<AttentionHub, 'setView' | 'snapshot'> &
+    Partial<Pick<AttentionHub, 'muteNextDone' | 'unmute'>>;
   /**
    * Extra env per terminal (main: the attention URL and token, OpenCode's plugin, and for agent tabs the task's
    * `shellie run` link). `runNames`: the names agents are told about, only when the repo has a stored secret. `denyPaths`: the untracked
@@ -341,6 +343,10 @@ export type Services = {
   claudeThemeSettings?: (deny?: string[]) => string | null;
   /** A Claude Code tab was started (or resumed) with the theme claudeThemeSettings gave. */
   claudeSpawned?: (terminalId: string) => void;
+  /** A Claude Code or OpenCode tab was started (or resumed): its activity starts clean (TabActivity). */
+  agentSpawned?: (terminalId: string) => void;
+  /** What each agent tab is doing, so the PR draft can tell whether typing into one is safe; absent in tests that don't care. */
+  tabActivity?: Pick<TabActivity, 'view' | 'onState'>;
   /** Explains and logs agent tabs that fail to start (#109); absent in tests that don't care. */
   terminalFailures?: Pick<TerminalFailures, 'get' | 'clear' | 'spawnFailed'>;
   /** Sets nativeTheme.themeSource (main); absent in tests that don't care. */
@@ -1528,6 +1534,8 @@ export function createHandlers(s: Services): Handlers {
       spawnedWithSecrets.add(def.id);
     else spawnedWithSecrets.delete(def.id);
     if (def.kind === 'claude') s.claudeSpawned?.(def.id);
+    if (def.kind === 'claude' || def.kind === 'opencode')
+      s.agentSpawned?.(def.id);
     return started.catch((e: unknown) => {
       s.terminalFailures?.spawnFailed(def.id, def.kind, e);
       throw e;
