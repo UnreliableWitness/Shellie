@@ -29,6 +29,8 @@ export type WorkspaceDetectorDeps = {
   reader?: SessionLogReader;
   /** OpenCode's database (`openCodeDbPath()` by default). */
   openCodeDb?: () => string;
+  /** Reads OpenCode's database; one on `openCodeDb` by default. */
+  openCodeReader?: OpenCodeReader;
   /** A quiet info notice in the notice corner. */
   notice: (message: string) => void;
   /** Telemetry; no paths or repo names. */
@@ -40,10 +42,20 @@ type Source = 'log' | 'branch' | 'manual';
 /** Finds other repos' worktrees a task worked in (Claude's session logs, OpenCode's database, the task branch) and joins them. */
 export class WorkspaceDetector {
   private readonly reader: SessionLogReader;
+  private openCode: OpenCodeReader | undefined;
   private readonly scans = new Map<string, Promise<{ added: Workspace[] }>>();
+  /**
+   * Per task, the folders its OpenCode sessions were read for and the latest part update read, so a scan reads
+   * only newer parts, as readNew does for Claude's logs. In memory: the first scan after a start reads everything.
+   */
+  private readonly openCodeRead = new Map<
+    string,
+    { dirs: string; watermark: number }
+  >();
 
   constructor(private readonly d: WorkspaceDetectorDeps) {
     this.reader = d.reader ?? new SessionLogReader();
+    this.openCode = d.openCodeReader;
   }
 
   /** Reads new session log lines and scans for the task branch, then joins what the rules allow. */
@@ -169,8 +181,9 @@ export class WorkspaceDetector {
   }
 
   /**
-   * Worktrees the task's OpenCode sessions wrote in, outside its home worktree: its top-level sessions in one of its
-   * worktrees since it was created (OpenCode tabs have no session id). None without an OpenCode tab or database.
+   * Worktrees the task's OpenCode sessions wrote in since its last scan, outside its home worktree: its top-level
+   * sessions in one of its worktrees since it was created (OpenCode tabs have no session id). None without an
+   * OpenCode tab or database.
    */
   private async fromOpenCode(task: Task): Promise<Candidate[]> {
     if (
@@ -184,11 +197,21 @@ export class WorkspaceDetector {
         taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
       ),
     ];
+    // A joined worktree brings its sessions in: their earlier parts are read once too.
+    const key = dirs.join('\n');
+    const last = this.openCodeRead.get(task.id);
     let paths: string[];
     try {
-      paths = new OpenCodeReader(
+      this.openCode ??= new OpenCodeReader(
         (this.d.openCodeDb ?? openCodeDbPath)(),
-      ).writtenPaths(dirs, Date.parse(task.createdAt) || 0);
+      );
+      const read = this.openCode.writtenPaths(
+        dirs,
+        Date.parse(task.createdAt) || 0,
+        last?.dirs === key ? last.watermark : 0,
+      );
+      paths = read.paths;
+      this.openCodeRead.set(task.id, { dirs: key, watermark: read.watermark });
     } catch (e) {
       console.warn('[workspaces] OpenCode database not read', e);
       return [];

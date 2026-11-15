@@ -15,6 +15,8 @@ import {
   type Task,
   type TerminalDef,
 } from '../../shared/types';
+import { OpenCodeReader } from '../budget/openCode';
+import { isInside } from '../paths';
 import { GitClient } from '../services/GitClient';
 import { RepoRegistry } from '../services/RepoRegistry';
 import { TaskStore } from '../services/TaskStore';
@@ -346,6 +348,73 @@ describe('WorkspaceDetector.scan', () => {
     expect(env.events).toEqual([
       { name: 'workspace.joined', props: { source: 'log' } },
     ]);
+  });
+
+  it('reads only the OpenCode parts added since its last scan of the task', async () => {
+    const env = await setup({
+      terminals: [{ id: 'o1', kind: 'opencode', label: 'OpenCode' }],
+    });
+    const bWt = worktree(repoB(), 'feature/b');
+    const file = openCodeDb(env.homeWt, [
+      { tool: 'edit', input: { filePath: path.join(bWt, 'README.md') } },
+    ]);
+    const gitClient = new GitClient();
+    const toplevel = vi.spyOn(gitClient, 'toplevel');
+    const reader = new OpenCodeReader(file);
+    const written = vi.spyOn(reader, 'writtenPaths');
+    const detector = new WorkspaceDetector({
+      store: env.store,
+      git: gitClient,
+      repos: env.repos,
+      connections: () => [],
+      projectsDir: () => env.projectsDir,
+      openCodeReader: reader,
+      notice: () => undefined,
+      event: () => undefined,
+    });
+    const resolved = (wt: string) =>
+      toplevel.mock.calls.filter(([dir]) => isInside(wt, dir)).length;
+
+    expect((await detector.scan('t1')).added).toHaveLength(1);
+    expect(resolved(bWt)).toBe(1);
+    const first = written.mock.results[0].value as { watermark: number };
+
+    // B's worktree joined, so its folders are new: the scan after reads from the start once.
+    expect((await detector.scan('t1')).added).toEqual([]);
+    expect(written.mock.calls[1][2]).toBe(0);
+    expect(resolved(bWt)).toBe(2);
+
+    // Nothing new: B's path is not looked at again.
+    expect((await detector.scan('t1')).added).toEqual([]);
+    expect(written.mock.calls[2][2]).toBe(first.watermark);
+    expect(resolved(bWt)).toBe(2);
+
+    // A later edit in C: only C is resolved and joined.
+    const c = makeRepo('c');
+    const cWt = worktree(c, 'feature/c', 'wt-c');
+    const db = new DatabaseSync(file);
+    db.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)').run(
+      'prt_late',
+      'msg_1',
+      'ses_1',
+      first.watermark + 10,
+      first.watermark + 10,
+      JSON.stringify({
+        type: 'tool',
+        tool: 'edit',
+        state: {
+          status: 'completed',
+          input: { filePath: path.join(cWt, 'a.md') },
+          output: '',
+        },
+      }),
+    );
+    db.close();
+    const { added } = await detector.scan('t1');
+    expect(added.map((w) => w.worktreePath)).toEqual([cWt]);
+    expect(written.mock.calls[3][2]).toBe(first.watermark);
+    expect(resolved(bWt)).toBe(2);
+    expect(resolved(cWt)).toBe(1);
   });
 
   it("adds nothing for OpenCode edits in the task's own worktree, or without a database", async () => {

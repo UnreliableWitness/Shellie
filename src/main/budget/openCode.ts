@@ -305,33 +305,44 @@ export class OpenCodeReader {
   /**
    * The paths written by tool calls (edit, write, patch, writing git commands) in the top-level sessions in one of
    * `dirs` created at or after `since` (epoch ms), Shellie's own runs left out. Only those tool parts' inputs are
-   * selected (in SQL), so tool output never reaches JS.
+   * selected (in SQL), so tool output never reaches JS. Only parts updated after `sincePart` (epoch ms) are read;
+   * `watermark` is the latest update among them (`sincePart` when none), the `sincePart` of the next read. A tool
+   * part gets its input after it is created, so the bound is on its update time, not its creation time.
    */
-  writtenPaths(dirs: readonly string[], since = 0): string[] {
-    if (!existsSync(this.file) || dirs.length === 0) return [];
+  writtenPaths(
+    dirs: readonly string[],
+    since = 0,
+    sincePart = 0,
+  ): { paths: string[]; watermark: number } {
+    const none = { paths: [], watermark: sincePart };
+    if (!existsSync(this.file) || dirs.length === 0) return none;
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
       const ids = topSessions(db, dirs, since);
-      if (ids.length === 0) return [];
+      if (ids.length === 0) return none;
       const tool = `(CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.tool') END)`;
       const rows = db
         .prepare(
-          `SELECT ${tool} AS tool, json_extract(part.data, '$.state.input') AS input, session.directory AS directory FROM part JOIN session ON session.id = part.session_id WHERE part.session_id IN (${ids.map(() => '?').join(', ')}) AND part.data LIKE '%"type":"tool"%' AND (CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.type') END) = 'tool' AND ${tool} IN (${WRITING_TOOLS.map(() => '?').join(', ')}) ORDER BY part.time_created, part.id`,
+          `SELECT ${tool} AS tool, json_extract(part.data, '$.state.input') AS input, session.directory AS directory, part.time_updated AS updated FROM part JOIN session ON session.id = part.session_id WHERE part.session_id IN (${ids.map(() => '?').join(', ')}) AND part.time_updated > ? AND part.data LIKE '%"type":"tool"%' AND (CASE WHEN json_valid(part.data) THEN json_extract(part.data, '$.type') END) = 'tool' AND ${tool} IN (${WRITING_TOOLS.map(() => '?').join(', ')}) ORDER BY part.time_created, part.id`,
         )
-        .all(...ids, ...WRITING_TOOLS) as {
+        .all(...ids, sincePart, ...WRITING_TOOLS) as {
         tool: string;
         input: string | null;
         directory: string;
+        updated: number;
       }[];
       const paths: string[] = [];
-      for (const r of rows)
+      let watermark = sincePart;
+      for (const r of rows) {
+        watermark = Math.max(watermark, r.updated);
         for (const hit of writeHitsFromOpenCodeTool(
           r.tool,
           json(r.input ?? ''),
           r.directory || null,
         ))
           if (!paths.includes(hit.path)) paths.push(hit.path);
-      return paths;
+      }
+      return { paths, watermark };
     } finally {
       db.close();
     }
