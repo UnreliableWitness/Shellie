@@ -581,14 +581,38 @@ describe('OpenCodeReader session reads for the PR draft', () => {
     say('ses_job', 'assistant', 120, [call('edit', { filePath: '/job' })]);
     say('ses_far', 'assistant', 130, [call('edit', { filePath: '/far' })]);
     close();
-    expect(new OpenCodeReader(file).writtenPaths(['/w'], 100)).toEqual(
-      ['/r/a.md', '/w/rel/b.md', '/p/c.ts', '/q/d.ts', '/g', '/h'].map((p) =>
-        path.resolve(p),
+    expect(new OpenCodeReader(file).writtenPaths(['/w'], 100)).toEqual({
+      paths: ['/r/a.md', '/w/rel/b.md', '/p/c.ts', '/q/d.ts', '/g', '/h'].map(
+        (p) => path.resolve(p),
       ),
-    );
+      watermark: 108,
+    });
     expect(
-      new OpenCodeReader('/nope/opencode.db').writtenPaths(['/w']),
-    ).toEqual([]);
+      new OpenCodeReader('/nope/opencode.db').writtenPaths(['/w'], 0, 42),
+    ).toEqual({ paths: [], watermark: 42 });
+  });
+
+  it('writtenPaths with sincePart reads only the parts updated after it', () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_a', 100, 100);
+    const edit = (filePath: string) => ({
+      type: 'tool',
+      tool: 'edit',
+      state: { status: 'completed', input: { filePath } },
+    });
+    say('ses_a', 'assistant', 100, [edit('/r/a.md'), edit('/r/b.md')]);
+    say('ses_a', 'assistant', 200, [edit('/r/c.md')]);
+    close();
+    const r = new OpenCodeReader(file);
+    expect(r.writtenPaths(['/w'], 100, 100)).toEqual({
+      paths: [path.resolve('/r/b.md'), path.resolve('/r/c.md')],
+      watermark: 200,
+    });
+    // No new parts: nothing, and the watermark stays.
+    expect(r.writtenPaths(['/w'], 100, 200)).toEqual({
+      paths: [],
+      watermark: 200,
+    });
   });
 
   it('sessionTexts leaves the PR run out like a brain job', () => {
