@@ -35,7 +35,13 @@ beforeEach(async () => {
   await git.run(dir, ['config', 'user.email', 't@localhost']);
 });
 afterEach(async () => {
-  await fs.rm(dir, { recursive: true, force: true });
+  // git on Windows can still hold the folder for a moment after it exits (EBUSY).
+  await fs.rm(dir, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 100,
+  });
 });
 
 describe('unsentSecretFile', () => {
