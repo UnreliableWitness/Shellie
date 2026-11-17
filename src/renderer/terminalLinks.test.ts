@@ -7,6 +7,7 @@ import {
   createLinkProvider,
   logicalLine,
   openLink,
+  oscLinkHandler,
 } from './terminalLinks';
 
 const buffer = (rows: { text: string; wrapped: boolean }[], cols: number) => ({
@@ -314,5 +315,20 @@ describe('openLink', () => {
       channel: 'links:open',
       args: ['https://example.com'],
     });
+  });
+});
+
+describe('oscLinkHandler', () => {
+  it('opens OSC 8 links through links:open without a confirm prompt (#311)', () => {
+    const { calls } = installFakeApi({ 'links:open': () => undefined });
+    const confirm = vi.spyOn(window, 'confirm');
+    const url = 'https://dev.azure.com/x/_git/y/pullrequest/1';
+    const handler = oscLinkHandler('t1');
+    expect(handler.allowNonHttpProtocols).toBe(false);
+    const range = { start: { x: 1, y: 1 }, end: { x: 44, y: 1 } };
+    handler.activate(new MouseEvent('click'), url, range);
+    expect(calls).toContainEqual({ channel: 'links:open', args: [url] });
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 });

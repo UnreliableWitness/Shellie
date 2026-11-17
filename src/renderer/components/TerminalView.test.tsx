@@ -7,12 +7,14 @@ const xterm = vi.hoisted(() => ({
   terminals: [] as { write: (d: string) => void; refresh: () => void }[],
   webgl: [] as { dispose: () => void }[],
   typed: [] as ((data: string) => void)[],
+  created: [] as Record<string, unknown>[],
 }));
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
-    constructor() {
+    constructor(options: Record<string, unknown> = {}) {
       xterm.terminals.push(this);
+      xterm.created.push(options);
     }
     options: Record<string, unknown> = {};
     modes = {};
@@ -505,5 +507,24 @@ describe('TerminalView while hidden (#236)', () => {
       width.mockRestore();
       height.mockRestore();
     }
+  });
+});
+
+describe('TerminalView links', () => {
+  it('opens OSC 8 links through links:open, with no confirm prompt (#311)', () => {
+    const { calls } = installFakeApi({
+      'terminals:buffer': () => '',
+      'links:open': () => undefined,
+    });
+    const confirm = vi.spyOn(window, 'confirm');
+    render(<TerminalView terminalId="t1" taskId="a" active />);
+    const handler = xterm.created.at(-1)?.linkHandler as {
+      activate(e: MouseEvent, uri: string): void;
+    };
+    const url = 'https://dev.azure.com/x/_git/y/pullrequest/1';
+    handler.activate(new MouseEvent('click'), url);
+    expect(calls).toContainEqual({ channel: 'links:open', args: [url] });
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 });

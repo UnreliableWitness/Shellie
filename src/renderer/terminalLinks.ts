@@ -1,4 +1,9 @@
-import type { ILink, ILinkProvider, Terminal } from '@xterm/xterm';
+import type {
+  ILink,
+  ILinkHandler,
+  ILinkProvider,
+  Terminal,
+} from '@xterm/xterm';
 import { api } from './api';
 import { findLinks } from './docs/linkify';
 import { useStore } from './store';
@@ -83,6 +88,18 @@ export function openLink(taskId: string, target: LinkTarget): void {
         useStore.getState().notify('error', errorMessage(e)),
       );
 }
+
+/**
+ * Links a program prints with OSC 8 (Claude Code's PR links). xterm's default asks
+ * with confirm() and then opens a blank window, which main denies (#311); main's
+ * links:open already allows only http(s), so no prompt is needed.
+ */
+export const oscLinkHandler = (
+  taskId: string,
+): ILinkHandler & { allowNonHttpProtocols: false } => ({
+  activate: (_e, uri) => openLink(taskId, { type: 'url', url: uri }),
+  allowNonHttpProtocols: false,
+});
 
 const LABELS = {
   md: 'Open in Docs',
