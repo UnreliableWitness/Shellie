@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { HomeSnapshot } from '../../../shared/home';
@@ -140,6 +140,47 @@ describe('TasksBand', () => {
       kind: 'setup',
       taskId: 'new',
     });
+  });
+
+  it('Up next starts with the agent chosen in its menu', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => ({
+        worktreeRoot: '/w',
+        ...noOverrides,
+        config: {
+          base: 'main',
+          branch: '{type}/{id}-{slug}',
+          copy: [],
+          setup: [],
+          run: {},
+          found: true,
+        },
+      }),
+      'agents:detect': () => ({
+        checkedAt: '2026-10-22T10:00:00.000Z',
+        agents: {
+          claude: { found: true, version: null, path: '/bin/claude' },
+          copilot: { found: true, version: null, path: '/bin/copilot' },
+          opencode: { found: false, version: null, path: null },
+        },
+        shell: { label: 'zsh' },
+      }),
+      'tasks:create': (input) => ({ id: 'new', ...input }) as never,
+    });
+    render(<TasksBand snapshot={snapshot} />);
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'Choose the agent for Issue 7 Reset mail',
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'GitHub Copilot CLI' }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'tasks:create')?.args[0],
+      ).toMatchObject({ startClaude: false, openCopilot: true }),
+    );
   });
 
   it('Up next opens New task to choose the repo when several repos share the project', async () => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { AgentId } from '../../../shared/agents';
 import type { HomeItem, HomeSnapshot } from '../../../shared/home';
 import type { TaskView } from '../../../shared/types';
 import { taskConnectionId } from '../../../shared/workspaces';
@@ -11,6 +12,7 @@ import { useStore } from '../../store';
 import { taskStatusOf } from '../../taskStatus';
 import { track } from '../../telemetry';
 import { stateMeta, useWorkItemTypes } from '../../workItemTypes';
+import { StartAgentMenu } from '../StartAgentMenu';
 import { WorkItemTypeIcon } from '../ui';
 import { Band } from './Band';
 
@@ -77,43 +79,57 @@ function UpNextRow({
   const linked = reposForConnection(repos, connectionId);
   const repoId = linked[0]?.id ?? null;
   const label = `${item.type} ${item.id} ${item.title}`;
+  const start = async (agent?: AgentId) => {
+    if (!repoId || starting) return;
+    track('home.clicked', { band: 'up-next' });
+    const workItem = {
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      url: item.url,
+      project: item.project ?? null,
+    };
+    // Several repos share the project: New task asks which one.
+    if (linked.length > 1) return go({ kind: 'new-task', workItem, repoId });
+    setStarting(true);
+    const created = await startTaskFor(repoId, workItem, notify, agent);
+    setStarting(false);
+    if (created) {
+      select(created.id);
+      go({ kind: 'setup', taskId: created.id });
+    }
+  };
+  const startButton = (
+    <button
+      type="button"
+      className="btn btn-primary"
+      aria-label={`Start a task for ${label}`}
+      aria-disabled={!repoId || undefined}
+      title={repoId ? undefined : NO_REPO}
+      disabled={starting}
+      onClick={() => void start()}
+    >
+      {starting ? 'Starting' : 'Start'}
+    </button>
+  );
   return (
     <div className="home-upnext-row">
       <span>
         <WorkItemTypeIcon type={item.type} connectionId={connectionId} />{' '}
         {item.id} {item.title}
       </span>
-      <button
-        type="button"
-        className="btn btn-primary"
-        aria-label={`Start a task for ${label}`}
-        aria-disabled={!repoId || undefined}
-        title={repoId ? undefined : NO_REPO}
-        disabled={starting}
-        onClick={async () => {
-          if (!repoId || starting) return;
-          track('home.clicked', { band: 'up-next' });
-          const workItem = {
-            id: item.id,
-            type: item.type,
-            title: item.title,
-            url: item.url,
-            project: item.project ?? null,
-          };
-          // Several repos share the project: New task asks which one.
-          if (linked.length > 1)
-            return go({ kind: 'new-task', workItem, repoId });
-          setStarting(true);
-          const created = await startTaskFor(repoId, workItem, notify);
-          setStarting(false);
-          if (created) {
-            select(created.id);
-            go({ kind: 'setup', taskId: created.id });
-          }
-        }}
-      >
-        {starting ? 'Starting' : 'Start'}
-      </button>
+      {repoId && linked.length === 1 ? (
+        <StartAgentMenu
+          label={label}
+          className="btn btn-primary"
+          disabled={starting}
+          onPick={(agent) => void start(agent)}
+        >
+          {startButton}
+        </StartAgentMenu>
+      ) : (
+        startButton
+      )}
     </div>
   );
 }
