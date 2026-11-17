@@ -23,8 +23,11 @@ export type { RefreshResult };
 
 const WIKI_DIR = 'sources/wiki';
 const ATTACHMENTS = '.attachments';
-/** The wiki checkout keeps LF whatever the machine's git says (Windows runners set core.autocrlf=true). */
-const LF = ['-c', 'core.autocrlf=false'];
+/**
+ * Config for every git call on the wiki checkout: it keeps LF whatever the machine's git says (Windows runners set
+ * core.autocrlf=true), and deep wiki pages may go past Windows' 260-character path limit.
+ */
+const MIRROR_GIT = ['-c', 'core.autocrlf=false', '-c', 'core.longpaths=true'];
 
 /** Sources are our files: LF everywhere, so a page hashes the same on every platform. */
 export const toLf = (text: string) => text.replace(/\r\n/g, '\n');
@@ -205,19 +208,23 @@ async function syncMirror(
     try {
       sameRemote =
         (
-          await git.run(mirror, [...LF, 'remote', 'get-url', 'origin'])
+          await git.run(mirror, [...MIRROR_GIT, 'remote', 'get-url', 'origin'])
         ).trim() === wiki.gitUrl;
     } catch {
       sameRemote = false;
     }
   }
   if (cloned && sameRemote) {
-    await git.run(mirror, [...LF, 'fetch', '-q', 'origin', wiki.version], {
-      env,
-    });
     await git.run(
       mirror,
-      [...LF, 'reset', '-q', '--hard', `origin/${wiki.version}`],
+      [...MIRROR_GIT, 'fetch', '-q', 'origin', wiki.version],
+      {
+        env,
+      },
+    );
+    await git.run(
+      mirror,
+      [...MIRROR_GIT, 'reset', '-q', '--hard', `origin/${wiki.version}`],
       {
         env,
       },
@@ -226,7 +233,7 @@ async function syncMirror(
     await git.run(
       mirror,
       [
-        ...LF,
+        ...MIRROR_GIT,
         'sparse-checkout',
         'set',
         '--no-cone',
@@ -241,7 +248,7 @@ async function syncMirror(
     await git.run(
       brainDir,
       [
-        ...LF,
+        ...MIRROR_GIT,
         'clone',
         '-q',
         '--filter=blob:none',
@@ -256,7 +263,7 @@ async function syncMirror(
     await git.run(
       mirror,
       [
-        ...LF,
+        ...MIRROR_GIT,
         'sparse-checkout',
         'set',
         '--no-cone',
@@ -264,7 +271,9 @@ async function syncMirror(
       ],
       { env },
     );
-    await git.run(mirror, [...LF, 'checkout', '-q', wiki.version], { env });
+    await git.run(mirror, [...MIRROR_GIT, 'checkout', '-q', wiki.version], {
+      env,
+    });
   } catch (e) {
     await fs.rm(mirror, { recursive: true, force: true });
     throw e;
@@ -396,7 +405,7 @@ export async function refreshMirror(
         await git.run(
           mirror,
           [
-            ...LF,
+            ...MIRROR_GIT,
             'sparse-checkout',
             'add',
             ...[...wanted].map((n) =>
