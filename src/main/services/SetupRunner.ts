@@ -7,6 +7,7 @@ import { isInside } from '../paths';
 import type { Command, Platform } from '../platform/Platform';
 import { GitAuthError, killTree, type GitClient } from './GitClient';
 import { nodeModulesMatch } from './nodeModules';
+import { normalizeOpenCodeAgents } from './opencodeAgents';
 import { errorMessage } from '../../shared/errors';
 import { strippableKind, stripKeys } from '../secrets/inject';
 import { replaceFile } from '../secrets/replaceFile';
@@ -651,6 +652,9 @@ export class SetupRunner {
           cmd,
         );
       }
+      // Before restoreTouched, so an agent file committed in the repo goes back to how it was committed.
+      if (targets.includes('opencode'))
+        await normalizeOpenCodeAgents(plan.worktreePath, log);
     } finally {
       restored = await this.restoreTouched(
         plan.worktreePath,
