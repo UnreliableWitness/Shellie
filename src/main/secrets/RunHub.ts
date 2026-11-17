@@ -9,6 +9,9 @@ import type { ShellieConfig } from '../../shared/types';
 import { errorMessage } from '../../shared/errors';
 import { argsRefusal, packageScripts, withScriptSeparator } from './runArgs';
 
+/** The name agents may not `shellie run`: tests run in their own shell (#319). */
+const TESTS_NAME = 'test';
+
 /** The start of the last line of a `/v1/run` response: `\0exit:<code>`. Output never holds a NUL. */
 export const RUN_EXIT = '\u0000exit:';
 
@@ -26,10 +29,10 @@ export type RunTask = {
   agentTabs: string[];
 };
 
-/** A resolved named command. `command` is the repo's own line from .shellie.yml (or the test command). */
+/** A resolved named command. `command` is the repo's own line from .shellie.yml. */
 export type RunSpec = {
   name: string;
-  given: 'run' | 'tests' | 'setup';
+  given: 'run' | 'setup';
   command: string | null;
   setupCommands: string[] | null;
   /** Passed as arguments, never through a shell line (with `--` in front for an npm script). */
@@ -51,10 +54,6 @@ export type RunBackend = {
   task(taskId: string): RunTask | null;
   /** The repo's .shellie.yml (from its main checkout). */
   config(repoPath: string): Promise<ShellieConfig>;
-  testCommand(
-    worktreePath: string,
-    config: ShellieConfig,
-  ): Promise<string | null>;
   /**
    * Opens (or reuses) the visible run tab `agent · <name>` and spawns the command with the task environment's
    * secrets. Calls `attach` with the tab's id right before the spawn, so no output is missed; `attach` returns
@@ -110,7 +109,7 @@ function inside(root: string, folder: string): boolean {
 }
 
 /**
- * `shellie run` for agents: runs a task's **named** commands (the repo's `run:` entries, `test`, `setup`) in a
+ * `shellie run` for agents: runs a task's **named** commands (the repo's `run:` entries, `setup`) in a
  * visible `run` tab with the task environment's secrets, and streams the tab's output back to the agent only
  * after leak filtering. A token per task per launch says which task a request is for. UAT and Production runs
  * wait for an approve in Shellie. Never a free command line: the name picks the command, arguments stay arguments.
@@ -173,10 +172,14 @@ export class RunHub {
   ): Promise<RunSpec | { error: string; code?: number }> {
     const task = this.backend?.task(taskId);
     if (!task) return { error: 'This task is not in Shellie' };
-    const { names, ws, run, test, setupCommands } = await this.catalog(
-      task,
-      folder,
-    );
+    // Tests run in the agent's own shell, never through Shellie (#319): Windows showed a security prompt.
+    if (name === TESTS_NAME)
+      return {
+        error:
+          "Tests do not run through shellie run: run the repo's test command (dotnet test, npm test) directly in your shell, without this project's secrets.",
+        code: 2,
+      };
+    const { names, ws, run, setupCommands } = await this.catalog(task, folder);
     const list =
       names.length > 0
         ? `Commands for shellie run: ${names.join(', ')}`
@@ -193,11 +196,7 @@ export class RunHub {
       workspaceId: ws.id,
       environment: task.environment,
     };
-    const command = Object.hasOwn(run, name)
-      ? run[name]!
-      : name === 'test'
-        ? test
-        : null;
+    const command = Object.hasOwn(run, name) ? run[name]! : null;
     if (command === null) {
       if (args.length > 0) return { error: 'setup takes no arguments' };
       return {
@@ -213,7 +212,7 @@ export class RunHub {
     return {
       ...base,
       args: withScriptSeparator(command, args),
-      given: name === 'test' ? 'tests' : 'run',
+      given: 'run',
       command,
       setupCommands: null,
     };
@@ -429,14 +428,12 @@ export class RunHub {
             .find((w) => inside(w.worktreePath, folder))
         : undefined) ?? home;
     const config = await this.backend!.config(ws.repoPath);
-    const run = config.run;
-    const test = await this.backend!.testCommand(ws.worktreePath, config);
+    const { [TESTS_NAME]: _tests, ...run } = config.run;
     // The home runs the task's own setup commands; another workspace its repo's `setup:`.
     const setupCommands = ws === home ? task.setupCommands : config.setup;
     const names = Object.keys(run);
-    if (test !== null && !names.includes('test')) names.push('test');
     if (setupCommands.length > 0 && !names.includes('setup'))
       names.push('setup');
-    return { names, ws, run, test, setupCommands };
+    return { names, ws, run, setupCommands };
   }
 }

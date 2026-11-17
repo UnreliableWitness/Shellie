@@ -331,8 +331,8 @@ describe('claudeContext and shellie run', () => {
     slug: 'spike',
   };
   it('names the commands that run with secrets when the repo has some', () => {
-    expect(claudeContext(t, ['dev', 'test', 'setup'])).toContain(
-      "Commands that need this project's secrets (tests, the dev server) run through `shellie run <name>`; available: dev, test, setup. Plain commands in your shell run without secrets.",
+    expect(claudeContext(t, ['dev', 'setup'])).toContain(
+      "Commands that need this project's secrets (the dev server) run through `shellie run <name>`; available: dev, setup. Run tests directly in your shell, never through shellie run. Plain commands in your shell run without secrets.",
     );
   });
   it('stays as it was without stored secrets', () => {

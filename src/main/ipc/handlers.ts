@@ -1669,7 +1669,6 @@ export function createHandlers(s: Services): Handlers {
         };
       },
       config: (repoPath) => s.loadConfig(repoPath),
-      testCommand: testCommandFor,
       openTab: openRunTab,
       kill: (id) => void stopTab(id),
       // The agent reads what comes back masked: it never sees a value, so no notice and no Production pause.
@@ -1677,7 +1676,7 @@ export function createHandlers(s: Services): Handlers {
       pending: (list) => s.broadcast('runs:pending', list),
       started: (spec) =>
         tel.event('secrets.runStarted', {
-          kind: spec.given === 'tests' ? 'test' : spec.given,
+          kind: spec.given,
           environment: spec.environment,
         }),
     });
