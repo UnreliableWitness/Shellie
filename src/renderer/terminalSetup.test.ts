@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   TERMINAL_FONT,
   followColorScheme,
+  onScaleChange,
   terminalOptions,
 } from './terminalSetup';
 import { MIN_CONTRAST, TERMINAL_THEMES } from './terminalTheme';
@@ -53,5 +54,38 @@ describe('followColorScheme', () => {
     setTestColorScheme('dark');
     expect(t.options).toEqual(light);
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe('onScaleChange', () => {
+  it('reports each scale factor change, asking again for the new ratio, until unsubscribed', () => {
+    const queries: { media: string; listeners: Set<() => void> }[] = [];
+    const had = window.matchMedia;
+    window.matchMedia = ((media: string) => {
+      const q = { media, listeners: new Set<() => void>() };
+      queries.push(q);
+      return {
+        addEventListener: (_: string, l: () => void) => q.listeners.add(l),
+        removeEventListener: (_: string, l: () => void) =>
+          q.listeners.delete(l),
+      };
+    }) as never;
+    const ratio = vi.spyOn(window, 'devicePixelRatio', 'get');
+    try {
+      ratio.mockReturnValue(1);
+      const changed = vi.fn();
+      const off = onScaleChange(changed);
+      expect(queries.map((q) => q.media)).toEqual(['(resolution: 1dppx)']);
+      ratio.mockReturnValue(1.5);
+      for (const l of queries[0].listeners) l();
+      expect(changed).toHaveBeenCalledTimes(1);
+      expect(queries[0].listeners.size).toBe(0);
+      expect(queries[1].media).toBe('(resolution: 1.5dppx)');
+      off();
+      expect(queries[1].listeners.size).toBe(0);
+    } finally {
+      ratio.mockRestore();
+      window.matchMedia = had;
+    }
   });
 });

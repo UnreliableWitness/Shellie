@@ -19,6 +19,7 @@ import {
   followColorScheme,
   loadRenderer,
   loadWebgl,
+  onScaleChange,
   terminalOptions,
   windowsBuild,
 } from '../terminalSetup';
@@ -225,6 +226,20 @@ export function TerminalView({
         .catch(() => undefined);
     });
     const observer = new ResizeObserver(() => sendSize.current());
+    // Moved to a screen with other scaling: the WebGL renderer is dropped and loaded again after the refit, instead of
+    // rebuilding its canvas and glyph atlas mid-move, which froze the window on Windows (#315).
+    const offScale = onScaleChange(() => {
+      webgl?.dispose();
+      webgl = null;
+      requestAnimationFrame(() => {
+        if (!live) return;
+        sendSize.current();
+        if (shown && opened && !webgl) {
+          webgl = loadWebgl(t);
+          t.refresh(0, t.rows - 1);
+        }
+      });
+    });
     // Open once the ConPTY build is known. Output written before that is buffered by xterm.
     void windowsBuild().then((build) => {
       if (!live) return;
@@ -249,6 +264,7 @@ export function TerminalView({
       live = false;
       if (pendingTimer) clearTimeout(pendingTimer);
       observer.disconnect();
+      offScale();
       onData.dispose();
       links?.dispose();
       offData();

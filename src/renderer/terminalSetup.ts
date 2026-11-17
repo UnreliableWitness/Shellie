@@ -70,6 +70,26 @@ export function loadRenderer(t: Terminal): void {
 }
 
 /**
+ * Calls `changed` each time the window's scale factor changes (moved to a screen with other scaling, #315); returns the
+ * unsubscribe. A `(resolution)` query matches one ratio only, so it is asked again for the new ratio after each change.
+ */
+export function onScaleChange(changed: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => undefined;
+  let query: MediaQueryList | null = null;
+  const fire = () => {
+    query?.removeEventListener('change', fire);
+    arm();
+    changed();
+  };
+  const arm = () => {
+    query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    query.addEventListener('change', fire);
+  };
+  arm();
+  return () => query?.removeEventListener('change', fire);
+}
+
+/**
  * The WebGL renderer when the GPU allows it; the DOM renderer otherwise (null). Disposing it, or losing the GPU context,
  * returns the terminal to the DOM renderer; disposing twice is harmless.
  */

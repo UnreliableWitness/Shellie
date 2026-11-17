@@ -8,6 +8,8 @@ const xterm = vi.hoisted(() => ({
   webgl: [] as { dispose: () => void }[],
   typed: [] as ((data: string) => void)[],
   created: [] as Record<string, unknown>[],
+  fits: 0,
+  scale: [] as { changed: () => void; off: () => void }[],
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -40,7 +42,9 @@ vi.mock('@xterm/xterm', () => ({
 }));
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
-    fit() {}
+    fit() {
+      xterm.fits++;
+    }
   },
 }));
 vi.mock('../terminalSetup', () => ({
@@ -50,6 +54,11 @@ vi.mock('../terminalSetup', () => ({
     const addon = { dispose: vi.fn() };
     xterm.webgl.push(addon);
     return addon;
+  },
+  onScaleChange: (changed: () => void) => {
+    const off = vi.fn();
+    xterm.scale.push({ changed, off });
+    return off;
   },
   terminalOptions: () => ({}),
   windowsBuild: async () => null,
@@ -526,5 +535,65 @@ describe('TerminalView links', () => {
     expect(calls).toContainEqual({ channel: 'links:open', args: [url] });
     expect(confirm).not.toHaveBeenCalled();
     confirm.mockRestore();
+  });
+});
+
+describe('TerminalView on a screen with other scaling (#315)', () => {
+  const opened = async () => {
+    await new Promise((r) => setTimeout(r, 20));
+    return xterm.terminals[xterm.terminals.length - 1];
+  };
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+
+  it('drops the WebGL renderer, refits, then loads it again', async () => {
+    installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => true,
+      'terminals:resize': () => undefined,
+    });
+    const width = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(800);
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(600);
+    try {
+      xterm.webgl.length = 0;
+      xterm.scale.length = 0;
+      const { unmount } = render(
+        <TerminalView terminalId="t1" taskId="a" active />,
+      );
+      const t = await opened();
+      await frame();
+      const refresh = vi.spyOn(t, 'refresh');
+      expect(xterm.webgl).toHaveLength(1);
+      const fits = xterm.fits;
+      xterm.scale[0].changed();
+      expect(xterm.webgl[0].dispose).toHaveBeenCalledTimes(1);
+      expect(xterm.webgl).toHaveLength(1);
+      await frame();
+      expect(xterm.fits).toBeGreaterThan(fits);
+      expect(xterm.webgl).toHaveLength(2);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      unmount();
+      expect(xterm.scale[0].off).toHaveBeenCalledTimes(1);
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
+  it('does not load WebGL again for a hidden terminal', async () => {
+    installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => true,
+    });
+    xterm.webgl.length = 0;
+    xterm.scale.length = 0;
+    render(<TerminalView terminalId="t1" taskId="a" active={false} />);
+    await opened();
+    xterm.scale[0].changed();
+    await frame();
+    expect(xterm.webgl).toHaveLength(0);
   });
 });
