@@ -1242,7 +1242,7 @@ describe('handlers: shellie run', () => {
   it("tells Claude the names when the repo has a stored secret, and gives agent tabs' env the task", async () => {
     const hx = await runHarness();
     expect(hx.contexts.at(-1)).toContain(
-      'run through `shellie run <name>`; available: show, list, fail. Plain commands in your shell run without secrets.',
+      'run through `shellie run <name>`; available: show, list, fail. Run tests directly in your shell, never through shellie run. Plain commands in your shell run without secrets.',
     );
     expect(hx.envCalls.find((c) => c.kind === 'claude')).toEqual({
       kind: 'claude',

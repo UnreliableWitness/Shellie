@@ -252,7 +252,7 @@ function otherReposInstruction(task: Pick<Task, 'branch' | 'slug'>): string {
  * Only for a repo with stored secrets.
  */
 export function shellieRunInstruction(names: string[]): string {
-  return `Commands that need this project's secrets (tests, the dev server) run through \`shellie run <name>\`; available: ${names.join(', ')}. Plain commands in your shell run without secrets.`;
+  return `Commands that need this project's secrets (the dev server) run through \`shellie run <name>\`; available: ${names.join(', ')}. Run tests directly in your shell, never through shellie run. Plain commands in your shell run without secrets.`;
 }
 
 /**

@@ -255,7 +255,7 @@ describe('Import page', () => {
         (_, el) =>
           el?.tagName === 'P' &&
           el.textContent ===
-            'Agents run tests and the dev server through shellie run; plain npm test in an agent tab runs without secrets.',
+            'Agents run the dev server through shellie run; tests run directly in the agent tab, without secrets.',
       ),
     ).toBeVisible();
     expect(

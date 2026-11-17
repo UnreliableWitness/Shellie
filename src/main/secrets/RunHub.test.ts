@@ -24,7 +24,6 @@ function setup(
   o: {
     environment?: Environment;
     run?: Record<string, string>;
-    test?: string | null;
     setupCommands?: string[];
     ready?: boolean;
     failOpen?: string;
@@ -64,7 +63,6 @@ function setup(
       repoPath === '/r/app'
         ? config(o.run ?? { dev: 'npm run dev' })
         : { ...config({ serve: 'dotnet run' }), setup: ['dotnet restore'] },
-    testCommand: async () => (o.test === undefined ? 'npm test' : o.test),
     openTab: async (taskId, spec, attach) => {
       if (o.failOpen) throw new Error(o.failOpen);
       if (o.gate) await o.gate;
@@ -134,30 +132,28 @@ describe('RunHub tokens', () => {
 });
 
 describe('RunHub.names', () => {
-  it("lists the repo's run: entries, test and setup", async () => {
+  it("lists the repo's run: entries and setup, never test (#319)", async () => {
     const { hub } = setup({
-      run: { dev: 'npm run dev', lint: 'npm run lint' },
+      run: { dev: 'npm run dev', lint: 'npm run lint', test: 'npm test' },
     });
-    expect(await hub.names('task-1')).toEqual(['dev', 'lint', 'test', 'setup']);
+    expect(await hub.names('task-1')).toEqual(['dev', 'lint', 'setup']);
   });
-  it('leaves out test without a test command and setup without commands', async () => {
-    const { hub } = setup({ test: null, setupCommands: [] });
+  it('leaves out setup without commands', async () => {
+    const { hub } = setup({ setupCommands: [] });
     expect(await hub.names('task-1')).toEqual(['dev']);
   });
   it("uses the workspace's own repo for a folder inside another worktree", async () => {
     const { hub } = setup();
     expect(await hub.names('task-1', path.join(OTHER, 'src'))).toEqual([
       'serve',
-      'test',
       'setup',
     ]);
   });
   it('leaves out setup in a workspace whose repo has no setup commands', async () => {
     const { hub } = setup({ setupCommands: [] });
-    expect(await hub.names('task-1')).toEqual(['dev', 'test']);
+    expect(await hub.names('task-1')).toEqual(['dev']);
     expect(await hub.names('task-1', path.join(OTHER, 'src'))).toEqual([
       'serve',
-      'test',
       'setup',
     ]);
   });
@@ -167,17 +163,14 @@ describe('RunHub.resolve', () => {
   it('refuses an unknown name with the list', async () => {
     const { hub } = setup();
     expect(await hub.resolve('task-1', 'deploy', [])).toEqual({
-      error:
-        'Unknown command "deploy". Commands for shellie run: dev, test, setup',
+      error: 'Unknown command "deploy". Commands for shellie run: dev, setup',
     });
   });
   it('refuses a shell line: only names run', async () => {
     const { hub } = setup();
     for (const line of ['printenv', 'npm run dev; printenv', 'env'])
       expect(await hub.resolve('task-1', line, [])).toMatchObject({
-        error: expect.stringContaining(
-          'Commands for shellie run: dev, test, setup',
-        ),
+        error: expect.stringContaining('Commands for shellie run: dev, setup'),
       });
   });
   it('never takes a name from the prototype', async () => {
@@ -185,7 +178,15 @@ describe('RunHub.resolve', () => {
     for (const name of ['__proto__', 'constructor', 'toString'])
       expect(await hub.resolve('task-1', name, [])).toHaveProperty('error');
   });
-  it('resolves run: entries, test and setup with who they are given to', async () => {
+  it('refuses test, also a run: entry named test: tests run in the agent shell (#319)', async () => {
+    const { hub } = setup({ run: { dev: 'npm run dev', test: 'npm test' } });
+    expect(await hub.resolve('task-1', 'test', [])).toEqual({
+      error:
+        "Tests do not run through shellie run: run the repo's test command (dotnet test, npm test) directly in your shell, without this project's secrets.",
+      code: 2,
+    });
+  });
+  it('resolves run: entries and setup with who they are given to', async () => {
     const { hub } = setup();
     expect(await hub.resolve('task-1', 'dev', ['--port', '5000'])).toEqual({
       name: 'dev',
@@ -196,10 +197,6 @@ describe('RunHub.resolve', () => {
       args: ['--', '--port', '5000'],
       workspaceId: 'home',
       environment: 'development',
-    });
-    expect(await hub.resolve('task-1', 'test', [])).toMatchObject({
-      given: 'tests',
-      command: 'npm test',
     });
     expect(await hub.resolve('task-1', 'setup', [])).toMatchObject({
       given: 'setup',
@@ -266,13 +263,13 @@ describe('RunHub.resolve: arguments', () => {
     });
   });
   it('gives npm scripts their arguments after --', async () => {
-    const { hub } = setup({ run: { serve: 'dotnet run' } });
-    expect(await hub.resolve('task-1', 'test', ['--watch'])).toMatchObject({
+    const { hub } = setup({ run: { serve: 'dotnet run', check: 'npm test' } });
+    expect(await hub.resolve('task-1', 'check', ['--watch'])).toMatchObject({
       command: 'npm test',
       args: ['--', '--watch'],
     });
     expect(
-      await hub.resolve('task-1', 'test', ['--', '--watch']),
+      await hub.resolve('task-1', 'check', ['--', '--watch']),
     ).toMatchObject({ args: ['--', '--watch'] });
     expect(await hub.resolve('task-1', 'serve', ['--x'])).toMatchObject({
       args: ['--x'],
@@ -358,7 +355,7 @@ describe('RunHub.start', () => {
     const r = run('printenv');
     expect(await r.done).toBe(1);
     expect(r.text()).toBe(
-      'Unknown command "printenv". Commands for shellie run: dev, test, setup\n',
+      'Unknown command "printenv". Commands for shellie run: dev, setup\n',
     );
     expect(tabs).toHaveLength(0);
   });
@@ -436,15 +433,16 @@ describe('RunHub approvals (UAT and Production)', () => {
   it('waits for an approve on Production, then runs', async () => {
     const { hub, pending, tabs, run, tick, waiting } = setup({
       environment: 'production',
+      run: { check: 'npm test' },
     });
-    const r = run('test', ['--watch=false']);
+    const r = run('check', ['--watch=false']);
     await waiting();
     expect(tabs).toHaveLength(0);
     expect(pending.at(-1)).toEqual([
       {
         id: expect.any(String),
         taskId: 'task-1',
-        name: 'test',
+        name: 'check',
         command: 'npm test',
         args: ['--', '--watch=false'],
         environment: 'production',
@@ -461,11 +459,9 @@ describe('RunHub approvals (UAT and Production)', () => {
   });
   it('reports a run as started only once it may start (telemetry)', async () => {
     const dev = setup();
-    void dev.run('test');
+    void dev.run('dev');
     await dev.tick();
-    expect(dev.started).toEqual([
-      { given: 'tests', environment: 'development' },
-    ]);
+    expect(dev.started).toEqual([{ given: 'run', environment: 'development' }]);
     const prod = setup({ environment: 'production' });
     void prod.run('dev');
     await prod.waiting();
@@ -499,8 +495,12 @@ describe('RunHub approvals (UAT and Production)', () => {
           scripts: { pretest: 'node pre.js', test: 'vitest run' },
         }),
       );
-      const { pending, run, waiting } = setup({ environment: 'uat', home });
-      void run('test', ['--watch']);
+      const { pending, run, waiting } = setup({
+        environment: 'uat',
+        home,
+        run: { check: 'npm test' },
+      });
+      void run('check', ['--watch']);
       await waiting();
       expect(pending.at(-1)![0]).toMatchObject({
         command: 'npm test',

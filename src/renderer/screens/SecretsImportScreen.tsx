@@ -420,8 +420,8 @@ export function SecretsImportScreen({ repoId }: { repoId: string }) {
           </p>
         )}
         <p className="import-note">
-          Agents run tests and the dev server through <code>shellie run</code>;
-          plain <code>npm test</code> in an agent tab runs without secrets.
+          Agents run the dev server through <code>shellie run</code>; tests run
+          directly in the agent tab, without secrets.
         </p>
         {clash && (
           <p role="alert" className="small text-red import-clash">
