@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainWiki } from '../../shared/brain';
 import { GitClient } from '../services/GitClient';
 import {
@@ -401,6 +401,39 @@ describe('wiki mirror', () => {
       pageUrl,
     );
     expect(r).toMatchObject({ ok: true, changed: 1, removed: 1, pages: 1 });
+  });
+
+  it('runs every mirror git call with long paths allowed and LF kept', async () => {
+    const run = vi.spyOn(git, 'run');
+    try {
+      await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl); // clone
+      await put(KICK, 'Changed\n');
+      await refreshMirror(git, dir, wiki, ROOT, auth, pageUrl); // fetch + reset
+      const mirrorCalls = run.mock.calls
+        .map(([, args]) => args)
+        .filter((args) =>
+          [
+            'clone',
+            'fetch',
+            'reset',
+            'sparse-checkout',
+            'checkout',
+            'remote',
+          ].includes(args[4]),
+        );
+      expect(mirrorCalls.map((args) => args[4])).toEqual(
+        expect.arrayContaining(['clone', 'fetch', 'reset', 'checkout']),
+      );
+      for (const args of mirrorCalls)
+        expect(args.slice(0, 4)).toEqual([
+          '-c',
+          'core.autocrlf=false',
+          '-c',
+          'core.longpaths=true',
+        ]);
+    } finally {
+      run.mockRestore();
+    }
   });
 
   it('sparsePatterns for the wiki root and for a page', () => {
