@@ -12,7 +12,7 @@ import { onTerminalEvent } from '../terminalEvents';
 import { currentColorScheme } from '../colorScheme';
 import { useStore } from '../store';
 import { attachClipboardKeys, isMac } from '../terminalClipboard';
-import { createLinkProvider } from '../terminalLinks';
+import { createLinkProvider, oscLinkHandler } from '../terminalLinks';
 import { registerTerminal } from '../terminalRegistry';
 import { LeakNotice } from './secrets/LeakNotice';
 import {
@@ -87,7 +87,10 @@ export function TerminalView({
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const t = new Terminal(terminalOptions(null));
+    const t = new Terminal({
+      ...terminalOptions(null),
+      linkHandler: oscLinkHandler(taskId),
+    });
     const f = new FitAddon();
     t.loadAddon(f);
     attachClipboardKeys(t, isMac, navigator.clipboard);
