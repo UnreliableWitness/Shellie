@@ -815,6 +815,39 @@ describe('SetupRunner: apm step', () => {
     });
   });
 
+  it('converts Claude Code agent files for OpenCode only when opencode is a target (#318)', async () => {
+    const { p } = setup();
+    const file = path.join(p.worktreePath, '.opencode', 'agents', 'x.md');
+    const agent = '---\ntools: Read, Bash\n---\nbody\n';
+    const first = await runner.run(p, {
+      onEvent: () => {},
+      startTerminals: async () => {},
+    });
+    expect(first).toEqual({ ok: true });
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, agent);
+    await runner.run(p, {
+      onEvent: () => {},
+      startTerminals: async () => {},
+      fromStep: 3,
+    });
+    expect(readFileSync(file, 'utf8')).toBe(agent);
+
+    const { events, onEvent } = collect();
+    const result = await runner.run(
+      { ...p, apmTargets: ['claude', 'opencode'] },
+      { onEvent, startTerminals: async () => {}, fromStep: 3 },
+    );
+    expect(result).toEqual({ ok: true });
+    expect(readFileSync(file, 'utf8')).toBe(
+      '---\ntools:\n  read: true\n  bash: true\n---\nbody\n',
+    );
+    expect(apmStep(events)).toMatchObject({
+      status: 'done',
+      detail: 'Installed for claude, opencode',
+    });
+  });
+
   it('warns and goes on when apm is not installed', async () => {
     const { p, calls } = setup({ FAKE_APM_MISSING: '1' });
     const { events, onEvent } = collect();
