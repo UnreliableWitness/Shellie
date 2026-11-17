@@ -1475,6 +1475,27 @@ describe('handlers: the brain at setup', () => {
     await hx.terminals.killAllForTask(on.t.id);
   });
 
+  it('an OpenCode tab gets the same task context Claude starts with, brain included', async () => {
+    const ctxs: { kind: string; context?: string }[] = [];
+    const { b, c, calls, create, hx } = await brainSetup({
+      terminalEnv: (def, ctx) => {
+        ctxs.push({ kind: def.kind, ...ctx });
+        return {};
+      },
+    });
+    const brain = await b.add({ connectionId: c.id, project: 'Acme Project' });
+    const { t } = await create({ openOpencode: true });
+    const context = ctxs.filter((x) => x.kind === 'opencode').at(-1)?.context;
+    expect(context).toContain('The details are in .shellie/task.md.');
+    expect(context).toContain(`The project's brain (Acme) is at ${brain.path}`);
+    expect(context).toBe(calls.at(-1)!.prompt);
+    // Only OpenCode gets it through its env: Claude has it in its system prompt.
+    expect(
+      ctxs.filter((x) => x.kind === 'claude').at(-1)?.context,
+    ).toBeUndefined();
+    await hx.terminals.killAllForTask(t.id);
+  });
+
   it('names the brain in the recorded summary when the work item project is known', async () => {
     const { b, c, create, hx } = await brainSetup();
     await b.add({ connectionId: c.id, project: 'Acme Project' });

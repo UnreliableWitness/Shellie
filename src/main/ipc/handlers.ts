@@ -292,6 +292,8 @@ export type Services = {
    * secret files an agent tab must not read (relative to its folder, absolute for another repo's worktree).
    * `brainDir`: the task's brain folder an OpenCode tab may read (when the brain gives tasks read access), with
    * `worktrees`: the tab's folder as given and real, which OpenCode's edit rules are relative to.
+   * `context`: for an OpenCode tab, the start context Claude gets as its system prompt (the task, `.shellie/task.md`,
+   * the `shellie run` names and the brain), which main gives OpenCode as an instructions file.
    */
   terminalEnv?: (
     def: TerminalDef,
@@ -301,6 +303,7 @@ export type Services = {
       denyPaths?: string[];
       brainDir?: string;
       worktrees?: string[];
+      context?: string;
     },
   ) => Record<string, string>;
   /** `shellie run` for agents (main); handlers give it the task's tabs, config and leak watch. Absent in most tests. */
@@ -1525,8 +1528,13 @@ export function createHandlers(s: Services): Handlers {
         secrets.denyPaths,
       );
       // OpenCode's counterpart of Claude's --add-dir for the brain, given through its config.
-      const brainDir =
-        def.kind === 'opencode' ? brainToRead(task)?.path : undefined;
+      const brain = def.kind === 'opencode' ? brainToRead(task) : undefined;
+      const brainDir = brain?.path;
+      // OpenCode has no system prompt flag: Claude's start context goes in through its config's instructions.
+      const context =
+        def.kind === 'opencode'
+          ? claudeContext(task, secrets.runNames, brain)
+          : undefined;
       const cwd = terminalWorkspace(task, def).worktreePath;
       started = s.terminals.spawn({
         id: def.id,
@@ -1546,6 +1554,7 @@ export function createHandlers(s: Services): Handlers {
             ...(secrets.runNames ? { runNames: secrets.runNames } : {}),
             ...(secrets.denyPaths ? { denyPaths: secrets.denyPaths } : {}),
             ...(brainDir ? { brainDir, worktrees: folderPaths(cwd) } : {}),
+            ...(context ? { context } : {}),
           }),
           ...cmd.env,
           ...extraEnv,
