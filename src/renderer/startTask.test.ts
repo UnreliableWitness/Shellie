@@ -52,6 +52,42 @@ describe('startTaskFor', () => {
     });
   });
 
+  it('opens only the chosen agent, keeping the shell from Settings', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => config,
+      'settings:get': () => ({
+        ...defaultSettings(),
+        defaultTerminals: {
+          claude: true,
+          copilot: true,
+          opencode: false,
+          shell: true,
+        },
+      }),
+      'tasks:create': () => ({ id: 't1' }) as never,
+    });
+    await startTaskFor(
+      'r1',
+      {
+        id: '5',
+        type: 'Task',
+        title: 'Store the address',
+        url: null,
+        project: null,
+      },
+      vi.fn(),
+      'opencode',
+    );
+    expect(
+      calls.find((c) => c.channel === 'tasks:create')?.args[0],
+    ).toMatchObject({
+      startClaude: false,
+      openShell: true,
+      openCopilot: false,
+      openOpencode: true,
+    });
+  });
+
   it('uses the repo default environment, Development or Test', async () => {
     const { calls } = installFakeApi({
       'repos:config': () => config,

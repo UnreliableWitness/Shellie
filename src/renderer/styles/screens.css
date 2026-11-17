@@ -576,7 +576,8 @@
 }
 .sprint-row:hover .sprint-start,
 .sprint-row:focus-within .sprint-start,
-.sprint-start:focus-visible {
+.sprint-start:focus-visible,
+.split-btn:has([aria-expanded='true']) .sprint-start {
   opacity: 1;
 }
 .btn.sprint-start[aria-disabled='true'] {

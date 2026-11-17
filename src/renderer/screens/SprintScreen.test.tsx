@@ -389,6 +389,54 @@ describe('Sprint page', () => {
     });
   });
 
+  it('the Start menu starts the task with the chosen agent', async () => {
+    const { calls } = fake({
+      'agents:detect': () => ({
+        checkedAt: '2026-10-22T10:00:00.000Z',
+        agents: {
+          claude: { found: true, version: '2.1.307', path: '/bin/claude' },
+          copilot: { found: false, version: null, path: null },
+          opencode: { found: true, version: '1.0.0', path: '/bin/opencode' },
+        },
+        shell: { label: 'zsh' },
+      }),
+      'tasks:create': () => ({ id: 't5' }) as never,
+    });
+    useStore.setState({ repos: [repo] });
+    render(<Shell />);
+    const table = await grid();
+    await userEvent.click(
+      within(table).getByRole('button', {
+        name: 'Choose the agent for Task 5 Store the address',
+      }),
+    );
+    const menu = await screen.findByRole('menu', { name: 'Start with' });
+    // Only detected agents; the one ticked in Settings is marked.
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((b) => b.textContent),
+    ).toEqual(['Claude Code (default)', 'OpenCode']);
+    await userEvent.click(
+      within(menu).getByRole('menuitem', { name: 'OpenCode' }),
+    );
+    await waitFor(() =>
+      expect(useStore.getState().screen).toEqual({
+        kind: 'setup',
+        taskId: 't5',
+      }),
+    );
+    expect(
+      calls.find((c) => c.channel === 'tasks:create')?.args[0],
+    ).toMatchObject({
+      startClaude: false,
+      openShell: true,
+      openCopilot: false,
+      openOpencode: true,
+    });
+    expect(calls.some((c) => c.channel === 'shell:openExternal')).toBe(false);
+  });
+
   it('Start never picks a discovered repo', async () => {
     const { calls } = fake({
       'repos:config': () => ({

@@ -14,7 +14,9 @@ import type {
   SprintRow,
   TaskView,
 } from '../../shared/types';
+import type { AgentId } from '../../shared/agents';
 import { api, tryInvoke } from '../api';
+import { StartAgentMenu } from '../components/StartAgentMenu';
 import {
   PageHeader,
   StateDot,
@@ -213,6 +215,42 @@ function Row({
   // The row opens the work item in Azure DevOps; the title is the same link for keyboard users.
   const openInAdo = () =>
     void tryInvoke(() => api().invoke('shell:openExternal', w.url), notify);
+  const start = async (agent?: AgentId) => {
+    if (!repoId || starting) return;
+    const workItem = {
+      id: w.id,
+      type: w.type,
+      title: w.title,
+      url: w.url,
+      project: w.project ?? null,
+    };
+    if (chooseRepo) return go({ kind: 'new-task', workItem, repoId });
+    setStarting(true);
+    const created = await startTaskFor(repoId, workItem, notify, agent);
+    setStarting(false);
+    if (created) {
+      select(created.id);
+      go({ kind: 'setup', taskId: created.id });
+    }
+  };
+  const startButton = (
+    <button
+      type="button"
+      className="btn btn-primary sprint-start"
+      // aria-disabled, not disabled: the button stays focusable so keyboard users hear why.
+      aria-disabled={!repoId || undefined}
+      title={repoId ? undefined : NO_REPO}
+      aria-label={`Start a task for ${label}`}
+      aria-description={repoId ? undefined : NO_REPO}
+      disabled={starting}
+      onClick={(e) => {
+        e.stopPropagation();
+        void start();
+      }}
+    >
+      {starting ? 'Starting' : 'Start'}
+    </button>
+  );
   return (
     <div
       role="row"
@@ -275,38 +313,18 @@ function Row({
       <span role="cell" className="sprint-shellie">
         {task ? (
           <TaskCell task={task} label={label} />
-        ) : (
-          <button
-            type="button"
+        ) : repoId && !chooseRepo ? (
+          <StartAgentMenu
+            label={label}
             className="btn btn-primary sprint-start"
-            // aria-disabled, not disabled: the button stays focusable so keyboard users hear why.
-            aria-disabled={!repoId || undefined}
-            title={repoId ? undefined : NO_REPO}
-            aria-label={`Start a task for ${label}`}
-            aria-description={repoId ? undefined : NO_REPO}
             disabled={starting}
-            onClick={async (e) => {
-              e.stopPropagation();
-              if (!repoId || starting) return;
-              const workItem = {
-                id: w.id,
-                type: w.type,
-                title: w.title,
-                url: w.url,
-                project: w.project ?? null,
-              };
-              if (chooseRepo) return go({ kind: 'new-task', workItem, repoId });
-              setStarting(true);
-              const created = await startTaskFor(repoId, workItem, notify);
-              setStarting(false);
-              if (created) {
-                select(created.id);
-                go({ kind: 'setup', taskId: created.id });
-              }
-            }}
+            onPick={(agent) => void start(agent)}
           >
-            {starting ? 'Starting' : 'Start'}
-          </button>
+            {startButton}
+          </StartAgentMenu>
+        ) : (
+          // No repo, or New task picks the repo and its agents: no agent menu.
+          startButton
         )}
       </span>
     </div>
