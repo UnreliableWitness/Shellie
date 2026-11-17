@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, promises as fs, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -76,7 +76,6 @@ import {
 } from './main/attention/opencodePlugin';
 import { RunHub } from './main/secrets/RunHub';
 import { agentRunEnv, writeShims } from './main/secrets/shim';
-import { shellieRunInstruction } from './shared/naming';
 import { DocsWatcher } from './main/docs/DocsWatcher';
 import { GitDirWatcher } from './main/review/GitDirWatcher';
 import { registerIpc } from './main/ipc/register';
@@ -748,19 +747,23 @@ async function boot(): Promise<void> {
       .catch((err) =>
         console.error('[secrets] could not write the shellie run shim', err),
       );
-    /** OpenCode reads instructions from a file: the `shellie run` line, per task. */
-    const opencodeRunInstructions = (taskId: string, names: string[]) => {
+    /**
+     * OpenCode reads instructions from a file: per task, the start context Claude gets as its system prompt (the
+     * task and its `.shellie/task.md`, the `shellie run` line, the brain).
+     */
+    const opencodeTaskInstructions = (taskId: string, context: string) => {
       try {
+        const dir = path.join(userData, 'opencode');
+        mkdirSync(dir, { recursive: true });
         const file = path.join(
-          userData,
-          'opencode',
-          `shellie-run-${taskId.replace(/[^\w-]/g, '_')}.md`,
+          dir,
+          `shellie-task-${taskId.replace(/[^\w-]/g, '_')}.md`,
         );
-        writeFileSync(file, `${shellieRunInstruction(names)}\n`);
+        writeFileSync(file, `${context}\n`);
         return file;
       } catch (err) {
         console.error(
-          '[secrets] could not write the OpenCode instructions',
+          '[terminals] could not write the OpenCode instructions',
           err,
         );
         return undefined;
@@ -1416,8 +1419,8 @@ async function boot(): Promise<void> {
           const content = opencodeConfigContent(
             process.env.OPENCODE_CONFIG_CONTENT,
             opencodePluginReady ? opencodePlugin : null,
-            opencodePluginReady && ctx.runNames
-              ? opencodeRunInstructions(ctx.taskId, ctx.runNames)
+            ctx.context
+              ? opencodeTaskInstructions(ctx.taskId, ctx.context)
               : undefined,
             ctx.denyPaths,
             ctx.brainDir,
