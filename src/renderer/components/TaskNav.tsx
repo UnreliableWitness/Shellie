@@ -135,15 +135,23 @@ function useLifecycles(): {
 } {
   const pulse = usePulse();
   const attention = useStore((s) => s.attention);
-  const life = (t: TaskView) =>
-    lifecycleOf({
-      pulses: pulse?.tasks[t.id] ?? [],
-      lastActiveAt: pulse?.lastActive[t.id] ?? null,
-      agentBlocked: t.terminals.some((d) =>
-        [attention[d.id] ?? []].flat().some((e) => e.reason === 'blocked'),
-      ),
-      now: Date.now(),
-    });
+  // Ages only change with time: re-render every minute so groups and waits follow.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const life = (t: TaskView): TaskLifecycle =>
+    ALWAYS_ACTIVE.includes(t.status)
+      ? { group: 'active', chip: null, story: '', sortKey: 0 }
+      : lifecycleOf({
+          pulses: pulse?.tasks[t.id] ?? [],
+          lastActiveAt: pulse?.lastActive[t.id] ?? null,
+          agentBlocked: t.terminals.some((d) =>
+            [attention[d.id] ?? []].flat().some((e) => e.reason === 'blocked'),
+          ),
+          now: Date.now(),
+        });
   return { pulse, life };
 }
 
@@ -244,23 +252,54 @@ function Row({
   );
 }
 
-function RailRow({ task }: { task: TaskView }) {
+const railName = (task: TaskView) =>
+  `${task.workItem?.id ?? ''} ${task.workItem?.title ?? task.name}`.trim();
+
+function RailRow({
+  task,
+  lifecycle,
+}: {
+  task: TaskView;
+  lifecycle?: TaskLifecycle;
+}) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
   const waiting = useWaiting(task);
-  const name =
-    `${task.workItem?.id ?? ''} ${task.workItem?.title ?? task.name}`.trim();
+  const name = railName(task);
+  const dim = lifecycle?.group === 'in-review' || lifecycle?.group === 'parked';
+  const tone = lifecycle?.chip?.tone;
   return (
     <button
       type="button"
-      className="railrow"
+      className={dim ? 'railrow is-dim' : 'railrow'}
       aria-label={name}
-      title={name}
+      title={lifecycle?.story ? `${name} · ${lifecycle.story}` : name}
       aria-current={current ? 'true' : undefined}
       onClick={() => openTask(task.id)}
     >
       <TypeIcon task={task} />
+      {tone && tone !== 'muted' && (
+        <span className={`rail-dot rail-dot-${tone}`} aria-hidden="true" />
+      )}
       {waiting && <AttentionDot entry={waiting} />}
+    </button>
+  );
+}
+
+/** A merged task's hollow Finish square: the rail's version of the row's Finish chip. */
+function RailMergedFinish({ task }: { task: TaskView }) {
+  const go = useStore((s) => s.go);
+  return (
+    <button
+      type="button"
+      className="railrow"
+      aria-label={`Finish ${railName(task)}`}
+      title="Merged: finish this task"
+      onClick={() => go({ kind: 'finish', taskId: task.id })}
+    >
+      <span className="rail-finish-hollow">
+        <CheckmarkCircle20Regular aria-hidden="true" />
+      </span>
     </button>
   );
 }
@@ -705,12 +744,31 @@ export function TaskNav() {
       <div className="leftnav-scroll">
         <TasksHead rail={rail} />
         {rail
-          ? open.map((t) => (
-              <Fragment key={t.id}>
-                <RailRow task={t} />
-                <RailFinish task={t} />
-                <RailDiscard task={t} />
-              </Fragment>
+          ? groups.map(({ group, tasks: list }, i) => (
+              <div key={group} role="group" aria-label={LIFECYCLE_LABEL[group]}>
+                {i > 0 && <div className="rail-sep" aria-hidden="true" />}
+                {group === 'needs-you' && (
+                  <span
+                    className="rail-count"
+                    aria-label={`${plural(list.length, 'task')} need${list.length === 1 ? 's' : ''} you`}
+                  >
+                    {list.length}
+                  </span>
+                )}
+                {list.map((t) => {
+                  const l = life(t);
+                  return (
+                    <Fragment key={t.id}>
+                      <RailRow task={t} lifecycle={l} />
+                      {l.chip?.kind === 'finish' && (
+                        <RailMergedFinish task={t} />
+                      )}
+                      <RailFinish task={t} />
+                      <RailDiscard task={t} />
+                    </Fragment>
+                  );
+                })}
+              </div>
             ))
           : groups.map(({ group, tasks: list }) => (
               <div key={group} role="group" aria-label={LIFECYCLE_LABEL[group]}>

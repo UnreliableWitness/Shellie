@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
@@ -657,6 +657,171 @@ describe('TaskNav lifecycle groups', () => {
       await screen.findByText(`${String.fromCharCode(0x20ac)}2.50`),
     ).toBeInTheDocument();
     expect(screen.queryByText(`${String.fromCharCode(0x20ac)}1.50`)).toBeNull();
+  });
+});
+
+describe('TaskNav collapsed rail (R3)', () => {
+  const mk = (id: string, title: string): TaskView => ({
+    ...tasks[0],
+    id,
+    workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
+  });
+  const merged = pulseOf('t5', {
+    pr: {
+      id: 9,
+      url: 'https://x/9',
+      status: 'completed',
+      isDraft: false,
+      createdAt: '2026-11-16T08:00:00.000Z',
+      closedAt: '2026-11-17T08:00:00.000Z',
+    },
+  });
+  const setup = async () => {
+    useStore.setState({
+      tasks: ['t1', 't2', 't3', 't4', 't5', 't6'].map((id, i) =>
+        mk(id, `Title${i + 1}`),
+      ),
+      selectedTaskId: null,
+      navCollapsed: true,
+    });
+    withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { ci: 'failing', ciFailedName: 'PR build' })],
+          t2: [pulseOf('t2', { conflict: true })],
+          t3: [pulseOf('t3', { review: 'changes-asked' })],
+          t4: [
+            pulseOf('t4', {
+              review: 'approved',
+              approvals: { have: 2, need: 2 },
+            }),
+          ],
+          t5: [merged],
+        },
+        lastActive: { t6: Date.now() },
+      }),
+    );
+    render(<TaskNav />);
+    await screen.findByLabelText('3 tasks need you');
+  };
+  afterEach(() => useStore.setState({ navCollapsed: false }));
+
+  it('shows an amber count pill above the Needs you icons', async () => {
+    await setup();
+    const pill = screen.getByLabelText('3 tasks need you');
+    expect(pill).toHaveTextContent('3');
+    expect(pill).toHaveClass('rail-count');
+    const first = screen.getByRole('button', { name: /9t1 Title1/ });
+    expect(
+      pill.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('draws corner dots in the chip tone, none on a clean Active task', async () => {
+    await setup();
+    const dot = (name: RegExp) =>
+      screen.getByRole('button', { name }).querySelector('.rail-dot');
+    expect(dot(/Title1/)).toHaveClass('rail-dot', 'rail-dot-red');
+    expect(dot(/Title4/)).toHaveClass('rail-dot-green');
+    expect(dot(/Title6/)).toBeNull();
+  });
+
+  it('separates groups and dims In review icons', async () => {
+    await setup();
+    expect(
+      document.querySelectorAll('.rail-sep').length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('button', { name: /Title4/ })).toHaveClass(
+      'is-dim',
+    );
+    expect(screen.getByRole('button', { name: /Title1/ })).not.toHaveClass(
+      'is-dim',
+    );
+  });
+
+  it('dims Parked icons too', async () => {
+    useStore.setState({ tasks: [mk('t1', 'Idle')], navCollapsed: true });
+    installFakeApi({ 'pulse:get': () => null as never });
+    render(<TaskNav />);
+    expect(screen.getByRole('button', { name: /Idle/ })).toHaveClass('is-dim');
+  });
+
+  it('renders a hollow Finish square for a Merged task that opens Finish', async () => {
+    await setup();
+    const fin = screen.getByRole('button', { name: /Finish 9t5/ });
+    expect(fin.querySelector('.rail-finish-hollow')).not.toBeNull();
+    await userEvent.click(fin);
+    expect(useStore.getState().screen).toEqual({
+      kind: 'finish',
+      taskId: 't5',
+    });
+  });
+
+  it('titles an icon with the id, title and story', async () => {
+    await setup();
+    expect(
+      screen.getByRole('button', { name: /Title1/ }).getAttribute('title'),
+    ).toMatch(/^9t1 Title1 · .*CI failing/);
+  });
+});
+
+describe('TaskNav lifecycle fixes', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    useStore.setState({ navCollapsed: false });
+  });
+
+  it('moves a task out of Active after 4 h while the window sits idle', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const t0 = Date.now();
+    useStore.setState({ tasks: [tasks[0]], selectedTaskId: null });
+    installFakeApi({
+      'pulse:get': () =>
+        pulseView({
+          tasks: {},
+          lastActive: { a: t0 - 3.9 * 3600_000 },
+        }),
+    });
+    render(<TaskNav />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(8 * 60_000);
+    });
+    expect(screen.queryByText('Active')).toBeNull();
+    expect(screen.getByText('Parked')).toBeInTheDocument();
+  });
+
+  it('shows no chip or story from a stale pulse on a setting-up task', async () => {
+    useStore.setState({
+      tasks: [{ ...tasks[0], status: 'setting-up' }],
+      selectedTaskId: null,
+    });
+    withPulse(pulseView({ tasks: { a: [pulseOf('a', { ci: 'failing' })] } }));
+    render(<TaskNav />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.navchip')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /Checkout/ }).getAttribute('title'),
+    ).toBeNull();
+  });
+
+  it('shows no rail dot from a stale pulse on a setting-up task', async () => {
+    useStore.setState({
+      tasks: [{ ...tasks[0], status: 'setting-up' }],
+      selectedTaskId: null,
+      navCollapsed: true,
+    });
+    withPulse(pulseView({ tasks: { a: [pulseOf('a', { ci: 'failing' })] } }));
+    render(<TaskNav />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.rail-dot-red')).toBeNull();
   });
 });
 

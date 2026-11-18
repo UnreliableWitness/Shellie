@@ -430,7 +430,7 @@ button.projecttile:hover {
 .navchip-finish {
   background: var(--warn);
   border-color: var(--warn);
-  color: var(--on-accent);
+  color: var(--bg-chrome);
 }
 .nav-status-note {
   color: var(--warn);
@@ -528,6 +528,55 @@ button.projecttile:hover {
 }
 .railrow[aria-current='true'] {
   background: var(--bg-selected);
+}
+.railrow.is-dim > svg:first-child,
+.railrow.is-dim > [role='img'] {
+  opacity: 0.5;
+}
+.rail-dot {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-chrome);
+}
+.rail-dot-red {
+  background: var(--red);
+}
+.rail-dot-amber {
+  background: var(--warn);
+}
+.rail-dot-green {
+  background: var(--green);
+}
+.rail-count {
+  display: block;
+  width: fit-content;
+  margin: 4px auto 2px;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--warn);
+  color: var(--bg-chrome);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+.rail-sep {
+  height: 1px;
+  margin: 4px 12px;
+  background: var(--line);
+}
+.rail-finish-hollow {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--warn);
+  color: var(--warn);
 }
 .leftnav-foot {
   flex: none;
