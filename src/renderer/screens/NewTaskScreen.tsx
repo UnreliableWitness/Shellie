@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { defaultEditorPrefs, type EditorPrefs } from '../../shared/editors';
 import { renderBranch, taskSlug } from '../../shared/naming';
-import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
+import {
+  buildSetupSummary,
+  setupAgents,
+  setupTabLabels,
+} from '../../shared/setupSummary';
 import { setupTabsFrom } from '../../shared/terminals';
 import type {
   CopyEntry,
@@ -260,6 +264,12 @@ export function NewTaskScreen({
             { startClaude, openShell, openCopilot, openOpencode },
             'Shell',
           ),
+          agents: setupAgents({
+            startClaude,
+            openShell,
+            openCopilot,
+            openOpencode,
+          }),
           workItem: mode === 'blank' || !workItem?.id ? null : workItem,
           ...startOf(repo, connectionOf(repo.id)),
           types: typeMeta ? [typeMeta] : null,

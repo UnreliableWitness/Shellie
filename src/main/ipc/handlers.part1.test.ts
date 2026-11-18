@@ -788,6 +788,56 @@ describe('handlers: create task', () => {
     await terminals.killAllForTask(b.id);
   });
 
+  it('narrows a chosen apm list to the harnesses of the tabs setup opens', async () => {
+    const { h, terminals, setupDone, input, repo } = await harness();
+    commitFile(repo, 'apm.yml', 'name: webshop\n');
+    writeFileSync(path.join(repo, '.shellie.yml'), 'apm: [claude, opencode]\n');
+    const detailOf = async (
+      flags: Parameters<typeof input>[0],
+      n: number,
+    ): Promise<string | undefined> => {
+      const finished = setupDone();
+      const task = await h['tasks:create'](
+        input({
+          ...flags,
+          workItem: {
+            id: String(n),
+            type: 'Bug',
+            title: `t${n}`,
+            url: null,
+            project: null,
+          },
+          branch: `bug/${n}-t`,
+        }),
+      );
+      await finished;
+      const state = await h['tasks:setupState'](task.id);
+      await terminals.killAllForTask(task.id);
+      return state?.steps.find((s) => s.def.kind === 'apm')?.def.detail;
+    };
+    // Only an OpenCode tab: claude is not installed.
+    expect(
+      await detailOf(
+        { startClaude: false, openOpencode: true, openShell: false },
+        1,
+      ),
+    ).toBe('apm install --target opencode');
+    // Both tabs: both targets.
+    expect(
+      await detailOf(
+        { startClaude: true, openOpencode: true, openShell: false },
+        2,
+      ),
+    ).toBe('apm install --target claude, opencode');
+    // No agent tab: the list as chosen.
+    expect(
+      await detailOf(
+        { startClaude: false, openOpencode: false, openShell: true },
+        3,
+      ),
+    ).toBe('apm install --target claude, opencode');
+  });
+
   it('has no apm step without apm.yml or with apm: false', async () => {
     const { h, terminals, setupDone, input, repo } = await harness();
     const first = setupDone();

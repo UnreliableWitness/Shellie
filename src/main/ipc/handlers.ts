@@ -90,7 +90,11 @@ import type {
 } from '../../shared/types';
 import { EnvironmentSchema } from '../../shared/types';
 import { effectiveStartSettings, startOf } from '../../shared/startSettings';
-import { buildSetupSummary, setupTabLabels } from '../../shared/setupSummary';
+import {
+  buildSetupSummary,
+  setupAgents,
+  setupTabLabels,
+} from '../../shared/setupSummary';
 import type { EffectiveConfig } from '../services/effectiveConfig';
 import {
   activeHome,
@@ -131,7 +135,7 @@ import { stateCategory } from '../../shared/home';
 import { billableEurByTask, homeStats } from '../home/homeStats';
 import { DocsWatcher } from '../docs/DocsWatcher';
 import { GitDirWatcher } from '../review/GitDirWatcher';
-import type { AgentsDetected } from '../../shared/agents';
+import { type AgentsDetected, apmTargetsOfList } from '../../shared/agents';
 import {
   detectAgents,
   runProbe,
@@ -2193,8 +2197,9 @@ export function createHandlers(s: Services): Handlers {
         Boolean(s.platform.cloneDir) &&
         task.setup.commands.some((c) => c.trim() === 'npm ci'),
       apmTargets: hasApm
-        ? config.apm ||
-          (await apmTargetsInApmYml(repo.path, apmTargetsFor(defs)))
+        ? config.apm
+          ? apmTargetsOfList(config.apm, apmTargetsFor(defs))
+          : await apmTargetsInApmYml(repo.path, apmTargetsFor(defs))
         : [],
       taskMd: renderTaskMd(
         task,
@@ -3707,6 +3712,7 @@ export function createHandlers(s: Services): Handlers {
           copy: input.copy,
           commands: input.commands,
           tabs: setupTabLabels(input, s.platform.shellLabel),
+          agents: setupAgents(input),
           workItem: input.workItem,
           ...startOf(repo, s.connections.find(repo.connectionId)),
           types: repo.connectionId

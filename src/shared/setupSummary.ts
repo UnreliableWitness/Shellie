@@ -1,3 +1,4 @@
+import { type AgentId, apmTargetsOfList } from './agents';
 import { EDITOR_LABELS, type EditorPrefs } from './editors';
 import type {
   SetupSummary,
@@ -22,6 +23,20 @@ export function setupTabLabels(
     ...(flags.openCopilot ? ['Copilot CLI'] : []),
     ...(flags.openOpencode ? ['OpenCode'] : []),
     ...(flags.openShell ? [shellLabel] : []),
+  ];
+}
+
+/** The harnesses of the tabs a task opens, as apm targets, in the order setup opens them. */
+export function setupAgents(flags: {
+  startClaude: boolean;
+  openShell: boolean;
+  openCopilot?: boolean;
+  openOpencode?: boolean;
+}): AgentId[] {
+  return [
+    ...(flags.startClaude ? ['claude' as const] : []),
+    ...(flags.openCopilot ? ['copilot' as const] : []),
+    ...(flags.openOpencode ? ['opencode' as const] : []),
   ];
 }
 
@@ -65,6 +80,8 @@ export function buildSetupSummary(args: {
   copy: boolean;
   commands: string[];
   tabs: string[];
+  /** The harnesses of those tabs (`setupAgents`): a chosen apm list shows only these, as setup installs. */
+  agents: string[];
   workItem: WorkItemRef | null;
   start: StartSettings;
   /** Where `start` came from (`startSettingsSource`), and the repo's project name for "from project <name>". */
@@ -83,7 +100,10 @@ export function buildSetupSummary(args: {
     base: args.base,
     copy: args.copy ? [...args.config.copy] : [],
     commands: [...args.commands],
-    apm: args.config.apm === undefined ? null : args.config.apm,
+    apm:
+      args.config.apm === undefined
+        ? null
+        : args.config.apm && apmTargetsOfList(args.config.apm, args.agents),
     tabs: args.tabs,
     run: Object.values(args.config.run),
     workItem: workItem
