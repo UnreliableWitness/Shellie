@@ -1841,3 +1841,172 @@ describe('AdoClient repo calls', () => {
     expect(await client.itemText('p1', 'r2', '/share.json')).toBeNull();
   });
 });
+
+describe('AdoClient pull request pulse reads', () => {
+  const P = '/unreliablewitness/Shellie/_apis';
+  const PR = `${P}/git/repositories/r1/pullrequests`;
+
+  it('lists every pull request of a branch with detail', async () => {
+    server.route('GET', PR, {
+      body: {
+        value: [
+          {
+            pullRequestId: 7,
+            status: 'completed',
+            isDraft: false,
+            creationDate: '2026-11-01T10:00:00Z',
+            closedDate: '2026-11-02T10:00:00Z',
+            mergeStatus: 'succeeded',
+            repository: { project: { id: 'proj-1' } },
+            createdBy: { id: 'me-1' },
+            _links: { web: { href: 'https://example/pr/7' } },
+            reviewers: [
+              { id: 'u1', vote: 10, isContainer: false },
+              { id: 'g1' },
+            ],
+          },
+          {
+            pullRequestId: 5,
+            creationDate: '2026-10-01T10:00:00Z',
+          },
+        ],
+      },
+    });
+    const prs = await client.pullRequestsForBranch('Shellie', 'r1', 'feat/x');
+    expect(server.requests.at(-1)!.path).toBe(
+      `${PR}?searchCriteria.sourceRefName=refs%2Fheads%2Ffeat%2Fx&searchCriteria.status=all&api-version=7.1`,
+    );
+    expect(prs[0]).toEqual({
+      pullRequestId: 7,
+      status: 'completed',
+      isDraft: false,
+      creationDate: '2026-11-01T10:00:00Z',
+      closedDate: '2026-11-02T10:00:00Z',
+      mergeStatus: 'succeeded',
+      projectId: 'proj-1',
+      createdById: 'me-1',
+      webUrl: 'https://example/pr/7',
+      reviewers: [
+        { id: 'u1', vote: 10, isContainer: false },
+        { id: 'g1', vote: 0, isContainer: false },
+      ],
+    });
+    expect(prs[1]).toMatchObject({
+      pullRequestId: 5,
+      status: 'active',
+      closedDate: null,
+      mergeStatus: null,
+      createdById: null,
+      projectId: '',
+      webUrl: `${server.url}/unreliablewitness/Shellie/_git/r1/pullrequest/5`,
+      reviewers: [],
+    });
+  });
+
+  it('reads policy evaluations by artifact id with the preview version', async () => {
+    server.route('GET', `${P}/policy/evaluations`, {
+      body: {
+        value: [
+          {
+            status: 'rejected',
+            configuration: {
+              type: { displayName: 'Build' },
+              settings: { displayName: 'fallback' },
+            },
+            context: { buildDefinitionName: 'CI' },
+          },
+          {
+            status: 'approved',
+            configuration: {
+              type: { displayName: 'Minimum number of reviewers' },
+              settings: { minimumApproverCount: 2 },
+            },
+          },
+        ],
+      },
+    });
+    const ev = await client.policyEvaluations('Shellie', 'proj-1', 9);
+    expect(server.requests.at(-1)!.path).toBe(
+      `${P}/policy/evaluations?artifactId=${encodeURIComponent('vstfs:///CodeReview/CodeReviewId/proj-1/9')}&api-version=7.1-preview.1`,
+    );
+    expect(ev).toEqual([
+      {
+        status: 'rejected',
+        typeName: 'Build',
+        displayName: 'CI',
+        minimumApproverCount: null,
+      },
+      {
+        status: 'approved',
+        typeName: 'Minimum number of reviewers',
+        displayName: null,
+        minimumApproverCount: 2,
+      },
+    ]);
+  });
+
+  it('reads statuses and threads', async () => {
+    server.route('GET', `${PR}/9/statuses`, {
+      body: {
+        value: [
+          {
+            state: 'failed',
+            context: { name: 'lint', genre: 'ci' },
+            description: 'bad',
+            creationDate: '2026-11-01T00:00:00Z',
+          },
+        ],
+      },
+    });
+    expect(await client.pullRequestStatuses('Shellie', 'r1', 9)).toEqual([
+      {
+        state: 'failed',
+        context: 'ci/lint',
+        description: 'bad',
+        creationDate: '2026-11-01T00:00:00Z',
+      },
+    ]);
+    server.route('GET', `${PR}/9/threads`, {
+      body: {
+        value: [
+          {
+            status: 'active',
+            isDeleted: false,
+            comments: [
+              { author: { id: 'a' }, commentType: 'text', isDeleted: false },
+            ],
+          },
+        ],
+      },
+    });
+    expect(await client.pullRequestThreads('Shellie', 'r1', 9)).toEqual([
+      {
+        status: 'active',
+        isDeleted: false,
+        comments: [{ authorId: 'a', commentType: 'text', isDeleted: false }],
+      },
+    ]);
+  });
+
+  it('names the Code scope when any of the four is denied', async () => {
+    const reads: [string, () => Promise<unknown>][] = [
+      [PR, () => client.pullRequestsForBranch('Shellie', 'r1', 'b')],
+      [
+        `${P}/policy/evaluations`,
+        () => client.policyEvaluations('Shellie', 'p', 1),
+      ],
+      [
+        `${PR}/1/statuses`,
+        () => client.pullRequestStatuses('Shellie', 'r1', 1),
+      ],
+      [`${PR}/1/threads`, () => client.pullRequestThreads('Shellie', 'r1', 1)],
+    ];
+    for (const [route, call] of reads) {
+      server.route('GET', route, { status: 401, body: {} });
+      await expect(call()).rejects.toMatchObject({
+        kind: 'unauthorized',
+        message: CODE_READ_DENIED,
+      });
+    }
+  });
+});

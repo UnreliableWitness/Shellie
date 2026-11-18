@@ -37,4 +37,12 @@ export class AzureDevOpsTracker implements Tracker {
   createPullRequest: Tracker['createPullRequest'] = (...a) =>
     this.client.createPullRequest(...a);
   pullRequest: Tracker['pullRequest'] = (...a) => this.client.pullRequest(...a);
+  pullRequestsForBranch: Tracker['pullRequestsForBranch'] = (...a) =>
+    this.client.pullRequestsForBranch(...a);
+  policyEvaluations: Tracker['policyEvaluations'] = (...a) =>
+    this.client.policyEvaluations(...a);
+  pullRequestStatuses: Tracker['pullRequestStatuses'] = (...a) =>
+    this.client.pullRequestStatuses(...a);
+  pullRequestThreads: Tracker['pullRequestThreads'] = (...a) =>
+    this.client.pullRequestThreads(...a);
 }
