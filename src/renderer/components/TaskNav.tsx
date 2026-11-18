@@ -209,6 +209,8 @@ function Row({
   const openTask = useStore((s) => s.openTask);
   const extras = activeWorkspaces(task).length - 1;
   const waiting = useWaiting(task);
+  // The Finish button under the current task replaces the Finish chip.
+  const hasFinish = useShowsFinish(task);
   const state = task.worktreeMissing
     ? { color: 'var(--red)', label: 'Worktree folder missing' }
     : NOT_READY[task.status];
@@ -244,7 +246,7 @@ function Row({
           />
         )}
       </button>
-      {lifecycle?.chip && (
+      {lifecycle?.chip && !(hasFinish && lifecycle.chip.kind === 'finish') && (
         <Chip task={task} chip={lifecycle.chip} pulse={pulse ?? null} />
       )}
       {cost > 0 && <span className="navrow-cost">{eur(cost)}</span>}
@@ -289,6 +291,9 @@ function RailRow({
 /** A merged task's hollow Finish square: the rail's version of the row's Finish chip. */
 function RailMergedFinish({ task }: { task: TaskView }) {
   const go = useStore((s) => s.go);
+  // The current ready task already has the real Finish under its icon.
+  const hasFinish = useShowsFinish(task);
+  if (hasFinish) return null;
   return (
     <button
       type="button"
@@ -750,6 +755,7 @@ export function TaskNav() {
                 {group === 'needs-you' && (
                   <span
                     className="rail-count"
+                    role="status"
                     aria-label={`${plural(list.length, 'task')} need${list.length === 1 ? 's' : ''} you`}
                   >
                     {list.length}

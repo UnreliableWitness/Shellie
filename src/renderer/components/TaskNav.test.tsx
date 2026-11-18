@@ -825,6 +825,55 @@ describe('TaskNav lifecycle fixes', () => {
   });
 });
 
+describe('TaskNav current merged task', () => {
+  const mergedView = () =>
+    withPulse(
+      pulseView({
+        tasks: {
+          a: [
+            pulseOf('a', {
+              pr: {
+                id: 9,
+                url: 'https://x/9',
+                status: 'completed',
+                isDraft: false,
+                createdAt: '2026-11-16T08:00:00.000Z',
+                closedAt: '2026-11-17T08:00:00.000Z',
+              },
+            }),
+          ],
+        },
+      }),
+    );
+  afterEach(() => useStore.setState({ navCollapsed: false }));
+
+  it('shows one Finish control in the rail', async () => {
+    useStore.setState({
+      tasks: [tasks[0]],
+      selectedTaskId: 'a',
+      screen: { kind: 'task', taskId: 'a' } as never,
+      navCollapsed: true,
+    });
+    mergedView();
+    render(<TaskNav />);
+    await screen.findByLabelText('1 task needs you').catch(() => undefined);
+    await screen.findAllByRole('button', { name: /Finish/ });
+    expect(screen.getAllByRole('button', { name: /Finish/ })).toHaveLength(1);
+  });
+
+  it('shows one Finish control in the open list', async () => {
+    useStore.setState({
+      tasks: [tasks[0]],
+      selectedTaskId: 'a',
+      screen: { kind: 'task', taskId: 'a' } as never,
+    });
+    mergedView();
+    render(<TaskNav />);
+    await screen.findByText('Merged · close me');
+    expect(screen.getAllByRole('button', { name: /^Finish/ })).toHaveLength(1);
+  });
+});
+
 describe('TaskNav', () => {
   it('draws the no-connection avatar in a readable text colour, not white', () => {
     installFakeApi();
