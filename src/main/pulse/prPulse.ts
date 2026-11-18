@@ -19,12 +19,15 @@ export function pickPr(
   const live = prs.filter(
     (p) =>
       since === null ||
-      p.status !== 'completed' ||
+      p.status === 'active' ||
       p.closedDate === null ||
       Date.parse(p.closedDate) >= since,
   );
   return live.sort((a, b) => stamp(b) - stamp(a))[0] ?? null;
 }
+
+/** Epoch ms of an ADO timestamp; missing or invalid reads as oldest. */
+const timeOf = (iso: string): number => Date.parse(iso) || 0;
 
 const FAILED_STATES = new Set(['failed', 'error']);
 
@@ -47,7 +50,8 @@ function ciOf(
   const latest = new Map<string, RawPrStatus>();
   for (const s of statuses) {
     const cur = latest.get(s.context);
-    if (!cur || s.creationDate > cur.creationDate) latest.set(s.context, s);
+    if (!cur || timeOf(s.creationDate) > timeOf(cur.creationDate))
+      latest.set(s.context, s);
   }
   for (const s of latest.values()) {
     seen = true;
@@ -102,11 +106,7 @@ export function toPrPulse(input: {
       ?.minimumApproverCount ?? null;
   let review: ReviewState = 'waiting';
   if (pr.reviewers.some((r) => r.vote === -10)) review = 'changes-asked';
-  else if (
-    pr.reviewers.some((r) => r.vote === 10 || r.vote === 5) &&
-    (need === null || have >= need)
-  )
-    review = 'approved';
+  else if (have > 0 && (need === null || have >= need)) review = 'approved';
   return {
     workspaceId,
     pr: {

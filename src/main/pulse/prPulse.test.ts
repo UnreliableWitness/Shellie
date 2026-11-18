@@ -68,6 +68,8 @@ describe('pickPr', () => {
   it('keeps abandoned PRs and the newest completed one', () => {
     const ab = pr({ status: 'abandoned', closedDate: '2026-11-09T00:00:00Z' });
     expect(pickPr([ab], '2026-11-05T00:00:00Z')).toBe(ab);
+    const old = pr({ status: 'abandoned', closedDate: '2026-11-01T00:00:00Z' });
+    expect(pickPr([old], '2026-11-05T00:00:00Z')).toBeNull();
     const c2 = pr({
       pullRequestId: 2,
       status: 'completed',
@@ -199,6 +201,29 @@ describe('toPrPulse', () => {
       approvals: { have: 1, need: null },
     });
     expect(run({ pr: pr({ reviewers: [rv(0)] }) }).review).toBe('waiting');
+  });
+  it('does not approve on a container vote alone', () => {
+    const r = run({
+      pr: pr({ reviewers: [{ id: 'g', vote: 10, isContainer: true }] }),
+    });
+    expect(r).toMatchObject({ review: 'waiting', approvals: { have: 0 } });
+  });
+  it('orders statuses by time, not by string', () => {
+    const r = run({
+      statuses: [
+        st({
+          context: 'a',
+          state: 'failed',
+          creationDate: '2026-11-10T00:00:00Z',
+        }),
+        st({
+          context: 'a',
+          state: 'succeeded',
+          creationDate: '2026-11-10T00:00:00.5Z',
+        }),
+      ],
+    });
+    expect(r.ci).toBe('passing');
   });
   it('flags conflicts', () => {
     expect(run({ pr: pr({ mergeStatus: 'conflicts' }) }).conflict).toBe(true);
