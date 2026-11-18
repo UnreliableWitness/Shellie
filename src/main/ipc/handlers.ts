@@ -127,6 +127,8 @@ import {
 } from '../reader/readerHandlers';
 import { type CostServerStatus, validServerUrl } from '../../shared/costServer';
 import { HomeService } from '../home/HomeService';
+import { TaskPulseService } from '../pulse/TaskPulseService';
+import type { PulseSnapshot, PulseView } from '../../shared/pulse';
 import {
   ReadingService,
   type ReadingWorkItem,
@@ -385,6 +387,9 @@ export type Services = {
   usageDir: string;
   /** Home's snapshot builder; handlers build one in usageDir when absent (tests). */
   home?: HomeService;
+  pulse?: TaskPulseService;
+  /** Told once with how to ask when the pulse last refreshed (for the focus check in main). */
+  pulseReady?: (lastRefreshAt: () => number | null) => void;
   budget?: BudgetService;
   /** Settings › Cost server: the saved connection and the background sender; absent in tests that don't care. */
   costServer?: {
@@ -3173,6 +3178,66 @@ export function createHandlers(s: Services): Handlers {
     patch: Parameters<typeof setWorkspace>[2],
   ) => mutateTask(taskId, (t) => setWorkspace(t, id, patch));
 
+  /** The latest end of the task's active and agent intervals; absent when it never ran. */
+  const lastActiveAt = (taskId: string): number | undefined => {
+    const ends = [
+      ...s.time.activeIntervals(taskId),
+      ...Object.values(s.time.agentIntervals(taskId)).flat(),
+    ].map((iv) => iv[1]);
+    return ends.length ? Math.max(...ends) : undefined;
+  };
+  const pulseView = (snapshot: PulseSnapshot): PulseView => {
+    const lastActive: Record<string, number> = {};
+    for (const t of s.store.state.tasks) {
+      const at = lastActiveAt(t.id);
+      if (at !== undefined) lastActive[t.id] = at;
+    }
+    return { ...snapshot, lastActive };
+  };
+  const pulse =
+    s.pulse ??
+    new TaskPulseService({
+      file: path.join(s.usageDir, 'pulse.json'),
+      workspaces: () =>
+        s.store.state.tasks
+          .filter((t) => t.status !== 'done')
+          .flatMap((t) =>
+            activeWorkspaces(t)
+              .filter((w) => w.branch)
+              .map((w) => ({
+                taskId: t.id,
+                workspaceId: w.id,
+                branch: w.branch,
+                openedAt: t.openPeriods.at(-1)?.start ?? null,
+                stored: w.pullRequest,
+              })),
+          ),
+      target: async (taskId, workspaceId) => {
+        const task = taskById(taskId);
+        const w = taskWorkspaces(task).find((x) => x.id === workspaceId);
+        if (!w) return null;
+        const { connection, availability } = await prContext(task, w);
+        if (!connection || !availability.target) return null;
+        return {
+          connectionId: connection.id,
+          project: availability.target.project,
+          repo: availability.target.repo,
+        };
+      },
+      client: (id) => s.trackers.client(id),
+      link: async (taskId, workspaceId, ref) => {
+        await patchWorkspace(taskId, workspaceId, { pullRequest: ref });
+      },
+      onChanged: (snapshot) => s.broadcast('pulse:changed', snapshot),
+      onRefreshed: (info) =>
+        tel.event(
+          'pulse.refreshed',
+          { tasks: info.tasks, errors: info.errors.length },
+          { durationMs: info.durationMs },
+        ),
+    });
+  s.pulseReady?.(() => pulse.lastRefreshAt());
+
   /**
    * Stops what runs in the task's folders: its Docs and git watchers and every terminal. Before a folder goes:
    * Windows will not remove a folder that a running process has as its cwd.
@@ -4047,6 +4112,7 @@ export function createHandlers(s: Services): Handlers {
           { workspaces: 1, prs: options.createPullRequest ? 1 : 0, dropped: 0 },
           { summary, pendingCleanup },
         );
+        void pulse.refresh().catch(() => undefined);
       });
     },
     'tasks:setEnvironment': async (taskId, env, confirmed) => {
@@ -4902,6 +4968,8 @@ export function createHandlers(s: Services): Handlers {
       return st;
     },
     'reading:get': () => reading.list(),
+    'pulse:get': async () => pulseView(await pulse.get()),
+    'pulse:refresh': async () => pulseView(await pulse.refresh()),
     'home:get': () => home.get(),
     'home:refresh': () => home.refresh(),
     'home:stats': async (period) =>

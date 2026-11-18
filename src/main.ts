@@ -340,6 +340,8 @@ let stopLedger: () => void = () => {};
 /** Stops the brains' scheduler and job queue (on quit). */
 let stopBrains: () => void = () => {};
 /** The phone reader's push: asked for whenever a brain changes, stopped on quit. */
+/** When the pulse last refreshed (set where the handlers are made). */
+let pulseLastRefreshAt: () => number | null = () => null;
 let readerBrainChanged: () => void = () => {};
 let stopReader: () => void = () => {};
 /** The reading list (set where the handlers are made): told when a brain's files change, asked by the phone's push. */
@@ -1229,6 +1231,9 @@ async function boot(): Promise<void> {
       },
     });
     const handlers = createHandlers({
+      pulseReady: (f) => {
+        pulseLastRefreshAt = f;
+      },
       brainTerminals,
       brain: {
         store: brains,
@@ -1485,6 +1490,11 @@ async function boot(): Promise<void> {
       tracker.tick();
       agentTimer.tick();
     }, 15_000);
+    // Task PR status: every 3 minutes while the window is focused (and on focus, below).
+    const pulseTick = setInterval(() => {
+      if (mainWindow?.isFocused())
+        void handlers['pulse:refresh']().catch(() => undefined);
+    }, 180_000);
     const timeFlush = setInterval(() => tracker.flush(), 60_000);
     powerMonitor.on('lock-screen', () => tracker.suspend());
     powerMonitor.on('suspend', () => tracker.suspend());
@@ -1493,6 +1503,7 @@ async function boot(): Promise<void> {
     stopTime = () => {
       clearInterval(timeTick);
       clearInterval(timeFlush);
+      clearInterval(pulseTick);
       clearInterval(retick);
       // Closes the open intervals at now; will-quit waits for their writes.
       tracker.setFocused(false);
@@ -1504,6 +1515,9 @@ async function boot(): Promise<void> {
       if (focused) {
         void budget.pass();
         void ledger.pass();
+        const last = pulseLastRefreshAt();
+        if (last === null || Date.now() - last > 60_000)
+          void handlers['pulse:refresh']().catch(() => undefined);
       }
     };
 

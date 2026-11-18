@@ -91,6 +91,7 @@ import type { ReaderMarkSet, ReaderStatus } from './reader';
 import type { ReadingBrain } from './reading';
 import type { PrDraft } from './prDraft';
 import type { HomePeriod, HomeSnapshot, HomeStats } from './home';
+import type { PulseSnapshot, PulseView } from './pulse';
 import type {
   FileContent,
   NewReviewComment,
@@ -542,6 +543,10 @@ export type Channels = {
   'home:get': { args: []; result: HomeSnapshot | null };
   /** Rebuilds the Home snapshot over every connection, or joins the rebuild already running. */
   'home:refresh': { args: []; result: HomeSnapshot };
+  /** The last PR, CI and review status per task workspace (from disk at launch), with when each task was last active. */
+  'pulse:get': { args: []; result: PulseView };
+  /** Checks Azure DevOps for every open task now, or joins the check already running. */
+  'pulse:refresh': { args: []; result: PulseView };
   /** The developer's own totals for this week or month, from local data. */
   'home:stats': { args: [period: HomePeriod]; result: HomeStats };
   /** A budget (Claude or Copilot) for a month: 0 is this one, -1 the one before. */
@@ -923,6 +928,8 @@ export type Events = {
   'update:ready': PendingUpdate;
   /** A Home rebuild finished. */
   'home:updated': HomeSnapshot;
+  /** A pulse refresh changed something. */
+  'pulse:changed': PulseSnapshot;
   /** The budget numbers changed (Claude or Copilot). */
   'budget:changed': Record<string, never>;
   /** The cost server connection or its sending status changed. */
