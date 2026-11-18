@@ -6,6 +6,12 @@ import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { readingBrain, readingRead } from '../test-helpers/readingFixture';
+import {
+  type Lifecycle,
+  type PrPulse,
+  type PulseView,
+  type TaskLifecycle,
+} from '../../shared/pulse';
 import { groupTasks, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
@@ -342,16 +348,80 @@ describe('brains', () => {
   });
 });
 
+const lifeOf =
+  (by: Record<string, { group: Lifecycle; sortKey?: number }> = {}) =>
+  (t: TaskView): TaskLifecycle => ({
+    group: by[t.id]?.group ?? 'parked',
+    chip: null,
+    story: '',
+    sortKey: by[t.id]?.sortKey ?? 0,
+  });
+const ids = (list: TaskView[]) => list.map((t) => t.id);
+
 describe('groupTasks', () => {
-  it('groups open tasks by repo and collects done tasks separately', () => {
-    const g = groupTasks(tasks, repos);
-    expect(g.open.map((x) => [x.repo.name, x.tasks.map((t) => t.id)])).toEqual([
-      ['webshop', ['a', 'b', 'd']],
+  it('groups open tasks by lifecycle in order, omits empty groups and collects done tasks', () => {
+    const ready = (id: string): TaskView => ({ ...tasks[0], id });
+    const g = groupTasks(
+      [...tasks, ready('p'), ready('q'), ready('r')],
+      repos,
+      null,
+      undefined,
+      lifeOf({
+        p: { group: 'parked' },
+        q: { group: 'in-review' },
+        r: { group: 'needs-you' },
+        a: { group: 'merged' },
+      }),
+    );
+    expect(g.groups.map((x) => [x.group, ids(x.tasks)])).toEqual([
+      ['needs-you', ['r']],
+      ['active', ['b', 'd']],
+      ['in-review', ['q']],
+      ['merged', ['a']],
+      ['parked', ['p']],
     ]);
-    expect(g.done.map((t) => t.id)).toEqual(['c']);
+    expect(ids(g.done)).toEqual(['c']);
   });
 
-  it('puts open tasks without a repo in their own group (#225)', () => {
+  it('sorts a group by sortKey', () => {
+    const ready = (id: string): TaskView => ({ ...tasks[0], id });
+    const g = groupTasks(
+      [ready('x'), ready('y'), ready('z')],
+      repos,
+      null,
+      undefined,
+      lifeOf({
+        x: { group: 'parked', sortKey: 3 },
+        y: { group: 'parked', sortKey: 1 },
+        z: { group: 'parked', sortKey: 2 },
+      }),
+    );
+    expect(ids(g.groups[0].tasks)).toEqual(['y', 'z', 'x']);
+  });
+
+  it('puts setting-up, setup-failed and finishing tasks in Active whatever their lifecycle', () => {
+    const t = (id: string, status: TaskView['status']): TaskView => ({
+      ...tasks[0],
+      id,
+      status,
+    });
+    const g = groupTasks(
+      [t('x', 'setting-up'), t('y', 'setup-failed'), t('z', 'finishing')],
+      repos,
+      null,
+      undefined,
+      lifeOf({
+        x: { group: 'merged' },
+        y: { group: 'parked' },
+        z: { group: 'needs-you' },
+      }),
+    );
+    expect(g.groups.map((x) => [x.group, ids(x.tasks)])).toEqual([
+      ['active', ['x', 'y', 'z']],
+    ]);
+  });
+
+  it('lets tasks without a repo join the groups like any other (#225)', () => {
     const scratch: TaskView = {
       ...tasks[0],
       id: 'n',
@@ -363,37 +433,17 @@ describe('groupTasks', () => {
     const g = groupTasks(
       [scratch, { ...scratch, id: 'm', status: 'done' }],
       repos,
+      null,
+      undefined,
+      lifeOf(),
     );
-    expect(g.open).toEqual([]);
-    expect(g.noRepo.map((t) => t.id)).toEqual(['n']);
-    expect(g.done.map((t) => t.id)).toEqual(['m']);
-    expect(groupTasks([scratch], repos, 'B', ['A', 'B']).noRepo).toEqual([]);
-  });
-
-  it('groups a task whose home was dropped under the repo that took over', () => {
-    const moved: TaskView = {
-      ...tasks[0],
-      homeDropped: true,
-      extraWorkspaces: [
-        {
-          id: 'w1',
-          repoId: 'r2',
-          branch: 'feature/48213-a',
-          worktreePath: '/w/a-api',
-          baseRef: 'origin/main',
-          baseSha: null,
-          source: 'detected',
-          summary: null,
-          pullRequest: null,
-          reopen: null,
-          dropped: false,
-        },
-      ],
-    };
-    const g = groupTasks([moved], repos);
-    expect(g.open.map((x) => [x.repo.id, x.tasks.map((t) => t.id)])).toEqual([
-      ['r2', ['a']],
+    expect(g.groups.map((x) => [x.group, ids(x.tasks)])).toEqual([
+      ['parked', ['n']],
     ]);
+    expect(ids(g.done)).toEqual(['m']);
+    expect(
+      groupTasks([scratch], repos, 'B', ['A', 'B'], lifeOf()).groups,
+    ).toEqual([]);
   });
 
   it('keeps only the connection’s tasks and tasks without one (#219)', () => {
@@ -411,15 +461,15 @@ describe('groupTasks', () => {
       { ...tasks[1], id: 'n1', repoId: 'r3' },
       { ...tasks[2], id: 'n2', repoId: 'r3' },
     ];
-    const g = groupTasks(mixed, split, 'A');
-    expect(g.open.map((x) => [x.repo.id, x.tasks.map((t) => t.id)])).toEqual([
-      ['r1', ['a1']],
-      ['r2', ['a2']],
-      ['r3', ['n1']],
+    const g = groupTasks(mixed, split, 'A', undefined, lifeOf());
+    expect(g.groups.flatMap((x) => ids(x.tasks)).sort()).toEqual([
+      'a1',
+      'a2',
+      'n1',
     ]);
-    expect(g.done.map((t) => t.id)).toEqual(['a3', 'n2']);
-    const all = groupTasks(mixed, split, null);
-    expect(all.open.flatMap((x) => x.tasks)).toHaveLength(4);
+    expect(ids(g.done)).toEqual(['a3', 'n2']);
+    const all = groupTasks(mixed, split, null, undefined, lifeOf());
+    expect(all.groups.flatMap((x) => x.tasks)).toHaveLength(4);
     expect(all.done).toHaveLength(3);
   });
 
@@ -431,9 +481,182 @@ describe('groupTasks', () => {
       repoId: 'r1',
       connectionId: 'B',
     };
-    const g = groupTasks([orphan], split, 'A', ['A']);
-    expect(g.open.flatMap((x) => x.tasks.map((t) => t.id))).toEqual(['o1']);
-    expect(groupTasks([orphan], split, 'A', ['A', 'B']).open).toEqual([]);
+    const g = groupTasks([orphan], split, 'A', ['A'], lifeOf());
+    expect(g.groups.flatMap((x) => ids(x.tasks))).toEqual(['o1']);
+    expect(
+      groupTasks([orphan], split, 'A', ['A', 'B'], lifeOf()).groups,
+    ).toEqual([]);
+  });
+});
+
+const pulseOf = (
+  workspaceId: string,
+  over: Partial<PrPulse> = {},
+): PrPulse => ({
+  workspaceId,
+  pr: {
+    id: 7,
+    url: 'https://dev.azure.com/o/p/_git/r/pullrequest/7',
+    status: 'active',
+    isDraft: false,
+    createdAt: '2026-11-17T08:00:00.000Z',
+    closedAt: null,
+  },
+  ci: 'none',
+  ciFailedName: null,
+  review: 'waiting',
+  approvals: { have: 0, need: 2 },
+  conflict: false,
+  unanswered: 0,
+  checkedAt: '2026-11-18T08:00:00.000Z',
+  ...over,
+});
+const pulseView = (
+  over: Partial<PulseView> & { tasks: PulseView['tasks'] },
+): PulseView => ({
+  error: null,
+  checkedAt: null,
+  lastActive: {},
+  ...over,
+});
+const withPulse = (view: PulseView) =>
+  installFakeApi({ 'pulse:get': () => view });
+
+describe('TaskNav lifecycle groups', () => {
+  const three = () => {
+    const mk = (id: string, title: string): TaskView => ({
+      ...tasks[0],
+      id,
+      workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
+    });
+    return [mk('t1', 'One'), mk('t2', 'Two'), mk('t3', 'Three')];
+  };
+
+  it('shows an amber Needs you header with its count and a red chip on the row', async () => {
+    const list = three();
+    useStore.setState({ tasks: list, selectedTaskId: null });
+    withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { ci: 'failing', ciFailedName: 'PR build' })],
+          t2: [pulseOf('t2', { conflict: true })],
+          t3: [pulseOf('t3', { review: 'changes-asked' })],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    const header = await screen.findByText('Needs you');
+    const head = header.closest('.nav-subhead')!;
+    expect(head).toHaveClass('nav-subhead-amber');
+    expect(head).toHaveTextContent('3');
+    const chip = screen.getByRole('button', { name: 'CI failing' });
+    expect(chip).toHaveClass('navchip', 'navchip-red');
+    expect(
+      screen.getByRole('button', { name: /One/ }).getAttribute('title'),
+    ).toMatch(/CI failing/);
+  });
+
+  it('opens the PR from the chip and tracks it, without opening the task', async () => {
+    const list = three();
+    useStore.setState({ tasks: list, selectedTaskId: null });
+    const { calls, tracked } = withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { ci: 'failing' })],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'CI failing' }),
+    );
+    expect(calls).toContainEqual({
+      channel: 'links:open',
+      args: ['https://dev.azure.com/o/p/_git/r/pullrequest/7'],
+    });
+    expect(tracked).toContainEqual({
+      type: 'event',
+      name: 'nav.chipClicked',
+      props: { kind: 'ci-failing' },
+    });
+    expect(useStore.getState().selectedTaskId).toBeNull();
+  });
+
+  it('gives a merged task a Finish button that opens its Finish page', async () => {
+    const list = three();
+    useStore.setState({ tasks: list, selectedTaskId: null });
+    withPulse(
+      pulseView({
+        tasks: {
+          t1: [
+            pulseOf('t1', {
+              pr: {
+                id: 7,
+                url: 'https://x/7',
+                status: 'completed',
+                isDraft: false,
+                createdAt: '2026-11-16T08:00:00.000Z',
+                closedAt: '2026-11-17T08:00:00.000Z',
+              },
+            }),
+          ],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    await screen.findByText('Merged · close me');
+    await userEvent.click(screen.getByRole('button', { name: 'Finish' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'finish',
+      taskId: 't1',
+    });
+  });
+
+  it('shows the repo name on a row only with more than one repo', async () => {
+    installFakeApi();
+    const one = tasks.filter((t) => t.repoId === 'r1' && t.status !== 'done');
+    useStore.setState({ tasks: one });
+    const { unmount } = render(<TaskNav />);
+    expect(screen.queryByText('webshop')).toBeNull();
+    unmount();
+    useStore.setState({
+      tasks: [...one, { ...tasks[0], id: 'e', repoId: 'r2' }],
+    });
+    render(<TaskNav />);
+    expect(screen.getAllByText('backoffice-api')).toHaveLength(1);
+    expect(screen.getAllByText('webshop').length).toBeGreaterThan(0);
+  });
+
+  it('shows no chips and only Active or Parked groups before any pulse', async () => {
+    installFakeApi({ 'pulse:get': () => null as never });
+    render(<TaskNav />);
+    expect(await screen.findByText('Parked')).toBeInTheDocument();
+    expect(screen.queryByText('Needs you')).toBeNull();
+    expect(document.querySelector('.navchip')).toBeNull();
+  });
+
+  it('shows cost only in Active and the auth note in the footer', async () => {
+    const list = three();
+    useStore.setState({ tasks: list, selectedTaskId: null });
+    installFakeApi({
+      'pulse:get': () =>
+        pulseView({
+          error: 'auth',
+          tasks: { t1: [pulseOf('t1', { ci: 'failing' })] },
+          lastActive: { t2: Date.now() },
+        }),
+      'usage:costs': () => ({ t1: 1.5, t2: 2.5 }),
+    });
+    render(<TaskNav />);
+    expect(
+      await screen.findByText(
+        'PR status unavailable: check the Azure DevOps token',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(`${String.fromCharCode(0x20ac)}2.50`),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(`${String.fromCharCode(0x20ac)}1.50`)).toBeNull();
   });
 });
 
@@ -704,6 +927,8 @@ describe('TaskNav', () => {
       'repos:list': () => repos,
       'tasks:list': () => tasks,
       'usage:costs': () => ({ a: 12.5 }),
+      'pulse:get': () =>
+        pulseView({ tasks: {}, lastActive: { a: Date.now() } }),
     });
     useStore.setState({ repos, tasks, selectedTaskId: 'a' });
     render(<TaskNav />);
@@ -772,7 +997,9 @@ describe('TaskNav task actions (#95)', () => {
     expect(finish).toHaveLength(1);
     expect(finish[0]).toHaveClass('btn-primary');
     // Right after the task's own row.
-    const row = screen.getByRole('button', { name: /48213/ });
+    const row = screen
+      .getByRole('button', { name: /48213/ })
+      .closest('.navrow')!;
     expect(row.nextElementSibling).toContainElement(finish[0]);
     await userEvent.click(finish[0]);
     expect(useStore.getState().screen).toEqual({ kind: 'finish', taskId: 'a' });

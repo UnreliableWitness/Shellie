@@ -24,18 +24,27 @@ import {
   useRef,
   useState,
 } from 'react';
+import {
+  LIFECYCLE_LABEL,
+  LIFECYCLE_ORDER,
+  type Lifecycle,
+  lifecycleOf,
+  type PulseView,
+  type TaskLifecycle,
+} from '../../shared/pulse';
 import type { Repo, TaskStatus, TaskView } from '../../shared/types';
 import {
   activeHome,
   activeWorkspaces,
-  hasNoRepo,
   inConnection,
 } from '../../shared/workspaces';
+import { api } from '../api';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { useBrains } from '../hooks/useBrains';
 import { JoinCard } from './brain/JoinCard';
 import { useReading, useReadingNudges } from '../hooks/useReadingFeed';
+import { usePulse } from '../hooks/usePulse';
 import { useTaskCosts } from '../hooks/useTaskCosts';
 import { hasEvent } from '../readingFeed';
 import {
@@ -49,29 +58,38 @@ import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { AttentionDot } from './AttentionDot';
 import { WorkItemTypeIcon } from './ui';
 
-/** With a connection, only that project's tasks and tasks with no connection (#219). */
+/** Tasks in these states always sit in Active: they have no PR story yet. */
+const ALWAYS_ACTIVE: TaskStatus[] = ['setting-up', 'setup-failed', 'finishing'];
+
+/** With a connection, only that project's tasks and tasks with no connection (#219). Open tasks fall into lifecycle groups. */
 export function groupTasks(
   all: TaskView[],
   repos: Repo[],
-  connectionId?: string | null,
-  knownIds?: string[],
+  connectionId: string | null | undefined,
+  knownIds: string[] | undefined,
+  life: (t: TaskView) => TaskLifecycle,
 ) {
   const tasks = connectionId
     ? all.filter((t) => inConnection(t, repos, connectionId, knownIds))
     : all;
-  const open = repos
-    .map((repo) => ({
-      repo,
-      // Under the task's active home: its own repo unless Finish dropped it.
-      tasks: tasks.filter(
-        (t) => activeHome(t).repoId === repo.id && t.status !== 'done',
-      ),
-    }))
-    .filter((g) => g.tasks.length > 0);
-  // Tasks without a repo (#225) get their own group after the repos.
-  const noRepo = tasks.filter((t) => hasNoRepo(t) && t.status !== 'done');
+  const lives = new Map<string, TaskLifecycle>();
+  const groupOf = (t: TaskView): Lifecycle => {
+    if (ALWAYS_ACTIVE.includes(t.status)) return 'active';
+    const l = life(t);
+    lives.set(t.id, l);
+    return l.group;
+  };
+  const sortKey = (t: TaskView) => lives.get(t.id)?.sortKey ?? 0;
+  const open = tasks.filter((t) => t.status !== 'done');
+  const byGroup = new Map(open.map((t) => [t.id, groupOf(t)]));
+  const groups = LIFECYCLE_ORDER.map((group) => ({
+    group,
+    tasks: open
+      .filter((t) => byGroup.get(t.id) === group)
+      .sort((x, y) => sortKey(x) - sortKey(y)),
+  })).filter((g) => g.tasks.length > 0);
   const done = tasks.filter((t) => t.status === 'done');
-  return { open, noRepo, done };
+  return { groups, done };
 }
 
 /** Only a task that is not ready gets a status dot. */
@@ -110,7 +128,75 @@ function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
   );
 }
 
-function Row({ task, cost }: { task: TaskView; cost: number }) {
+/** Each open task's lifecycle: its PR pulse, last terminal activity and a blocked agent, read now. */
+function useLifecycles(): {
+  pulse: PulseView | null;
+  life: (t: TaskView) => TaskLifecycle;
+} {
+  const pulse = usePulse();
+  const attention = useStore((s) => s.attention);
+  const life = (t: TaskView) =>
+    lifecycleOf({
+      pulses: pulse?.tasks[t.id] ?? [],
+      lastActiveAt: pulse?.lastActive[t.id] ?? null,
+      agentBlocked: t.terminals.some((d) =>
+        [attention[d.id] ?? []].flat().some((e) => e.reason === 'blocked'),
+      ),
+      now: Date.now(),
+    });
+  return { pulse, life };
+}
+
+/** The status chip: opens the PR in the browser, or for a merged task goes to its Finish page. */
+function Chip({
+  task,
+  chip,
+  pulse,
+}: {
+  task: TaskView;
+  chip: NonNullable<TaskLifecycle['chip']>;
+  pulse: PulseView | null;
+}) {
+  const go = useStore((s) => s.go);
+  const onClick = () => {
+    track('nav.chipClicked', { kind: chip.kind });
+    if (chip.kind === 'finish') {
+      go({ kind: 'finish', taskId: task.id });
+      return;
+    }
+    const url = (pulse?.tasks[task.id] ?? []).find(
+      (p) => p.workspaceId === chip.workspaceId,
+    )?.pr?.url;
+    if (url)
+      void api()
+        .invoke('links:open', url)
+        .catch(() => undefined);
+  };
+  return (
+    <button
+      type="button"
+      className={`navchip navchip-${chip.tone}${chip.kind === 'finish' ? ' navchip-finish' : ''}`}
+      onClick={onClick}
+    >
+      {chip.text}
+    </button>
+  );
+}
+
+function Row({
+  task,
+  cost,
+  repoName,
+  lifecycle,
+  pulse,
+}: {
+  task: TaskView;
+  cost: number;
+  /** Shown only when the list spans more than one repo. */
+  repoName?: string;
+  lifecycle?: TaskLifecycle;
+  pulse?: PulseView | null;
+}) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
   const extras = activeWorkspaces(task).length - 1;
@@ -119,31 +205,42 @@ function Row({ task, cost }: { task: TaskView; cost: number }) {
     ? { color: 'var(--red)', label: 'Worktree folder missing' }
     : NOT_READY[task.status];
   return (
-    <button
-      type="button"
-      className="navrow"
-      aria-current={current ? 'true' : undefined}
-      onClick={() => openTask(task.id)}
-    >
-      <TypeIcon task={task} />
-      {task.workItem && <span className="navrow-id">{task.workItem.id}</span>}
-      <span className="navrow-title">{task.workItem?.title ?? task.name}</span>
-      {extras > 0 && (
-        <span className="navrow-repos small muted">
-          +{plural(extras, 'repo')}
+    <div className="navrow" data-current={current ? 'true' : undefined}>
+      <button
+        type="button"
+        className="navrow-main"
+        aria-current={current ? 'true' : undefined}
+        title={lifecycle?.story || undefined}
+        onClick={() => openTask(task.id)}
+      >
+        <TypeIcon task={task} />
+        {task.workItem && <span className="navrow-id">{task.workItem.id}</span>}
+        <span className="navrow-title">
+          {task.workItem?.title ?? task.name}
         </span>
+        {repoName && (
+          <span className="navrow-repos small muted">{repoName}</span>
+        )}
+        {extras > 0 && (
+          <span className="navrow-repos small muted">
+            +{plural(extras, 'repo')}
+          </span>
+        )}
+        {waiting && <AttentionDot entry={waiting} />}
+        {state && (
+          <span
+            className="dot"
+            aria-label={state.label}
+            title={state.label}
+            style={{ background: state.color }}
+          />
+        )}
+      </button>
+      {lifecycle?.chip && (
+        <Chip task={task} chip={lifecycle.chip} pulse={pulse ?? null} />
       )}
-      {waiting && <AttentionDot entry={waiting} />}
-      {state && (
-        <span
-          className="dot"
-          aria-label={state.label}
-          title={state.label}
-          style={{ background: state.color }}
-        />
-      )}
-      <span className="navrow-cost">{cost > 0 ? eur(cost) : ''}</span>
-    </button>
+      {cost > 0 && <span className="navrow-cost">{eur(cost)}</span>}
+    </div>
   );
 }
 
@@ -449,6 +546,7 @@ function ProjectTile({ rail }: { rail: boolean }) {
 }
 
 const NAV_STEP = 16;
+const PULSE_AUTH_NOTE = 'PR status unavailable: check the Azure DevOps token';
 
 /** The drag handle on the nav's right edge (#160): drag, arrow keys, double-click resets. */
 function NavResize({
@@ -516,22 +614,25 @@ export function TaskNav() {
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? navWidth;
   const [showDone, setShowDone] = useState(false);
-  const { open, noRepo, done } = groupTasks(
+  const { pulse, life } = useLifecycles();
+  const { groups, done } = groupTasks(
     tasks,
     repos,
     connection?.id,
     connections.map((c) => c.id),
+    life,
   );
+  const open = groups.flatMap((g) => g.tasks);
+  // A repo tag on a row only helps when the list spans more than one repo.
+  const repoIds = new Set(open.map((t) => activeHome(t).repoId));
+  const repoName = (t: TaskView) =>
+    repoIds.size > 1
+      ? repos.find((r) => r.id === activeHome(t).repoId)?.name
+      : undefined;
   const rail = navCollapsed;
   // One read for every row that shows a cost; the rail shows none.
   const costs = useTaskCosts(
-    rail
-      ? []
-      : [
-          ...open.flatMap((g) => g.tasks),
-          ...noRepo,
-          ...(showDone ? done : []),
-        ].map((t) => t.id),
+    rail ? [] : [...open, ...(showDone ? done : [])].map((t) => t.id),
   );
   // Like tasks, only the active project's brains (#229); none without a connection.
   const brains = useBrains().filter(
@@ -603,35 +704,41 @@ export function TaskNav() {
       ))}
       <div className="leftnav-scroll">
         <TasksHead rail={rail} />
-        {[
-          ...open.map(({ repo, tasks: list }) => ({
-            key: repo.id,
-            name: repo.name,
-            list,
-          })),
-          ...(noRepo.length > 0
-            ? [{ key: 'no-repo', name: 'No repo', list: noRepo }]
-            : []),
-        ].map(({ key, name, list }) => (
-          <div key={key} role="group" aria-label={name}>
-            {!rail && <div className="nav-subhead">{name}</div>}
-            {list.map((t) =>
-              rail ? (
-                <Fragment key={t.id}>
-                  <RailRow task={t} />
-                  <RailFinish task={t} />
-                  <RailDiscard task={t} />
-                </Fragment>
-              ) : (
-                <Fragment key={t.id}>
-                  <Row task={t} cost={costs[t.id] ?? 0} />
-                  <FinishAction task={t} />
-                </Fragment>
-              ),
-            )}
-          </div>
-        ))}
-        {open.length === 0 && noRepo.length === 0 && !rail && (
+        {rail
+          ? open.map((t) => (
+              <Fragment key={t.id}>
+                <RailRow task={t} />
+                <RailFinish task={t} />
+                <RailDiscard task={t} />
+              </Fragment>
+            ))
+          : groups.map(({ group, tasks: list }) => (
+              <div key={group} role="group" aria-label={LIFECYCLE_LABEL[group]}>
+                <div
+                  className={
+                    group === 'needs-you'
+                      ? 'nav-subhead nav-subhead-amber'
+                      : 'nav-subhead'
+                  }
+                >
+                  {LIFECYCLE_LABEL[group]}{' '}
+                  <span className="nav-subhead-count">{list.length}</span>
+                </div>
+                {list.map((t) => (
+                  <Fragment key={t.id}>
+                    <Row
+                      task={t}
+                      cost={group === 'active' ? (costs[t.id] ?? 0) : 0}
+                      repoName={repoName(t)}
+                      lifecycle={life(t)}
+                      pulse={pulse}
+                    />
+                    <FinishAction task={t} />
+                  </Fragment>
+                ))}
+              </div>
+            ))}
+        {open.length === 0 && !rail && (
           <div className="nav-empty">No open tasks.</div>
         )}
         {done.length > 0 && !rail && (
@@ -668,6 +775,11 @@ export function TaskNav() {
           <span className="dot" style={{ background: footer.color }} />
           {!rail && <span className="nav-status-text">{footer.text}</span>}
         </div>
+        {!rail && pulse?.error === 'auth' && (
+          <div className="nav-status nav-status-note">
+            <span className="nav-status-text">{PULSE_AUTH_NOTE}</span>
+          </div>
+        )}
         <button
           type="button"
           className="ibtn nav-collapse"
