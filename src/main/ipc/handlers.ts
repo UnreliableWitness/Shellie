@@ -3575,6 +3575,7 @@ export function createHandlers(s: Services): Handlers {
         );
         // A later Finish (after Reopen) is a new one, not a retry of this.
         finishResults.delete(taskId);
+        void pulse.refresh().catch(() => undefined);
       } catch (e) {
         if (taskById(taskId).status === 'finishing')
           await patchTask(taskId, { status: 'ready' });

@@ -1226,6 +1226,27 @@ describe('handlers: finish every workspace of a task', () => {
     );
   });
 
+  it('refreshes the pulse after a multi-repo Finish succeeds, not when it fails', async () => {
+    const refresh = vi.fn().mockResolvedValue({});
+    const pulse = { refresh, get: vi.fn(), lastRefreshAt: () => null };
+    const hx = await multiHarness(
+      [{ name: 'api' }],
+      {},
+      { pulse: pulse as never },
+    );
+    commitFile(hx.t.worktreePath, 'web.txt', 'w\n', 'Web change');
+    await hx.h['tasks:finish'](hx.t.id, {
+      ...opts,
+      confirmDiscardUnsaved: false,
+      workspaces: [
+        { workspaceId: 'home', action: 'pr' },
+        { workspaceId: hx.ids[0], action: 'keep' },
+      ],
+    });
+    expect(hx.store.state.tasks[0].status).toBe('done');
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('books the Time spent once and writes it once for a multi-repo Finish', async () => {
     const hx = await multiHarness([{ name: 'api' }]);
     await hx.h['connections:update'](hx.c.id, { writeTimeToAdo: true });
