@@ -14,7 +14,6 @@ import type {
   SprintRow,
   TaskView,
 } from '../../shared/types';
-import type { AgentId } from '../../shared/agents';
 import { api, tryInvoke } from '../api';
 import { StartAgentMenu } from '../components/StartAgentMenu';
 import {
@@ -31,7 +30,7 @@ import {
 import { formatDuration, type LocalItemTime } from '../../shared/time';
 import { eur, sprintDates } from '../format';
 import { useTaskUsage } from '../hooks/useTaskUsage';
-import { reposForConnection, startTaskFor } from '../startTask';
+import { reposForConnection, useStartTask } from '../startTask';
 import { activeConnection, useStore } from '../store';
 import { taskStatusOf } from '../taskStatus';
 import {
@@ -206,33 +205,13 @@ function Row({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const go = useStore((s) => s.go);
-  const select = useStore((s) => s.select);
   const notify = useStore((s) => s.notify);
-  const [starting, setStarting] = useState(false);
   const w = row.item;
   const label = `${w.type} ${w.id} ${w.title}`;
+  const { starting, start } = useStartTask(repoId, w, chooseRepo);
   // The row opens the work item in Azure DevOps; the title is the same link for keyboard users.
   const openInAdo = () =>
     void tryInvoke(() => api().invoke('shell:openExternal', w.url), notify);
-  const start = async (agent?: AgentId) => {
-    if (!repoId || starting) return;
-    const workItem = {
-      id: w.id,
-      type: w.type,
-      title: w.title,
-      url: w.url,
-      project: w.project ?? null,
-    };
-    if (chooseRepo) return go({ kind: 'new-task', workItem, repoId });
-    setStarting(true);
-    const created = await startTaskFor(repoId, workItem, notify, agent);
-    setStarting(false);
-    if (created) {
-      select(created.id);
-      go({ kind: 'setup', taskId: created.id });
-    }
-  };
   const startButton = (
     <button
       type="button"

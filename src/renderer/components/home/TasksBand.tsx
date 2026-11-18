@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { AgentId } from '../../../shared/agents';
 import type { HomeItem, HomeSnapshot } from '../../../shared/home';
 import type { TaskView } from '../../../shared/types';
@@ -7,7 +6,7 @@ import { eur, formatDuration } from '../../format';
 import { useTaskTime } from '../../hooks/useTaskTime';
 import { useTaskCosts } from '../../hooks/useTaskCosts';
 import { upNext } from '../../homeView';
-import { reposForConnection, startTaskFor } from '../../startTask';
+import { reposForConnection, useStartTask } from '../../startTask';
 import { useStore } from '../../store';
 import { taskStatusOf } from '../../taskStatus';
 import { track } from '../../telemetry';
@@ -72,32 +71,19 @@ function UpNextRow({
   item: HomeItem;
 }) {
   const repos = useStore((s) => s.repos);
-  const notify = useStore((s) => s.notify);
-  const select = useStore((s) => s.select);
-  const go = useStore((s) => s.go);
-  const [starting, setStarting] = useState(false);
   const linked = reposForConnection(repos, connectionId);
   const repoId = linked[0]?.id ?? null;
   const label = `${item.type} ${item.id} ${item.title}`;
-  const start = async (agent?: AgentId) => {
+  // Several repos share the project: New task asks which one.
+  const { starting, start: startTask } = useStartTask(
+    repoId,
+    item,
+    linked.length > 1,
+  );
+  const start = (agent?: AgentId) => {
     if (!repoId || starting) return;
     track('home.clicked', { band: 'up-next' });
-    const workItem = {
-      id: item.id,
-      type: item.type,
-      title: item.title,
-      url: item.url,
-      project: item.project ?? null,
-    };
-    // Several repos share the project: New task asks which one.
-    if (linked.length > 1) return go({ kind: 'new-task', workItem, repoId });
-    setStarting(true);
-    const created = await startTaskFor(repoId, workItem, notify, agent);
-    setStarting(false);
-    if (created) {
-      select(created.id);
-      go({ kind: 'setup', taskId: created.id });
-    }
+    void startTask(agent);
   };
   const startButton = (
     <button
@@ -107,7 +93,7 @@ function UpNextRow({
       aria-disabled={!repoId || undefined}
       title={repoId ? undefined : NO_REPO}
       disabled={starting}
-      onClick={() => void start()}
+      onClick={() => start()}
     >
       {starting ? 'Starting' : 'Start'}
     </button>
@@ -123,7 +109,7 @@ function UpNextRow({
           label={label}
           className="btn btn-primary"
           disabled={starting}
-          onPick={(agent) => void start(agent)}
+          onPick={(agent) => start(agent)}
         >
           {startButton}
         </StartAgentMenu>

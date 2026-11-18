@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import type { AgentId } from '../shared/agents';
 import { renderBranch } from '../shared/naming';
 import { isGuarded } from '../shared/secrets';
 import { setupTabsFrom } from '../shared/terminals';
 import type { Repo, Task, WorkItemRef } from '../shared/types';
 import { api, tryInvoke } from './api';
+import { useStore } from './store';
 
 /** The repos a Start for this connection can go to: linked ones, never discovered ones. */
 export function reposForConnection(
@@ -65,4 +67,38 @@ export async function startTaskFor(
       }),
     notify,
   );
+}
+
+/**
+ * Start on a work item row (Up next, Sprint): New task when `chooseRepo` (several repos share the project, so it asks
+ * which one), else startTaskFor and the new task's setup. `starting` is true while the task is created.
+ */
+export function useStartTask(
+  repoId: string | null,
+  item: Omit<WorkItemRef, 'project'> & { project?: string | null },
+  chooseRepo: boolean,
+) {
+  const go = useStore((s) => s.go);
+  const select = useStore((s) => s.select);
+  const notify = useStore((s) => s.notify);
+  const [starting, setStarting] = useState(false);
+  const start = async (agent?: AgentId) => {
+    if (!repoId || starting) return;
+    const workItem = {
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      url: item.url,
+      project: item.project ?? null,
+    };
+    if (chooseRepo) return go({ kind: 'new-task', workItem, repoId });
+    setStarting(true);
+    const created = await startTaskFor(repoId, workItem, notify, agent);
+    setStarting(false);
+    if (created) {
+      select(created.id);
+      go({ kind: 'setup', taskId: created.id });
+    }
+  };
+  return { starting, start };
 }
