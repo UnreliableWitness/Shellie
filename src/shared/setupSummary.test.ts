@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildSetupSummary, inProgressState } from './setupSummary';
+import {
+  buildSetupSummary,
+  inProgressState,
+  setupAgents,
+} from './setupSummary';
 import type { StartSettings, WorkItemTypeMeta } from './types';
 
 const bug: WorkItemTypeMeta = {
@@ -58,6 +62,7 @@ describe('buildSetupSummary', () => {
       copy: false,
       commands: [],
       tabs: [],
+      agents: [],
       workItem: { id: '1', title: 'X', type: 'Bug', url: null, project: null },
       start: start({}),
       startSource,
@@ -73,5 +78,36 @@ describe('buildSetupSummary', () => {
     );
     expect(summarize('repo', 'DXP').workItem?.source).toBe('set on this repo');
     expect(summarize('default', null).workItem?.source).toBe('default');
+  });
+
+  it('shows a chosen apm list narrowed to the harnesses the task opens', () => {
+    const apmFor = (flags: Parameters<typeof setupAgents>[0]) =>
+      buildSetupSummary({
+        repoId: 'r1',
+        branch: 'feature/1-x',
+        base: 'origin/main',
+        config: { copy: [], run: {}, apm: ['claude', 'opencode'] },
+        copy: false,
+        commands: [],
+        tabs: [],
+        agents: setupAgents(flags),
+        workItem: null,
+        start: start({}),
+        startSource: 'default',
+        project: null,
+        types: null,
+        editor: { default: null, repos: {} },
+        brain: null,
+      }).apm;
+    expect(
+      apmFor({ startClaude: false, openOpencode: true, openShell: false }),
+    ).toEqual(['opencode']);
+    expect(
+      apmFor({ startClaude: true, openOpencode: true, openShell: false }),
+    ).toEqual(['claude', 'opencode']);
+    expect(apmFor({ startClaude: false, openShell: true })).toEqual([
+      'claude',
+      'opencode',
+    ]);
   });
 });

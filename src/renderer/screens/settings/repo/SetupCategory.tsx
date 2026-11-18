@@ -61,7 +61,7 @@ export function SetupCategory({
         scope="repo"
         category="Setup"
         title="Agent packages"
-        description="Which harnesses apm install targets for a repo with an apm.yml. Automatic follows the task's tabs."
+        description="Which harnesses apm install targets for a repo with an apm.yml. Automatic follows the task's tabs; a chosen list is the harnesses apm may install for, limited to the ones the task opens."
         keywords={['apm', 'apm install', 'claude', 'copilot', 'opencode']}
         {...yamlRow(settings, 'apm')}
       >
