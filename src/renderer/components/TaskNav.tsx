@@ -29,6 +29,7 @@ import {
   LIFECYCLE_ORDER,
   type Lifecycle,
   lifecycleOf,
+  RECENT_MS,
   type PulseView,
   type TaskLifecycle,
 } from '../../shared/pulse';
@@ -74,10 +75,9 @@ export function groupTasks(
     : all;
   const lives = new Map<string, TaskLifecycle>();
   const groupOf = (t: TaskView): Lifecycle => {
-    if (ALWAYS_ACTIVE.includes(t.status)) return 'active';
     const l = life(t);
     lives.set(t.id, l);
-    return l.group;
+    return ALWAYS_ACTIVE.includes(t.status) ? 'active' : l.group;
   };
   const sortKey = (t: TaskView) => lives.get(t.id)?.sortKey ?? 0;
   const open = tasks.filter((t) => t.status !== 'done');
@@ -86,7 +86,12 @@ export function groupTasks(
     group,
     tasks: open
       .filter((t) => byGroup.get(t.id) === group)
-      .sort((x, y) => sortKey(x) - sortKey(y)),
+      .sort((x, y) => {
+        // Not a subtraction: two -Infinity keys would give NaN.
+        const a = sortKey(x);
+        const b = sortKey(y);
+        return a < b ? -1 : a > b ? 1 : 0;
+      }),
   })).filter((g) => g.tasks.length > 0);
   const done = tasks.filter((t) => t.status === 'done');
   return { groups, done };
@@ -128,6 +133,22 @@ function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
   );
 }
 
+/** When a task was last active: the time store's interval, else now for the task on screen, else its creation if that is recent (a new task has no interval yet). */
+export function recentAt(
+  t: TaskView,
+  stored: number | null,
+  onScreen: string | null,
+  now = Date.now(),
+): number | null {
+  const created = Date.parse(t.createdAt);
+  const candidates = [
+    stored,
+    onScreen === t.id ? now : null,
+    !Number.isNaN(created) && now - created < RECENT_MS ? created : null,
+  ].filter((x): x is number => x !== null);
+  return candidates.length ? Math.max(...candidates) : null;
+}
+
 /** Each open task's lifecycle: its PR pulse, last terminal activity and a blocked agent, read now. */
 function useLifecycles(): {
   pulse: PulseView | null;
@@ -135,6 +156,7 @@ function useLifecycles(): {
 } {
   const pulse = usePulse();
   const attention = useStore((s) => s.attention);
+  const onScreen = useStore((s) => taskOnScreen(s));
   // Ages only change with time: re-render every minute so groups and waits follow.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -143,10 +165,10 @@ function useLifecycles(): {
   }, []);
   const life = (t: TaskView): TaskLifecycle =>
     ALWAYS_ACTIVE.includes(t.status)
-      ? { group: 'active', chip: null, story: '', sortKey: 0 }
+      ? { group: 'active', chip: null, story: '', sortKey: -Infinity }
       : lifecycleOf({
           pulses: pulse?.tasks[t.id] ?? [],
-          lastActiveAt: pulse?.lastActive[t.id] ?? null,
+          lastActiveAt: recentAt(t, pulse?.lastActive[t.id] ?? null, onScreen),
           agentBlocked: t.terminals.some((d) =>
             [attention[d.id] ?? []].flat().some((e) => e.reason === 'blocked'),
           ),
@@ -211,11 +233,16 @@ function Row({
   const waiting = useWaiting(task);
   // The Finish button under the current task replaces the Finish chip.
   const hasFinish = useShowsFinish(task);
+  const muted =
+    lifecycle?.group === 'in-review' || lifecycle?.group === 'parked';
   const state = task.worktreeMissing
     ? { color: 'var(--red)', label: 'Worktree folder missing' }
     : NOT_READY[task.status];
   return (
-    <div className="navrow" data-current={current ? 'true' : undefined}>
+    <div
+      className={muted ? 'navrow is-muted' : 'navrow'}
+      data-current={current ? 'true' : undefined}
+    >
       <button
         type="button"
         className="navrow-main"

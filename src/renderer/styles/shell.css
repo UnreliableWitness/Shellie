@@ -529,9 +529,12 @@ button.projecttile:hover {
 .railrow[aria-current='true'] {
   background: var(--bg-selected);
 }
-.railrow.is-dim > svg:first-child,
-.railrow.is-dim > [role='img'] {
+.railrow.is-dim > .wit-icon,
+.railrow.is-dim > .navrow-blank {
   opacity: 0.5;
+}
+.navrow.is-muted .navrow-title {
+  color: var(--muted);
 }
 .rail-dot {
   position: absolute;

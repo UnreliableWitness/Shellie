@@ -12,7 +12,7 @@ import {
   type PulseView,
   type TaskLifecycle,
 } from '../../shared/pulse';
-import { groupTasks, TaskNav } from './TaskNav';
+import { groupTasks, recentAt, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
   {
@@ -628,6 +628,7 @@ describe('TaskNav lifecycle groups', () => {
   });
 
   it('shows no chips and only Active or Parked groups before any pulse', async () => {
+    useStore.setState({ selectedTaskId: null });
     installFakeApi({ 'pulse:get': () => null as never });
     render(<TaskNav />);
     expect(await screen.findByText('Parked')).toBeInTheDocument();
@@ -1357,5 +1358,91 @@ describe('TaskNav width (#160)', () => {
     render(<TaskNav />);
     expect(screen.queryByRole('separator')).toBeNull();
     expect(nav().style.width).toBe('');
+  });
+});
+
+describe('TaskNav review fixes', () => {
+  const mk = (id: string, title: string, over: Partial<TaskView> = {}) => ({
+    ...tasks[0],
+    id,
+    workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
+    ...over,
+  });
+  afterEach(() => useStore.setState({ navCollapsed: false }));
+
+  it('matches the dimming selector on the real rail icon', async () => {
+    useStore.setState({
+      tasks: [mk('t1', 'Idle')],
+      navCollapsed: true,
+      selectedTaskId: null,
+    });
+    installFakeApi({ 'pulse:get': () => null as never });
+    render(<TaskNav />);
+    const row = screen.getByRole('button', { name: /Idle/ });
+    const icon = row.querySelector('.wit-icon, .navrow-blank')!;
+    expect(icon).not.toBeNull();
+    expect(
+      icon.matches(
+        '.railrow.is-dim > .wit-icon, .railrow.is-dim > .navrow-blank',
+      ),
+    ).toBe(true);
+  });
+
+  it('mutes In review and Parked rows, not Active ones', async () => {
+    useStore.setState({
+      tasks: [mk('t1', 'Idle'), mk('t2', 'Busy')],
+      selectedTaskId: null,
+      navCollapsed: false,
+    });
+    withPulse(pulseView({ tasks: {}, lastActive: { t2: Date.now() } }));
+    render(<TaskNav />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const rowOf = (n: RegExp) =>
+      screen.getByRole('button', { name: n }).closest('.navrow')!;
+    expect(rowOf(/Idle/)).toHaveClass('is-muted');
+    expect(rowOf(/Busy/)).not.toHaveClass('is-muted');
+  });
+
+  it('keeps a new task and the task on screen in Active without an interval', async () => {
+    useStore.setState({
+      tasks: [
+        mk('t1', 'Fresh', { createdAt: new Date().toISOString() }),
+        mk('t2', 'Open', { createdAt: '2020-01-01T00:00:00.000Z' }),
+        mk('t3', 'Old', { createdAt: '2020-01-01T00:00:00.000Z' }),
+      ],
+      selectedTaskId: 't2',
+      screen: { kind: 'task' },
+    } as never);
+    withPulse(pulseView({ tasks: {} }));
+    render(<TaskNav />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const group = (name: string) => screen.getByRole('group', { name });
+    expect(within(group('Active')).getByText('Fresh')).toBeInTheDocument();
+    expect(within(group('Active')).getByText('Open')).toBeInTheDocument();
+    expect(within(group('Parked')).getByText('Old')).toBeInTheDocument();
+  });
+
+  it('sorts setting-up tasks first in Active', () => {
+    const t = (id: string, status: TaskView['status']) =>
+      ({ ...tasks[0], id, status }) as TaskView;
+    const g = groupTasks(
+      [t('x', 'ready'), t('s1', 'setting-up'), t('s2', 'finishing')],
+      repos,
+      null,
+      undefined,
+      (task) =>
+        task.id === 'x'
+          ? { group: 'active', chip: null, story: '', sortKey: -5 }
+          : { group: 'active', chip: null, story: '', sortKey: -Infinity },
+    );
+    expect(g.groups[0].tasks.map((x) => x.id)).toEqual(['s1', 's2', 'x']);
+  });
+
+  it('recentAt ignores an invalid createdAt', () => {
+    expect(recentAt(mk('a', 'A', { createdAt: 'now' }), null, null)).toBeNull();
   });
 });

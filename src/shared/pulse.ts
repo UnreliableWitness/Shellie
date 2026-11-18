@@ -116,8 +116,10 @@ function troubleOf(p: PrPulse): Trouble | null {
   return null;
 }
 
-const createdMs = (p: PrPulse): number =>
-  p.pr ? Date.parse(p.pr.createdAt) : 0;
+const createdMs = (p: PrPulse): number => {
+  const t = p.pr ? Date.parse(p.pr.createdAt) : 0;
+  return Number.isNaN(t) ? 0 : t;
+};
 
 function ageText(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
@@ -156,14 +158,13 @@ export function lifecycleOf(input: {
   const { pulses, lastActiveAt, agentBlocked, now } = input;
   const withPr = pulses.filter((p) => p.pr && p.pr.status !== 'abandoned');
 
-  // Merged: every pulse has a live PR, all completed.
-  if (
-    pulses.length > 0 &&
-    withPr.length === pulses.length &&
-    withPr.every((p) => p.pr!.status === 'completed')
-  ) {
+  // Merged: at least one live PR, and all live PRs completed (no PR or an abandoned one does not block).
+  if (withPr.length > 0 && withPr.every((p) => p.pr!.status === 'completed')) {
     const closed = Math.max(
-      ...withPr.map((p) => (p.pr!.closedAt ? Date.parse(p.pr!.closedAt) : 0)),
+      ...withPr.map((p) => {
+        const t = p.pr!.closedAt ? Date.parse(p.pr!.closedAt) : 0;
+        return Number.isNaN(t) ? 0 : t;
+      }),
     );
     return {
       group: 'merged',
@@ -237,7 +238,7 @@ export function lifecycleOf(input: {
           }
         : {
             kind: 'waiting',
-            text: ageText(now - since),
+            text: since > 0 ? ageText(now - since) : 'Waiting',
             tone: 'muted',
             workspaceId: null,
           },
@@ -282,7 +283,8 @@ function storyOf(
       parts.push(
         `${p.unanswered} unanswered ${p.unanswered === 1 ? 'comment' : 'comments'}`,
       );
-    if (!p.pr.isDraft) parts.push(`waiting ${ageText(now - createdMs(p))}`);
+    if (!p.pr.isDraft && createdMs(p) > 0)
+      parts.push(`waiting ${ageText(now - createdMs(p))}`);
   }
   if (agentBlocked && trouble === null) parts.push('agent needs you');
   return parts.join(' · ');

@@ -11,15 +11,22 @@ opening each task or going to Azure DevOps.
 
 Pure function in `src/shared/pulse.ts`, first match wins:
 
-1. **Merged · close me**: the PR is completed. One Finish control on the row (and on the rail icon).
+1. **Merged · close me**: at least one workspace has a non-abandoned PR and all such PRs are completed. A workspace with
+   no PR, or only an abandoned one, does not block Merged; a still-active PR in another workspace does. One Finish control on the row (and on the rail icon).
 2. **Active**: the task was worked on in the last 4 hours (latest end of its active and agent intervals in the time
-   store). Trouble shows as a chip but does not move the row.
+   store). In the renderer a task whose page is on screen, or that was created less than 4 hours ago, also counts as
+   recent before the time store has an interval for it, so a new task does not flash Parked. Setting-up, setup-failed
+   and finishing tasks always sit in Active, first. Trouble shows as a chip but does not move the row.
 3. **Needs you**: CI failing, changes asked, a merge conflict, an unanswered comment, or an agent tab blocked on you.
 4. **In review**: a published (non-draft) PR with nothing waiting on you. Approved PRs stay here; there is no
    "Ready to merge" group.
 5. **Parked** (bottom, quiet): idle, no PR or only a draft, nothing waiting.
 
-An abandoned PR counts as no PR. Ordering inside each group follows the spec (Needs you by severity then age, In review by
+Changes asked is a reviewer vote of -10 (rejected) or -5 (waiting for author) by a person; group votes do not count.
+Reopened tasks: a completed or abandoned PR closed before the start of the task's latest open period is ignored, so a
+reopened task does not jump back to Merged (spec, "Reopened tasks").
+
+An abandoned PR counts as no PR. In review and Parked rows are muted (title colour), and their rail icons dimmed. Ordering inside each group follows the spec (Needs you by severity then age, In review by
 longest waiting, and so on).
 
 ## Where the status comes from
@@ -52,7 +59,7 @@ Telemetry: `pulse.refreshed` and `nav.chipClicked` added to `docs/telemetry.md`.
   Full `npm test`, `npm run typecheck` and `npm run lint` pass.
 - Real app: `npm start` on a fresh `SHELLIE_USER_DATA` folder started, and the terminal output showed no errors from the
   pulse service or the nav. A fresh folder has no connection and no tasks, so this confirms only that the app starts
-  and the empty list renders without errors. It was not checked visually and no groups, chips or rail states were seen.
+  and the empty list renders without errors. The renderer DevTools console was not checked. It was not checked visually and no groups, chips or rail states were seen.
 
 ## Not verified, and known gaps
 

@@ -11,6 +11,7 @@ import type {
 } from '../../shared/types';
 import { errorMessage } from '../../shared/errors';
 import { sleep } from '../async';
+import { prWebUrl } from './azureRepos';
 
 export type AdoErrorKind =
   | 'unauthorized'
@@ -1046,7 +1047,12 @@ export class AdoClient {
         createdById: str((d.createdBy as Json | undefined)?.id),
         webUrl:
           str(web) ??
-          `${this.organizationUrl}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repositoryId)}/pullrequest/${base.pullRequestId}`,
+          prWebUrl(
+            this.organizationUrl,
+            project,
+            str((d.repository as Json | undefined)?.name) ?? repositoryId,
+            base.pullRequestId,
+          ),
         reviewers: reviewers.flatMap((r) =>
           typeof r.id === 'string'
             ? [

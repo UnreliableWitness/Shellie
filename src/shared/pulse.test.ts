@@ -150,11 +150,11 @@ describe('lifecycleOf', () => {
     const done = withPr({ status: 'completed', closedAt: iso(NOW - H) });
     expect(run([done, pulse({ workspaceId: 'b' })]).group).toBe('in-review');
     expect(run([done, pulse({ workspaceId: 'b', pr: null })]).group).toBe(
-      'parked',
+      'merged',
     );
     expect(
       run([done, withPr({ status: 'abandoned' }, { workspaceId: 'b' })]).group,
-    ).toBe('parked');
+    ).toBe('merged');
     const r = run([
       pulse({ workspaceId: 'a' }),
       pulse({ workspaceId: 'b', ci: 'failing' }),
@@ -185,6 +185,33 @@ describe('lifecycleOf', () => {
     expect(r.story).toBe(
       'CI failing: PR build · 1 of 2 approvals · 2 unanswered comments · waiting 1d',
     );
+  });
+});
+
+describe('lifecycleOf fixes', () => {
+  const done = withPr({ status: 'completed', closedAt: iso(NOW - 2 * H) });
+  const none = pulse({ workspaceId: 'n', pr: null });
+  const abandoned = (id: string) =>
+    withPr({ status: 'abandoned' }, { workspaceId: id });
+
+  it('is merged when the PRs that exist are all completed', () => {
+    expect(run([done, none]).group).toBe('merged');
+    expect(run([done, abandoned('x')]).group).toBe('merged');
+  });
+  it('is not merged while another PR is active, or with only abandoned PRs', () => {
+    expect(run([done, pulse({ workspaceId: 'z' })]).group).not.toBe('merged');
+    expect(run([abandoned('x')]).group).not.toBe('merged');
+  });
+  it('survives a missing createdAt without NaN', () => {
+    const bad = withPr({ createdAt: '' });
+    const r = run([bad]);
+    expect(Number.isNaN(r.sortKey)).toBe(false);
+    expect(r.chip?.text).not.toMatch(/NaN/);
+    expect(r.story).not.toMatch(/NaN/);
+    const t = run([withPr({ createdAt: '' }, { ci: 'failing' })], {
+      lastActiveAt: null,
+    });
+    expect(Number.isNaN(t.sortKey)).toBe(false);
   });
 });
 

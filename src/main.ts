@@ -339,9 +339,9 @@ let stopBudget: () => void = () => {};
 let stopLedger: () => void = () => {};
 /** Stops the brains' scheduler and job queue (on quit). */
 let stopBrains: () => void = () => {};
-/** The phone reader's push: asked for whenever a brain changes, stopped on quit. */
 /** When the pulse last refreshed (set where the handlers are made). */
 let pulseLastRefreshAt: () => number | null = () => null;
+/** The phone reader's push: asked for whenever a brain changes, stopped on quit. */
 let readerBrainChanged: () => void = () => {};
 let stopReader: () => void = () => {};
 /** The reading list (set where the handlers are made): told when a brain's files change, asked by the phone's push. */

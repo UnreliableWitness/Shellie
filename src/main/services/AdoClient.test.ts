@@ -1868,6 +1868,7 @@ describe('AdoClient pull request pulse reads', () => {
           {
             pullRequestId: 5,
             creationDate: '2026-10-01T10:00:00Z',
+            repository: { name: 'Repo One' },
           },
         ],
       },
@@ -1898,7 +1899,7 @@ describe('AdoClient pull request pulse reads', () => {
       mergeStatus: null,
       createdById: null,
       projectId: '',
-      webUrl: `${server.url}/unreliablewitness/Shellie/_git/r1/pullrequest/5`,
+      webUrl: `${server.url}/unreliablewitness/Shellie/_git/Repo%20One/pullrequest/5`,
       reviewers: [],
     });
   });

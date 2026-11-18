@@ -105,7 +105,8 @@ export function toPrPulse(input: {
     evaluations.find((e) => e.typeName === 'Minimum number of reviewers')
       ?.minimumApproverCount ?? null;
   let review: ReviewState = 'waiting';
-  if (pr.reviewers.some((r) => r.vote === -10)) review = 'changes-asked';
+  if (pr.reviewers.some((r) => !r.isContainer && r.vote <= -5))
+    review = 'changes-asked';
   else if (have > 0 && (need === null || have >= need)) review = 'approved';
   return {
     workspaceId,

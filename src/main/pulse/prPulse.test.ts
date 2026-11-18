@@ -171,6 +171,22 @@ describe('toPrPulse', () => {
       'running',
     );
   });
+  it('counts -5 (waiting for author) as changes asked, but not from a container', () => {
+    const r = (vote: number, isContainer: boolean) => ({
+      id: 'u',
+      vote,
+      isContainer,
+    });
+    expect(run({ pr: pr({ reviewers: [r(-5, false)] }) }).review).toBe(
+      'changes-asked',
+    );
+    expect(run({ pr: pr({ reviewers: [r(-5, true)] }) }).review).toBe(
+      'waiting',
+    );
+    expect(run({ pr: pr({ reviewers: [r(-10, true)] }) }).review).toBe(
+      'waiting',
+    );
+  });
   it('reads review state and approvals', () => {
     const rv = (vote: number, id = 'u', isContainer = false) => ({
       id,
