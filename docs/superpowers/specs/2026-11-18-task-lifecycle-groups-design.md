@@ -129,15 +129,12 @@ Parked              otherwise (idle, no PR or only a draft, nothing waiting)
 ### Recent activity
 
 `openPeriods` cannot answer "worked on recently" (every open task has a period with `end: null`), and attention keeps
-no 'working' timestamp. Add `lastActiveAt: string | null` to the task (default null, persisted in `state.json`). Main
-sets it, throttled to at most once a minute per task, when:
-
-- the task's page is on screen in a focused window (renderer reports the on-screen task; main stamps it every minute
-  while it stays there), or
-- an agent in one of the task's tabs reports 'working' (AttentionTracker), or
-- the developer types in one of the task's terminals.
-
-Plain terminal output (a dev server logging) does not count. A tab merely open in the background does not count.
+no 'working' timestamp. Time tracking already records exactly the right signal, persisted in the time store
+(`src/main/time/TimeStore.ts`): **active intervals** (the task's page on screen in a focused window, trimmed at system
+idle, flushed every minute by `ActivityTracker`) and **agent intervals** (Claude Code from telemetry, Copilot, OpenCode).
+So `lastActiveAt(task)` = the latest interval end across `activeIntervals(taskId)` and `agentIntervals(taskId)`; no new
+task field. Typing in a terminal happens with the page on screen, so it is covered. Plain terminal output (a dev server
+logging) does not count; a tab merely open in the background does not count.
 
 Order inside a group: Needs you by severity (CI failing, conflict, changes asked, comments, agent waiting) then oldest
 first; Active by most recently worked; In review by longest waiting; Merged by merge time; Parked by most recently
@@ -202,8 +199,8 @@ Mockups: the screenshots shared in the brainstorm (A row style, R3 rail).
 
 - "Recently" = 4 hours.
 - Active wins over Needs you while recent; trouble shows as a chip without moving the row.
-- "Worked on" = page on screen in a focused window, an agent working in its tabs, or typing in its terminals; stored as
-  `lastActiveAt` (owner did not know; Claude's call).
+- "Worked on" = page on screen in a focused window (not idle) or an agent working in its tabs, read from the time
+  store's intervals (owner did not know; Claude's call).
 - Idle tasks with no published PR go to a quiet Parked group (owner did not know; Claude's call, keeps Active honest).
 - "Me" for unanswered comments = token user or PR creator (owner did not know how agents post; covers both).
 - Several workspaces: least advanced for PR state, worst for trouble.
