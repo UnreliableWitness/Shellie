@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { RECENT_MS, lifecycleOf, type PrPulse } from './pulse';
+import {
+  LIFECYCLE_LABEL,
+  LIFECYCLE_ORDER,
+  RECENT_MS,
+  lifecycleOf,
+  type PrPulse,
+} from './pulse';
 
 const NOW = Date.parse('2026-11-18T12:00:00Z');
 const H = 3_600_000;
@@ -179,5 +185,24 @@ describe('lifecycleOf', () => {
     expect(r.story).toBe(
       'CI failing: PR build · 1 of 2 approvals · 2 unanswered comments · waiting 1d',
     );
+  });
+});
+
+describe('lifecycle labels', () => {
+  it('has the group order and labels', () => {
+    expect(LIFECYCLE_ORDER).toEqual([
+      'needs-you',
+      'active',
+      'in-review',
+      'merged',
+      'parked',
+    ]);
+    expect(LIFECYCLE_ORDER.map((g) => LIFECYCLE_LABEL[g])).toEqual([
+      'Needs you',
+      'Active',
+      'In review',
+      'Merged · close me',
+      'Parked',
+    ]);
   });
 });

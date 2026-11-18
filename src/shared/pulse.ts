@@ -58,7 +58,7 @@ export const LIFECYCLE_LABEL: Record<Lifecycle, string> = {
   'needs-you': 'Needs you',
   active: 'Active',
   'in-review': 'In review',
-  merged: 'Merged',
+  merged: 'Merged · close me',
   parked: 'Parked',
 };
 
