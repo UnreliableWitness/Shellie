@@ -114,6 +114,7 @@ describe('App', () => {
         'brain:list',
         'brain:pendingJoin',
         'connections:list',
+        'pulse:get',
         'reading:get',
         'repos:list',
         'settings:get',

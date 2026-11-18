@@ -11,6 +11,7 @@ import type {
 } from '../../shared/types';
 import { errorMessage } from '../../shared/errors';
 import { sleep } from '../async';
+import { prWebUrl } from './azureRepos';
 
 export type AdoErrorKind =
   | 'unauthorized'
@@ -112,6 +113,39 @@ export type RawPr = {
   status: 'active' | 'completed' | 'abandoned';
   isDraft: boolean;
 };
+
+/** A branch's pull request with what the lifecycle pulse reads. */
+export type RawPrDetail = {
+  pullRequestId: number;
+  status: 'active' | 'completed' | 'abandoned';
+  isDraft: boolean;
+  creationDate: string;
+  closedDate: string | null;
+  mergeStatus: string | null;
+  projectId: string;
+  createdById: string | null;
+  webUrl: string;
+  reviewers: { id: string; vote: number; isContainer: boolean }[];
+};
+export type RawPolicyEvaluation = {
+  status: string;
+  typeName: string;
+  displayName: string | null;
+  minimumApproverCount: number | null;
+};
+export type RawPrStatus = {
+  state: string;
+  context: string;
+  description: string | null;
+  creationDate: string;
+};
+export type RawPrThread = {
+  status: string | null;
+  isDeleted: boolean;
+  comments: { authorId: string; commentType: string; isDeleted: boolean }[];
+};
+
+const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
 /** An active pull request as the list API returns it; only the fields Home reads. */
 export type RawHomePr = {
@@ -980,6 +1014,132 @@ export class AdoClient {
     );
     const first = (data.value ?? [])[0];
     return first === undefined ? null : toRawPr(first, path);
+  }
+
+  async pullRequestsForBranch(
+    project: string,
+    repositoryId: string,
+    branch: string,
+  ): Promise<RawPrDetail[]> {
+    const path = prPath(project, repositoryId);
+    const data = await this.request<{ value?: Json[] }>(
+      `${path}?searchCriteria.sourceRefName=${encodeURIComponent(`refs/heads/${branch}`)}&searchCriteria.status=all&${API}`,
+      {},
+      { code: true },
+    );
+    return (data.value ?? []).map((d) => {
+      const base = toRawPr(d, path);
+      const web = ((d._links as Json | undefined)?.web as Json | undefined)
+        ?.href;
+      const reviewers = Array.isArray(d.reviewers)
+        ? (d.reviewers as Json[])
+        : [];
+      return {
+        ...base,
+        creationDate: str(d.creationDate) ?? '',
+        closedDate: str(d.closedDate),
+        mergeStatus: str(d.mergeStatus),
+        projectId:
+          str(
+            ((d.repository as Json | undefined)?.project as Json | undefined)
+              ?.id,
+          ) ?? '',
+        createdById: str((d.createdBy as Json | undefined)?.id),
+        webUrl:
+          str(web) ??
+          prWebUrl(
+            this.organizationUrl,
+            project,
+            str((d.repository as Json | undefined)?.name) ?? repositoryId,
+            base.pullRequestId,
+          ),
+        reviewers: reviewers.flatMap((r) =>
+          typeof r.id === 'string'
+            ? [
+                {
+                  id: r.id,
+                  vote: typeof r.vote === 'number' ? r.vote : 0,
+                  isContainer: r.isContainer === true,
+                },
+              ]
+            : [],
+        ),
+      };
+    });
+  }
+
+  async policyEvaluations(
+    project: string,
+    projectId: string,
+    prId: number,
+  ): Promise<RawPolicyEvaluation[]> {
+    const artifact = encodeURIComponent(
+      `vstfs:///CodeReview/CodeReviewId/${projectId}/${prId}`,
+    );
+    const data = await this.request<{ value?: Json[] }>(
+      `/${encodeURIComponent(project)}/_apis/policy/evaluations?artifactId=${artifact}&api-version=7.1-preview.1`,
+      {},
+      { code: true },
+    );
+    return (data.value ?? []).map((e) => {
+      const cfg = (e.configuration ?? {}) as Json;
+      const settings = (cfg.settings ?? {}) as Json;
+      const min = settings.minimumApproverCount;
+      return {
+        status: str(e.status) ?? '',
+        typeName: str((cfg.type as Json | undefined)?.displayName) ?? '',
+        displayName:
+          str((e.context as Json | undefined)?.buildDefinitionName) ??
+          str(settings.displayName),
+        minimumApproverCount: typeof min === 'number' ? min : null,
+      };
+    });
+  }
+
+  async pullRequestStatuses(
+    project: string,
+    repositoryId: string,
+    prId: number,
+  ): Promise<RawPrStatus[]> {
+    const data = await this.request<{ value?: Json[] }>(
+      `${prPath(project, repositoryId)}/${prId}/statuses?${API}`,
+      {},
+      { code: true },
+    );
+    return (data.value ?? []).map((s) => {
+      const c = (s.context ?? {}) as Json;
+      const name = str(c.name) ?? '';
+      const genre = str(c.genre);
+      return {
+        state: str(s.state) ?? '',
+        context: genre ? `${genre}/${name}` : name,
+        description: str(s.description),
+        creationDate: str(s.creationDate) ?? '',
+      };
+    });
+  }
+
+  async pullRequestThreads(
+    project: string,
+    repositoryId: string,
+    prId: number,
+  ): Promise<RawPrThread[]> {
+    const data = await this.request<{ value?: Json[] }>(
+      `${prPath(project, repositoryId)}/${prId}/threads?${API}`,
+      {},
+      { code: true },
+    );
+    return (data.value ?? []).map((t) => ({
+      status: str(t.status),
+      isDeleted: t.isDeleted === true,
+      comments: (Array.isArray(t.comments) ? (t.comments as Json[]) : []).map(
+        (c) => ({
+          authorId: str((c.author as Json | undefined)?.id) ?? '',
+          commentType: str(c.commentType) ?? 'text',
+          isDeleted: c.isDeleted === true,
+        }),
+      ),
+    }));
   }
 
   async createPullRequest(

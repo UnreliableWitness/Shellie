@@ -26,4 +26,8 @@ export interface Tracker {
   findActivePullRequest: AdoClient['findActivePullRequest'];
   createPullRequest: AdoClient['createPullRequest'];
   pullRequest: AdoClient['pullRequest'];
+  pullRequestsForBranch: AdoClient['pullRequestsForBranch'];
+  policyEvaluations: AdoClient['policyEvaluations'];
+  pullRequestStatuses: AdoClient['pullRequestStatuses'];
+  pullRequestThreads: AdoClient['pullRequestThreads'];
 }

@@ -93,6 +93,8 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `review.repoFiltered` | `via`: how the Changes tab was narrowed to one repo or back to all (`chip`, `key`, `breadcrumb`, `commit`, `comment`) |
 | `review.repoCollapsed` | `how`: a repo group folded by hand (`manual`) or by itself once every file was viewed (`auto`) |
 | `review.fileDiscarded` | `scope`: the Changes scope the file's changes were discarded or the new file deleted in (`all`, `uncommitted`) |
+| `pulse.refreshed` | `tasks`: how many tasks have a pulse after the refresh, `errors`: a count of failed checks; measurement `durationMs` |
+| `nav.chipClicked` | `kind`: which status chip on a task in the list was clicked (the chip kinds, never names) |
 | `usage.exportCsv` | none |
 | `focus.toggled`, `nav.toggled` | on / collapsed |
 | `settings.changed` | names of the changed settings (not their values) |

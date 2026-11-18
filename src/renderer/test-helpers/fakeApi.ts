@@ -102,6 +102,18 @@ const defaults: FakeHandlers = {
   }),
   'prDrafts:skip': () => undefined,
   'prDrafts:edit': () => undefined,
+  'pulse:get': () => ({
+    tasks: {},
+    error: null,
+    checkedAt: null,
+    lastActive: {},
+  }),
+  'pulse:refresh': () => ({
+    tasks: {},
+    error: null,
+    checkedAt: null,
+    lastActive: {},
+  }),
   'home:refresh': () => ({
     version: 1,
     builtAt: '2026-10-17T09:00:00.000Z',

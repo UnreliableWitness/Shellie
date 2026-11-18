@@ -762,6 +762,53 @@ describe('handlers: finish with a pull request', () => {
     expect(taskClient).not.toHaveBeenCalled();
   });
 
+  it('pulse:get adds the latest active or agent interval end per task', async () => {
+    const hx = await prHarness();
+    expect(await hx.h['pulse:get']()).toMatchObject({
+      tasks: {},
+      error: null,
+      checkedAt: null,
+      lastActive: {},
+    });
+    await hx.services.time.addActive(hx.t.id, [1000, 2000]);
+    await hx.services.time.addAgent(hx.t.id, 'claude-code', [3000, 5000]);
+    const view = await hx.h['pulse:get']();
+    expect(view.lastActive).toEqual({ [hx.t.id]: 5000 });
+  });
+
+  it('pulse:refresh finds the PR, links it on the workspace and broadcasts', async () => {
+    const hx = await prHarness();
+    vi.spyOn(hx.client, 'me').mockResolvedValue('me-1');
+    vi.spyOn(hx.client, 'pullRequestsForBranch').mockResolvedValue([
+      {
+        pullRequestId: 7,
+        projectId: 'pid',
+        status: 'active',
+        isDraft: false,
+        webUrl: 'https://dev.azure.com/contoso/P/_git/R/pullrequest/7',
+        creationDate: new Date(Date.now() + 60_000).toISOString(),
+        createdBy: 'me-1',
+        reviewers: [],
+      },
+    ] as never);
+    vi.spyOn(hx.client, 'policyEvaluations').mockResolvedValue([]);
+    vi.spyOn(hx.client, 'pullRequestStatuses').mockResolvedValue([]);
+    vi.spyOn(hx.client, 'pullRequestThreads').mockResolvedValue([]);
+    const view = await hx.h['pulse:refresh']();
+    expect(view.tasks[hx.t.id]).toHaveLength(1);
+    expect(hx.store.state.tasks[0].pullRequest).toMatchObject({ id: 7 });
+    expect(hx.broadcasts.some((b) => b.event === 'tasks:changed')).toBe(true);
+    expect(hx.broadcasts.some((b) => b.event === 'pulse:changed')).toBe(true);
+  });
+
+  it('pulse:refresh has no target for a workspace without an Azure Repos remote', async () => {
+    const hx = await prHarness('https://github.com/contoso/R.git');
+    const me = vi.spyOn(hx.client, 'me');
+    const view = await hx.h['pulse:refresh']();
+    expect(me).not.toHaveBeenCalled();
+    expect(view.tasks[hx.t.id] ?? []).toEqual([]);
+  });
+
   it('finishChecks still reports unpushed commits as a count', async () => {
     const hx = await prHarness();
     commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
@@ -1177,6 +1224,27 @@ describe('handlers: finish every workspace of a task', () => {
       'capture',
       expect.stringMatching(/^sources\//),
     );
+  });
+
+  it('refreshes the pulse after a multi-repo Finish succeeds, not when it fails', async () => {
+    const refresh = vi.fn().mockResolvedValue({});
+    const pulse = { refresh, get: vi.fn(), lastRefreshAt: () => null };
+    const hx = await multiHarness(
+      [{ name: 'api' }],
+      {},
+      { pulse: pulse as never },
+    );
+    commitFile(hx.t.worktreePath, 'web.txt', 'w\n', 'Web change');
+    await hx.h['tasks:finish'](hx.t.id, {
+      ...opts,
+      confirmDiscardUnsaved: false,
+      workspaces: [
+        { workspaceId: 'home', action: 'pr' },
+        { workspaceId: hx.ids[0], action: 'keep' },
+      ],
+    });
+    expect(hx.store.state.tasks[0].status).toBe('done');
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it('books the Time spent once and writes it once for a multi-repo Finish', async () => {
