@@ -29,6 +29,7 @@ type WS = ReturnType<PulseDeps['workspaces']>[number];
 const ws = (n: number, o: Partial<WS> = {}): WS => ({
   taskId: `t${n}`,
   workspaceId: `w${n}`,
+  repoId: 'r',
   branch: `b${n}`,
   openedAt: null,
   stored: null,
@@ -186,6 +187,50 @@ describe('TaskPulseService', () => {
     const snap = await svc.refresh();
     expect(snap.tasks.t1[0].pr).toBeNull();
     expect(link).not.toHaveBeenCalled();
+  });
+
+  it('looks up the target once per repo per refresh', async () => {
+    const target = vi.fn(async () => ({
+      connectionId: 'c',
+      project: 'P',
+      repo: 'R',
+    }));
+    const { svc, client } = setup({
+      workspaces: () => [
+        ws(1, { repoId: 'A' }),
+        ws(2, { repoId: 'A' }),
+        ws(3, { repoId: 'A' }),
+        ws(4, { repoId: 'B' }),
+      ],
+      target,
+    });
+    const snap = await svc.refresh();
+    expect(target).toHaveBeenCalledTimes(2);
+    expect(target.mock.calls.map((c: unknown[]) => c[0]).sort()).toEqual([
+      'A',
+      'B',
+    ]);
+    expect(client.pullRequestsForBranch).toHaveBeenCalledTimes(4);
+    expect(Object.keys(snap.tasks).sort()).toEqual(['t1', 't2', 't3', 't4']);
+    await svc.refresh();
+    expect(target).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps a failed target lookup to the workspaces of its repo', async () => {
+    const { svc } = setup({
+      workspaces: () => [
+        ws(1, { repoId: 'A' }),
+        ws(2, { repoId: 'A' }),
+        ws(3, { repoId: 'B' }),
+      ],
+      target: async (repoId) => {
+        if (repoId === 'A') throw new Error('no repo');
+        return { connectionId: 'c', project: 'P', repo: 'R' };
+      },
+    });
+    const snap = await svc.refresh();
+    expect(Object.keys(snap.tasks)).toEqual(['t3']);
+    expect(snap.error).toBeNull();
   });
 
   it('caches the repository id and asks for me once per refresh', async () => {
