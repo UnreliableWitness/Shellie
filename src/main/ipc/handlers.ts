@@ -1053,16 +1053,9 @@ export function createHandlers(s: Services): Handlers {
     return left;
   };
 
-  /**
-   * Where a workspace's pull request would go (the home's by default): its repo's connection and `origin`
-   * parsed as Azure Repos. The PR links the work item only when that connection is in the work item's
-   * organization.
-   */
-  const prContext = async (
-    task: Task,
-    w: WorkspaceView = taskWorkspaces(task)[0],
-  ) => {
-    const repo = s.repos.get(w.repoId);
+  /** Where a repo's pull requests go: its connection and `origin` parsed as Azure Repos. */
+  const prTargetOf = async (repoId: string) => {
+    const repo = s.repos.get(repoId);
     const connection = repo.connectionId
       ? s.connections.get(repo.connectionId)
       : null;
@@ -1080,6 +1073,18 @@ export function createHandlers(s: Services): Handlers {
         availability.target.project,
         availability.target.repo,
       ]);
+    return { connection, remotes, availability };
+  };
+
+  /**
+   * Where a workspace's pull request would go (the home's by default), see `prTargetOf`. The PR links the
+   * work item only when the repo's connection is in the work item's organization.
+   */
+  const prContext = async (
+    task: Task,
+    w: WorkspaceView = taskWorkspaces(task)[0],
+  ) => {
+    const { connection, remotes, availability } = await prTargetOf(w.repoId);
     const taskConn = s.connections.find(taskConnectionId(task, s.repos.list()));
     const taskOrg = taskConn ? organizationOf(taskConn.organizationUrl) : null;
     return {
@@ -3207,16 +3212,14 @@ export function createHandlers(s: Services): Handlers {
               .map((w) => ({
                 taskId: t.id,
                 workspaceId: w.id,
+                repoId: w.repoId,
                 branch: w.branch,
                 openedAt: t.openPeriods.at(-1)?.start ?? null,
                 stored: w.pullRequest,
               })),
           ),
-      target: async (taskId, workspaceId) => {
-        const task = taskById(taskId);
-        const w = taskWorkspaces(task).find((x) => x.id === workspaceId);
-        if (!w) return null;
-        const { connection, availability } = await prContext(task, w);
+      target: async (repoId) => {
+        const { connection, availability } = await prTargetOf(repoId);
         if (!connection || !availability.target) return null;
         return {
           connectionId: connection.id,
