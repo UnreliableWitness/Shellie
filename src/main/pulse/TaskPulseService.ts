@@ -29,11 +29,13 @@ export type PulseDeps = {
   workspaces: () => {
     taskId: string;
     workspaceId: string;
+    repoId: string;
     branch: string;
     openedAt: string | null;
     stored: PullRequestRef | null;
   }[];
-  target: (taskId: string, workspaceId: string) => Promise<PulseTarget | null>;
+  /** Where the repo's PRs go; asked once per repo per refresh. */
+  target: (repoId: string) => Promise<PulseTarget | null>;
   client: (connectionId: string) => PulseClient;
   /** Saves a found PR on the workspace when it differs from `stored`. */
   link: (
@@ -141,6 +143,7 @@ export class TaskPulseService {
     const list = this.d.workspaces();
     const errors: PulseError[] = [];
     const meOf = new Map<string, Promise<string>>();
+    const targetOf = new Map<string, Promise<PulseTarget | null>>();
     const tasks: Record<string, PrPulse[]> = {};
     let auth = false;
 
@@ -149,7 +152,13 @@ export class TaskPulseService {
         (p) => p.workspaceId === w.workspaceId,
       );
       try {
-        const t = await this.d.target(w.taskId, w.workspaceId);
+        let target = targetOf.get(w.repoId);
+        if (!target) {
+          target = this.d.target(w.repoId);
+          target.catch(() => undefined);
+          targetOf.set(w.repoId, target);
+        }
+        const t = await target;
         if (!t) return null;
         const client = this.d.client(t.connectionId);
         let me = meOf.get(t.connectionId);
