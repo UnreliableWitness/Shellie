@@ -800,7 +800,10 @@ describe('handlers: reopen a finished task', () => {
     const hx = await finished({ removeWorktree: false, deleteBranch: false });
     const extra = await withExtra(hx);
     rmSync(extra, { recursive: true, force: true });
+    const summary = vi.spyOn(hx.services.git, 'summary');
     await expect(hx.h['tasks:gitSummary'](hx.t.id, 'w2')).rejects.toThrow();
+    // No git process in a missing folder, so no failed git.ms status per poll (#332).
+    expect(summary).not.toHaveBeenCalled();
   });
 
   it('still fails the summary when .git is there but git fails', async () => {
