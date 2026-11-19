@@ -14,6 +14,11 @@ export function useGitSummary(
 
   useEffect(() => {
     if (!enabled) return;
+    // A missing worktree has no git state; polling it would only count a failed git call every 5 s (#332).
+    if (worktreeMissing) {
+      setGit(null);
+      return;
+    }
     let live = true;
     const refresh = () =>
       api()
