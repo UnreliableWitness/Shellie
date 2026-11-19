@@ -25,6 +25,7 @@ import { ProjectScreen } from './screens/ProjectScreen';
 import { SetupScreen } from './screens/SetupScreen';
 import { SprintScreen } from './screens/SprintScreen';
 import { TaskScreen, TaskTerminals } from './screens/TaskScreen';
+import { WeekScreen } from './screens/WeekScreen';
 import { useStore } from './store';
 import { useWorkItemTypes } from './workItemTypes';
 
@@ -41,6 +42,8 @@ function Page() {
       return <AgentsScreen />;
     case 'sprint':
       return <SprintScreen />;
+    case 'week':
+      return <WeekScreen />;
     case 'project':
       return <ProjectScreen />;
     case 'brain':

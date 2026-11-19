@@ -3,6 +3,7 @@ import {
   Add20Regular,
   Brain20Regular,
   ArrowSprint20Regular,
+  CalendarLtr20Regular,
   CheckmarkCircle16Regular,
   CheckmarkCircle20Regular,
   ChevronDown12Regular,
@@ -758,6 +759,13 @@ export function TaskNav() {
         rail={rail}
         current={screen.kind === 'sprint'}
         onClick={() => go({ kind: 'sprint' })}
+      />
+      <NavItem
+        icon={<CalendarLtr20Regular aria-hidden="true" />}
+        label="Week"
+        rail={rail}
+        current={screen.kind === 'week'}
+        onClick={() => go({ kind: 'week' })}
       />
       {!rail && connection && (
         <JoinCard connectionId={connection.id} project={connection.project} />

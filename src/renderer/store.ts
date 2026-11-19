@@ -98,6 +98,8 @@ export type Screen =
   /** The brain step as a page (from Get started). */
   | { kind: 'brain-new'; from: 'get-started' }
   | { kind: 'sprint' }
+  /** Every task's time in one week, across projects (for timesheets). */
+  | { kind: 'week' }
   /** The active project's overview page. */
   | { kind: 'project' }
   /** A brain: the local knowledge folder of one Azure DevOps project. */

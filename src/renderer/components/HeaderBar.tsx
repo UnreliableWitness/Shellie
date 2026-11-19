@@ -25,6 +25,7 @@ const SEP = String.fromCharCode(0x203a);
 const PAGE_LABEL: Partial<Record<Screen['kind'], string>> = {
   home: 'Home',
   project: 'Project',
+  week: 'Week',
   setup: 'Setup',
   finish: 'Finish',
   'new-task': 'New task',

@@ -1,15 +1,21 @@
 import type { Handlers } from '../../shared/ipc';
-import { AGENT_TOOLS, type LocalItemTime } from '../../shared/time';
+import {
+  AGENT_TOOLS,
+  type LocalItemTime,
+  type WeekRow,
+} from '../../shared/time';
 import type { Task } from '../../shared/types';
 import type { AppSettings } from '../../shared/usage';
 import type { ActivityTracker } from './ActivityTracker';
 import type { TimeStore } from './TimeStore';
 import { timeCsv } from './timeCsv';
+import { weekBounds } from './weekTime';
 
 type TimeChannels =
   | 'time:focus'
   | 'time:task'
   | 'time:sprint'
+  | 'time:week'
   | 'time:exportCsv';
 
 export type TimeDeps = {
@@ -19,6 +25,8 @@ export type TimeDeps = {
   settings: () => AppSettings;
   /** The connection of the task's repo, null when the repo has none (or is gone). */
   connectionOf: (task: Task) => string | null;
+  /** The name the Week page groups a task under: its Azure DevOps project, else its repo; null for neither. */
+  projectOf: (task: Task) => string | null;
   tracker?: Pick<ActivityTracker, 'setTask'>;
   now?: () => number;
 };
@@ -96,6 +104,37 @@ export function createTimeHandlers(d: TimeDeps): Pick<Handlers, TimeChannels> {
         item.booked ||= s.booking !== null;
       }
       return out;
+    },
+    'time:week': async (weekStart) => {
+      const bounds = weekBounds(weekStart);
+      const at = now();
+      const rows: WeekRow[] = [];
+      // Open and finished tasks alike: a timesheet wants every task worked on that week.
+      for (const task of d.tasks()) {
+        const perDay = d.time.weekSeconds(task, bounds, at);
+        const totalSeconds = perDay.reduce((n, s) => n + s, 0);
+        if (totalSeconds === 0) continue;
+        rows.push({
+          taskId: task.id,
+          title: task.workItem?.title ?? (task.name || task.branch),
+          project: d.projectOf(task),
+          workItem: task.workItem
+            ? { id: task.workItem.id, title: task.workItem.title }
+            : null,
+          perDay,
+          totalSeconds,
+        });
+      }
+      rows.sort((a, b) => b.totalSeconds - a.totalSeconds);
+      const dayTotals = bounds
+        .slice(0, -1)
+        .map((_, i) => rows.reduce((n, r) => n + r.perDay[i], 0));
+      return {
+        weekStart,
+        rows,
+        dayTotals,
+        totalSeconds: dayTotals.reduce((n, s) => n + s, 0),
+      };
     },
   };
 }
