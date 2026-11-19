@@ -384,6 +384,33 @@ describe('GitClient', () => {
     });
   });
 
+  it('leaves out the commits that came in by merging main into the branch (#338)', async () => {
+    const repo = makeRepo();
+    const wt = path.join(path.dirname(repo), 'wt-mergedmain');
+    const baseSha = await client.worktreeAdd(repo, {
+      branch: 'feature/mergedmain',
+      path: wt,
+      baseRef: 'main',
+    });
+    commitFile(wt, 'a.txt', 'one\n', 'Add a');
+    commitFile(repo, 'later.txt', 'later\n', 'Main one');
+    commitFile(repo, 'later2.txt', 'later\n', 'Main two');
+    git(wt, 'merge', '-q', '--no-edit', '-m', 'Merge main', 'main');
+    const s = await client.finishSummary(wt, {
+      baseRef: 'main',
+      baseSha,
+      branch: 'feature/mergedmain',
+    });
+    expect(s.commits.map((c) => c.subject)).toEqual(['Add a', 'Merge main']);
+    expect(s).toMatchObject({ commitCount: 2, filesChanged: 1, insertions: 1 });
+    const c = await client.branchChanges(wt, { baseRef: 'main', baseSha });
+    expect(c!.log).toContain('Add a');
+    expect(c!.log).not.toContain('Main one');
+    expect(c!.stat).not.toContain('later');
+    expect(c!.diff).toContain('+one');
+    expect(c!.diff).not.toContain('later');
+  });
+
   it('lists no commits when neither the recorded base nor the base ref resolves', async () => {
     const repo = makeRepo();
     for (let i = 0; i < 3; i++)

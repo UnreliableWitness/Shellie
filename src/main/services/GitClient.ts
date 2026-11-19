@@ -674,6 +674,31 @@ export class GitClient {
   }
 
   /**
+   * The branch's own work since `base`: `revs` for log and rev-list, `diff` for a diff. Commits that came in by
+   * merging `baseRef` into the branch are left out (#338), unless the branch is already merged into `baseRef`,
+   * where that would leave nothing.
+   */
+  private async ownRange(
+    worktree: string,
+    base: string,
+    baseRef: string,
+  ): Promise<{ revs: string[]; diff: string }> {
+    const own = { revs: [`${base}..HEAD`], diff: `${base}..HEAD` };
+    const isAncestor = (a: string, b: string) =>
+      this.run(worktree, ['merge-base', '--is-ancestor', a, b]).then(
+        () => true,
+        () => false,
+      );
+    if (await isAncestor('HEAD', baseRef)) return own;
+    const fork = await this.mergeBase(worktree, baseRef, 'HEAD');
+    if (!fork) return own;
+    return {
+      revs: [`${base}..HEAD`, `^${fork}`],
+      diff: (await isAncestor(base, fork)) ? `${fork}..HEAD` : own.diff,
+    };
+  }
+
+  /**
    * What the branch did since its base, as text for a PR description (#111): its log with commit bodies (the newest
    * 50), the diff stat and the diff, without lock files. Null when the base cannot be found.
    */
@@ -683,21 +708,21 @@ export class GitClient {
   ): Promise<{ log: string; stat: string; diff: string } | null> {
     const base = await this.resolveBase(worktree, o).catch(() => null);
     if (!base) return null;
-    const range = `${base}..HEAD`;
+    const range = await this.ownRange(worktree, base, o.baseRef);
     const [log, stat, diff] = await Promise.all([
       this.run(worktree, [
         'log',
         `--max-count=${MAX_SUMMARY_COMMITS}`,
         '--format=- %h %s%n%w(0,2,2)%b',
-        range,
+        ...range.revs,
       ]),
-      this.run(worktree, ['diff', '--no-color', '--stat=120', range]),
+      this.run(worktree, ['diff', '--no-color', '--stat=120', range.diff]),
       this.run(worktree, [
         'diff',
         '--no-color',
         '--no-ext-diff',
         '-U2',
-        range,
+        range.diff,
         '--',
         '.',
         ...LOCK_FILES.map((f) => `:(exclude,glob)**/${f}`),
@@ -765,7 +790,8 @@ export class GitClient {
   /**
    * What the task's branch did since it left its base: its commits (the newest 50, oldest first), the diff
    * stat, and whether it is pushed. The range starts at the recorded `baseSha`, else at the merge base with
-   * `baseRef` (tasks from before Shellie recorded it). With neither, commits and changes are left unknown.
+   * `baseRef` (tasks from before Shellie recorded it). Commits that came in by merging `baseRef` into the branch
+   * are left out. With neither, commits and changes are left unknown.
    */
   async finishSummary(
     worktree: string,
@@ -773,7 +799,9 @@ export class GitClient {
   ): Promise<TaskSummary> {
     const { baseRef, branch } = o;
     const [range, { upstream, pushed }] = await Promise.all([
-      this.resolveBase(worktree, o).then((base) => base && `${base}..HEAD`),
+      this.resolveBase(worktree, o).then((base) =>
+        base ? this.ownRange(worktree, base, baseRef) : null,
+      ),
       this.pushState(worktree, baseRef, branch),
     ]);
     let commits: TaskSummary['commits'] = [];
@@ -783,14 +811,14 @@ export class GitClient {
     let deletions = 0;
     if (range) {
       const [count, log, stat] = await Promise.all([
-        this.run(worktree, ['rev-list', '--count', range]),
+        this.run(worktree, ['rev-list', '--count', ...range.revs]),
         this.run(worktree, [
           'log',
           `--max-count=${MAX_SUMMARY_COMMITS}`,
           '--format=%h%x09%s',
-          range,
+          ...range.revs,
         ]),
-        this.run(worktree, ['diff', '--shortstat', range]),
+        this.run(worktree, ['diff', '--shortstat', range.diff]),
       ]);
       commitCount = Number(count.trim()) || 0;
       commits = log
