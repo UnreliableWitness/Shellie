@@ -114,6 +114,41 @@ describe('TaskPulseService', () => {
     expect(link).toHaveBeenCalledWith('t1', 'w1', ref);
   });
 
+  it('fetches CI, statuses and threads for an active PR', async () => {
+    const { svc, client } = setup();
+    await svc.refresh();
+    expect(client.policyEvaluations).toHaveBeenCalledTimes(1);
+    expect(client.pullRequestStatuses).toHaveBeenCalledTimes(1);
+    expect(client.pullRequestThreads).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['completed', 'abandoned'] as const)(
+    'skips the detail calls for a %s PR but still links it',
+    async (status) => {
+      const { svc, client, link } = setup(
+        {},
+        {
+          pullRequestsForBranch: async () => [
+            pr({ status, closedDate: '2026-11-17T00:00:00Z' }),
+          ],
+        },
+      );
+      const snap = await svc.refresh();
+      expect(client.policyEvaluations).not.toHaveBeenCalled();
+      expect(client.pullRequestStatuses).not.toHaveBeenCalled();
+      expect(client.pullRequestThreads).not.toHaveBeenCalled();
+      expect(link).toHaveBeenCalledWith(
+        't1',
+        'w1',
+        expect.objectContaining({ id: 7, status }),
+      );
+      const p = snap.tasks.t1[0];
+      expect(p.pr?.status).toBe(status);
+      expect(p.ci).toBe('none');
+      expect(p.unanswered).toBe(0);
+    },
+  );
+
   it('does not link or broadcast again when nothing changed', async () => {
     const stored: PullRequestRef = {
       id: 7,
