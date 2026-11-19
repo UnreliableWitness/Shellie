@@ -170,23 +170,26 @@ export class TaskPulseService {
         let threads: Awaited<ReturnType<PulseClient['pullRequestThreads']>> =
           [];
         if (found) {
-          [evaluations, statuses, threads] = await Promise.all([
-            client.policyEvaluations(
-              t.project,
-              found.projectId,
-              found.pullRequestId,
-            ),
-            client.pullRequestStatuses(
-              t.project,
-              repositoryId,
-              found.pullRequestId,
-            ),
-            client.pullRequestThreads(
-              t.project,
-              repositoryId,
-              found.pullRequestId,
-            ),
-          ]);
+          // The task list reads CI, review and comments only for active PRs.
+          if (found.status === 'active') {
+            [evaluations, statuses, threads] = await Promise.all([
+              client.policyEvaluations(
+                t.project,
+                found.projectId,
+                found.pullRequestId,
+              ),
+              client.pullRequestStatuses(
+                t.project,
+                repositoryId,
+                found.pullRequestId,
+              ),
+              client.pullRequestThreads(
+                t.project,
+                repositoryId,
+                found.pullRequestId,
+              ),
+            ]);
+          }
           const s = w.stored;
           if (
             !s ||
