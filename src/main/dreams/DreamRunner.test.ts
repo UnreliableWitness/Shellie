@@ -343,6 +343,59 @@ describe('DreamRunner', () => {
     });
   });
 
+  it('decides evidence before the cap of 3: proposals without a developer quote take no place', async () => {
+    const unheard = (title: string, file: string) => ({
+      ...proposal(title, file),
+      evidence: [{ task: 't1', date: '2026-11-19', quote: 'nobody said this' }],
+    });
+    const out = await runner([
+      {
+        sessionId: 'ses_p',
+        edits: {
+          '.apm/rules/a.md': 'A\n',
+          '.apm/rules/b.md': 'B\n',
+          '.apm/rules/c.md': 'C\n',
+          '.apm/rules/d.md': 'D\n',
+        },
+        report: report(
+          unheard('Rule A', '.apm/rules/a.md'),
+          unheard('Rule B', '.apm/rules/b.md'),
+          unheard('Rule C', '.apm/rules/c.md'),
+          proposal('Rule D', '.apm/rules/d.md'),
+        ),
+      },
+      { sessionId: 'ses_c', verdicts: ['pass', 'pass', 'pass', 'pass'] },
+    ]).dream(repoArg(), opts());
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(out.result.proposals.map((p) => p.title)).toEqual(['Rule D']);
+    expect(out.result.removedByCheck).toBe(3);
+    expect(
+      show(repo, 'show', '--name-only', '--format=', out.result.branch),
+    ).toBe('.apm/rules/d.md');
+  });
+
+  it('never merges a proposal without a developer quote into a kept one that shares its file', async () => {
+    const out = await runner([
+      {
+        sessionId: 'ses_p',
+        edits: { '.apm/rules/a.md': 'A\n' },
+        report: report(proposal('Rule A', '.apm/rules/a.md'), {
+          ...proposal('Rule B', '.apm/rules/a.md'),
+          evidence: [
+            { task: 't1', date: '2026-11-19', quote: 'nobody said this' },
+          ],
+        }),
+      },
+      { sessionId: 'ses_c', verdicts: ['pass', 'pass'] },
+    ]).dream(repoArg(), opts());
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(out.result.proposals.map((p) => p.title)).toEqual(['Rule A']);
+    expect(out.result.proposals[0].evidence.map((e) => e.quote)).toEqual([
+      'use the helper',
+    ]);
+    expect(out.result.removedByCheck).toBe(1);
+  });
+
   it('maps evidence to tasks by id, digest file or label, and keeps an unknown one as given', async () => {
     tasks = [task('t1'), { ...task('t2'), label: 'Fix the login page' }];
     const runs = twoProposals();

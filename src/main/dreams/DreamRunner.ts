@@ -354,31 +354,43 @@ export class DreamRunner {
       throw new DreamFailed(REASON.checkEdited);
 
     const { allowed, outside } = splitAllowed(after.paths, m.folders);
-    const grouped = groupProposals(checked, allowed, true);
-    // Who said each quote, from the task's own turns; a proposal needs one of the developer's.
-    const withWho = grouped.groups.map((g) => ({
+    // Who said each quote, from the task's own turns, decided before the cap and the merge: a proposal without a
+    // quote of the developer counts as failed, so it takes no place and joins no kept group.
+    const evidence = (
+      e: DreamReport['proposals'][number]['evidence'][number],
+    ): DreamEvidence => {
+      const ref = taskRef(e.task, m.material.tasks);
+      const t = m.material.tasks.find((x) => x.taskId === ref.taskId);
+      return {
+        ...ref,
+        date: e.date,
+        // The words looked for: no digest label or quotation marks in what the screen shows.
+        quote: cleanQuote(e.quote) || e.quote,
+        who: t ? quoteWho(e.quote, t.sessions) : 'unknown',
+      };
+    };
+    const heard: DreamReport = {
+      ...checked,
+      proposals: checked.proposals.map((p) =>
+        p.evidence.some((e) => evidence(e).who === 'you')
+          ? p
+          : { ...p, verdict: 'fail' },
+      ),
+    };
+    const grouped = groupProposals(heard, allowed, true);
+    const groups = grouped.groups.map((g) => ({
       ...g,
-      evidence: g.evidence.map((e): DreamEvidence => {
-        const ref = taskRef(e.task, m.material.tasks);
-        const t = m.material.tasks.find((x) => x.taskId === ref.taskId);
-        return {
-          ...ref,
-          date: e.date,
-          // The words looked for: no digest label or quotation marks in what the screen shows.
-          quote: cleanQuote(e.quote) || e.quote,
-          who: t ? quoteWho(e.quote, t.sessions) : 'unknown',
-        };
-      }),
+      evidence: g.evidence.map(evidence),
     }));
-    const groups = withWho.filter((g) =>
-      g.evidence.some((e) => e.who === 'you'),
-    );
-    const unheard = withWho.filter((g) => !groups.includes(g));
-    const unlisted = [...grouped.unlisted, ...unheard.flatMap((g) => g.files)];
-    const removedByCheck = grouped.removedByCheck + unheard.length;
-    m.removedByCheck = removedByCheck;
+    m.removedByCheck = grouped.removedByCheck;
     await step(REASON.undo, () =>
-      revertPaths(git, m.worktree, baseSha, [...outside, ...unlisted], config),
+      revertPaths(
+        git,
+        m.worktree,
+        baseSha,
+        [...outside, ...grouped.unlisted],
+        config,
+      ),
     );
     if (groups.length === 0) return { outcome: 'nothing' };
 
@@ -418,7 +430,7 @@ export class DreamRunner {
         sessions: m.material.tasks.reduce((n, t) => n + t.sessions.length, 0),
         proposals,
         reverted: outside,
-        removedByCheck,
+        removedByCheck: grouped.removedByCheck,
       },
     };
   }

@@ -115,7 +115,9 @@ describe('DreamSetupScreen: switching on', () => {
     await screen.findByRole('heading', { name: 'What you are switching on' });
     expect(screen.queryByText('Tested')).toBeNull();
     expect(within(panel()).getByText(/Test the model/)).toBeInTheDocument();
-    await userEvent.click(tick()).catch(() => undefined);
+    // The box cannot be ticked while a step is missing.
+    expect(tick()).toBeDisabled();
+    expect(tick()).not.toBeChecked();
     expect(switchOn()).toBeDisabled();
   });
 

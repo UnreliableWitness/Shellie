@@ -26,10 +26,6 @@ import { useStore } from '../store';
 
 const MINUS = String.fromCharCode(0x2212);
 
-/**
- * One repo's dream result, for review (spec section 8): the proposals, each with where it comes from and what it
- * changes; drop some, open the rest as a task or discard the dream. Every count comes from the view main holds.
- */
 /** A quote's caption, by who Shellie found said it in the task's turns; a quote found nowhere says only where from. */
 const WHO_CAPTION: Record<DreamEvidence['who'], string> = {
   you: 'You, in',
@@ -37,6 +33,10 @@ const WHO_CAPTION: Record<DreamEvidence['who'], string> = {
   unknown: 'From',
 };
 
+/**
+ * One repo's dream result, for review (spec section 8): the proposals, each with where it comes from and what it
+ * changes; drop some, open the rest as a task or discard the dream. Every count comes from the view main holds.
+ */
 export function DreamScreen({ repoId }: { repoId: string }) {
   const { view, failed, retry } = useDreamsState();
   const go = useStore((s) => s.go);

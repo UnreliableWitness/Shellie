@@ -76,6 +76,65 @@ describe('quoteWho', () => {
   });
 });
 
+describe('whole words', () => {
+  const dev = (text: string): TurnAt[][] => [[turn('Developer', text)]];
+
+  it('is unknown for a match that starts or ends inside a word', () => {
+    const s = dev("Don't refuse the helpers here");
+    expect(quoteWho('use the helper', s)).toBe('unknown');
+    expect(quoteWho('refuse the helper', s)).toBe('unknown');
+    expect(quoteWho('fuse the helpers here', s)).toBe('unknown');
+    expect(quoteWho('refuse the helpers here', s)).toBe('you');
+  });
+
+  it('takes a later whole-word match when an earlier one is mid-word', () => {
+    expect(
+      quoteWho('use the helper', dev('refuse the helpers, use the helper')),
+    ).toBe('you');
+  });
+
+  it('counts accented letters as letters', () => {
+    const s = dev('Schrijf élke logregel in het Engels');
+    expect(quoteWho('lke logregel in het', s)).toBe('unknown');
+    expect(quoteWho('élke logregel in het', s)).toBe('you');
+  });
+
+  it('needs at least three words', () => {
+    const s = dev('Always internationalisation-first, please.');
+    expect(quoteWho('internationalisation-first, please', s)).toBe('unknown');
+    expect(quoteWho('Always internationalisation-first, please.', s)).toBe(
+      'you',
+    );
+  });
+
+  it('a quote that starts or ends with punctuation sits on a boundary', () => {
+    const s = dev('See (a) keep the timer short.');
+    expect(quoteWho('(a) keep the timer', s)).toBe('you');
+  });
+});
+
+describe('quotation marks', () => {
+  it('strips them only as a matching pair at both ends', () => {
+    expect(cleanQuote('"use the helpers"')).toBe('use the helpers');
+    expect(cleanQuote('‘use the helpers’')).toBe('use the helpers');
+    expect(cleanQuote('«use the helpers»')).toBe('use the helpers');
+    expect(cleanQuote("'use the helpers'")).toBe('use the helpers');
+  });
+
+  it('keeps a lone apostrophe inside or at the end of a word', () => {
+    expect(cleanQuote("check the developers'")).toBe("check the developers'");
+    expect(cleanQuote("don't touch the tests")).toBe("don't touch the tests");
+    expect(cleanQuote("'tis the season of tests")).toBe(
+      "'tis the season of tests",
+    );
+    expect(
+      quoteWho("follow the developers' rules", [
+        [turn('Developer', "Please follow the developers' rules here.")],
+      ]),
+    ).toBe('you');
+  });
+});
+
 describe('a stored result from before the check', () => {
   it('reads evidence without who as unknown', () => {
     expect(
