@@ -335,7 +335,10 @@ export const DreamRepoStateSchema = z.object({
 });
 export type DreamRepoState = z.infer<typeof DreamRepoStateSchema>;
 
-/** Why dreaming switched itself off: a call of a dream of `repoId` was answered by `answered` instead of `chosen`. */
+/**
+ * Why dreaming switched itself off: a call of a dream of `repoId` was answered by `answered` instead of `chosen`;
+ * `repoId` is empty for the setup's re-test of the dreaming model.
+ */
 export const DreamSwitchedOffSchema = z.object({
   answered: z.string(),
   chosen: z.string(),
@@ -365,7 +368,10 @@ export type DreamUsage = {
 /** Everything the Dreams screens show (`dream:get`). */
 export type DreamView = {
   settings: DreamingSettings;
-  /** OpenCode's model list; null when it is not known. */
+  /**
+   * OpenCode's model list as already known (the scheduler's or `agents:opencodeModels`'s last answer); null when not
+   * known. `dream:get` never asks OpenCode for it; the setup's picker reads `agents:opencodeModels`.
+   */
   models: string[] | null;
   /** The rate table prices the chosen model, so a euro limit can be offered. */
   euroLimitOffered: boolean;

@@ -15,6 +15,7 @@ import { GitClient } from '../services/GitClient';
 import { cleanupTempRepos, git, makeRepo } from '../test-helpers/gitRepo';
 import type { DreamOutcome } from './DreamRunner';
 import { DreamStore } from './DreamStore';
+import { opencodeModelList } from './models';
 import type { TaskSessions } from './material';
 import {
   DREAM_TICK_MS,
@@ -85,6 +86,10 @@ let idle: number;
 let sessions: TaskSessions[];
 let fake: ReturnType<typeof fakeRunner>;
 let deps: DreamSchedulerDeps;
+/** `opencode models`, as the shared list asks it. */
+let ask: ReturnType<typeof vi.fn<() => Promise<string[] | null>>>;
+const listOf = (a: () => Promise<string[] | null>) =>
+  opencodeModelList({ ask: a, now: () => Date.now() });
 let scheduler: ReturnType<typeof startDreamScheduler> | null;
 
 beforeEach(async () => {
@@ -100,6 +105,7 @@ beforeEach(async () => {
   idle = 3600;
   sessions = [task('t1')];
   fake = fakeRunner();
+  ask = vi.fn(async () => [MODEL]);
   deps = {
     settings: {
       get: () => app,
@@ -112,7 +118,7 @@ beforeEach(async () => {
     },
     store,
     runner: fake.runner,
-    models: vi.fn(async () => [MODEL]),
+    models: listOf(() => ask()),
     idleSeconds: () => idle,
     onBattery: () => false,
     agentWorking: () => false,
@@ -161,7 +167,7 @@ describe('the dream scheduler', () => {
     start();
     await tick();
     expect(scheduler!.status().wait).toBe('off');
-    expect(deps.models).not.toHaveBeenCalled();
+    expect(ask).not.toHaveBeenCalled();
     app = { ...app, dreaming: dreaming() };
     idle = 30;
     await tick();
@@ -197,15 +203,61 @@ describe('the dream scheduler', () => {
     sessions = [];
     start();
     for (let i = 0; i < 10; i++) await tick();
-    expect(deps.models).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledTimes(1);
     await tick();
-    expect(deps.models).toHaveBeenCalledTimes(2);
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks for the models only once the cheap checks pass: not while the owner is active', async () => {
+    sessions = [];
+    idle = 30;
+    start();
+    for (let i = 0; i < 15; i++) await tick();
+    expect(ask).not.toHaveBeenCalled();
+    expect(scheduler!.status().wait).toBe('active');
+    idle = 3600;
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(scheduler!.status().wait).toBe('nothing-ready');
+  });
+
+  it('nor while an agent works, on battery, or while a dream runs', async () => {
+    let busy = true;
+    let battery = false;
+    start({ agentWorking: () => busy, onBattery: () => battery });
+    await tick();
+    expect(scheduler!.status().wait).toBe('agents-busy');
+    busy = false;
+    battery = true;
+    await tick();
+    expect(scheduler!.status().wait).toBe('battery');
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('says the model is missing before it says the owner is active, for a list it already knows', async () => {
+    const list = listOf(async () => ['other/model']);
+    await list.get();
+    idle = 30;
+    start({ models: list });
+    await tick();
+    expect(scheduler!.status().wait).toBe('model-missing');
+  });
+
+  it('caches a failed ask for 10 minutes', async () => {
+    sessions = [];
+    ask.mockResolvedValue(null);
+    start();
+    for (let i = 0; i < 10; i++) await tick();
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(scheduler!.status().wait).toBe('model-missing');
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(2);
   });
 
   it('learns of a model removed from OpenCode within 10 minutes', async () => {
     sessions = [];
     const lists: (string[] | null)[] = [[MODEL], ['other/model']];
-    start({ models: async () => lists.shift() ?? null });
+    start({ models: listOf(async () => lists.shift() ?? null) });
     await tick();
     expect(scheduler!.status().wait).toBe('nothing-ready');
     await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
@@ -215,7 +267,7 @@ describe('the dream scheduler', () => {
   it('keeps the last good list for one more interval after a failed refresh, then knows none', async () => {
     sessions = [];
     const lists: (string[] | null)[] = [[MODEL], null, null, [MODEL]];
-    start({ models: async () => lists.shift() ?? null });
+    start({ models: listOf(async () => lists.shift() ?? null) });
     await tick();
     await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
     expect(scheduler!.status().wait).toBe('nothing-ready');
@@ -226,7 +278,7 @@ describe('the dream scheduler', () => {
   });
 
   it('gives up on a hung `opencode models` after 30 s, so Dream now still answers', async () => {
-    start({ models: () => new Promise<string[] | null>(() => {}) });
+    start({ models: listOf(() => new Promise<string[] | null>(() => {})) });
     const answer = scheduler!.dreamNow(REPO.id);
     await vi.advanceTimersByTimeAsync(29_999);
     let got: unknown = null;

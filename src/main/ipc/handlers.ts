@@ -275,6 +275,8 @@ import { throttleByKey } from './throttleByKey';
 export type Services = {
   /** The `dream:*` handlers and what `tasks:create` asks about a task from a dream (main); absent in most tests. */
   dreams?: DreamApi;
+  /** Each list `agents:opencodeModels` read (null when it could not): main shares it with dreams' model list. */
+  opencodeModelsRead?: (models: string[] | null) => void;
   /** The brain's own Claude terminal (main); absent in most tests. */
   brainTerminals?: ReturnType<typeof createBrainTerminals>;
   /**
@@ -3731,6 +3733,7 @@ export function createHandlers(s: Services): Handlers {
       opencodeModelsRun = run;
       void run.then((models) => {
         if (!models && opencodeModelsRun === run) opencodeModelsRun = null;
+        s.opencodeModelsRead?.(models);
       });
       return run;
     },

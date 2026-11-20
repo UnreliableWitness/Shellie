@@ -56,6 +56,7 @@ import type { DreamScheduler } from './main/dreams/scheduler';
 import { startDreams, taskAgentWorking } from './main/dreams/startDreams';
 import { createDreamHandlers } from './main/dreams/dreamHandlers';
 import { limitChecks } from './main/dreams/limit';
+import { opencodeModelList } from './main/dreams/models';
 import {
   commitJobOutput,
   OUTSIDE_EDIT_MESSAGE,
@@ -1253,6 +1254,12 @@ async function boot(): Promise<void> {
         exception: (...a) => telemetry.exception(...a),
       },
     });
+    // OpenCode's model list for dreams, one for the scheduler and `dream:get` (which never asks), fed also by
+    // `agents:opencodeModels`: `opencode models` runs at most every 10 minutes, a failed ask kept as long.
+    const dreamModels = opencodeModelList({
+      ask: () => opencodeModels(platform, runProbe),
+      now: Date.now,
+    });
     // Dreams' IPC: reads answer at once; changes to the dream store wait for the scheduler (the store loads with it).
     const dreamApi = createDreamHandlers({
       settings,
@@ -1263,7 +1270,7 @@ async function boot(): Promise<void> {
       platform,
       run: (cmd, o) => ptyHost.run(cmd, o),
       sessionModels: (id) => openCodeSessions.sessionModels(id),
-      models: () => opencodeModels(platform, runProbe),
+      models: dreamModels,
       usage: limitChecks({
         reader: openCodeSessions,
         limit: () => settings.get().dreaming.limit,
@@ -1275,6 +1282,7 @@ async function boot(): Promise<void> {
     });
     const handlers = createHandlers({
       dreams: dreamApi,
+      opencodeModelsRead: (m) => dreamModels.seen(m),
       pulseReady: (f) => {
         pulseLastRefreshAt = f;
       },
@@ -1635,8 +1643,8 @@ async function boot(): Promise<void> {
               { lenient: true },
             )
           ).base,
-        // Asked afresh (at most every 10 min); the renderer's list keeps its own cache.
-        models: () => opencodeModels(platform, runProbe),
+        // Shared with `dream:get`; asked only once the cheap checks pass.
+        models: dreamModels,
         idleSeconds: () => powerMonitor.getSystemIdleTime(),
         onBattery: () => powerMonitor.isOnBatteryPower(),
         agentWorking: () =>

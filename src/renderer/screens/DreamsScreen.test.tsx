@@ -77,6 +77,22 @@ describe('DreamsScreen: off', () => {
   });
 });
 
+describe('DreamsScreen: a re-test that another model answered', () => {
+  it('says the test call was answered by the other model, naming no repo or dream', async () => {
+    open(
+      viewOf({
+        settings: defaultDreaming(),
+        switchedOff: { answered: 'a/b', chosen: 'zai/glm-5.3', repoId: '' },
+      }),
+    );
+    render(<DreamsScreen />);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'The test call was answered by a/b instead of zai/glm-5.3. Nothing was changed.',
+    );
+  });
+});
+
 describe('DreamsScreen: on', () => {
   it('shows four status cells with the usage as a progress bar', async () => {
     open(viewOf());

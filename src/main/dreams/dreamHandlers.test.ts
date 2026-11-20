@@ -44,6 +44,7 @@ import {
   type DreamHandlerDeps,
 } from './dreamHandlers';
 import { DreamStore } from './DreamStore';
+import { opencodeModelList } from './models';
 import { dreamArgs } from './opencodeDream';
 import type { DreamStatus } from './scheduler';
 
@@ -64,6 +65,8 @@ let started: boolean;
 let deps: DreamHandlerDeps;
 let run: Mock;
 let answered: string[];
+/** `opencode models`, as the shared list asks it. */
+let askModels: Mock<() => Promise<string[] | null>>;
 
 const ready = (over: Partial<DreamingSettings> = {}): DreamingSettings => ({
   enabled: false,
@@ -116,6 +119,7 @@ beforeEach(async () => {
   };
   started = true;
   answered = [MODEL];
+  askModels = vi.fn(async () => [MODEL, OTHER]);
   run = vi.fn(
     async () =>
       `${JSON.stringify({ type: 'step_start', sessionID: 'ses_1' })}\n`,
@@ -129,7 +133,7 @@ beforeEach(async () => {
     platform: testPlatform(),
     run: run as unknown as DreamHandlerDeps['run'],
     sessionModels: vi.fn(() => answered),
-    models: vi.fn(async () => [MODEL, OTHER]),
+    models: opencodeModelList({ ask: () => askModels(), now: Date.now }),
     usage: () => ({ day: '2026-11-20', tokens: 42, eur: 0.5 }),
     dreamsDir: path.join(dir, 'dreams'),
     broadcast: vi.fn(),
@@ -209,6 +213,8 @@ describe('dream:get', () => {
     mkdirSync(path.join(repoPath, '.apm'));
     await store.log(entry('2026-11-19-1', '2026-11-19T03:00:00.000Z'));
     await store.log(entry('2026-11-20-1', '2026-11-20T03:00:00.000Z'));
+    // What the scheduler or another screen already read.
+    await deps.models.get();
     const view = await api().handlers['dream:get']();
     expect(view.journal.map((e) => e.dreamId)).toEqual([
       '2026-11-20-1',
@@ -230,6 +236,15 @@ describe('dream:get', () => {
       euroLimitOffered: false,
       settings: settings.get().dreaming,
     });
+  });
+
+  it('never starts a process: with dreaming off and no OpenCode installed, four in a row spawn nothing', async () => {
+    askModels.mockResolvedValue(null);
+    const h = api().handlers;
+    for (let i = 0; i < 4; i++)
+      expect((await h['dream:get']()).models).toBeNull();
+    expect(askModels).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('answers before the scheduler started: dreaming as stored, no wait, no sessions known', async () => {
@@ -500,15 +515,95 @@ describe('dream:test', () => {
     expect(changed()).toBe(1);
   });
 
-  it('fails when another model answered and does not set testedModel', async () => {
-    await setDreaming(ready({ testedModel: null }));
+  it('a re-test of the saved model that another model answered does what a wrong-model dream does', async () => {
+    await setDreaming(ready({ enabled: true }));
+    status = {
+      ...status,
+      running: { repoId: 'r1', startedAt: 1, step: 'reading' },
+    };
+    const events: [string, unknown][] = [];
+    deps.event = (name, props) => events.push([name, props]);
     answered = [MODEL, 'anthropic/claude-x'];
     expect(await api().handlers['dream:test'](MODEL)).toEqual({
       ok: false,
       message: 'Another model answered',
     });
-    expect(settings.get().dreaming.testedModel).toBeNull();
+    expect(settings.get().dreaming).toMatchObject({
+      enabled: false,
+      model: MODEL,
+      testedModel: null,
+    });
+    expect(store.switchedOff()).toEqual({
+      answered: 'anthropic/claude-x',
+      chosen: MODEL,
+      repoId: '',
+    });
+    expect(scheduler.stopDream).toHaveBeenCalled();
+    expect(events).toContainEqual([
+      'dream.switched_off',
+      { by: 'wrong-model' },
+    ]);
+    expect(changed()).toBe(1);
+  });
+
+  it.each([
+    ['did not answer', () => run.mockResolvedValueOnce('no events at all')],
+    [
+      'timed out',
+      () =>
+        run.mockRejectedValueOnce(new Error('opencode timed out after 120 s')),
+    ],
+    [
+      'OpenCode was not found',
+      () =>
+        run.mockRejectedValueOnce(
+          Object.assign(new Error('spawn opencode ENOENT'), { code: 'ENOENT' }),
+        ),
+    ],
+    ['not in the list', () => askModels.mockResolvedValue([OTHER])],
+  ])(
+    'any other failed re-test of the saved model (%s) forgets the test and switches dreaming off, without a record',
+    async (_why, fail) => {
+      await setDreaming(ready({ enabled: true }));
+      const events: [string, unknown][] = [];
+      deps.event = (name, props) => events.push([name, props]);
+      fail();
+      expect((await api().handlers['dream:test'](MODEL)).ok).toBe(false);
+      expect(settings.get().dreaming).toMatchObject({
+        enabled: false,
+        testedModel: null,
+      });
+      expect(store.switchedOff()).toBeNull();
+      expect(scheduler.stopDream).toHaveBeenCalled();
+      expect(events).toContainEqual([
+        'dream.switched_off',
+        { by: 'test-failed' },
+      ]);
+    },
+  );
+
+  it('a failed test of a model that is not the saved one changes nothing', async () => {
+    await setDreaming(ready({ enabled: true }));
+    answered = [OTHER, 'anthropic/claude-x'];
+    expect(await api().handlers['dream:test'](OTHER)).toMatchObject({
+      ok: false,
+    });
+    expect(settings.get().dreaming).toMatchObject({
+      enabled: true,
+      model: MODEL,
+      testedModel: MODEL,
+    });
+    expect(store.switchedOff()).toBeNull();
+    expect(scheduler.stopDream).not.toHaveBeenCalled();
     expect(changed()).toBe(0);
+  });
+
+  it('a passed test of a new model switches dreaming off and stops a dream still running on the old one', async () => {
+    await setDreaming(ready({ enabled: true }));
+    answered = [OTHER];
+    expect(await api().handlers['dream:test'](OTHER)).toEqual({ ok: true });
+    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(scheduler.stopDream).toHaveBeenCalled();
   });
 
   it('testing a new model while on switches dreaming off', async () => {

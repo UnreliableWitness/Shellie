@@ -284,6 +284,16 @@ describe('handlers: agents', () => {
     expect(b).toEqual(a);
   });
 
+  it('tells main each list it read, so dreams know it without asking', async () => {
+    const read = vi.fn();
+    const { h } = await harness(undefined, {
+      opencodeModelsRead: read,
+      runProbe: async () => ({ code: 0, stdout: 'a/b\n' }),
+    });
+    await h['agents:opencodeModels']();
+    await vi.waitFor(() => expect(read).toHaveBeenCalledWith(['a/b']));
+  });
+
   it('gives null when opencode fails, prints no models or cannot start, and tries again next time', async () => {
     let n = 0;
     const { h } = await harness(undefined, {

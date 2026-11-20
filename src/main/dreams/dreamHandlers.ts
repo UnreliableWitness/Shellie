@@ -41,14 +41,13 @@ import {
   type DreamEvent,
 } from './dreamTelemetry';
 import { hasPrice } from './limit';
+import type { OpencodeModelList } from './models';
 import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
 import type { DreamScheduler } from './scheduler';
 
 export const DREAM_TEST_TIMEOUT_MS = 2 * 60_000;
 /** The test call's prompt: tiny and fixed. */
 export const DREAM_TEST_PROMPT = 'Reply with the single word: ok';
-/** OpenCode's model list counts as known this long. */
-const MODELS_MS = 10 * 60_000;
 
 const OPEN_FAILED = 'The dream could not be opened as a task';
 const NO_OPENED = 'This repo has no dream branch waiting for a task';
@@ -132,8 +131,8 @@ export type DreamHandlerDeps = {
   run: typeof runWithInput;
   /** The models of every assistant message of a session and its child sessions. */
   sessionModels: (sessionId: string) => string[];
-  /** OpenCode's model list; null when it is not known. */
-  models: () => Promise<string[] | null>;
+  /** OpenCode's model list, shared with the scheduler: `dream:get` only reads what is known, `dream:test` may ask. */
+  models: Pick<OpencodeModelList, 'known' | 'get'>;
   /** Today's dream usage (`limitChecks(...).usage`). */
   usage: () => DreamUsage;
   /** Every dream's folder lies in it; nothing outside it is ever removed. */
@@ -179,8 +178,6 @@ const REMOVED_STOP_MS = 15_000;
 export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   const now = d.now ?? Date.now;
   const event: DreamEvent = (name, props) => sendSafely(d.event, name, props);
-  let models: { at: number; list: string[] } | null = null;
-  let asking: Promise<string[] | null> | null = null;
   let testing = false;
   // Drop, discard and open as task change the open result: one after another.
   let chain: Promise<unknown> = Promise.resolve();
@@ -188,23 +185,6 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     const p = chain.then(fn);
     chain = p.catch(() => undefined);
     return p;
-  };
-
-  /** OpenCode's models: kept 10 minutes; a failed ask is not kept. `fresh` asks again. */
-  const modelList = (fresh = false): Promise<string[] | null> => {
-    if (!fresh && models && now() - models.at < MODELS_MS)
-      return Promise.resolve(models.list);
-    asking ??= d
-      .models()
-      .catch(() => null)
-      .then((list) => {
-        if (list) models = { at: now(), list };
-        return list;
-      })
-      .finally(() => {
-        asking = null;
-      });
-    return asking;
   };
 
   /** The scheduler, for a call that writes the dream store: it is loaded once the scheduler started. */
@@ -440,17 +420,20 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   };
 
   /**
-   * One call with the model, as a dream makes it, in an empty folder; null when the model alone answered. The folder
-   * lies in the dreams folder, so the ledger counts its usage as a dream's (never sent to the cost server).
+   * One call with the model, as a dream makes it, in an empty folder; null when the model alone answered, else the
+   * fixed phrase and, when another model answered, which. The folder lies in the dreams folder, so the ledger counts
+   * its usage as a dream's (never sent to the cost server).
    */
-  const testCall = async (model: string): Promise<string | null> => {
+  const testCall = async (
+    model: string,
+  ): Promise<{ message: string; others?: string[] } | null> => {
     let root: string;
     try {
       await fs.mkdir(d.dreamsDir, { recursive: true });
       root = await fs.mkdtemp(path.join(d.dreamsDir, DREAM_TEST_PREFIX));
     } catch (e) {
       console.error('[dreams] the test folder could not be made', e);
-      return TEST_FAILED;
+      return { message: TEST_FAILED };
     }
     try {
       const worktree = path.join(root, 'wt');
@@ -462,7 +445,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         cwd = await fs.realpath(worktree);
       } catch (e) {
         console.error('[dreams] the test folder could not be made', e);
-        return TEST_FAILED;
+        return { message: TEST_FAILED };
       }
       const cmd = d.platform.opencodeCommand(
         undefined,
@@ -481,10 +464,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           },
         );
       } catch (e) {
-        if (programMissing(e)) return 'OpenCode was not found';
+        if (programMissing(e)) return { message: 'OpenCode was not found' };
         if (/timed out/i.test((e as Error | null)?.message ?? ''))
-          return 'The test timed out';
-        return `${model} did not answer`;
+          return { message: 'The test timed out' };
+        return { message: `${model} did not answer` };
       }
       let answered: string[];
       try {
@@ -493,15 +476,45 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       } catch {
         answered = [];
       }
-      if (answered.length === 0) return `${model} did not answer`;
-      if (otherModels(answered, model).length > 0)
-        return 'Another model answered';
+      if (answered.length === 0) return { message: `${model} did not answer` };
+      const others = otherModels(answered, model);
+      if (others.length > 0)
+        return { message: 'Another model answered', others };
       return null;
     } finally {
       await removeTree(root).catch((e: unknown) =>
         console.error('[dreams] the test folder could not be removed', e),
       );
     }
+  };
+
+  /**
+   * A re-test of the saved model failed. Another model answered (`others`): as after a dream answered by another model,
+   * the switch-off is recorded, dreaming goes off and the passed test is forgotten. Any other failure: dreaming goes
+   * off and the test is forgotten, so setup asks to test the model first; no record. A running dream stops.
+   */
+  const retestFailed = async (model: string, others: string[] | null) => {
+    // The dream store is written only once loaded (the scheduler started); the settings below hold either way.
+    if (others && d.scheduler())
+      await d.store.setSwitchedOff({
+        answered: others.join(', '),
+        chosen: model,
+        // A test call is no repo's.
+        repoId: '',
+      });
+    let wasOn = false;
+    await saveDreaming((cur) => {
+      wasOn = cur.enabled;
+      // Still the model that was tested: a new pick saved meanwhile is left alone.
+      if (cur.model !== model) return cur;
+      return { ...cur, enabled: false, testedModel: null };
+    });
+    if (wasOn)
+      event('dream.switched_off', {
+        by: others ? 'wrong-model' : 'test-failed',
+      });
+    d.scheduler()?.stopDream();
+    d.broadcast();
   };
 
   const usageNow = (): DreamUsage => {
@@ -543,7 +556,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         );
         return {
           settings,
-          models: await modelList(),
+          // Never asked here: only what the scheduler or another screen already read.
+          models: d.models.known(),
           euroLimitOffered: settings.model !== null && hasPrice(settings.model),
           usage: usageNow(),
           waiting: st?.wait ?? null,
@@ -561,27 +575,38 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       let ok = false;
       try {
         const listed = async (fresh: boolean) =>
-          (await modelList(fresh))?.includes(model) ?? false;
-        if (
+          (await d.models.get(fresh))?.includes(model) ?? false;
+        const failure =
           typeof model !== 'string' ||
           !isOpencodeModel(model) ||
           !((await listed(false)) || (await listed(true)))
-        )
-          return {
-            ok: false,
-            message: `${String(model)} is not available in OpenCode`,
-          };
-        const failure = await testCall(model);
-        if (failure) return { ok: false, message: failure };
+            ? { message: `${String(model)} is not available in OpenCode` }
+            : await testCall(model);
+        if (failure) {
+          // A failed re-test of the dreaming model is not ignored: the next dream would spend a whole run first.
+          if (d.settings.get().dreaming.model === model)
+            await phrased(SETTINGS_FAILED, () =>
+              retestFailed(model, failure.others ?? null),
+            );
+          return { ok: false, message: failure.message };
+        }
+        let wasOn = false;
+        let changedModel = false;
         await phrased(SETTINGS_FAILED, () =>
-          saveDreaming((cur) => ({
-            ...cur,
-            model,
-            testedModel: model,
-            // A new model is confirmed again before it dreams.
-            enabled: cur.model === model ? cur.enabled : false,
-          })),
+          saveDreaming((cur) => {
+            wasOn = cur.enabled;
+            changedModel = cur.model !== model;
+            return {
+              ...cur,
+              model,
+              testedModel: model,
+              // A new model is confirmed again before it dreams.
+              enabled: cur.model === model ? cur.enabled : false,
+            };
+          }),
         );
+        // A dream still running on the old model stops with it.
+        if (wasOn && changedModel) d.scheduler()?.stopDream();
         d.broadcast();
         ok = true;
         return { ok: true };

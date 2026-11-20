@@ -10,22 +10,18 @@ import path from 'node:path';
 import type { DreamingSettings, DreamSwitchedOff } from '../../shared/dreams';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
-import { withTimeout } from '../async';
 import { isInside } from '../paths';
 import type { GitClient } from '../services/GitClient';
 import type { DreamRunner } from './DreamRunner';
 import type { DreamStore } from './DreamStore';
 import { DREAM_TEST_PREFIX, removeDream, unattendedConfig } from './dreamGit';
 import { settledWithin } from './dreamRun';
+import type { OpencodeModelList } from './models';
 import { runProps, sendSafely, type DreamEvent } from './dreamTelemetry';
 import { pickMaterial, type TaskSessions } from './material';
 import { nextDream, type ReadyInput, type Wait } from './ready';
 
 export const DREAM_TICK_MS = 60_000;
-/** `opencode models` is asked again at most this often. */
-const MODELS_MS = 10 * 60_000;
-/** A hung `opencode models` is given up on after this. */
-const MODELS_TIMEOUT_MS = 30_000;
 /** How long a repo's material counts as known without reading its sessions again. */
 const MATERIAL_MS = 5 * 60_000;
 /** The empty hooks folders of a sweep, inside the dreams folder; one left by a crash goes in the next sweep. */
@@ -47,8 +43,8 @@ export type DreamSchedulerDeps = {
   };
   store: DreamStore;
   runner: Pick<DreamRunner, 'dream' | 'running'>;
-  /** OpenCode's model list; null when it is not known. */
-  models: () => Promise<string[] | null>;
+  /** OpenCode's model list, shared with `dream:get` (`opencodeModelList`). */
+  models: Pick<OpencodeModelList, 'known' | 'get'>;
   idleSeconds: () => number;
   onBattery: () => boolean;
   /** Some agent tab's last state is `working`. */
@@ -105,8 +101,6 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   const material = new Map<string, Known>();
   /** A wrong-model switch-off the dream store could not record: it holds for this session in its place. */
   let offUnrecorded = false;
-  let models: { at: number; list: string[] | null; failed: boolean } | null =
-    null;
   // Decisions, Dream now and the sweep run one after another, never side by side.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -115,24 +109,6 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     return p;
   };
   const unsubscribe = d.store.onChange(() => material.clear());
-
-  /**
-   * OpenCode's models, asked at most every 10 minutes and given up on after 30 s. A failed ask keeps the last good
-   * list for one more interval; a second in a row gives none.
-   */
-  const modelList = async (): Promise<string[] | null> => {
-    if (models && d.now() - models.at < MODELS_MS) return models.list;
-    const asked = await withTimeout(
-      d.models().catch(() => null),
-      MODELS_TIMEOUT_MS,
-      () => null,
-    );
-    const keep = asked === null && models?.list && !models.failed;
-    models = keep
-      ? { at: d.now(), list: models!.list, failed: true }
-      : { at: d.now(), list: asked, failed: asked === null };
-    return models.list;
-  };
 
   const hasRoom = (): boolean => {
     try {
@@ -191,9 +167,12 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       return { wait: 'off' };
     }
     const s = d.settings.get().dreaming;
+    // The list as known, without asking: a known list without the model says so first (the order of `nextDream`);
+    // an unknown one is asked for only once the cheap checks pass, so OpenCode is not started while the owner works.
+    const listedNow = d.models.known();
     const base: ReadyInput = {
       settings: s,
-      models: s.enabled ? await modelList() : null,
+      models: listedNow ?? (s.model === null ? null : [s.model]),
       idleSeconds: d.idleSeconds(),
       onBattery: d.onBattery(),
       agentWorking: d.agentWorking(),
@@ -204,6 +183,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     };
     const cheap = nextDream(base, manual);
     if ('wait' in cheap && cheap.wait !== 'nothing-ready') return cheap;
+    // At most every 10 minutes, a failed ask kept as long.
+    base.models = await d.models.get();
+    const listed = nextDream(base, manual);
+    if ('wait' in listed && listed.wait !== 'nothing-ready') return listed;
     base.overLimit = !hasRoom();
     if (base.overLimit) return { wait: 'limit' };
     const candidates = d.repos().filter((r) => {

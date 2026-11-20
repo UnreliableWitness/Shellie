@@ -102,6 +102,20 @@ function Setup({ view }: { view: DreamView }) {
   const [testing, setTesting] = useState(false);
   const [testedNote, setTestedNote] = useState<string | null>(null);
   const [retestFailed, setRetestFailed] = useState<string | null>(null);
+  // OpenCode's list for the picker, as other screens read it: undefined while reading, null when it could not be.
+  const [listed, setListed] = useState<string[] | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    api()
+      .invoke('agents:opencodeModels')
+      .then(
+        (m) => live && setListed(m),
+        () => live && setListed(null),
+      );
+    return () => {
+      live = false;
+    };
+  }, []);
   const [confirmNoLimit, setConfirmNoLimit] = useState(false);
   const panelHeading = useRef<HTMLHeadingElement>(null);
 
@@ -211,9 +225,9 @@ function Setup({ view }: { view: DreamView }) {
     pending === null &&
     saved.model !== null &&
     saved.testedModel === saved.model;
-  const models = view.models
-    ? [...new Set([...(saved.model ? [saved.model] : []), ...view.models])]
-    : null;
+  const models = listed
+    ? [...new Set([...(saved.model ? [saved.model] : []), ...listed])]
+    : listed;
 
   return (
     <div className="page">
@@ -260,6 +274,10 @@ function Setup({ view }: { view: DreamView }) {
                       ))}
                     </select>
                   </div>
+                ) : models === undefined ? (
+                  <p className="grow muted">
+                    Reading OpenCode&rsquo;s models&hellip;
+                  </p>
                 ) : (
                   <p className="grow text-warn">OpenCode was not found</p>
                 )}

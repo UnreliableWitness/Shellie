@@ -10,11 +10,19 @@ export function SwitchedOffNotice({ view }: { view: DreamView }) {
   return (
     <div role="alert" className="dream-notice">
       <strong>Dreaming switched itself off</strong>
-      <span>
-        A call in a dream{repo ? ` for ${repo}` : ''} was answered by{' '}
-        <code>{off.answered}</code> instead of <code>{off.chosen}</code>. The
-        dream was thrown away and nothing was changed.
-      </span>
+      {off.repoId === '' ? (
+        // A re-test in setup (no repo): no dream was involved.
+        <span>
+          The test call was answered by <code>{off.answered}</code> instead of{' '}
+          <code>{off.chosen}</code>. Nothing was changed.
+        </span>
+      ) : (
+        <span>
+          A call in a dream{repo ? ` for ${repo}` : ''} was answered by{' '}
+          <code>{off.answered}</code> instead of <code>{off.chosen}</code>. The
+          dream was thrown away and nothing was changed.
+        </span>
+      )}
       <div>
         <button
           type="button"

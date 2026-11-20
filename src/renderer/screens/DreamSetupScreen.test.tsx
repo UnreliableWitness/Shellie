@@ -68,10 +68,16 @@ const viewOf = (
   ...patch,
 });
 
+/** The picker's list comes from `agents:opencodeModels`; the view's `models` is not read for it. */
 const open = (
   view: DreamView,
   extra: Parameters<typeof installFakeApi>[0] = {},
-) => installFakeApi({ 'dream:get': () => view, ...extra });
+) =>
+  installFakeApi({
+    'dream:get': () => view,
+    'agents:opencodeModels': () => view.models,
+    ...extra,
+  });
 
 const callsOf = (
   calls: { channel: string; args: unknown[] }[],
@@ -302,12 +308,36 @@ describe('DreamSetupScreen: steps', () => {
     ).toBeInTheDocument();
   });
 
-  it('reads "OpenCode was not found" without a model list', async () => {
-    open(viewOf(ready(), { models: null }));
+  it('reads "OpenCode was not found" when agents:opencodeModels has no list', async () => {
+    open(viewOf(ready(), { models: [MODEL] }), {
+      'agents:opencodeModels': () => null,
+    });
     render(<DreamSetupScreen />);
     expect(
       await screen.findByText('OpenCode was not found'),
     ).toBeInTheDocument();
+  });
+
+  it('picks from agents:opencodeModels, never from the view, and says it is reading meanwhile', async () => {
+    let answer!: (m: string[] | null) => void;
+    const { calls } = open(viewOf(ready(), { models: null }), {
+      'agents:opencodeModels': () =>
+        new Promise<string[] | null>((r) => (answer = r)),
+    });
+    render(<DreamSetupScreen />);
+    expect(
+      await screen.findByText('Reading OpenCode’s models…'),
+    ).toBeInTheDocument();
+    answer([MODEL, 'opencode/big-pickle']);
+    const picker = await screen.findByLabelText(/Model, from OpenCode/);
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual([MODEL, 'opencode/big-pickle']);
+    expect(
+      calls.filter((c) => c.channel === 'agents:opencodeModels'),
+    ).toHaveLength(1);
   });
 
   it('tests a picked model at once and shows Tested only when it passed', async () => {
@@ -315,7 +345,7 @@ describe('DreamSetupScreen: steps', () => {
     render(<DreamSetupScreen />);
     expect(await screen.findByText('Tested')).toBeInTheDocument();
     await userEvent.selectOptions(
-      screen.getByLabelText(/Model, from OpenCode/),
+      await screen.findByLabelText(/Model, from OpenCode/),
       'opencode/big-pickle',
     );
     expect(callsOf(a.calls, 'dream:test')).toEqual([['opencode/big-pickle']]);
@@ -627,7 +657,7 @@ describe('DreamSetupScreen: steps', () => {
     );
     await screen.findByRole('button', { name: 'Confirm the change' });
     await userEvent.selectOptions(
-      screen.getByLabelText(/Model, from OpenCode/),
+      await screen.findByLabelText(/Model, from OpenCode/),
       'opencode/big-pickle',
     );
     expect(
