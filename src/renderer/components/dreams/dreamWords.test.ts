@@ -16,7 +16,7 @@ import {
   result,
   settings,
   viewOf,
-} from './dreamFixtures';
+} from '../../test-helpers/dreamFixtures';
 
 const NOW = new Date('2026-11-20T15:00:00').getTime();
 

@@ -5,10 +5,14 @@ import { api } from '../../api';
 /** Bursts of `dream:changed` collapse into one refetch. */
 const DEBOUNCE_MS = 100;
 
-/** The fetch that is under way: screens that mount together (navigation, Home, Dreams) share one call. */
+/**
+ * The fetch that is under way: screens that mount together (navigation, Home, Dreams) share one call. Only mount
+ * loads share it; a reload after a change always starts a new fetch (and replaces this one), since a fetch under way
+ * may answer with a view from before the change.
+ */
 let inflight: Promise<DreamView> | null = null;
-const fetchView = (): Promise<DreamView> => {
-  if (!inflight) {
+const fetchView = (fresh: boolean): Promise<DreamView> => {
+  if (fresh || !inflight) {
     const p = api().invoke('dream:get');
     const done = () => {
       if (inflight === p) inflight = null;
@@ -35,9 +39,9 @@ export function useDreamsState(): {
   const live = useRef(true);
   const asked = useRef(0);
   const shown = useRef(0);
-  const load = useCallback(() => {
+  const load = useCallback((fresh: boolean) => {
     const n = ++asked.current;
-    fetchView().then(
+    fetchView(fresh).then(
       (view) => {
         if (!live.current || n < shown.current) return;
         shown.current = n;
@@ -52,11 +56,11 @@ export function useDreamsState(): {
   }, []);
   useEffect(() => {
     live.current = true;
-    load();
+    load(false);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = api().on('dream:changed', () => {
       clearTimeout(timer);
-      timer = setTimeout(load, DEBOUNCE_MS);
+      timer = setTimeout(() => load(true), DEBOUNCE_MS);
     });
     return () => {
       live.current = false;
@@ -66,7 +70,7 @@ export function useDreamsState(): {
   }, [load]);
   const retry = useCallback(() => {
     setState({ view: null, failed: false });
-    load();
+    load(true);
   }, [load]);
   return { ...state, retry };
 }

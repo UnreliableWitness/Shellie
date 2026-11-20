@@ -60,6 +60,7 @@ export function AwayBand() {
   const cards = openResults(view).filter(
     (r) => !hidden[r.id]?.includes(r.state.result?.id ?? ''),
   );
+  // A dream that found nothing: one quiet line, only inside the band, for the newest journal entry under 24 hours old.
   const latest = view.journal[0];
   const quiet =
     latest?.outcome === 'nothing' &&

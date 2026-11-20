@@ -6,7 +6,11 @@ import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { DreamNavStatus } from './DreamNavStatus';
 import { DreamsNavItem } from './DreamsNavItem';
-import { settings, viewOf, withResults } from './dreamFixtures';
+import {
+  settings,
+  viewOf,
+  withResults,
+} from '../../test-helpers/dreamFixtures';
 
 beforeEach(() => {
   useStore.setState({ screen: { kind: 'home' }, previous: null, notices: [] });

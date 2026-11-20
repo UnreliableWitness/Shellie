@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DreamView } from '../../shared/dreams';
 import { errorMessage } from '../../shared/errors';
 import { api } from '../api';
@@ -178,6 +178,7 @@ function Strip({ view, now }: { view: DreamView; now: number }) {
       <div className="dream-cell">
         <span className="muted small">Starts</span>
         <span>After {view.settings.idleMinutes} minutes idle</span>
+        {/* Both rules are fixed in main (ready.ts), not settings. */}
         <span className="muted small">
           on mains power · never while an agent works
         </span>
@@ -245,15 +246,27 @@ function Repos({ view, now }: { view: DreamView; now: number }) {
   const go = useStore((s) => s.go);
   // Why a Dream now did not start, per repo, for a while.
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // One timer per repo: a new answer restarts it; all stop when the screen goes.
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const all = timers.current;
+    return () => {
+      for (const t of all.values()) clearTimeout(t);
+      all.clear();
+    };
+  }, []);
   const note = (repoId: string, text: string) => {
     setNotes((n) => ({ ...n, [repoId]: text }));
-    setTimeout(
-      () =>
+    clearTimeout(timers.current.get(repoId));
+    timers.current.set(
+      repoId,
+      setTimeout(() => {
+        timers.current.delete(repoId);
         setNotes((n) => {
           const { [repoId]: _gone, ...rest } = n;
           return rest;
-        }),
-      NOTE_MS,
+        });
+      }, NOTE_MS),
     );
   };
   const dreamNow = async (repoId: string) => {

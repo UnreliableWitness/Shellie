@@ -12,7 +12,7 @@ import {
   settings,
   viewOf,
   withResults,
-} from './dreamFixtures';
+} from '../../test-helpers/dreamFixtures';
 
 beforeEach(() => {
   localStorage.clear();

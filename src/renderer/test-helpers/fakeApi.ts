@@ -1,5 +1,6 @@
 import { StartSettingsSchema } from '../../shared/types';
 import { defaultDreaming } from '../../shared/dreams';
+import { viewOf } from './dreamFixtures';
 import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
 import type { Channels, Events, ShellieApi } from '../../shared/ipc';
@@ -250,18 +251,14 @@ const defaults: FakeHandlers = {
     shell: { label: 'zsh' },
   }),
   'agents:opencodeModels': () => null,
-  'dream:get': () => ({
-    settings: defaultDreaming(),
-    models: null,
-    euroLimitOffered: false,
-    usage: { day: '2026-11-20', tokens: 0, eur: 0 },
-    waiting: null,
-    next: null,
-    running: null,
-    switchedOff: null,
-    repos: [],
-    journal: [],
-  }),
+  'dream:get': () =>
+    viewOf({
+      settings: defaultDreaming(),
+      models: null,
+      usage: { day: '2026-11-20', tokens: 0, eur: 0 },
+      waiting: null,
+      repos: [],
+    }),
   'dream:test': () => ({ ok: true }),
   'dream:save': (next) => next,
   'dream:switchOn': () => ({ ...defaultDreaming(), enabled: true }),

@@ -7,7 +7,7 @@ import {
   settings,
   viewOf,
   withResults,
-} from '../components/dreams/dreamFixtures';
+} from '../test-helpers/dreamFixtures';
 import { useStore } from '../store';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { DreamsScreen } from './DreamsScreen';

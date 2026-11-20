@@ -5,7 +5,7 @@ import {
   type DreamRepoState,
   type DreamResult,
   type DreamView,
-} from '../../../shared/dreams';
+} from '../../shared/dreams';
 
 export const MODEL = 'zai/glm-5.3';
 
