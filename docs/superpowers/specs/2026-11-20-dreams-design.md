@@ -340,3 +340,11 @@ Rulings made while building (2026-11-20) that change or add to what the sections
   line under 24 hours old.
 - Section 8, Open as task: a setup failure or cancel of the task never deletes the dream branch, and the task
   remembers its branch already existed.
+- Section 4, step 3 and section 8, evidence: Shellie checks each quote against the turns of the task it names
+  (label, quotation marks and spare whitespace off, cut at a label inside; found inside one turn, case-sensitively,
+  at least 12 characters). Who said it is stored with the evidence (`you`, `agent`, `unknown`; missing in an older
+  record reads as `unknown`) and shown as "You, in", "The agent, in" or "From", unknown quotes last. A proposal
+  without a quote of the developer is removed like one the check failed. Both prompts ask for the developer's own
+  words, copied exactly, without the label.
+- Section 5: when another model answered, the write that switches dreaming off also clears the model's passed test,
+  so the setup's step 1 is not done until the model is tested again.
