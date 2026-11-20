@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
+import {
+  DREAM_PROTECTED,
+  dreamArgs,
+  dreamEnv,
+  isProtectedPath,
+  otherModels,
+} from './opencodeDream';
 
 const MODEL = 'zai/glm-5.3';
 const WORKTREE = '/u/Shellie/dreams/2026-11-20-1/worktree';
@@ -110,7 +116,33 @@ describe('dreamEnv', () => {
       expect(decide(permission, tool, 'src/a.ts')).toBe('allow');
   });
 
-  it('gives the build agent the same rules, so a repo agent setting cannot loosen them', () => {
+  it('switches off project config and blanks every inherited way in to OpenCode config', () => {
+    const env = dreamEnv(
+      {
+        A: '1',
+        OPENCODE_PERMISSION: '{"bash":"allow"}',
+        OPENCODE_CONFIG_DIR: '/x/cfg',
+        OPENCODE_CONFIG: '/x/opencode.json',
+      },
+      { model: MODEL, worktree: WORKTREE, dataDir: DATA },
+    );
+    expect(env.A).toBe('1');
+    expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1');
+    // Empty, not left out: the spawn helpers spread process.env first, and OpenCode reads an empty one as unset.
+    expect(env.OPENCODE_PERMISSION).toBe('');
+    expect(env.OPENCODE_CONFIG_DIR).toBe('');
+    expect(env.OPENCODE_CONFIG).toBe('');
+  });
+
+  it('sets PWD to the worktree: `opencode run` takes its folder from PWD before the process folder', () =>
+    expect(
+      dreamEnv(
+        { PWD: '/' },
+        { model: MODEL, worktree: WORKTREE, dataDir: DATA },
+      ).PWD,
+    ).toBe(WORKTREE));
+
+  it('gives the build agent rules equal to the top-level ones', () => {
     const c = config();
     expect(c.agent.build.permission).toEqual(c.permission);
   });
@@ -126,6 +158,24 @@ describe('dreamEnv', () => {
     expect(decide(permission, 'edit', '../other/x.md')).toBe('deny');
     expect(decide(permission, 'edit', '../../../../etc/hosts')).toBe('deny');
     expect(decide(permission, 'edit', 'D:/elsewhere/x.md')).toBe('deny');
+    expect(decide(permission, 'edit', '//server/share/x.md')).toBe('deny');
+  });
+
+  it("never lets an edit write OpenCode's own config, at the root or deeper, in the worktree or the data folder", () => {
+    const { permission } = config();
+    for (const p of [
+      'opencode.json',
+      'opencode.jsonc',
+      '.opencode/opencode.json',
+      '.opencode/plugin/x.ts',
+      '.opencode/agent/build.md',
+      'packages/a/opencode.json',
+      'packages/a/.opencode/plugin/x.ts',
+      '../data/opencode.json',
+      '../data/.opencode/plugin/x.ts',
+    ])
+      expect(decide(permission, 'edit', p), p).toBe('deny');
+    expect(decide(permission, 'edit', 'docs/opencode.json.md')).toBe('allow');
   });
 
   it('opens only the data folder outside the worktree', () => {
@@ -175,4 +225,33 @@ describe('otherModels', () => {
     ).toEqual(['opencode/big-pickle']));
   it('is not a pass when nobody answered', () =>
     expect(otherModels([], MODEL)).toEqual(['(none)']));
+});
+
+describe('isProtectedPath', () => {
+  it("names OpenCode's config files and folder at any depth, in any case", () => {
+    expect(DREAM_PROTECTED).toEqual([
+      'opencode.json',
+      'opencode.jsonc',
+      '.opencode',
+    ]);
+    for (const p of [
+      'opencode.json',
+      'opencode.jsonc',
+      '.opencode',
+      '.opencode/plugin/x.ts',
+      'a/b/.opencode/agent/x.md',
+      'a/opencode.json',
+      'OpenCode.JSON',
+      '.OpenCode/plugin/x.ts',
+      'a\\.opencode\\x.ts',
+    ])
+      expect(isProtectedPath(p), p).toBe(true);
+    for (const p of [
+      'README.md',
+      '.apm/skills/x/SKILL.md',
+      'docs/opencode.json.md',
+      'opencode',
+    ])
+      expect(isProtectedPath(p), p).toBe(false);
+  });
 });

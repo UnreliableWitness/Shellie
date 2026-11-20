@@ -42,6 +42,24 @@ const AGENTS = [
 /** Switched off: the two subagents, and title generation. */
 const DISABLED = new Set<string>(['general', 'explore', 'title']);
 
+/**
+ * OpenCode's own configuration: config files, and the folder that holds agents, plugins (code OpenCode runs) and more.
+ * A dream never writes these, at any depth: OpenCode refuses the edit, and later steps refuse them as allowed folders
+ * and revert them after a run.
+ */
+export const DREAM_PROTECTED = ['opencode.json', 'opencode.jsonc', '.opencode'];
+
+/**
+ * Whether a repo-relative path is or lies in one of `DREAM_PROTECTED`. Without regard to case: on macOS and Windows
+ * `OpenCode.json` is the same file as `opencode.json`.
+ */
+export function isProtectedPath(repoRelativePath: string): boolean {
+  return repoRelativePath
+    .toLowerCase()
+    .split(/[\\/]/)
+    .some((segment) => DREAM_PROTECTED.includes(segment));
+}
+
 const inside = (parent: string, child: string): boolean => {
   const p = pathFor(parent);
   const r = p.relative(parent, child);
@@ -69,7 +87,17 @@ function dreamPermission(worktree: string, dataDir: string) {
       '**': 'allow',
       '../**': 'deny',
       '?:/**': 'deny',
+      '//**': 'deny',
       [`${data}/**`]: 'allow',
+      // Last, so they win everywhere: OpenCode's own config, at the root and at any depth.
+      ...Object.fromEntries(
+        DREAM_PROTECTED.flatMap((n) => [
+          n,
+          `${n}/**`,
+          `**/${n}`,
+          `**/${n}/**`,
+        ]).map((g) => [g, 'deny']),
+      ),
     },
     external_directory: {
       '*': 'deny',
@@ -96,11 +124,27 @@ function dreamPermission(worktree: string, dataDir: string) {
  * - Compaction uses `agent.compaction.model`, else the session's model; pinned.
  * - With `"*": "deny"` first, bash and task were not offered to the model at all. A write in the worktree and in the
  *   data folder succeeded, a write next to the worktree was refused.
- * Not pinned by config: a repo agent reached by name (`--agent`, never passed, or the task tool, denied), a repo's
- * `provider` entries, and plugins (OpenCode runs a repo's and the user's plugins; `--pure` would skip them). The
- * after-run check (`OpenCodeReader.sessionModels` and `otherModels`) is what decides.
+ * Second check, same day, with a hostile root `opencode.json` and `.opencode/opencode.json` (`"*": "ask"`,
+ * `"b?sh": "allow"`, `external_directory: {"/**": "allow"}`, the same on `agent.build.permission`) and a
+ * `.opencode/plugin` that writes a marker file when loaded:
+ * - Without `OPENCODE_DISABLE_PROJECT_CONFIG` both files were loaded and the repo's plugin ran. With it (set here)
+ *   neither was loaded and the plugin did not run: in 1.19.3 the switch skips the project's `opencode.json*` and its
+ *   `.opencode/` folders (config, agents, plugins, commands) and its AGENTS.md, but not the user's global config and
+ *   plugins (`~/.config/opencode`, `~/.opencode`), which still load. Bash was not offered, a write outside refused.
+ * - Writes to `.opencode/plugin/x.ts`, `opencode.jsonc` and `pkg/.opencode/agent/a.md` were refused by the protected
+ *   edit rules; `ok.txt` next to them was written.
+ * - `OPENCODE_PERMISSION` in the parent env, blanked here, did not reach the run. (Even unblanked it did not loosen
+ *   the build agent, whose own copy of the rules is applied after the top-level ones; blanked anyway.)
+ * - `opencode run` takes its folder from PWD before the process folder: spawned with an inherited PWD it ran in the
+ *   wrong folder, with that folder's rules. PWD is set to the worktree here.
+ * Not pinned by config: the user's own global config, agents and plugins; a repo agent reached by name (`--agent`,
+ * never passed, or the task tool, denied). The after-run check (`OpenCodeReader.sessionModels` and `otherModels`) is
+ * what decides on the model.
  */
-/** Inline config: every model key pinned to `model`, subagents off, permissions per spec §4. */
+/**
+ * Inline config: every model key pinned to `model`, subagents off, permissions per spec §4. The result is the run's
+ * whole OpenCode env: spawn with it on top of everything inherited, so its empty values blank inherited ones.
+ */
 export function dreamEnv(
   base: Record<string, string>,
   o: { model: string; worktree: string; dataDir: string },
@@ -113,6 +157,15 @@ export function dreamEnv(
   const permission = dreamPermission(o.worktree, o.dataDir);
   return {
     ...base,
+    // `opencode run` takes its folder from PWD before the process folder (checked live): an inherited PWD would run
+    // the dream elsewhere.
+    PWD: o.worktree,
+    OPENCODE_DISABLE_PROJECT_CONFIG: '1',
+    // Each of these would add to or override the config below. Empty rather than left out: the spawn helpers spread
+    // process.env under this env, and OpenCode treats an empty value as unset.
+    OPENCODE_PERMISSION: '',
+    OPENCODE_CONFIG_DIR: '',
+    OPENCODE_CONFIG: '',
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
       model,
       small_model: model,
