@@ -137,4 +137,20 @@ describe('writeMaterial', () => {
     const index = fs.readFileSync(path.join(dir, 'index.md'), 'utf8');
     for (const n of names) expect(index).toContain(n);
   });
+
+  it('keeps names distinct on a case-insensitive file system', async () => {
+    const m = pickMaterial([task('A', [[dev(1)]]), task('a', [[dev(2)]])], {});
+    const files = await writeMaterial(dir, m, memory);
+    const names = files.filter((f) => f !== 'index.md');
+    expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(2);
+    expect(fs.readdirSync(path.join(dir, 'tasks'))).toHaveLength(2);
+  });
+
+  it('does not use a Windows device name as a file name', async () => {
+    const m = pickMaterial([task('con', [[dev(1)]])], {});
+    const files = await writeMaterial(dir, m, memory);
+    const name = path.basename(files[1], '.md');
+    expect(name.toLowerCase()).not.toBe('con');
+    expect(name).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
 });

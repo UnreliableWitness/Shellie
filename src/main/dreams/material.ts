@@ -67,17 +67,20 @@ export function pickMaterial(
   };
 }
 
+/** Names Windows reserves, with or without an extension. */
+const DEVICE_NAME = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+
 /** A file name from letters, digits, `-` and `_`; ids that needed changing get a hash so two never collide. */
 function fileNames(ids: string[]): string[] {
   const used = new Set<string>();
   return ids.map((id) => {
     const safe = id.replace(/[^A-Za-z0-9_-]/g, '_');
     let name =
-      safe === id && safe !== ''
+      safe === id && safe !== '' && !DEVICE_NAME.test(safe)
         ? safe
         : `${safe}_${createHash('sha256').update(id).digest('hex').slice(0, 8)}`;
-    for (let n = 2; used.has(name); n++) name = `${safe}_${n}`;
-    used.add(name);
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${safe}_${n}`;
+    used.add(name.toLowerCase());
     return `tasks/${name}.md`;
   });
 }
