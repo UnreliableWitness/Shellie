@@ -218,7 +218,7 @@ export function stepLine(
 ): string {
   if (step === 'checking') return 'Checking its own proposals';
   return sessions && sessions > 0
-    ? `Reading ${sessions} sessions`
+    ? `Reading ${sessions} session${sessions === 1 ? '' : 's'}`
     : 'Reading sessions';
 }
 

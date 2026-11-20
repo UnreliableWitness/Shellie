@@ -221,6 +221,8 @@ describe('usageText', () => {
 
 describe('stepLine', () => {
   it('reads', () => expect(stepLine('reading', 4)).toBe('Reading 4 sessions'));
+  it('reads one session', () =>
+    expect(stepLine('reading', 1)).toBe('Reading 1 session'));
   it('omits an unknown count', () =>
     expect(stepLine('reading', null)).toBe('Reading sessions'));
   it('checks', () =>
