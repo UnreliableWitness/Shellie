@@ -309,3 +309,34 @@ and booleans only; no model, repo or file names. Listed in `docs/telemetry.md`.
 - A dream on the owner's licence model through OpenCode on Windows: that the model check sees only that model, and
   how good the proposals are.
 - apm's source folder in the owner's project repos.
+
+## Changed during the build
+
+Rulings made while building (2026-11-20) that change or add to what the sections above say. The change note
+`docs/changes/2026-11-20-dreams.md` has the rest.
+
+- Section 4, permissions: a dream never writes OpenCode's own configuration (`opencode.json`, `opencode.jsonc`,
+  anything under `.opencode/`) or anything in a folder named `hooks` (`.apm/hooks/` holds scripts that run by
+  themselves). Such paths cannot be chosen as a folder a dream may change, and are reverted after a run. Runs also set
+  `OPENCODE_DISABLE_PROJECT_CONFIG=1` and drop inherited `OPENCODE_*` variables; `--pure` is not passed, so the
+  owner's global plugins still load.
+- Section 4, step 3: the check run is read-only on the worktree, enforced by its permissions and by comparing the
+  worktree's changed paths (ignored files included) before and after it; any difference fails the dream with "The
+  check run changed files".
+- Section 4, step 4: Shellie's dream commits run with hooks off and without signing.
+- Section 4 and 8: failure reasons are fixed phrases, never session text, a path or git's own errors.
+- Section 4, after a crash: the startup cleanup deletes a `dream/<date>-<n>` branch only when its dream folder still
+  exists; a branch without one (a dream opened as a task) is the owner's and stays.
+- Section 3: OpenCode turns carry their times, like Claude Code's, so new turns in an OpenCode-only task are new
+  material.
+- Section 5: a recorded "switched itself off" holds across restarts and is ended only by switching on again.
+- Section 1: while a widening change waits for the tick, the panel lists what it adds (a repo, a folder, a higher or
+  no limit), since the sentence does not name folders. Every control shows the saved settings or the held change.
+- Section 8, a dream result: the changed lines of a proposal come from git (its own hunks, with caps), and the full
+  diff gets the two texts of one file on demand.
+- Dream ids (`<date>-<n>`) are per repo: two repos dreaming on one day share an id, so every lookup is by repo and id,
+  and an id the repo's journal names is never given again.
+- Section 8, Home: the "found nothing" line shows only inside the While you were away band, for the newest journal
+  line under 24 hours old.
+- Section 8, Open as task: a setup failure or cancel of the task never deletes the dream branch, and the task
+  remembers its branch already existed.

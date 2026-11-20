@@ -18,6 +18,17 @@ don't render standalone in a browser; read them for layout, copy, colors and dat
 | `Usage.dc.html` | 6. Task AI usage: per-session tokens and cost, custom fields and comment on the work item |
 | `Invoicing.dc.html` | 7. AI cost per customer for invoicing, per period, with CSV export |
 
+**Dreams** (2026-11-20), canvas "Shellie Dreams": https://claude.ai/artifact/UpRsPykwKeKdEo2iWdQoLn. Snapshot in
+`mockups/dreams/`, same format, with its own `canvas.json`; spec `docs/superpowers/specs/2026-11-20-dreams-design.md`.
+
+| File | Screen |
+|---|---|
+| `dreams/Main.dc.html` | 1. Home, the morning after: the While you were away band with a dream result to review |
+| `dreams/Dreams.dc.html` | 2. Dreams: state, status strip, results waiting, repos with Dream now, journal |
+| `dreams/Review.dc.html` | 3. Reviewing a dream: proposals, evidence quotes, changed lines, drop, Open as a task |
+| `dreams/Setup.dc.html` | 4. Let Shellie dream: model and test, daily limit, when, repos and folders, the confirm panel |
+| `dreams/States.dc.html` | 5. The dream status line in the navigation in each state, its panel, the switched-off notice |
+
 Visual language (sub-project 6 replaces the mockups' greys): space-black ground `#090b10` (`#07080c` void,
 `#0c0e14` panels), `#1d2230` hairlines, amber `#f0a443` as the one accent, cream `#f6e7c8` for highlights. Instrument
 motifs: the Mind dial mark, ring gauges, bracketed values, tick rules and small spaced-out labels. IBM Plex Sans for UI,
