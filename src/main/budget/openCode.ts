@@ -3,7 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { BRAIN_JOB_TITLE } from '../../shared/brain';
-import type { BudgetRecord } from '../../shared/budget';
+import {
+  type BudgetRecord,
+  type BudgetTokens,
+  tokensOf,
+} from '../../shared/budget';
+import { DREAM_JOB_TITLE } from '../../shared/dreams';
 import { PR_JOB_TITLE } from '../../shared/prDraft';
 import type { Turn } from '../brain/sessionDigest';
 import type { TurnAt } from '../sessions/claudeTranscript';
@@ -348,6 +353,83 @@ export class OpenCodeReader {
     }
   }
 
+  /**
+   * Every model (`provider/model`) that answered in a session or any session below it (a subagent's), in the order
+   * they first answered: each assistant message counts, finished or not. Empty when there is no such session.
+   */
+  sessionModels(sessionId: string): string[] {
+    if (!existsSync(this.file)) return [];
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      const rows = db
+        .prepare(
+          `${withChildren(db, 'SELECT id FROM session WHERE id = ?')} SELECT message.data AS data FROM message JOIN tree ON tree.id = message.session_id ORDER BY message.time_created, message.id`,
+        )
+        .all(sessionId) as { data: string }[];
+      const models = new Set<string>();
+      for (const r of rows) {
+        const d = json(r.data);
+        if (
+          d.role === 'assistant' &&
+          typeof d.modelID === 'string' &&
+          d.modelID
+        )
+          models.add(
+            `${typeof d.providerID === 'string' ? d.providerID : ''}/${d.modelID}`,
+          );
+      }
+      return [...models];
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * The tokens of dream sessions (by title, and the sessions below them) in finished assistant messages created in
+   * [`since`, `until`) (epoch ms): all five kinds added up, the way the ledger counts them, and per `provider/model`.
+   */
+  dreamTokens(
+    since: number,
+    until: number,
+  ): { tokens: number; byModel: Record<string, BudgetTokens> } {
+    const byModel: Record<string, BudgetTokens> = {};
+    let tokens = 0;
+    if (!existsSync(this.file)) return { tokens, byModel };
+    const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
+    try {
+      const rows = db
+        .prepare(
+          `${withChildren(db, 'SELECT id FROM session WHERE title LIKE ?')} SELECT message.id AS id, message.session_id AS session_id, message.data AS data FROM message JOIN tree ON tree.id = message.session_id WHERE message.time_created >= ? AND message.time_created < ?`,
+        )
+        .all(`${DREAM_JOB_TITLE}%`, since, until) as {
+        id: string;
+        session_id: string;
+        data: string;
+      }[];
+      for (const r of rows) {
+        const rec = parseOpenCodeMessage(r.id, r.session_id, r.data);
+        if (!rec) continue;
+        const key = `${rec.provider}/${rec.model}`;
+        const t = (byModel[key] ??= {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWrite5mTokens: 0,
+          cacheWrite1hTokens: 0,
+        });
+        t.inputTokens += rec.inputTokens;
+        t.outputTokens += rec.outputTokens;
+        t.cacheReadTokens += rec.cacheReadTokens;
+        t.cacheWrite5mTokens += rec.cacheWrite5mTokens;
+        t.cacheWrite1hTokens += rec.cacheWrite1hTokens;
+        tokens += tokensOf(rec);
+      }
+      return { tokens, byModel };
+    } finally {
+      db.close();
+    }
+  }
+
   /** One session's turns from messages created at or after `since` (epoch ms), with when each was said. */
   turnsSince(sessionId: string, since = 0): TurnAt[] {
     if (!existsSync(this.file)) return [];
@@ -432,6 +514,15 @@ function textTurns(rows: TextRow[]): Map<string, TurnAt[]> {
   return bySession;
 }
 
+/**
+ * `WITH RECURSIVE tree(id)`: the sessions `roots` selects and every session below them (subagents); a database without
+ * `session.parent_id` has flat sessions, so only the roots.
+ */
+const withChildren = (db: DatabaseSync, roots: string) =>
+  hasParentId(db)
+    ? `WITH RECURSIVE tree(id) AS (${roots} UNION SELECT session.id FROM session JOIN tree ON session.parent_id = tree.id)`
+    : `WITH tree(id) AS (${roots})`;
+
 /** The sessions a person had in one of `dirs` since `since`: top-level, not Shellie's own runs (by title). */
 function taskSessions(
   db: DatabaseSync,
@@ -439,8 +530,14 @@ function taskSessions(
   since: number,
 ): { where: string; params: (string | number)[] } {
   return {
-    where: `directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''}`,
-    params: [...dirs, since, `${BRAIN_JOB_TITLE}%`, `${PR_JOB_TITLE}%`],
+    where: `directory IN (${dirs.map(() => '?').join(', ')}) AND time_created >= ? AND title NOT LIKE ? AND title NOT LIKE ? AND title NOT LIKE ?${hasParentId(db) ? ' AND parent_id IS NULL' : ''}`,
+    params: [
+      ...dirs,
+      since,
+      `${BRAIN_JOB_TITLE}%`,
+      `${PR_JOB_TITLE}%`,
+      `${DREAM_JOB_TITLE}%`,
+    ],
   };
 }
 
