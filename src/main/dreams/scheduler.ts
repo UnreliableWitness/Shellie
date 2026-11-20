@@ -92,8 +92,8 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     done: Promise<void>;
   } | null = null;
   const material = new Map<string, Known>();
-  /** A wrong-model outcome whose `enabled: false` is not saved yet. */
-  let offPending = false;
+  /** A wrong-model switch-off the dream store could not record: it holds for this session in its place. */
+  let offUnrecorded = false;
   let models: { at: number; list: string[] | null; failed: boolean } | null =
     null;
   // Decisions, Dream now and the sweep run one after another, never side by side.
@@ -173,16 +173,13 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   const decide = async (manual?: {
     repoId: string;
   }): Promise<{ repoId: string } | { wait: Wait }> => {
-    if (offPending) await switchOff();
-    // Dreaming switched itself off and that is not saved yet: nothing starts, Dream now included.
-    if (offPending) return { wait: 'off' };
+    // A stored switch-off always wins, also across a restart: nothing starts (Dream now included), and settings
+    // that still say on are saved off again on every check. Only `clearSwitchedOff` (switching on) ends it.
+    if (offUnrecorded || d.store.switchedOff()) {
+      if (d.settings.get().dreaming.enabled) await switchOff();
+      return { wait: 'off' };
+    }
     const s = d.settings.get().dreaming;
-    // A backstop: switching on clears it (`clearSwitchedOff`).
-    if (s.enabled && d.store.switchedOff())
-      await clearSwitchedOff().catch((e: unknown) =>
-        console.error('[dreams] switchedOff', e),
-      );
-    if (d.store.switchedOff()) return { wait: 'off' };
     const base: ReadyInput = {
       settings: s,
       models: s.enabled ? await modelList() : null,
@@ -218,34 +215,46 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     out: Awaited<ReturnType<DreamRunner['dream']>>,
   ) => {
     if (out.outcome !== 'wrong-model') return;
-    // Recorded first, so Home says why even when the settings cannot be saved; the save is retried each check.
-    await d.store
+    // Recorded first: the record keeps dreaming off even when the settings cannot be saved (retried each check).
+    const recorded = await d.store
       .setSwitchedOff({
         answered: out.answered.join(', '),
         chosen: model,
         repoId,
       })
-      .catch((e: unknown) => console.error('[dreams] switchedOff', e));
-    offPending = true;
-    await switchOff();
+      .then(
+        () => true,
+        (e: unknown) => {
+          console.error('[dreams] the switch-off could not be recorded', e);
+          return false;
+        },
+      );
+    if (!recorded) offUnrecorded = true;
+    if (!(await switchOff()) && !recorded)
+      // A known gap: neither file could be written, so after a restart dreaming would be on again.
+      console.error(
+        '[dreams] the switch-off could be neither recorded nor saved; it holds until Shellie quits',
+      );
   };
 
-  /** Saves `enabled: false`; on failure `offPending` stays set and the next check tries again. */
-  const switchOff = async () => {
+  /** Saves `enabled: false`; false (logged) when it could not, and the next check tries again. */
+  const switchOff = async (): Promise<boolean> => {
     const cur = d.settings.get();
     try {
       await d.settings.save({
         ...cur,
         dreaming: { ...cur.dreaming, enabled: false },
       });
-      offPending = false;
+      return true;
     } catch (e) {
       console.error('[dreams] could not switch dreaming off', e);
+      return false;
     }
   };
 
   const clearSwitchedOff = async () => {
     await d.store.setSwitchedOff(null);
+    offUnrecorded = false;
     d.broadcast();
   };
 
@@ -416,7 +425,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           : { wait: 'nothing-ready' as const };
       });
     },
-    /** Dreaming was switched on: what switched it off before is forgotten at once. */
+    /**
+     * The only way a switch-off ends: the owner switches dreaming on. Call it before saving `enabled: true`. No caller
+     * in production yet: the `dream:switchOn` handler (the next task) is to call it.
+     */
     clearSwitchedOff(): Promise<void> {
       return clearSwitchedOff();
     },

@@ -318,10 +318,41 @@ describe('the dream scheduler', () => {
     await tick();
     expect(fake.calls).toHaveLength(1);
     expect(scheduler!.status().wait).toBe('off');
+  });
+
+  it('a stored switch-off wins across a restart: no dream, the save retried each check, cleared only by clearSwitchedOff()', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
+    // As the last run left it: recorded, but `enabled: false` never saved.
+    await store.setSwitchedOff(off);
+    let failures = 2;
+    const save = vi.fn(async (next: AppSettings) => {
+      if (failures-- > 0) throw new Error('disk full');
+      app = next;
+      return next;
+    });
+    start({ settings: { get: () => app, save } });
+    expect(await scheduler!.dreamNow(REPO.id)).toEqual({ wait: 'off' });
+    await tick();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(app.dreaming.enabled).toBe(true);
+    await tick();
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(app.dreaming.enabled).toBe(false);
+    await tick();
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(fake.calls).toHaveLength(0);
+    expect(store.switchedOff()).toEqual(off);
+    // Even with dreaming on again, only clearSwitchedOff() lets a dream start.
     app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
     await tick();
-    await vi.waitFor(() => expect(store.switchedOff()).toBeNull());
-    expect(scheduler!.status().switchedOff).toBeNull();
+    expect(fake.calls).toHaveLength(0);
+    expect(store.switchedOff()).toEqual(off);
+    app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+    await scheduler!.clearSwitchedOff();
+    await tick();
+    expect(fake.calls).toHaveLength(1);
+    error.mockRestore();
   });
 
   it('clearSwitchedOff() clears it at once', async () => {

@@ -18,7 +18,7 @@ import { readClaudeTurns, type TurnAt } from './claudeTranscript';
 export function opencodeSessionTurns<T extends Turn>(
   task: Task,
   texts: ((dirs: readonly string[], since: number) => T[][]) | undefined,
-  tag = '[brain] OpenCode sessions not read for lessons',
+  tag = '[sessions] OpenCode sessions not read',
 ): T[][] {
   const tabs = [...task.closedTerminals, ...task.terminals];
   if (!texts || !tabs.some((t) => t.kind === 'opencode')) return [];
