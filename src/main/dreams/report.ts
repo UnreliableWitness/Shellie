@@ -111,7 +111,7 @@ export function splitAllowed(
       !escapes &&
       !isProtectedPath(p) &&
       roots.some(
-        (r) => r === '' || r === '.' || p === r || p.startsWith(`${r}/`),
+        (r) => r !== '' && r !== '.' && (p === r || p.startsWith(`${r}/`)),
       );
     (inside ? allowed : outside).push(p);
   }
@@ -127,17 +127,29 @@ export interface DreamGroup {
   files: string[];
 }
 
+const cap = (s: string, max: number): string =>
+  s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+
+/** `first` was earlier in the report: its kind leads; title and why are capped like the schema's. */
+const join = (first: DreamGroup, next: DreamGroup): DreamGroup => ({
+  kind: first.kind,
+  title: cap(`${first.title} + ${next.title}`, 200),
+  why: cap(`${first.why} ${next.why}`.trim(), 1000),
+  evidence: [...first.evidence, ...next.evidence],
+  files: [...new Set([...first.files, ...next.files])],
+});
+
 /**
  * What to commit: one group per passing proposal, in report order, at most 3. Proposals sharing a file become one
  * (titles joined with " + ", the first one's kind). Files a proposal lists that did not change are dropped from it; a
  * proposal left with no file is removed. Allowed changed files no group lists are `unlisted` (to be reverted).
  * `removedByCheck` counts the proposals that did not make it. A proposal without a verdict counts as failed once a
- * check run happened (`checked`, by default: any proposal has a verdict).
+ * check run happened (`checked`, stated by the runner).
  */
 export function groupProposals(
   report: DreamReport,
   allowedChanged: string[],
-  checked: boolean = report.proposals.some((p) => p.verdict !== undefined),
+  checked: boolean,
 ): { groups: DreamGroup[]; unlisted: string[]; removedByCheck: number } {
   const changed = new Set(allowedChanged.map(normalise));
   let removed = 0;
@@ -158,23 +170,18 @@ export function groupProposals(
     });
   }
 
+  // Merge transitively until no two groups share a file; order is by earliest member.
   const groups: DreamGroup[] = [];
   for (const g of kept) {
-    const at = groups.findIndex((o) =>
-      o.files.some((f) => g.files.includes(f)),
-    );
-    if (at === -1) {
-      groups.push(g);
-      continue;
+    let merged = g;
+    let at = groups.length;
+    for (let i = groups.length - 1; i >= 0; i--) {
+      if (!groups[i].files.some((f) => merged.files.includes(f))) continue;
+      merged = join(groups[i], merged);
+      groups.splice(i, 1);
+      at = i;
     }
-    const o = groups[at];
-    groups[at] = {
-      kind: o.kind,
-      title: `${o.title} + ${g.title}`,
-      why: `${o.why} ${g.why}`.trim(),
-      evidence: [...o.evidence, ...g.evidence],
-      files: [...new Set([...o.files, ...g.files])],
-    };
+    groups.splice(at, 0, merged);
   }
 
   const listed = new Set(groups.flatMap((g) => g.files));

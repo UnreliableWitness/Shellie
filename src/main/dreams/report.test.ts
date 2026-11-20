@@ -143,6 +143,12 @@ describe('splitAllowed', () => {
   it('compares exactly, case-sensitively', () => {
     expect(splitAllowed(['.APM/x'], ['.apm']).outside).toEqual(['.APM/x']);
   });
+  it('lets an empty or . folder allow nothing', () => {
+    expect(splitAllowed(['a.md', 'OpenCode.json'], ['.', ''])).toEqual({
+      allowed: [],
+      outside: ['a.md', 'OpenCode.json'],
+    });
+  });
   it('never allows a protected path', () => {
     expect(
       splitAllowed(
@@ -157,6 +163,43 @@ describe('splitAllowed', () => {
 });
 
 describe('groupProposals', () => {
+  it('merges transitively: a bridging proposal joins both groups', () => {
+    const r = groupProposals(
+      report([
+        proposal({ title: 'A', kind: 'new-skill', files: ['a.md'] }),
+        proposal({ title: 'B', files: ['c.md'] }),
+        proposal({ title: 'C', files: ['a.md', 'c.md'] }),
+      ]),
+      ['a.md', 'c.md'],
+      false,
+    );
+    expect(r.groups.map((g) => g.title)).toEqual(['A + B + C']);
+    expect(r.groups[0].kind).toBe('new-skill');
+    expect(r.groups[0].files).toEqual(['a.md', 'c.md']);
+    expect(r.groups[0].evidence).toHaveLength(3);
+    const all = r.groups.flatMap((g) => g.files);
+    expect(new Set(all).size).toBe(all.length);
+  });
+  it('fails everything when a check ran and wrote no verdicts', () => {
+    const r = groupProposals(report([proposal()]), ['r.md'], true);
+    expect(r.groups).toEqual([]);
+    expect(r.unlisted).toEqual(['r.md']);
+    expect(r.removedByCheck).toBe(1);
+  });
+  it('caps a merged title and why', () => {
+    const r = groupProposals(
+      report([
+        proposal({ title: 'x'.repeat(200), why: 'y'.repeat(1000) }),
+        proposal({ title: 'z'.repeat(200), why: 'w'.repeat(1000) }),
+      ]),
+      ['r.md'],
+      false,
+    );
+    expect(r.groups[0].title).toHaveLength(200);
+    expect(r.groups[0].title.endsWith('…')).toBe(true);
+    expect(r.groups[0].why).toHaveLength(1000);
+    expect(r.groups[0].why.endsWith('…')).toBe(true);
+  });
   it('drops a failed proposal and leaves its files unlisted', () => {
     const r = groupProposals(
       report([
@@ -164,6 +207,7 @@ describe('groupProposals', () => {
         proposal({ title: 'B', files: ['b.md'], verdict: 'fail' }),
       ]),
       ['a.md', 'b.md'],
+      true,
     );
     expect(r.groups.map((g) => g.title)).toEqual(['A']);
     expect(r.unlisted).toEqual(['b.md']);
@@ -177,6 +221,7 @@ describe('groupProposals', () => {
         proposal({ title: 'C', files: ['c.md'] }),
       ]),
       ['r.md', 'a.md', 'c.md'],
+      false,
     );
     expect(r.groups).toHaveLength(2);
     expect(r.groups[0].title).toBe('A + B');
@@ -193,26 +238,28 @@ describe('groupProposals', () => {
         proposal({ title: 'B', files: ['gone2.md'] }),
       ]),
       ['a.md'],
+      false,
     );
     expect(r.groups).toHaveLength(1);
     expect(r.groups[0].files).toEqual(['a.md']);
     expect(r.removedByCheck).toBe(1);
   });
   it('lists changed files nobody lists as unlisted', () => {
-    const r = groupProposals(report([proposal()]), ['r.md', 'stray.md']);
+    const r = groupProposals(report([proposal()]), ['r.md', 'stray.md'], false);
     expect(r.unlisted).toEqual(['stray.md']);
   });
   it('counts a proposal without a verdict as failed after a check run', () => {
     const r = groupProposals(
       report([proposal({ verdict: 'pass' }), proposal({ files: ['b.md'] })]),
       ['r.md', 'b.md'],
+      true,
     );
     expect(r.groups).toHaveLength(1);
     expect(r.unlisted).toEqual(['b.md']);
     expect(r.removedByCheck).toBe(1);
   });
   it('treats no verdict anywhere as no check run', () => {
-    const r = groupProposals(report([proposal()]), ['r.md']);
+    const r = groupProposals(report([proposal()]), ['r.md'], false);
     expect(r.groups).toHaveLength(1);
     expect(r.removedByCheck).toBe(0);
   });
@@ -223,6 +270,7 @@ describe('groupProposals', () => {
     const r = groupProposals(
       report(ps),
       ps.flatMap((p) => p.files),
+      true,
     );
     expect(r.groups.map((g) => g.title)).toEqual(['a', 'b', 'c']);
     expect(r.unlisted).toEqual(['d.md', 'e.md']);
