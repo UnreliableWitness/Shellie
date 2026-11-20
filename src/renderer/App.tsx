@@ -9,6 +9,8 @@ import { useTimeFocus } from './hooks/useTimeFocus';
 import { useShortcuts } from './hooks/useShortcuts';
 import { AddRepoScreen } from './screens/AddRepoScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
+import { DreamsScreen } from './screens/DreamsScreen';
+import { DreamSetupScreen } from './screens/DreamSetupScreen';
 import { BrainNewScreen } from './screens/BrainNewScreen';
 import { BrainJoinScreen } from './screens/BrainJoinScreen';
 import { BrainScreen } from './screens/BrainScreen';
@@ -39,6 +41,11 @@ function Page() {
       return <GetStartedScreen />;
     case 'agents':
       return <AgentsScreen />;
+    case 'dreams':
+    case 'dream':
+      return <DreamsScreen />;
+    case 'dream-setup':
+      return <DreamSetupScreen />;
     case 'sprint':
       return <SprintScreen />;
     case 'project':

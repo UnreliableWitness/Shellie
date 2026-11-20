@@ -1,0 +1,154 @@
+/* Dreams: the setup screen. */
+.dream-setup {
+  max-width: 1180px;
+}
+.dream-intro {
+  max-width: 72ch;
+}
+.dream-setup-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.dream-steps {
+  flex: 999 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dream-step {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dream-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.dream-step-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.dream-done {
+  font-size: 12px;
+  font-weight: 600;
+}
+.dream-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.dream-model-row .grow {
+  flex: 1 1 260px;
+}
+.dream-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dream-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dream-limit-row,
+.dream-idle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.dream-limit-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dream-limit-name {
+  width: 100px;
+}
+.dream-off {
+  color: var(--disabled);
+}
+.dream-number {
+  width: 120px;
+  text-align: right;
+}
+.dream-minutes {
+  width: 56px;
+  text-align: right;
+}
+.dream-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.dream-repo-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 160px;
+  font-weight: 600;
+}
+.dream-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dream-chips .chip-code {
+  padding: 2px 8px;
+}
+.dream-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dream-repo-problem {
+  flex-basis: 100%;
+  margin: 0;
+}
+.dream-panel {
+  flex: 1 1 300px;
+  max-width: 380px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--line-strong);
+}
+.dream-panel h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.dream-panel h2:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.dream-sentence {
+  font-size: 16px;
+  line-height: 24px;
+}
+.dream-tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+}
+.dream-tick input {
+  margin-top: 3px;
+}

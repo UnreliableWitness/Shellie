@@ -97,6 +97,12 @@ export type Screen =
   | { kind: 'agents'; from: 'settings' | 'get-started' }
   /** The brain step as a page (from Get started). */
   | { kind: 'brain-new'; from: 'get-started' }
+  /** Dreams: what dreaming did and what it waits for (a placeholder until the screen is built). */
+  | { kind: 'dreams' }
+  /** "Let Shellie dream": setting up and switching on. */
+  | { kind: 'dream-setup' }
+  /** One repo's dream result, for review. */
+  | { kind: 'dream'; repoId: string }
   | { kind: 'sprint' }
   /** The active project's overview page. */
   | { kind: 'project' }
@@ -276,6 +282,7 @@ const TRANSIENT = new Set<Screen['kind']>([
   'connect',
   'agents',
   'brain-new',
+  'dream-setup',
 ]);
 
 export const useStore = create<Store>((set, get) => ({
