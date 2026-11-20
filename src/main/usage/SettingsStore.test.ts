@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultBudgetSettings } from '../../shared/budget';
+import { defaultDreaming } from '../../shared/dreams';
 import { AppSettingsSchema, defaultSettings } from '../../shared/usage';
 import { SettingsStore } from './SettingsStore';
 
@@ -111,6 +112,7 @@ describe('SettingsStore', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
+      dreaming: defaultDreaming(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: null,
@@ -148,6 +150,7 @@ describe('SettingsStore', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
+      dreaming: defaultDreaming(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: null,

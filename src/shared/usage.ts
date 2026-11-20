@@ -4,6 +4,7 @@ import { defaultEditorPrefs, EditorPrefsSchema } from './editors';
 import { defaultTerminals, DefaultTerminalsSchema } from './terminals';
 import { PR_SUMMARY_MODELS } from './prDraft';
 import { THEMES } from './theme';
+import { defaultDreaming, DreamingSettingsSchema } from './dreams';
 import { WorkHoursSchema } from './time';
 
 export type UsageTool = 'claude-code' | 'copilot-cli' | 'opencode';
@@ -124,6 +125,8 @@ export const AppSettingsSchema = z.object({
   whatsNewSeen: z.string().nullable().optional(),
   /** Auto-update (packaged Windows builds). No UI yet: set false in settings.json to turn it off. */
   autoUpdate: z.boolean().optional(),
+  /** Dreams: idle-time skill and rule proposals from past agent sessions. */
+  dreaming: DreamingSettingsSchema.default(defaultDreaming()),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 /** The required fields; every other setting takes its schema default. */

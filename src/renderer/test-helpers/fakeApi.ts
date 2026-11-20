@@ -1,4 +1,5 @@
 import { StartSettingsSchema } from '../../shared/types';
+import { defaultDreaming } from '../../shared/dreams';
 import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
 import type { Channels, Events, ShellieApi } from '../../shared/ipc';
@@ -220,6 +221,7 @@ const defaults: FakeHandlers = {
     sendTelemetry: true,
     editor: { default: null, repos: {} },
     secrets: { productionMinutes: 60 },
+    dreaming: defaultDreaming(),
     onboarding: {
       dismissedAt: null,
       agentsCheckedAt: '2026-10-22T09:00:00.000Z',

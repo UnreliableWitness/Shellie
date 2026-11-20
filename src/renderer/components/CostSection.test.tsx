@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { defaultDreaming } from '../../shared/dreams';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Rate } from '../../shared/usage';
@@ -42,6 +43,7 @@ const settings = {
   sendTelemetry: true,
   editor: { default: null, repos: {} },
   secrets: { productionMinutes: 60 },
+  dreaming: defaultDreaming(),
   onboarding: {
     dismissedAt: null,
     agentsCheckedAt: null,
@@ -132,6 +134,7 @@ describe('CostSection', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
+      dreaming: defaultDreaming(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: null,
