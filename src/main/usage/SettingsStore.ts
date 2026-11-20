@@ -19,4 +19,8 @@ export class SettingsStore {
   save(next: AppSettings): Promise<AppSettings> {
     return this.store.update(() => next);
   }
+  /** Like `save`, from the settings as they are when the write runs (after every queued save). */
+  update(fn: (current: AppSettings) => AppSettings): Promise<AppSettings> {
+    return this.store.update(fn);
+  }
 }

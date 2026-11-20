@@ -254,3 +254,53 @@ export const DreamSwitchedOffSchema = z.object({
   repoId: z.string(),
 });
 export type DreamSwitchedOff = z.infer<typeof DreamSwitchedOffSchema>;
+
+/** Why no dream starts (`nextDream`, `src/main/dreams/ready.ts`), in the order the waits are checked. */
+export type DreamWait =
+  | 'off'
+  | 'model-missing'
+  | 'active'
+  | 'battery'
+  | 'agents-busy'
+  | 'running'
+  | 'limit'
+  | 'nothing-ready';
+
+/** What dreams used in one local day. */
+export type DreamUsage = {
+  day: string;
+  tokens: number;
+  /** Null when a model that was used has no rate: the spend cannot be measured. */
+  eur: number | null;
+};
+
+/** Everything the Dreams screens show (`dream:get`). */
+export type DreamView = {
+  settings: DreamingSettings;
+  /** OpenCode's model list; null when it is not known. */
+  models: string[] | null;
+  /** The rate table prices the chosen model, so a euro limit can be offered. */
+  euroLimitOffered: boolean;
+  usage: DreamUsage;
+  /** Why no dream starts; null while one runs, before the first check, or before the scheduler started. */
+  waiting: DreamWait | null;
+  /** The repo that dreams next as far as the scheduler knows, with its count of sessions to read. */
+  next: { repoId: string; newSessions: number } | null;
+  running: {
+    repoId: string;
+    startedAt: number;
+    step: 'reading' | 'checking';
+  } | null;
+  switchedOff: DreamSwitchedOff | null;
+  repos: {
+    id: string;
+    name: string;
+    /** The folders a dream may change, prefilled for a repo that is not set up yet. */
+    suggestedFolders: string[];
+    /** Sessions waiting to be dreamt about, as far as the scheduler read them (0 when not read yet). */
+    newSessions: number;
+    state: DreamRepoState;
+  }[];
+  /** Newest first. */
+  journal: DreamJournalEntry[];
+};

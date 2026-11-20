@@ -3,17 +3,13 @@
  * the facts. The waits are checked in the order of `Wait`; the first that holds is the answer.
  */
 
-import type { DreamingSettings, DreamRepoState } from '../../shared/dreams';
+import type {
+  DreamingSettings,
+  DreamRepoState,
+  DreamWait,
+} from '../../shared/dreams';
 
-export type Wait =
-  | 'off'
-  | 'model-missing'
-  | 'active'
-  | 'battery'
-  | 'agents-busy'
-  | 'running'
-  | 'limit'
-  | 'nothing-ready';
+export type Wait = DreamWait;
 
 export type ReadyInput = {
   settings: DreamingSettings;

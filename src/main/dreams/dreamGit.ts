@@ -124,7 +124,7 @@ export function revertPaths(
 }
 
 /** The author settings for a commit: none when the repo has an author, else Shellie's own. */
-async function authorConfig(
+export async function authorConfig(
   git: Git,
   worktree: string,
   config: string[],

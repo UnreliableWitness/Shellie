@@ -1,16 +1,11 @@
 import type { BudgetTokens } from '../../shared/budget';
-import type { DreamLimit } from '../../shared/dreams';
+import type { DreamLimit, DreamUsage } from '../../shared/dreams';
 import { OFFICIAL_RATES } from '../pricing/officialRates';
 import type { OpenCodeReader } from '../budget/openCode';
 import { priceRecord } from '../ledger/price';
 import { selectRate } from '../pricing/RateTable';
 
-export type DreamUsage = {
-  day: string;
-  tokens: number;
-  /** Null when a model that was used has no rate: the spend cannot be measured. */
-  eur: number | null;
-};
+export type { DreamUsage };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 

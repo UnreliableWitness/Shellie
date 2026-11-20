@@ -269,9 +269,12 @@ import {
 } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { withTimeout } from '../async';
+import { noDreams, type DreamApi } from '../dreams/dreamHandlers';
 import { throttleByKey } from './throttleByKey';
 
 export type Services = {
+  /** The `dream:*` handlers and what `tasks:create` asks about a task from a dream (main); absent in most tests. */
+  dreams?: DreamApi;
   /** The brain's own Claude terminal (main); absent in most tests. */
   brainTerminals?: ReturnType<typeof createBrainTerminals>;
   /**
@@ -567,6 +570,9 @@ export async function pruneDanglingConnectionLinks(
 
 export function createHandlers(s: Services): Handlers {
   const tel = s.telemetry ?? NoopTelemetry;
+  const dreams = s.dreams ?? noDreams();
+  /** Tasks made on a dream's existing branch this session: their setup checks that branch out (no `-b`). */
+  const fromDreamTasks = new Set<string>();
   let agentsCache: AgentsDetected | null = null;
   /** The `opencode models` list, shared while it runs; dropped again when it gave none, so the next call retries. */
   let opencodeModelsRun: Promise<string[] | null> | null = null;
@@ -2039,7 +2045,11 @@ export function createHandlers(s: Services): Handlers {
   };
 
   const opencodeSessionTurns = (task: Task) =>
-    opencodeTaskTurns(task, s.opencodeSessionTexts);
+    opencodeTaskTurns(
+      task,
+      s.opencodeSessionTexts,
+      '[brain] OpenCode sessions not read for lessons',
+    );
   const claudeSessionTurns = (task: Task) => claudeTaskTurns(task, sessionFile);
 
   /**
@@ -2224,7 +2234,11 @@ export function createHandlers(s: Services): Handlers {
           taskConnectionId(task, [repo]) &&
           (startSettings.moveToInProgress || startSettings.assignToMe),
         ),
-      ...(task.reopen ? { restore: { from: task.reopen.from } } : {}),
+      ...(task.reopen
+        ? { restore: { from: task.reopen.from } }
+        : fromDreamTasks.has(task.id)
+          ? { restore: { from: null } }
+          : {}),
       ...(reopening
         ? {
             // Only workspaces Reopen marked are made again; the home's mark is absent when dropped or kept.
@@ -3610,6 +3624,7 @@ export function createHandlers(s: Services): Handlers {
 
   return {
     ...brainHandlers,
+    ...dreams.handlers,
     ...createReaderHandlers(s.reader),
     ...createDocsHandlers({
       taskById,
@@ -3750,7 +3765,11 @@ export function createHandlers(s: Services): Handlers {
       const branch = input.branch.trim();
       if (!(await s.git.validBranchName(repo.path, branch)))
         throw new Error(`"${branch}" is not a valid branch name`);
-      if (await s.git.branchExists(repo.path, branch))
+      // A dream's branch exists by design, but only the one `dream:openAsTask` just returned for that dream.
+      const fromDream =
+        input.fromDream !== undefined &&
+        dreams.taskLink.opened(input.fromDream, repo.id, branch);
+      if (!fromDream && (await s.git.branchExists(repo.path, branch)))
         throw new Error(`Branch ${branch} already exists in ${repo.name}`);
       assertTaskNamed(input);
       const slug = taskSlug(input.workItem, input.name);
@@ -3792,23 +3811,41 @@ export function createHandlers(s: Services): Handlers {
       } catch {
         // The summary is for display; a config that cannot be read now shows up in setup itself.
       }
-      return registerTask(
-        newTask(input, {
-          repoId: repo.id,
-          slug,
-          branch,
-          worktreePath,
-          baseRef: input.baseRef,
-          copy: input.copy,
-          commands: input.commands,
-          summary,
-          connectionId: repo.connectionId,
-          environment,
-          environmentUntil:
-            environment === 'production' ? productionUntil() : null,
-        }),
-        keys,
-      );
+      const task = newTask(input, {
+        repoId: repo.id,
+        slug,
+        branch,
+        worktreePath,
+        baseRef: input.baseRef,
+        copy: input.copy,
+        commands: input.commands,
+        summary,
+        connectionId: repo.connectionId,
+        environment,
+        environmentUntil:
+          environment === 'production' ? productionUntil() : null,
+      });
+      if (!fromDream) return registerTask(task, keys);
+      fromDreamTasks.add(task.id);
+      let created: Task;
+      try {
+        created = await registerTask(task, keys);
+      } catch (e) {
+        fromDreamTasks.delete(task.id);
+        throw e;
+      }
+      await dreams.taskLink
+        .taskCreated(
+          input.fromDream!,
+          repo.id,
+          created.workItem
+            ? `${created.workItem.id} ${created.workItem.title}`
+            : created.name,
+        )
+        .catch((e: unknown) =>
+          console.error('[dreams] the journal could not name the task', e),
+        );
+      return created;
     },
     'tasks:setupState': async (taskId) => setupStates.get(taskId) ?? null,
     'tasks:retrySetup': async (taskId) => {
@@ -5023,7 +5060,11 @@ export function createHandlers(s: Services): Handlers {
     'settings:get': async () => s.settings.get(),
     'settings:save': async (next) => {
       const before = s.settings.get();
-      const saved = await s.settings.save(next);
+      // Dreaming is never written from here (only `dream:*` change it): the block stays as stored when the write runs.
+      const saved = await s.settings.update((cur) => ({
+        ...next,
+        dreaming: cur.dreaming,
+      }));
       const changed = changedKeys(before, saved);
       if (saved.theme !== before.theme) s.applyTheme?.(saved.theme);
       // Turning telemetry off is the one change that is not reported.

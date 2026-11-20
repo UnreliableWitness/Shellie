@@ -54,6 +54,8 @@ import { startBrainScheduler } from './main/brain/scheduler';
 import { DreamStore } from './main/dreams/DreamStore';
 import type { DreamScheduler } from './main/dreams/scheduler';
 import { startDreams, taskAgentWorking } from './main/dreams/startDreams';
+import { createDreamHandlers } from './main/dreams/dreamHandlers';
+import { limitChecks } from './main/dreams/limit';
 import {
   commitJobOutput,
   OUTSIDE_EDIT_MESSAGE,
@@ -1244,7 +1246,27 @@ async function boot(): Promise<void> {
         exception: (...a) => telemetry.exception(...a),
       },
     });
+    // Dreams' IPC: reads answer at once; changes to the dream store wait for the scheduler (the store loads with it).
+    const dreamApi = createDreamHandlers({
+      settings,
+      store: dreamStore,
+      scheduler: () => dreams,
+      repos: () => repos.list(),
+      git,
+      platform,
+      run: (cmd, o) => ptyHost.run(cmd, o),
+      sessionModels: (id) => openCodeSessions.sessionModels(id),
+      models: () => opencodeModels(platform, runProbe),
+      usage: limitChecks({
+        reader: openCodeSessions,
+        limit: () => settings.get().dreaming.limit,
+        now: Date.now,
+      }).usage,
+      dreamsDir,
+      broadcast: () => broadcast('dream:changed', {}),
+    });
     const handlers = createHandlers({
+      dreams: dreamApi,
       pulseReady: (f) => {
         pulseLastRefreshAt = f;
       },

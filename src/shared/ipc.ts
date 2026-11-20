@@ -26,6 +26,7 @@ import type {
   JoinPreview,
 } from './brainShare';
 import type { ColorScheme } from './theme';
+import type { DreamingSettings, DreamView, DreamWait } from './dreams';
 import type {
   DiscoverResult,
   Environment,
@@ -892,6 +893,45 @@ export type Channels = {
     result: void;
   };
   'brain:openFolder': { args: [brainId: string]; result: void };
+  /** Dreams: settings, state, what the scheduler knows, every repo's record and the journal. */
+  'dream:get': { args: []; result: DreamView };
+  /** One small call with the model, as a dream makes it; on success the model is saved as chosen and tested. */
+  'dream:test': {
+    args: [model: string];
+    result: { ok: true } | { ok: false; message: string };
+  };
+  /**
+   * Saves the limit, repos, folders and idle minutes (never `enabled`, `model` or `testedModel`). While dreaming is
+   * on, a change that widens it needs `acknowledged`.
+   */
+  'dream:save': {
+    args: [next: DreamingSettings, acknowledged: boolean];
+    result: DreamingSettings;
+  };
+  /** The only way dreaming is switched on: with every step done and the owner's tick. */
+  'dream:switchOn': {
+    args: [acknowledged: boolean];
+    result: DreamingSettings;
+  };
+  'dream:switchOff': { args: []; result: DreamingSettings };
+  /** Dream now: starts at once unless a rule says to wait. */
+  'dream:now': {
+    args: [repoId: string];
+    result: { started: true } | { wait: DreamWait };
+  };
+  'dream:stop': { args: []; result: void };
+  /** Drops a proposal of the open result, or takes it back (`dropped: false`). */
+  'dream:drop': {
+    args: [repoId: string, proposalId: string, dropped: boolean];
+    result: void;
+  };
+  /** Removes the open result's worktree, branch and data; every proposal is remembered as rejected. */
+  'dream:discard': { args: [repoId: string]; result: void };
+  /**
+   * The open result's branch with the kept proposals only, its worktree removed; `tasks:create` with `fromDream`
+   * then makes a task on it.
+   */
+  'dream:openAsTask': { args: [repoId: string]; result: { branch: string } };
 };
 
 /** Push events from main to the renderer. */

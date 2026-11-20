@@ -7,6 +7,8 @@ import { NoopTelemetry } from '../telemetry/AppInsightsClient';
 import { TimeStore } from '../time/TimeStore';
 import { telemetryEnv } from '../usage/telemetryEnv';
 import { echoCmd, testPlatform } from '../test-helpers/shell';
+import { commitFile, git } from '../test-helpers/gitRepo';
+import { noDreams } from '../dreams/dreamHandlers';
 import {
   telemetryEvents,
   harness,
@@ -792,5 +794,87 @@ describe('handlers: task setup summary', () => {
       editor: null,
     });
     await terminals.killAllForTask(task.id);
+  });
+});
+
+describe('handlers: dreams', () => {
+  it('the generic settings save never writes dreaming, from a patch or a stale whole object', async () => {
+    const hx = await harness();
+    const s = await hx.h['settings:get']();
+    await hx.h['settings:save']({
+      ...s,
+      dreaming: { ...s.dreaming, enabled: true },
+    });
+    expect(hx.settings.get().dreaming.enabled).toBe(false);
+    // As the scheduler switches dreaming off: a direct save in main.
+    await hx.settings.save({
+      ...hx.settings.get(),
+      dreaming: { ...hx.settings.get().dreaming, enabled: true },
+    });
+    const stale = await hx.h['settings:get']();
+    await hx.settings.save({
+      ...hx.settings.get(),
+      dreaming: { ...hx.settings.get().dreaming, enabled: false },
+    });
+    await hx.h['settings:save']({ ...stale, showSplash: !stale.showSplash });
+    expect(hx.settings.get().dreaming.enabled).toBe(false);
+    expect(hx.settings.get().showSplash).toBe(!stale.showSplash);
+  });
+
+  const dreamBranch = 'dream/2026-11-20-1';
+  /** A dream branch with one commit, and a link that knows only `d1` → that branch. */
+  const withDream = async () => {
+    const taskCreated = vi.fn(async () => undefined);
+    const hx = await harness(fakeCrypto(), {
+      dreams: {
+        ...noDreams(),
+        taskLink: {
+          opened: (id, repoId, branch) =>
+            id === 'd1' && branch === dreamBranch && repoId !== '',
+          taskCreated,
+        },
+      },
+    });
+    const base = git(hx.repo, 'rev-parse', 'main').trim();
+    git(hx.repo, 'checkout', '-q', '-b', dreamBranch);
+    commitFile(hx.repo, 'RULE.md', 'a rule\n', 'dream: A rule');
+    git(hx.repo, 'checkout', '-q', 'main');
+    return { hx, base, taskCreated };
+  };
+
+  it('tasks:create with a wrong fromDream still refuses an existing branch', async () => {
+    const { hx } = await withDream();
+    await expect(
+      hx.h['tasks:create'](hx.input({ branch: dreamBranch, fromDream: 'd2' })),
+    ).rejects.toThrow(`Branch ${dreamBranch} already exists`);
+    await expect(
+      hx.h['tasks:create'](hx.input({ branch: dreamBranch })),
+    ).rejects.toThrow(`Branch ${dreamBranch} already exists`);
+    expect(hx.store.state.tasks).toEqual([]);
+  });
+
+  it('tasks:create from a dream makes the task on the dream branch; Changes shows its commits', async () => {
+    const { hx, taskCreated } = await withDream();
+    const done = hx.setupDone();
+    const t = await hx.h['tasks:create'](
+      hx.input({
+        branch: dreamBranch,
+        fromDream: 'd1',
+        workItem: null,
+        name: 'Rules from a dream',
+        openShell: false,
+      }),
+    );
+    expect((await done).ok).toBe(true);
+    expect(taskCreated).toHaveBeenCalledWith(
+      'd1',
+      hx.added.id,
+      'Rules from a dream',
+    );
+    expect(git(t.worktreePath, 'branch', '--show-current').trim()).toBe(
+      dreamBranch,
+    );
+    const files = await hx.h['review:files'](t.id, { kind: 'all' });
+    expect(files.repos[0].files.map((f) => f.path)).toContain('RULE.md');
   });
 });

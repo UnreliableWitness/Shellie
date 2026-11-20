@@ -125,8 +125,14 @@ export const AppSettingsSchema = z.object({
   whatsNewSeen: z.string().nullable().optional(),
   /** Auto-update (packaged Windows builds). No UI yet: set false in settings.json to turn it off. */
   autoUpdate: z.boolean().optional(),
-  /** Dreams: idle-time skill and rule proposals from past agent sessions. */
-  dreaming: DreamingSettingsSchema.default(defaultDreaming()),
+  /**
+   * Dreams: idle-time skill and rule proposals from past agent sessions. A block that does not parse (hand-edited, an
+   * old shape) loads as dreaming off, and the rest of the file still loads. Writers validate it first
+   * (`dream:save`), since a bad block written here would also become dreaming off without an error.
+   */
+  dreaming: DreamingSettingsSchema.default(defaultDreaming()).catch(() =>
+    defaultDreaming(),
+  ),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 /** The required fields; every other setting takes its schema default. */

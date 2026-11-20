@@ -346,6 +346,8 @@ export type CreateTaskInput = {
   environment?: Environment;
   /** UAT and Production need the developer's confirm; main refuses them without it. */
   environmentConfirmed?: boolean;
+  /** The dream whose branch `dream:openAsTask` returned: the task is made on that existing branch. */
+  fromDream?: string;
 };
 
 /**

@@ -198,4 +198,35 @@ describe('SettingsStore', () => {
       }),
     ).toThrow();
   });
+  it('loads a bad dreaming block as dreaming off and keeps every other setting', async () => {
+    const f = file();
+    writeFileSync(
+      f,
+      JSON.stringify({
+        version: 1,
+        receiverPort: 4400,
+        showSplash: false,
+        // Hand-edited: a folder that is not a repo sub-path, and enabled as a string.
+        dreaming: {
+          enabled: 'yes',
+          repos: { r1: { on: true, folders: ['.'] } },
+        },
+      }),
+    );
+    const s = new SettingsStore(f);
+    expect(await s.load()).toEqual({ recovered: false });
+    expect(s.get().dreaming).toEqual(defaultDreaming());
+    expect(s.get().receiverPort).toBe(4400);
+    expect(s.get().showSplash).toBe(false);
+  });
+
+  it('update() changes the value as it is when the write runs, after queued saves', async () => {
+    const s = new SettingsStore(file());
+    await s.load();
+    const first = s.save({ ...s.get(), showSplash: false });
+    const second = s.update((cur) => ({ ...cur, receiverPort: 4500 }));
+    await Promise.all([first, second]);
+    expect(s.get().showSplash).toBe(false);
+    expect(s.get().receiverPort).toBe(4500);
+  });
 });

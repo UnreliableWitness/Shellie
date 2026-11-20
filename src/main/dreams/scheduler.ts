@@ -74,6 +74,10 @@ export type DreamStatus = {
   /** The repo that dreams next as far as its material is known, with its count of sessions to read. */
   next: { repoId: string; newSessions: number } | null;
   switchedOff: DreamSwitchedOff | null;
+  /** The dream that runs now; null when none does. */
+  running: ReturnType<DreamRunner['running']>;
+  /** Sessions to read per repo, for the repos whose material was read in the last five minutes. */
+  newSessions: Record<string, number>;
 };
 
 type Known = {
@@ -425,12 +429,21 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           : { wait: 'nothing-ready' as const };
       });
     },
-    /**
-     * The only way a switch-off ends: the owner switches dreaming on. Call it before saving `enabled: true`. No caller
-     * in production yet: the `dream:switchOn` handler (the next task) is to call it.
-     */
+    /** Ends a switch-off without switching on; `switchOn` is what the owner's switch uses. */
     clearSwitchedOff(): Promise<void> {
       return clearSwitchedOff();
+    },
+    /**
+     * The owner switches dreaming on (`dream:switchOn`): the switch-off ends, then `save` writes `enabled: true`. Both
+     * run in the serial chain, so no check can find the switch-off gone and the settings still off, or save them off
+     * again, in between. Nothing is saved when the switch-off cannot be cleared. The caller broadcasts.
+     */
+    switchOn(save: () => Promise<void>): Promise<void> {
+      return serial(async () => {
+        await d.store.setSwitchedOff(null);
+        offUnrecorded = false;
+        await save();
+      });
     },
     stopDream(): void {
       abort('stopped');
@@ -478,6 +491,12 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
               }
             : null,
         switchedOff: d.store.switchedOff(),
+        running: d.runner.running(),
+        newSessions: Object.fromEntries(
+          [...material.entries()]
+            .filter(([, k]) => d.now() - k.at < MATERIAL_MS)
+            .map(([id, k]) => [id, k.sessions]),
+        ),
       };
     },
   };
