@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -137,7 +138,7 @@ const changed = () => vi.mocked(deps.broadcast).mock.calls.length;
 async function dreamWithThree(
   o: { thirdEditsSecond?: boolean } = {},
 ): Promise<DreamResult> {
-  const dreamDir = path.join(dir, 'dreams', 'r1', DREAM_ID);
+  const dreamDir = path.join(deps.dreamsDir, 'r1', DREAM_ID);
   mkdirSync(path.join(dreamDir, 'data'), { recursive: true });
   mkdirSync(path.join(dreamDir, 'hooks'));
   const baseSha = git(repoPath, 'rev-parse', 'HEAD').trim();
@@ -340,6 +341,56 @@ describe('dream:save', () => {
     expect(saved.enabled).toBe(false);
     expect(settings.get().dreaming.enabled).toBe(false);
     expect(changed()).toBe(1);
+  });
+
+  it('a narrowing change that unticks the repo a dream runs for stops that dream', async () => {
+    await setDreaming(
+      ready({
+        enabled: true,
+        repos: {
+          r1: { on: true, folders: ['.apm'] },
+          r2: { on: true, folders: ['.apm'] },
+        },
+      }),
+    );
+    deps.repos = () => [
+      { id: 'r1', name: 'Portal', path: repoPath },
+      { id: 'r2', name: 'Billing', path: repoPath },
+    ];
+    status = {
+      ...status,
+      running: { repoId: 'r1', startedAt: 1, step: 'reading' },
+    };
+    const h = api().handlers;
+    await h['dream:save'](
+      { ...settings.get().dreaming, limit: { kind: 'tokens', perDay: 10 } },
+      false,
+    );
+    expect(scheduler.stopDream).not.toHaveBeenCalled();
+    const saved = await h['dream:save'](
+      {
+        ...settings.get().dreaming,
+        repos: {
+          r1: { on: false, folders: ['.apm'] },
+          r2: { on: true, folders: ['.apm'] },
+        },
+      },
+      false,
+    );
+    expect(saved.enabled).toBe(true);
+    expect(scheduler.stopDream).toHaveBeenCalledOnce();
+  });
+
+  it('a narrowing change that switches dreaming off stops a running dream', async () => {
+    await setDreaming(ready({ enabled: true }));
+    await api().handlers['dream:save'](
+      {
+        ...ready({ enabled: true }),
+        repos: { r1: { on: false, folders: ['.apm'] } },
+      },
+      false,
+    );
+    expect(scheduler.stopDream).toHaveBeenCalledOnce();
   });
 
   it('says a settings write failure in a fixed phrase', async () => {
@@ -771,6 +822,82 @@ describe('a dream result', () => {
     );
     expect(existsSync(r.worktreePath)).toBe(true);
     expect(git(r.worktreePath, 'branch', '--show-current').trim()).toBe(BRANCH);
+  });
+
+  describe('a half-removed dream (its wt folder left without .git) inside an enclosing repo', () => {
+    let home: string;
+    const homeState = () => ({
+      head: git(home, 'rev-parse', 'HEAD').trim(),
+      branch: git(home, 'branch', '--show-current').trim(),
+      readme: readFileSync(path.join(home, 'README.md'), 'utf8'),
+    });
+    /** User data inside a dotfiles-like repo with uncommitted work, and the dream folder in it. */
+    const halfRemoved = async (
+      o: { drop?: boolean; rebuilt?: boolean } = {},
+    ) => {
+      home = makeRepo('home');
+      git(home, 'checkout', '-q', '-b', 'dotfiles');
+      writeFileSync(path.join(home, 'README.md'), '# uncommitted\n');
+      deps.dreamsDir = path.join(home, 'dreams');
+      const r = await dreamWithThree();
+      if (o.drop) await store.setDropped('r1', 'p2', true);
+      if (o.rebuilt) {
+        git(r.worktreePath, 'reset', '-q', '--hard', r.baseSha);
+        git(
+          r.worktreePath,
+          'cherry-pick',
+          r.proposals[0].commit,
+          r.proposals[2].commit,
+        );
+      }
+      // What a removal stopped part way by a locked file leaves: the folder, without its .git file.
+      rmSync(path.join(r.worktreePath, '.git'));
+      const before = homeState();
+      return { r, before };
+    };
+
+    it('discard removes the leftovers and the branch, and leaves the enclosing repo alone', async () => {
+      const { r, before } = await halfRemoved();
+      await api().handlers['dream:discard']('r1');
+      expect(existsSync(path.dirname(r.worktreePath))).toBe(false);
+      expect(await new GitClient().branchExists(repoPath, BRANCH)).toBe(false);
+      expect(store.repo('r1').result).toBeNull();
+      expect(homeState()).toEqual(before);
+    });
+
+    it('open as task refuses without touching anything when the branch was not rebuilt', async () => {
+      const { r, before } = await halfRemoved({ drop: true });
+      const tip = git(repoPath, 'rev-parse', BRANCH).trim();
+      await expect(api().handlers['dream:openAsTask']('r1')).rejects.toThrow(
+        /^The dream could not be opened as a task$/,
+      );
+      expect(git(repoPath, 'rev-parse', BRANCH).trim()).toBe(tip);
+      expect(existsSync(r.worktreePath)).toBe(true);
+      expect(store.repo('r1').result).not.toBeNull();
+      expect(homeState()).toEqual(before);
+    });
+
+    it('open as task finishes when the branch was rebuilt already', async () => {
+      const { r, before } = await halfRemoved({ drop: true, rebuilt: true });
+      expect(await api().handlers['dream:openAsTask']('r1')).toEqual({
+        branch: BRANCH,
+      });
+      expect(subjects(r.baseSha, BRANCH)).toEqual([
+        'dream: Rule 1',
+        'dream: Rule 3',
+      ]);
+      expect(existsSync(path.dirname(r.worktreePath))).toBe(false);
+      expect(store.repo('r1').result).toBeNull();
+      expect(homeState()).toEqual(before);
+    });
+
+    it('open as task finishes when nothing was dropped', async () => {
+      const { before } = await halfRemoved();
+      expect(await api().handlers['dream:openAsTask']('r1')).toEqual({
+        branch: BRANCH,
+      });
+      expect(homeState()).toEqual(before);
+    });
   });
 
   it('refuses when the dream worktree is not on the dream branch', async () => {

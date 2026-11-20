@@ -259,6 +259,17 @@ describe('SettingsStore', () => {
       expect(s.get().dreaming).toEqual(defaultDreaming());
     });
 
+    it('update cannot get past the guard by changing the draft in place', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await s.update((cur) => {
+        cur.dreaming.enabled = true;
+        cur.dreaming.repos.r1 = { on: true, folders: ['.apm'] };
+        return cur;
+      });
+      expect(s.get().dreaming).toEqual(defaultDreaming());
+    });
+
     it('a whole stale object saved after a switch-off leaves dreaming off', async () => {
       const s = new SettingsStore(file());
       await s.load();

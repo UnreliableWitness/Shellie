@@ -203,11 +203,17 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
 
   /**
    * The stored result as the runner made it, checked before anything acts on its paths: this repo's id, an id and
-   * branch of the runner's shape, worktree and data at `<dreamsDir>/<repoId>/<id>/{wt,data}`, and the worktree (while
-   * it is there) checked out on the dream branch. A hand-edited or damaged record never reaches git or a removal.
-   * Returns the dream's folder.
+   * branch of the runner's shape, and worktree and data at `<dreamsDir>/<repoId>/<id>/{wt,data}`. A hand-edited or
+   * damaged record never reaches git or a removal. Returns the dream's folder and what its worktree is:
+   * - `live`: `wt` is a git worktree of its own (git's top level for it is `wt` itself) on the dream branch;
+   * - `gone`: no such worktree (removed, or half removed: a `wt` folder whose `.git` is gone, where git would walk up
+   *   into an enclosing repo). No git command then runs with `wt` as its folder.
+   * A real worktree on another branch is refused.
    */
-  const checked = async (repoId: string, r: DreamResult): Promise<string> => {
+  const checked = async (
+    repoId: string,
+    r: DreamResult,
+  ): Promise<{ dir: string; worktree: 'live' | 'gone' }> => {
     const plainId = (x: string) =>
       x !== '' &&
       x !== '.' &&
@@ -230,16 +236,25 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           samePath(r.dataDir, path.join(x, 'data')),
       );
     if (!dir) throw refuse(MISMATCH);
-    if (await pathExists(r.worktreePath)) {
-      const head = await d.git
-        .run(r.worktreePath, ['symbolic-ref', '--short', 'HEAD'])
-        .then(
-          (x) => x.trim(),
-          () => null,
-        );
-      if (head !== r.branch) throw refuse(MISMATCH);
-    }
-    return dir;
+    if (!(await pathExists(r.worktreePath))) return { dir, worktree: 'gone' };
+    // Read-only, to learn whether `wt` is a worktree of its own; nothing else runs there unless it is.
+    const top = await d.git
+      .run(r.worktreePath, ['rev-parse', '--show-toplevel'])
+      .then(
+        (x) => fs.realpath(x.trim()),
+        () => null,
+      );
+    const wtReal = await fs.realpath(r.worktreePath).catch(() => null);
+    if (top === null || wtReal === null || !samePath(top, wtReal))
+      return { dir, worktree: 'gone' };
+    const head = await d.git
+      .run(r.worktreePath, ['symbolic-ref', '--short', 'HEAD'])
+      .then(
+        (x) => x.trim(),
+        () => null,
+      );
+    if (head !== r.branch) throw refuse(MISMATCH);
+    return { dir, worktree: 'live' };
   };
 
   /**
@@ -522,7 +537,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         const parsed = DreamingSettingsSchema.safeParse(next);
         if (!parsed.success) throw refuse('These dream settings are not valid');
         const known = new Set(d.repos().map((r) => r.id));
+        let wasOn = false;
         const saved = await saveDreaming((prev) => {
+          wasOn = prev.enabled;
           const merged: DreamingSettings = {
             ...parsed.data,
             enabled: prev.enabled,
@@ -540,6 +557,13 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             enabled: merged.enabled && canSwitchOn(merged) === null,
           };
         });
+        // As `dream:switchOff`: no more calls once dreaming is off or the running dream's repo is unticked.
+        const running = status()?.running ?? null;
+        if (
+          (wasOn && !saved.enabled) ||
+          (running && saved.repos[running.repoId]?.on !== true)
+        )
+          d.scheduler()?.stopDream();
         d.broadcast();
         return saved;
       }),
@@ -598,7 +622,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         phrased('The dream could not be saved', async () => {
           started();
           const r = openResult(repoId);
-          await discard(repoId, r, await checked(repoId, r));
+          await discard(repoId, r, (await checked(repoId, r)).dir);
         }),
       ),
 
@@ -608,15 +632,19 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           started();
           const r = openResult(repoId);
           // Before any git or removal: the record must be the dream's own.
-          const dir = await checked(repoId, r);
+          const { dir, worktree } = await checked(repoId, r);
           const kept = r.proposals.filter((p) => !p.dropped);
           const dropped = r.proposals.filter((p) => p.dropped);
           if (kept.length === 0) {
             await discard(repoId, r, dir);
             throw refuse('Nothing left to open');
           }
-          // A second call after a failed removal finds the branch built already.
-          if (!(await built(r, kept))) await rebuild(r, kept);
+          // A second call after a failed removal finds the branch built already. Without a live worktree there is
+          // nothing to build in: it goes on only when the branch is built.
+          if (!(await built(r, kept))) {
+            if (worktree !== 'live') throw refuse(OPEN_FAILED);
+            await rebuild(r, kept);
+          }
           // The branch stays for the task; the worktree and the data go.
           await removeResult(r, dir, false, OPEN_FAILED);
           await d.store.reject(repoId, dropped);

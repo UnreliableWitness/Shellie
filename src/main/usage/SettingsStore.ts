@@ -29,7 +29,11 @@ export class SettingsStore {
   }
   /** Like `save`, from the settings as they are when the write runs (after every queued write). */
   update(fn: (current: AppSettings) => AppSettings): Promise<AppSettings> {
-    return this.store.update((cur) => ({ ...fn(cur), dreaming: cur.dreaming }));
+    return this.store.update((cur) => {
+      // Taken before `fn` runs: a caller that changes the draft in place cannot get past this.
+      const dreaming = structuredClone(cur.dreaming);
+      return { ...fn(cur), dreaming };
+    });
   }
   /** The one way to change `dreaming`, from the block as it is when the write runs; every other setting stays. */
   updateDreaming(
