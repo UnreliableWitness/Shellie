@@ -229,6 +229,18 @@ describe('dreamEnv', () => {
     expect(decide(permission, 'edit', 'docs/opencode.json.md')).toBe('allow');
   });
 
+  it('never lets an edit write a hook script, at any depth', () => {
+    const { permission } = config();
+    for (const p of [
+      'hooks/pre-commit',
+      '.apm/hooks/format.json',
+      '.apm/hooks/scripts/run.sh',
+      'packages/a/.husky/hooks/x',
+    ])
+      expect(decide(permission, 'edit', p), p).toBe('deny');
+    expect(decide(permission, 'edit', '.apm/rules/hooks.md')).toBe('allow');
+  });
+
   it('lets a read-only run (the check) edit the data folder only, nothing in the worktree', () => {
     const env = dreamEnv(
       {},
@@ -317,6 +329,7 @@ describe('isProtectedPath', () => {
       'opencode.json',
       'opencode.jsonc',
       '.opencode',
+      'hooks',
     ]);
     for (const p of [
       'opencode.json',
@@ -328,6 +341,9 @@ describe('isProtectedPath', () => {
       'OpenCode.JSON',
       '.OpenCode/plugin/x.ts',
       'a\\.opencode\\x.ts',
+      'hooks/pre-commit',
+      '.apm/hooks/format.json',
+      '.apm/Hooks/run.sh',
     ])
       expect(isProtectedPath(p), p).toBe(true);
     for (const p of [
@@ -335,6 +351,8 @@ describe('isProtectedPath', () => {
       '.apm/skills/x/SKILL.md',
       'docs/opencode.json.md',
       'opencode',
+      '.apm/rules/hooks.md',
+      'src/use-hooks/x.ts',
     ])
       expect(isProtectedPath(p), p).toBe(false);
   });

@@ -569,6 +569,55 @@ describe('a dream result', () => {
     expect(a.taskLink.opened(DREAM_ID, 'r1', BRANCH)).toBe(false);
   });
 
+  it('open as task finishes on a second call when removing the worktree failed after the rebuild', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await dreamWithThree();
+    const g = deps.git as GitClient;
+    const a = api();
+    await a.handlers['dream:drop']('r1', 'p2', true);
+    vi.spyOn(g, 'worktreePrune').mockRejectedValueOnce(new Error('locked'));
+    await expect(a.handlers['dream:openAsTask']('r1')).rejects.toThrow(
+      'The dream could not be opened as a task',
+    );
+    const rebuilt = git(repoPath, 'rev-parse', BRANCH).trim();
+    expect(subjects(r.baseSha, BRANCH)).toEqual([
+      'dream: Rule 1',
+      'dream: Rule 3',
+    ]);
+    expect(store.repo('r1').result).not.toBeNull();
+    expect(await a.handlers['dream:openAsTask']('r1')).toEqual({
+      branch: BRANCH,
+    });
+    // Not built again: the branch is the one the first call made.
+    expect(git(repoPath, 'rev-parse', BRANCH).trim()).toBe(rebuilt);
+    expect(git(repoPath, 'worktree', 'list')).not.toContain(DREAM_ID);
+    expect(store.repo('r1').result).toBeNull();
+    expect(store.repo('r1').rejections.map((x) => x.title)).toEqual(['Rule 2']);
+    expect(a.taskLink.opened(DREAM_ID, 'r1', BRANCH)).toBe(true);
+  });
+
+  it('open as task with nothing dropped keeps the dream’s own commits', async () => {
+    const r = await dreamWithThree();
+    const tip = git(repoPath, 'rev-parse', BRANCH).trim();
+    await api().handlers['dream:openAsTask']('r1');
+    expect(git(repoPath, 'rev-parse', BRANCH).trim()).toBe(tip);
+    expect(subjects(r.baseSha, BRANCH)).toHaveLength(3);
+  });
+
+  it('closes only this repo’s journal entry when another repo has a dream of the same id', async () => {
+    await dreamWithThree();
+    await store.log({
+      ...entry(DREAM_ID, '2026-11-20T04:00:00.000Z'),
+      repoId: 'r2',
+    });
+    await api().handlers['dream:discard']('r1');
+    const j = store.journal();
+    expect(j.find((e) => e.repoId === 'r2')?.closed).toBeNull();
+    expect(j.find((e) => e.repoId === 'r1')?.closed).toMatchObject({
+      as: 'discarded',
+    });
+  });
+
   it('forgets the pair after 10 minutes', async () => {
     let t = 1_000_000;
     deps.now = () => t;

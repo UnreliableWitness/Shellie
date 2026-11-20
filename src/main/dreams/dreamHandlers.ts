@@ -219,7 +219,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   const discard = async (repoId: string, r: DreamResult) => {
     await removeResult(r, true, 'The dream could not be removed');
     await d.store.reject(repoId, r.proposals);
-    await d.store.closeJournal(r.id, {
+    await d.store.closeJournal(repoId, r.id, {
       as: 'discarded',
       kept: 0,
       dropped: r.proposals.length,
@@ -227,6 +227,47 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     });
     await d.store.setResult(repoId, null);
     d.broadcast();
+  };
+
+  /**
+   * Whether the branch already is the base plus the kept proposals' changes, one commit each: nothing dropped, or an
+   * earlier call rebuilt it and then failed to remove the worktree. Asked in the repo (read-only git, no hooks), so it
+   * also answers once the worktree is gone. Any doubt is false.
+   */
+  const built = async (r: DreamResult, kept: DreamProposal[]) => {
+    const repo = d.repos().find((x) => x.id === r.repoId);
+    if (!repo) return false;
+    const ref = `refs/heads/${r.branch}`;
+    try {
+      await d.git.run(repo.path, [
+        'merge-base',
+        '--is-ancestor',
+        r.baseSha,
+        ref,
+      ]);
+      const count = (
+        await d.git.run(repo.path, [
+          'rev-list',
+          '--count',
+          `${r.baseSha}..${ref}`,
+        ])
+      ).trim();
+      if (Number(count) !== kept.length) return false;
+      for (const p of kept) {
+        // Nothing when the commit is on the branch itself, `-` when the branch holds one with the same change (patch
+        // id), `+` when it holds none.
+        const out = await d.git.run(repo.path, [
+          'cherry',
+          ref,
+          p.commit,
+          `${p.commit}^`,
+        ]);
+        if (out.trim().startsWith('+')) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   /**
@@ -475,11 +516,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           await discard(repoId, r);
           throw new Error('Nothing left to open');
         }
-        await rebuild(r, kept);
+        // A second call after a failed removal finds the branch built already.
+        if (!(await built(r, kept))) await rebuild(r, kept);
         // The branch stays for the task; the worktree and the data go.
         await removeResult(r, false, OPEN_FAILED);
         await d.store.reject(repoId, dropped);
-        await d.store.closeJournal(r.id, {
+        await d.store.closeJournal(repoId, r.id, {
           as: 'task',
           kept: kept.length,
           dropped: dropped.length,
@@ -507,7 +549,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       const o = opened.get(key(repoId, dreamId));
       if (!o) return;
       opened.delete(key(repoId, dreamId));
-      await d.store.closeJournal(dreamId, {
+      await d.store.closeJournal(repoId, dreamId, {
         as: 'task',
         kept: o.kept,
         dropped: o.dropped,

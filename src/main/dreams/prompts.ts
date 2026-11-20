@@ -3,7 +3,7 @@
  * Bump `DREAM_PROMPT_VERSION` when the wording changes in a way that matters.
  */
 
-export const DREAM_PROMPT_VERSION = 1;
+export const DREAM_PROMPT_VERSION = 2;
 
 const REPORT_SHAPE = `{
   "proposals": [
@@ -29,6 +29,7 @@ Where you may write:
 - Only in these allowed folders (a folder entry may also be a single file): ${folders.join(', ')}
 - And the report file ${dataDir}/report.json.
 - Never write opencode.json, opencode.jsonc or anything under .opencode/.
+- Never write a hook script, or anything in a folder named hooks: a hook runs by itself, with no one in between.
 - Never run git or any shell command. Change nothing else.`;
 
 export function proposePrompt(o: {

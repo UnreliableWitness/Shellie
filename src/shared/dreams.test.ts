@@ -55,6 +55,9 @@ describe('schema', () => {
     '.opencode',
     '.apm/.OpenCode/plugin',
     'src/opencode.json',
+    'hooks',
+    '.apm/hooks',
+    '.apm/Hooks/format.json',
   ])('rejects folder %j as not a real sub-path', (f) => {
     const r = DreamingSettingsSchema.safeParse(
       ready({ repos: { r1: { on: true, folders: [f] } } }),

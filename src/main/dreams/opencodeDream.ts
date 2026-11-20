@@ -107,7 +107,7 @@ function dreamPermission(
       '*': 'deny',
       ...worktreeRules,
       [`${data}/**`]: 'allow',
-      // Last, so they win everywhere: OpenCode's own config, at the root and at any depth.
+      // Last, so they win everywhere: OpenCode's own config and hook folders, at the root and at any depth.
       ...Object.fromEntries(
         DREAM_PROTECTED.flatMap((n) => [
           n,

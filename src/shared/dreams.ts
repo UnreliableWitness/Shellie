@@ -12,11 +12,17 @@ export const DreamLimitSchema = z.discriminatedUnion('kind', [
 export type DreamLimit = z.infer<typeof DreamLimitSchema>;
 
 /**
- * OpenCode's own configuration: config files, and the folder that holds agents, plugins (code OpenCode runs) and more.
- * A dream never writes these, at any depth: OpenCode refuses the edit, and later steps refuse them as allowed folders
- * and revert them after a run.
+ * What a dream never writes, at any depth: OpenCode's own configuration (config files, and the folder that holds
+ * agents, plugins (code OpenCode runs) and more), and anything in a folder named `hooks` (hook scripts, such as apm's
+ * `.apm/hooks/`, run by themselves once merged, with no model and no person in between). OpenCode refuses the edit,
+ * and later steps refuse them as allowed folders and revert them after a run.
  */
-export const DREAM_PROTECTED = ['opencode.json', 'opencode.jsonc', '.opencode'];
+export const DREAM_PROTECTED = [
+  'opencode.json',
+  'opencode.jsonc',
+  '.opencode',
+  'hooks',
+];
 
 /**
  * Whether a repo-relative path is or lies in one of `DREAM_PROTECTED`. Without regard to case: on macOS and Windows
@@ -31,7 +37,7 @@ export function isProtectedPath(repoRelativePath: string): boolean {
 
 /**
  * A real repo-relative sub-path (a folder, or a single file such as `AGENTS.md`): forward slashes, not absolute, no
- * `.`, `..` or empty segment (so not `.`, `./x`, `a/` or `a//b`), and not OpenCode's own configuration.
+ * `.`, `..` or empty segment (so not `.`, `./x`, `a/` or `a//b`), and not protected (`DREAM_PROTECTED`).
  */
 const DreamFolderSchema = z
   .string()
@@ -43,7 +49,7 @@ const DreamFolderSchema = z
       !/^[A-Za-z]:/.test(f) &&
       f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..') &&
       !isProtectedPath(f),
-    'a repo-relative sub-path with forward slashes, no . or .. or empty segment, and not OpenCode configuration',
+    'a repo-relative sub-path with forward slashes, no . or .. or empty segment, not OpenCode configuration or hooks',
   );
 
 export const DreamRepoSchema = z.object({

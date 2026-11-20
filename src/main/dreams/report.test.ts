@@ -152,12 +152,23 @@ describe('splitAllowed', () => {
   it('never allows a protected path', () => {
     expect(
       splitAllowed(
-        ['.apm/.opencode/plugin/x.ts', 'OpenCode.json', '.apm/ok.md'],
+        [
+          '.apm/.opencode/plugin/x.ts',
+          'OpenCode.json',
+          '.apm/hooks/format.json',
+          '.apm/HOOKS/run.sh',
+          '.apm/ok.md',
+        ],
         ['.apm', '.'],
       ),
     ).toEqual({
       allowed: ['.apm/ok.md'],
-      outside: ['.apm/.opencode/plugin/x.ts', 'OpenCode.json'],
+      outside: [
+        '.apm/.opencode/plugin/x.ts',
+        'OpenCode.json',
+        '.apm/hooks/format.json',
+        '.apm/HOOKS/run.sh',
+      ],
     });
   });
 });

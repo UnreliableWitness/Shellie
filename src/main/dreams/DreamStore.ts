@@ -170,12 +170,16 @@ export class DreamStore {
     });
   }
 
+  /** Dream ids are per repo (`<date>-<n>`): two repos dreaming on one day share one. */
   closeJournal(
+    repoId: string,
     dreamId: string,
     closed: NonNullable<DreamJournalEntry['closed']>,
   ): Promise<void> {
     return this.write((f) => {
-      const e = f.journal.find((x) => x.dreamId === dreamId);
+      const e = f.journal.find(
+        (x) => x.repoId === repoId && x.dreamId === dreamId,
+      );
       if (e) e.closed = closed;
     });
   }

@@ -9,6 +9,7 @@ import { telemetryEnv } from '../usage/telemetryEnv';
 import { echoCmd, testPlatform } from '../test-helpers/shell';
 import { commitFile, git } from '../test-helpers/gitRepo';
 import { noDreams } from '../dreams/dreamHandlers';
+import { createHandlers } from './handlers';
 import {
   telemetryEvents,
   harness,
@@ -823,7 +824,7 @@ describe('handlers: dreams', () => {
 
   const dreamBranch = 'dream/2026-11-20-1';
   /** A dream branch with one commit, and a link that knows only `d1` → that branch. */
-  const withDream = async () => {
+  const withDream = async (o: { failing?: boolean } = {}) => {
     const taskCreated = vi.fn(async () => undefined);
     const hx = await harness(fakeCrypto(), {
       dreams: {
@@ -835,6 +836,8 @@ describe('handlers: dreams', () => {
         },
       },
     });
+    // Before the branch, so its apm.yml is on it and the setup's apm step fails.
+    if (o.failing) hx.failSetup();
     const base = git(hx.repo, 'rev-parse', 'main').trim();
     git(hx.repo, 'checkout', '-q', '-b', dreamBranch);
     commitFile(hx.repo, 'RULE.md', 'a rule\n', 'dream: A rule');
@@ -851,6 +854,53 @@ describe('handlers: dreams', () => {
       hx.h['tasks:create'](hx.input({ branch: dreamBranch })),
     ).rejects.toThrow(`Branch ${dreamBranch} already exists`);
     expect(hx.store.state.tasks).toEqual([]);
+  });
+
+  // A shell tab gives the setup an apm step, which `failSetup` makes fail.
+  const dreamTask = (hx: Awaited<ReturnType<typeof harness>>) =>
+    hx.h['tasks:create'](
+      hx.input({
+        branch: dreamBranch,
+        fromDream: 'd1',
+        workItem: null,
+        name: 'Rules from a dream',
+      }),
+    );
+
+  it('a failed and then cancelled setup of a dream task keeps the dream branch and its commits', async () => {
+    const { hx } = await withDream({ failing: true });
+    const tip = git(hx.repo, 'rev-parse', dreamBranch).trim();
+    const done = hx.setupDone();
+    const t = await dreamTask(hx);
+    expect((await done).ok).toBe(false);
+    expect(hx.store.state.tasks[0].existingBranch).toBe(true);
+    await hx.h['tasks:cancelSetup'](t.id);
+    expect(hx.store.state.tasks).toEqual([]);
+    expect(git(hx.repo, 'rev-parse', dreamBranch).trim()).toBe(tip);
+    expect(git(hx.repo, 'log', '--format=%s', '-1', dreamBranch).trim()).toBe(
+      'dream: A rule',
+    );
+  });
+
+  it('the setup of a dream task checks its branch out again after a restart', async () => {
+    const { hx } = await withDream({ failing: true });
+    const done = hx.setupDone();
+    const t = await dreamTask(hx);
+    expect((await done).ok).toBe(false);
+    // As after a crash during the worktree step: no worktree, and a fresh Shellie that knows nothing in memory.
+    git(hx.repo, 'worktree', 'remove', '--force', t.worktreePath);
+    hx.fixSetup();
+    const restarted = createHandlers(hx.services);
+    const retry = hx.setupDone();
+    await restarted['tasks:retrySetup'](t.id);
+    expect((await retry).ok).toBe(true);
+    expect(git(t.worktreePath, 'branch', '--show-current').trim()).toBe(
+      dreamBranch,
+    );
+    expect(git(t.worktreePath, 'log', '--format=%s', '-1').trim()).toBe(
+      'dream: A rule',
+    );
+    await hx.terminals.killAllForTask(t.id);
   });
 
   it('tasks:create from a dream makes the task on the dream branch; Changes shows its commits', async () => {

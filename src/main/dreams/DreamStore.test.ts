@@ -111,10 +111,26 @@ describe('DreamStore', () => {
     await s.log(entry(1));
     await s.log(entry(2));
     const closed = { as: 'task' as const, kept: 2, dropped: 1, taskName: 'n' };
-    await s.closeJournal('d1', closed);
-    await s.closeJournal('nope', closed);
+    await s.closeJournal('r', 'd1', closed);
+    await s.closeJournal('r', 'nope', closed);
     expect(s.journal().find((e) => e.dreamId === 'd1')?.closed).toEqual(closed);
     expect(s.journal().find((e) => e.dreamId === 'd2')?.closed).toBeNull();
+  });
+
+  it('closeJournal tells two repos’ dreams of the same id apart', async () => {
+    const { s } = await make();
+    await s.log(entry(1));
+    // Newer, another repo, the same per-repo id.
+    await s.log({ ...entry(1), repoId: 'other' });
+    const closed = {
+      as: 'discarded' as const,
+      kept: 0,
+      dropped: 1,
+      taskName: null,
+    };
+    await s.closeJournal('r', 'd1', closed);
+    expect(s.journal().find((e) => e.repoId === 'r')?.closed).toEqual(closed);
+    expect(s.journal().find((e) => e.repoId === 'other')?.closed).toBeNull();
   });
 
   it('sets the result, toggles dropped, rejects and forgets', async () => {

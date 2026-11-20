@@ -571,8 +571,6 @@ export async function pruneDanglingConnectionLinks(
 export function createHandlers(s: Services): Handlers {
   const tel = s.telemetry ?? NoopTelemetry;
   const dreams = s.dreams ?? noDreams();
-  /** Tasks made on a dream's existing branch this session: their setup checks that branch out (no `-b`). */
-  const fromDreamTasks = new Set<string>();
   let agentsCache: AgentsDetected | null = null;
   /** The `opencode models` list, shared while it runs; dropped again when it gave none, so the next call retries. */
   let opencodeModelsRun: Promise<string[] | null> | null = null;
@@ -2236,7 +2234,7 @@ export function createHandlers(s: Services): Handlers {
         ),
       ...(task.reopen
         ? { restore: { from: task.reopen.from } }
-        : fromDreamTasks.has(task.id)
+        : task.existingBranch
           ? { restore: { from: null } }
           : {}),
       ...(reopening
@@ -3826,14 +3824,10 @@ export function createHandlers(s: Services): Handlers {
           environment === 'production' ? productionUntil() : null,
       });
       if (!fromDream) return registerTask(task, keys);
-      fromDreamTasks.add(task.id);
-      let created: Task;
-      try {
-        created = await registerTask(task, keys);
-      } catch (e) {
-        fromDreamTasks.delete(task.id);
-        throw e;
-      }
+      const created = await registerTask(
+        { ...task, existingBranch: true },
+        keys,
+      );
       await dreams.taskLink
         .taskCreated(
           input.fromDream!,
@@ -3907,7 +3901,11 @@ export function createHandlers(s: Services): Handlers {
         if (await pathExists(task.worktreePath))
           await s.git.worktreeRemove(repo.path, task.worktreePath, true);
         await s.git.worktreePrune(repo.path);
-        if (await s.git.branchExists(repo.path, task.branch))
+        // A branch the task did not make (a dream's kept proposals) is never deleted here.
+        if (
+          !task.existingBranch &&
+          (await s.git.branchExists(repo.path, task.branch))
+        )
           await s.git.deleteBranch(repo.path, task.branch);
         setupStates.delete(taskId);
         await s.store.update((st) => {

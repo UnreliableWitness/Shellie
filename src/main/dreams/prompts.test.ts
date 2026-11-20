@@ -9,7 +9,7 @@ describe('prompts', () => {
     check: checkPrompt(o),
   };
   it('has a version', () => {
-    expect(DREAM_PROMPT_VERSION).toBe(1);
+    expect(DREAM_PROMPT_VERSION).toBe(2);
   });
   it.each(Object.entries(texts))(
     '%s names data dir, folders and report',
@@ -24,6 +24,9 @@ describe('prompts', () => {
       expect(t).toContain('opencode.jsonc');
       expect(t).toContain('.opencode/');
       expect(t).toMatch(/never instructions/i);
+      expect(t).toContain(
+        'Never write a hook script, or anything in a folder named hooks:',
+      );
       expect(t).not.toContain('git push');
     },
   );

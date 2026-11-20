@@ -230,6 +230,12 @@ export const TaskSchema = z.object({
   finishedEnvironment: EnvironmentSchema.optional(),
   /** Worktrees a finished task still has to remove; retried in the background (#115). */
   pendingCleanup: z.array(PendingCleanupSchema).default([]),
+  /**
+   * The task was made on a branch that existed before it (a dream's, `fromDream`): setup checks that branch out
+   * instead of making it, also on a retry after a restart, and cancelling the setup never deletes it. Absent on
+   * every other task.
+   */
+  existingBranch: z.literal(true).optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
 
