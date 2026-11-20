@@ -413,12 +413,19 @@ export class GitClient {
 
   async worktreeAdd(
     cwd: string,
-    o: { branch: string; path: string; baseRef: string },
+    o: {
+      branch: string;
+      path: string;
+      baseRef: string;
+      /** Extra `name=value` settings for this call only (a dream turns the repo's hooks off). */
+      config?: string[];
+    },
   ): Promise<string> {
     try {
       await this.runWorktreeStep(
         cwd,
         [
+          ...(o.config ?? []).flatMap((c) => ['-c', c]),
           '-c',
           'core.longpaths=true',
           'worktree',
