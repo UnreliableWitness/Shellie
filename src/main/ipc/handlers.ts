@@ -513,6 +513,32 @@ class LeakError extends Error {
   }
 }
 
+/** Base branch names that identify no one; scrubbing them would also blank words like `main` in stack traces. */
+const COMMON_BASES = new Set(['main', 'master', 'develop', 'dev', 'trunk']);
+
+/** Why Finish opens no PR when the task's base branch is gone from origin. */
+const targetGone = (target: string) =>
+  `target branch ${target} no longer exists on origin; pick another base branch`;
+
+/** Azure DevOps's 400 for a PR whose source or target branch it cannot find. */
+const isBranchGone = (e: unknown): e is AdoError =>
+  e instanceof AdoError &&
+  e.status === 400 &&
+  /branch no longer exists/i.test(e.message);
+
+/** The `pr.failed` properties: the error's kind, and for Azure DevOps its HTTP status and TF code. */
+function prFailedProps(e: unknown): Record<string, string | number> {
+  if (!(e instanceof AdoError)) return { kind: 'git' };
+  // A rewritten message keeps Azure DevOps's own error as its cause.
+  const raw = e.cause instanceof Error ? e.cause.message : e.message;
+  const code = /\bTF\d+\b/.exec(raw)?.[0];
+  return {
+    kind: e.kind,
+    ...(e.status !== undefined ? { status: e.status } : {}),
+    ...(code ? { code } : {}),
+  };
+}
+
 /** Keys (repo:branch, repo:worktree) of tasks being created right now, across handler bundles. */
 const creating = new Set<string>();
 
@@ -3119,9 +3145,15 @@ export function createHandlers(s: Services): Handlers {
       repositoryId,
       w.branch,
     );
-    const raw =
-      existing ??
-      (await client.createPullRequest(project, repositoryId, {
+    // baseRef is stored when the task starts; the branch may have been deleted or renamed on origin since.
+    const onRemote = (branch: string) =>
+      s.git.remoteBranchExists(w.worktreePath, 'origin', branch);
+    // The errors below name it; a base like release/customer-x must not leave the machine.
+    if (!COMMON_BASES.has(c.target)) s.rememberSensitive?.([c.target]);
+    if (!existing && (await onRemote(c.target)) === false)
+      throw new Error(targetGone(c.target));
+    const create = () =>
+      client.createPullRequest(project, repositoryId, {
         source: w.branch,
         target: c.target,
         title: prTitle(task),
@@ -3135,6 +3167,27 @@ export function createHandlers(s: Services): Handlers {
         }),
         workItemId:
           task.workItem && c.linksWorkItem ? Number(task.workItem.id) : null,
+      });
+    const raw =
+      existing ??
+      (await create().catch(async (e: unknown) => {
+        if (!isBranchGone(e)) throw e;
+        const [source, target] = await Promise.all([
+          onRemote(w.branch),
+          onRemote(c.target),
+        ]);
+        const named = new AdoError(
+          e.kind,
+          e.path,
+          target === false
+            ? targetGone(c.target)
+            : source === false
+              ? `source branch ${w.branch} no longer exists on origin; push it again`
+              : `Azure DevOps says source branch ${w.branch} or target branch ${c.target} no longer exists (${e.message})`,
+          e.status,
+        );
+        named.cause = e;
+        throw named;
       }));
     tel.event(existing ? 'pr.linked' : 'pr.created');
     return {
@@ -3511,10 +3564,7 @@ export function createHandlers(s: Services): Handlers {
             } catch (e) {
               const message = errorMessage(e);
               if (e instanceof LeakError) result.leak = e.kind;
-              else
-                tel.event('pr.failed', {
-                  kind: e instanceof AdoError ? e.kind : 'git',
-                });
+              else tel.event('pr.failed', prFailedProps(e));
               if (e instanceof GitAuthError) result.auth = e.hint;
               fail(
                 message,
@@ -4068,9 +4118,7 @@ export function createHandlers(s: Services): Handlers {
           } catch (e) {
             await patchTask(taskId, { status: 'ready' });
             if (!(e instanceof LeakError))
-              tel.event('pr.failed', {
-                kind: e instanceof AdoError ? e.kind : 'git',
-              });
+              tel.event('pr.failed', prFailedProps(e));
             throw new Error(`Pull request not created: ${errorMessage(e)}`);
           }
           summary = pr.summary;
