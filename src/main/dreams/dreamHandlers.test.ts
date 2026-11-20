@@ -132,7 +132,6 @@ beforeEach(async () => {
     usage: () => ({ day: '2026-11-20', tokens: 42, eur: 0.5 }),
     dreamsDir: path.join(dir, 'dreams'),
     broadcast: vi.fn(),
-    tmpDir: dir,
   };
 });
 
@@ -488,6 +487,10 @@ describe('dream:test', () => {
     expect(o.input).toBe(DREAM_TEST_PROMPT);
     expect(o.timeoutMs).toBe(DREAM_TEST_TIMEOUT_MS);
     expect(deps.sessionModels).toHaveBeenCalledWith('ses_1');
+    // Under the dreams folder, so the ledger knows its usage as a dream's and never sends it.
+    expect(path.relative(deps.dreamsDir, cwdHeld)).toMatch(
+      /^\.test-[^/\\]+[/\\]wt$/,
+    );
     expect(existsSync(path.dirname(cwdHeld!))).toBe(false);
     expect(settings.get().dreaming).toMatchObject({
       model: MODEL,
@@ -566,7 +569,8 @@ describe('dream:test', () => {
 
   it('says a test folder that cannot be made in a fixed phrase', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    deps.tmpDir = path.join(dir, 'missing', 'deeper');
+    writeFileSync(path.join(dir, 'not-a-folder'), '');
+    deps.dreamsDir = path.join(dir, 'not-a-folder', 'dreams');
     expect(await api().handlers['dream:test'](MODEL)).toEqual({
       ok: false,
       message: 'The test could not be run',

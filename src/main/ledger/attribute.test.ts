@@ -1,3 +1,12 @@
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { BudgetRecord } from '../../shared/budget';
 import type { CostRecord } from '../../shared/ledger';
@@ -477,6 +486,60 @@ describe('dream records', () => {
     expect(
       attribute(rec({ tool: 'opencode', cwd: '/data/dreams/r1/d/wt' }), c),
     ).toEqual({ level: 'none' });
+  });
+  it('the setup test call, under the dreams folder, is a dream record', () => {
+    expect(
+      attribute(
+        rec({ tool: 'opencode', cwd: '/data/dreams/.test-abc123/wt' }),
+        ctx(),
+      ),
+    ).toEqual({ level: 'dream', repo: '' });
+  });
+  it('a dream under a symlinked user data folder is a dream: OpenCode stores the real path', () => {
+    const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'ledger-')));
+    try {
+      const real = path.join(base, 'real');
+      mkdirSync(path.join(real, 'dreams'), { recursive: true });
+      const link = path.join(base, 'link');
+      symlinkSync(real, link);
+      const c = attributionContext(
+        [],
+        repos,
+        connections,
+        () => [],
+        [],
+        path.join(link, 'dreams'),
+      );
+      expect(
+        attribute(
+          rec({
+            tool: 'opencode',
+            cwd: path.join(real, 'dreams', 'r1', '2026-11-20-1', 'wt'),
+          }),
+          c,
+        ),
+      ).toEqual({ level: 'dream', repo: 'web' });
+      // Not made yet (the first ledger pass may run before the first dream): the real path of its parent counts.
+      const later = attributionContext(
+        [],
+        repos,
+        connections,
+        () => [],
+        [],
+        path.join(link, 'not-yet'),
+      );
+      expect(
+        attribute(
+          rec({
+            tool: 'opencode',
+            cwd: path.join(real, 'not-yet', 'r1', 'd', 'wt'),
+          }),
+          later,
+        ),
+      ).toEqual({ level: 'dream', repo: 'web' });
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
   it('a dream record is frozen: it never moves to another level', () => {
     const dream = { level: 'dream', repo: 'web' } as const;

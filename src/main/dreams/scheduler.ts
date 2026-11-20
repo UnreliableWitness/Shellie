@@ -15,7 +15,7 @@ import { isInside } from '../paths';
 import type { GitClient } from '../services/GitClient';
 import type { DreamRunner } from './DreamRunner';
 import type { DreamStore } from './DreamStore';
-import { removeDream, unattendedConfig } from './dreamGit';
+import { DREAM_TEST_PREFIX, removeDream, unattendedConfig } from './dreamGit';
 import { settledWithin } from './dreamRun';
 import { runProps, sendSafely, type DreamEvent } from './dreamTelemetry';
 import { pickMaterial, type TaskSessions } from './material';
@@ -30,6 +30,8 @@ const MODELS_TIMEOUT_MS = 30_000;
 const MATERIAL_MS = 5 * 60_000;
 /** The empty hooks folders of a sweep, inside the dreams folder; one left by a crash goes in the next sweep. */
 const SWEEP_PREFIX = '.sweep-';
+/** A test call's folder older than this is a crash's leftover (a test gives up after 2 minutes). */
+const TEST_LEFT_MS = 5 * 60_000;
 /** The branch name a dream gets (`DreamRunner`): `dream/<YYYY-MM-DD>-<n>`. */
 const DREAM_BRANCH = /^dream\/\d{4}-\d{2}-\d{2}-\d+$/;
 
@@ -402,6 +404,14 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           await removeTree(path.join(d.dreamsDir, e.name)).catch(
             () => undefined,
           );
+          continue;
+        }
+        // The setup test's folder: never a repo's; removed whole once no test can still be running in it.
+        if (e.name.startsWith(DREAM_TEST_PREFIX)) {
+          const at = path.join(d.dreamsDir, e.name);
+          const st = await fs.stat(at).catch(() => null);
+          if (st && Date.now() - st.mtimeMs > TEST_LEFT_MS)
+            await removeTree(at).catch(() => undefined);
           continue;
         }
         const repo = repos.get(e.name);

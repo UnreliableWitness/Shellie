@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -753,6 +760,25 @@ describe('sweep', () => {
     ]);
     const worktrees = git(repo, 'worktree', 'list', '--porcelain');
     expect(worktrees).not.toContain('2026-11-19-2');
+  });
+
+  it('removes a test call’s folder a crash left, whole, and never takes it for a repo', async () => {
+    vi.useRealTimers();
+    const dreamsDir = path.join(dir, 'dreams');
+    const left = path.join(dreamsDir, '.test-abc123');
+    mkdirSync(path.join(left, 'wt'), { recursive: true });
+    mkdirSync(path.join(left, 'data'));
+    const old = new Date(Date.now() - 10 * 60_000);
+    utimesSync(left, old, old);
+    // A test that runs while Shellie starts is left alone.
+    const live = path.join(dreamsDir, '.test-live');
+    mkdirSync(path.join(live, 'wt'), { recursive: true });
+    const s = startDreamScheduler({ ...deps, dreamsDir, now: Date.now });
+    scheduler = s;
+    await s.sweep();
+    expect(existsSync(left)).toBe(false);
+    expect(existsSync(path.join(live, 'wt'))).toBe(true);
+    expect(readdirSync(dreamsDir)).toEqual(['.test-live']);
   });
 
   it('skips a repo that is no longer on disk, quietly', async () => {

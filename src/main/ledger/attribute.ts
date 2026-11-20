@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { BudgetRecord } from '../../shared/budget';
 import { tokensOf } from '../../shared/budget';
@@ -42,8 +43,11 @@ export type AttributionContext = {
   bySession: Map<string, TaskCtx>;
   repos: RepoCtx[];
   brains: Map<string, BrainCtx>;
-  /** Where dream worktrees live (`<dreamsDir>/<repoId>/<dreamId>/wt`); empty when unknown. */
-  dreamsDir: string;
+  /**
+   * Where dream worktrees live (`<dreamsDir>/<repoId>/<dreamId>/wt`), as given and as its real path (OpenCode stores
+   * the real one: a junction, a redirected AppData, `/tmp` on macOS); empty when unknown.
+   */
+  dreamsDirs: string[];
   /** Repo id → repo name, for the repo id in a dream worktree's path. */
   dreamRepos: Map<string, string>;
 };
@@ -127,12 +131,13 @@ export function attributionContext(
   });
   const bySession = new Map<string, TaskCtx>();
   for (const t of taskCtx) for (const s of t.sessions) bySession.set(s, t);
+  const dreamsDirs = dreamsDir === '' ? [] : bothPaths(dreamsDir);
   return {
     key: JSON.stringify([
       taskCtx,
       repoCtx,
       brains,
-      dreamsDir,
+      dreamsDirs,
       repos.map((r) => [r.id, r.name]),
     ]),
     tasks: taskCtx,
@@ -140,7 +145,7 @@ export function attributionContext(
     bySession,
     repos: repoCtx,
     brains: new Map(brains.map((b) => [b.id, b])),
-    dreamsDir,
+    dreamsDirs,
     dreamRepos: new Map(repos.map((r) => [r.id, r.name])),
   };
 }
@@ -221,17 +226,48 @@ const brainAttribution = (b: BrainCtx): Attribution => ({
   project: b.project,
 });
 
-/** Whether the record ran inside a dream worktree (its cwd is inside the dreams folder). */
+/**
+ * A folder as given and as its real path. A folder not made yet (no dream ran) takes the real path of its nearest
+ * existing parent, so the first ledger pass already knows where OpenCode will say a dream ran.
+ */
+function bothPaths(folder: string): string[] {
+  const given = path.resolve(folder);
+  let real: string | null = null;
+  for (let at = given, rest = ''; ;) {
+    try {
+      real = path.join(realpathSync(at), rest);
+      break;
+    } catch {
+      const up = path.dirname(at);
+      if (up === at) break;
+      rest = path.join(path.basename(at), rest);
+      at = up;
+    }
+  }
+  return real === null || real === given ? [given] : [given, real];
+}
+
+/** The dreams folder (given or real) that holds the record's cwd; null when it ran elsewhere. */
+function dreamRoot(r: BudgetRecord, ctx: AttributionContext): string | null {
+  const cwd = r.cwd;
+  if (!cwd) return null;
+  return ctx.dreamsDirs.find((d) => isInside(d, cwd)) ?? null;
+}
+
+/**
+ * Whether the record ran inside the dreams folder: a dream worktree, or the setup's test call (`.test-*`). By path
+ * only: the OpenCode reader that feeds the ledger reads messages, not their session's title.
+ */
 export function isDreamRecord(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): boolean {
-  return !!r.cwd && ctx.dreamsDir !== '' && isInside(ctx.dreamsDir, r.cwd);
+  return dreamRoot(r, ctx) !== null;
 }
 
 /** The repo name from the repo id, the first folder below the dreams folder; '' when unknown. */
-function dreamRepo(cwd: string, ctx: AttributionContext): string {
-  const rel = path.relative(path.resolve(ctx.dreamsDir), path.resolve(cwd));
+function dreamRepo(root: string, cwd: string, ctx: AttributionContext): string {
+  const rel = path.relative(root, path.resolve(cwd));
   const id = rel.split(/[\\/]/)[0] ?? '';
   return ctx.dreamRepos.get(id) ?? '';
 }
@@ -241,8 +277,9 @@ export function attribute(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): Attribution {
-  if (isDreamRecord(r, ctx))
-    return { level: 'dream', repo: dreamRepo(r.cwd!, ctx) };
+  const dreams = dreamRoot(r, ctx);
+  if (dreams !== null)
+    return { level: 'dream', repo: dreamRepo(dreams, r.cwd!, ctx) };
   const byId = brainById(r, ctx);
   if (byId) return brainAttribution(byId);
   const task = taskOf(r, ctx);

@@ -7,7 +7,6 @@
  */
 
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { isOpencodeModel } from '../../shared/brain';
 import {
@@ -28,7 +27,12 @@ import type { GitClient } from '../services/GitClient';
 import { programMissing, type runWithInput } from '../services/prSummary';
 import type { DreamStore } from './DreamStore';
 import { DREAM_READ_TIMEOUT_MS, proposalDiff, proposalFile } from './dreamDiff';
-import { authorConfig, removeDream, unattendedConfig } from './dreamGit';
+import {
+  authorConfig,
+  DREAM_TEST_PREFIX,
+  removeDream,
+  unattendedConfig,
+} from './dreamGit';
 import { sessionOf } from './dreamRun';
 import {
   enabledProps,
@@ -129,8 +133,6 @@ export type DreamHandlerDeps = {
   /** Sends `dream:changed`. */
   broadcast: () => void;
   now?: () => number;
-  /** Where the test call's empty folders are made; the system temp folder by default. */
-  tmpDir?: string;
   /** `dream.enabled`, `dream.switched_off`, `dream.test`, `dream.result` (`docs/telemetry.md`); none when absent. */
   event?: DreamEvent;
 };
@@ -418,13 +420,15 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     };
   };
 
-  /** One call with the model, as a dream makes it, in an empty folder; null when the model alone answered. */
+  /**
+   * One call with the model, as a dream makes it, in an empty folder; null when the model alone answered. The folder
+   * lies in the dreams folder, so the ledger counts its usage as a dream's (never sent to the cost server).
+   */
   const testCall = async (model: string): Promise<string | null> => {
     let root: string;
     try {
-      root = await fs.mkdtemp(
-        path.join(d.tmpDir ?? os.tmpdir(), 'shellie-dream-test-'),
-      );
+      await fs.mkdir(d.dreamsDir, { recursive: true });
+      root = await fs.mkdtemp(path.join(d.dreamsDir, DREAM_TEST_PREFIX));
     } catch (e) {
       console.error('[dreams] the test folder could not be made', e);
       return TEST_FAILED;

@@ -9,6 +9,12 @@ import path from 'node:path';
 import { pathExists, removeTree } from '../fsRetry';
 import type { GitClient } from '../services/GitClient';
 
+/**
+ * The setup test call's folders inside the dreams folder (`<dreamsDir>/.test-<random>/{wt,data}`): there the ledger
+ * knows its usage as a dream's. Never a repo id; the startup sweep removes one a crash left.
+ */
+export const DREAM_TEST_PREFIX = '.test-';
+
 /** The author of Shellie's dream commits when the repo has none configured. */
 export const FALLBACK_AUTHOR = {
   name: 'Shellie Dreams',
