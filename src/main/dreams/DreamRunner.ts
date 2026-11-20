@@ -47,7 +47,7 @@ import {
   type Material,
   type TaskSessions,
 } from './material';
-import { quoteWho } from './evidence';
+import { cleanQuote, quoteWho } from './evidence';
 import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
 import { checkPrompt, proposePrompt } from './prompts';
 import {
@@ -353,7 +353,8 @@ export class DreamRunner {
         return {
           ...ref,
           date: e.date,
-          quote: e.quote,
+          // The words looked for: no digest label or quotation marks in what the screen shows.
+          quote: cleanQuote(e.quote) || e.quote,
           who: t ? quoteWho(e.quote, t.sessions) : 'unknown',
         };
       }),

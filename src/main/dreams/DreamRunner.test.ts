@@ -302,6 +302,12 @@ describe('DreamRunner', () => {
       'you',
       'unknown',
     ]);
+    // Stored as the words that were looked for: no digest label in the quote the screen shows.
+    expect(out.result.proposals[0].evidence.map((e) => e.quote)).toEqual([
+      'I used the helper everywhere',
+      'use the helper',
+      'something nobody said at all',
+    ]);
     expect(out.result.removedByCheck).toBe(1);
     // Rule B's file is reverted like a failed proposal's: not on the branch, not in the worktree.
     expect(
