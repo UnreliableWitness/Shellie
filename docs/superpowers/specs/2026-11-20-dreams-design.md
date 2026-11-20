@@ -318,8 +318,10 @@ Rulings made while building (2026-11-20) that change or add to what the sections
 - Section 4, permissions: a dream never writes OpenCode's own configuration (`opencode.json`, `opencode.jsonc`,
   anything under `.opencode/`) or anything in a folder named `hooks` (`.apm/hooks/` holds scripts that run by
   themselves). Such paths cannot be chosen as a folder a dream may change, and are reverted after a run. Runs also set
-  `OPENCODE_DISABLE_PROJECT_CONFIG=1` and drop inherited `OPENCODE_*` variables; `--pure` is not passed, so the
-  owner's global plugins still load.
+  `OPENCODE_DISABLE_PROJECT_CONFIG=1` and override four named variables (`OPENCODE_PERMISSION` and `OPENCODE_CONFIG`
+  emptied, `OPENCODE_CONFIG_DIR` set to the real global folder, `OPENCODE_CONFIG_CONTENT` to Shellie's config);
+  other inherited `OPENCODE_*` variables pass through. `--pure` is not passed, so the owner's global plugins still
+  load.
 - Section 4, step 3: the check run is read-only on the worktree, enforced by its permissions and by comparing the
   worktree's changed paths (ignored files included) before and after it; any difference fails the dream with "The
   check run changed files".
@@ -358,3 +360,47 @@ Rulings made while building (2026-11-20) that change or add to what the sections
   now in the file. The check run stays read-only on the worktree; `changes.diff` is outside it.
 - Section 5: when another model answered, the write that switches dreaming off also clears the model's passed test,
   so the setup's step 1 is not done until the model is tested again.
+
+Rulings of the final whole-branch review (2026-11-20):
+
+- Section 7: the setup test call runs under the dreams folder (`<dreamsDir>/.test-<random>/{wt,data}`, removed
+  afterwards and by the startup sweep once older than 5 minutes), so its usage is a `dream` record. The ledger knows
+  the dreams folder as given and as its real path (or its nearest existing parent's real path), so a junction, a
+  redirected AppData or `/tmp` on macOS do not make dream records `none`. The second net by session title was not
+  built: the OpenCode reader that feeds the ledger reads `message` rows, not their session's title.
+- Section 4: every dream git call runs with `core.longpaths=true` (in `unattendedConfig`), the branch delete of a
+  removed dream with hooks off too.
+- Section 4: a run's time limit kills the whole process tree, as Stop does, and the run settles at most 2 s after the
+  kill even when a process the kill missed keeps the pipes open.
+- Section 4, `changes.diff`: only the changed paths the listing found are added to the temporary index, literally and
+  with `-f` (an ignored write in an allowed folder shows, so nothing is committed that the check run did not see);
+  each git call ends after 120 s ("git could not read the changes"); index, lock and path list are removed after.
+- Section 4: the commit body is the fixed line `Proposed by a Shellie dream. Review before merging.`; the model's
+  reason stays on the result screen. The inline config pins `share: "disabled"`.
+- Section 4: at the end of a run the allowed folders are asked again; only changes in folders allowed at both the
+  start and the end are kept.
+- Section 8, Open as task: the opened branch is stored (`opened` in the repo's state, in the same write that closes
+  the result) until its task is made, with no time limit and across restarts. Dreams lists it under Waiting for you
+  with Make the task and Leave the branch (asks first; forgets the record, never deletes the branch), and the
+  navigation count includes it. A repo with such a record can dream again. "Waiting for you" also shows while
+  dreaming is off when something waits.
+- A repo removed from Shellie: its running dream is stopped, its open result discarded, its state (and `opened`, whose
+  branch stays) forgotten and its entry removed from the settings (dreaming goes off when no ticked repo is left).
+  The journal keeps its lines, with the repo's name stored in new entries. A repo folder deleted on disk: Discard
+  removes the dream folder and closes the result. The startup sweep removes the whole folder of an unknown repo id
+  and forgets stored state of unknown repo ids.
+- Section 1 and 5: a re-test of the saved model that another model answered does what a wrong-model dream does (the
+  switch-off record, with an empty repo id, both models; off; test forgotten; a running dream stopped). Any other
+  failed re-test forgets the test and switches dreaming off without a record. A failed test of another model changes
+  nothing; a passed test of a new model stops a dream still running on the old one.
+- Section 2: `dream:get` never starts a process: its `models` is the list already known. One list, shared by the
+  scheduler and `dream:get` and fed by `agents:opencodeModels`, is asked at most every 10 minutes, a failed ask kept
+  as long; the scheduler asks only once the cheap checks pass. The setup's picker reads `agents:opencodeModels`.
+- Section 2: a repo's material is kept until something can change it (the dream store, a task change, an agent tab
+  of its task reporting, a dream's end), at most 60 minutes.
+- Section 3: sightings past 90 days are dropped on load too; a repo keeps its newest 100 rejections, the prompt gets
+  the newest 30.
+- Section 4, evidence: a quote whose first or last character is punctuation also needs no letter or digit beside it
+  in the turn.
+- Section 1: allowed folders compare exactly (git paths are case-sensitive); setup warns once when a typed folder is
+  not in the repo's HEAD tree with that spelling, and a second Add takes it.
