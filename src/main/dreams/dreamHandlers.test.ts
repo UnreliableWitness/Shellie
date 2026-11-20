@@ -20,6 +20,7 @@ import {
   type Mock,
 } from 'vitest';
 import type {
+  DreamFileDiff,
   DreamingSettings,
   DreamJournalEntry,
   DreamProposal,
@@ -937,7 +938,7 @@ describe('a dream result', () => {
   });
 });
 
-describe('dream:diff', () => {
+describe('dream:diff and dream:file', () => {
   const BIG = 600 * 1024;
 
   /**
@@ -1004,7 +1005,22 @@ describe('dream:diff', () => {
       (await api().handlers['dream:diff']('r1', 'p1')).map((f) => [f.path, f]),
     );
 
-  it('returns each file of the commit with its counts and both texts', async () => {
+  /** Another commit on the dream branch, made by `write` in the worktree, as proposal p1's. */
+  async function recommit(r: DreamResult, write: (wt: string) => void) {
+    write(r.worktreePath);
+    git(r.worktreePath, 'add', '-A');
+    git(r.worktreePath, 'commit', '-q', '-m', 'dream: More');
+    const commit = git(r.worktreePath, 'rev-parse', 'HEAD').trim();
+    await store.setResult('r1', {
+      ...r,
+      proposals: [{ ...r.proposals[0], commit }],
+    });
+  }
+
+  const lines = (f: DreamFileDiff) =>
+    f.hunks.flatMap((h) => h.lines.map((l) => `${l.kind}:${l.text}`));
+
+  it('returns each file with the hunks git computes and counts from the same patch', async () => {
     await dreamOfMany();
     const files = await byPath();
     expect(Object.keys(files).sort()).toEqual([
@@ -1014,78 +1030,182 @@ describe('dream:diff', () => {
       'old.md',
       'pic.png',
     ]);
-    expect(files['a.md']).toEqual({
-      path: 'a.md',
-      added: 2,
-      removed: 1,
-      before: 'one\ntwo\nthree\n',
-      after: 'one\n2\nthree\nfour\n',
-    });
-    expect(files['new.md']).toEqual({
-      path: 'new.md',
-      added: 1,
-      removed: 0,
-      before: '',
-      after: 'fresh\n',
-    });
-    expect(files['old.md']).toEqual({
-      path: 'old.md',
-      added: 0,
-      removed: 1,
-      before: 'gone soon\n',
-      after: '',
-    });
+    expect(files['a.md']).toMatchObject({ added: 2, removed: 1 });
+    expect(files['a.md'].hunks).toEqual([
+      {
+        header: '@@ -1,3 +1,4 @@',
+        lines: [
+          { kind: 'context', text: 'one', oldNo: 1, newNo: 1 },
+          { kind: 'del', text: 'two', oldNo: 2, newNo: null },
+          { kind: 'add', text: '2', oldNo: null, newNo: 2 },
+          { kind: 'context', text: 'three', oldNo: 3, newNo: 3 },
+          { kind: 'add', text: 'four', oldNo: null, newNo: 4 },
+        ],
+      },
+    ]);
+    expect(files['new.md']).toMatchObject({ added: 1, removed: 0 });
+    expect(lines(files['new.md'])).toEqual(['add:fresh']);
+    expect(files['old.md']).toMatchObject({ added: 0, removed: 1 });
+    expect(lines(files['old.md'])).toEqual(['del:gone soon']);
+    expect(files['a.md']).not.toHaveProperty('before');
   });
 
-  it('gives a binary file and a file over 500 kB no text, but says so and counts what git counts', async () => {
+  it('gives a binary file and a file over 500 kB no lines, but says so and counts what git counts', async () => {
     await dreamOfMany();
     const files = await byPath();
     expect(files['pic.png']).toEqual({
       path: 'pic.png',
       added: 0,
       removed: 0,
-      before: '',
-      after: '',
+      hunks: [],
       binary: true,
     });
     expect(files['big.txt']).toEqual({
       path: 'big.txt',
       added: BIG / 2,
       removed: 0,
-      before: '',
-      after: '',
+      hunks: [],
       tooLarge: true,
     });
+  });
+
+  it('keeps a change of the trailing newline, with git’s note', async () => {
+    const r = await dreamOfMany();
+    await recommit(r, (wt) =>
+      writeFileSync(path.join(wt, 'a.md'), 'one\n2\nthree\nfour'),
+    );
+    const f = (await byPath())['a.md'];
+    expect(f).toMatchObject({ added: 1, removed: 1 });
+    expect(lines(f)).toEqual([
+      'context:one',
+      'context:2',
+      'context:three',
+      'del:four',
+      'add:four',
+      'note:No newline at end of file',
+    ]);
+    expect(f.hunks[0].lines.at(-1)).toEqual({
+      kind: 'note',
+      text: 'No newline at end of file',
+      oldNo: null,
+      newNo: null,
+    });
+  });
+
+  it('shows two far apart edits of a long file as two small hunks', async () => {
+    const r = await dreamOfMany();
+    const long = Array.from({ length: 2000 }, (_, i) => `line ${i}`);
+    await recommit(r, (wt) =>
+      writeFileSync(path.join(wt, 'long.md'), `${long.join('\n')}\n`),
+    );
+    git(r.worktreePath, 'rev-parse', 'HEAD');
+    const before = store.repo('r1').result!;
+    await recommit(before, (wt) => {
+      const next = [...long];
+      next[0] = 'first';
+      next[1999] = 'last';
+      writeFileSync(path.join(wt, 'long.md'), `${next.join('\n')}\n`);
+    });
+    const f = (await byPath())['long.md'];
+    expect(f).toMatchObject({ added: 2, removed: 2 });
+    expect(f.hunks).toHaveLength(2);
+    const shown = f.hunks.flatMap((h) => h.lines);
+    expect(shown.filter((l) => l.kind === 'add')).toHaveLength(2);
+    expect(shown.filter((l) => l.kind === 'del')).toHaveLength(2);
+  });
+
+  it('cuts a file at 400 lines and a line at 2 000 characters', async () => {
+    const r = await dreamOfMany();
+    await recommit(r, (wt) => {
+      writeFileSync(
+        path.join(wt, 'many.md'),
+        Array.from({ length: 500 }, (_, i) => `${i}\n`).join(''),
+      );
+      writeFileSync(path.join(wt, 'wide.md'), `${'w'.repeat(3000)}\n`);
+    });
+    const files = await byPath();
+    expect(files['many.md']).toMatchObject({ added: 500, truncated: true });
+    expect(files['many.md'].hunks.flatMap((h) => h.lines)).toHaveLength(400);
+    expect(files['wide.md'].truncated).toBeUndefined();
+    expect(files['wide.md'].hunks[0].lines[0].text).toHaveLength(2000);
+  });
+
+  it('keeps the whole answer under 2 MB: later files come back without lines', async () => {
+    const r = await dreamOfMany();
+    const line = `${'z'.repeat(1199)}\n`;
+    await recommit(r, (wt) => {
+      for (let i = 0; i < 6; i++)
+        writeFileSync(path.join(wt, `heavy${i}.md`), `${i}${line}`.repeat(400));
+    });
+    const files = await api().handlers['dream:diff']('r1', 'p1');
+    expect(JSON.stringify(files).length).toBeLessThanOrEqual(2 * 1024 * 1024);
+    const heavy = files.filter((f) => f.path.startsWith('heavy'));
+    expect(heavy.some((f) => f.tooLarge && f.hunks.length === 0)).toBe(true);
+    expect(heavy.find((f) => f.tooLarge)!.added).toBe(400);
   });
 
   it('reads from the repo when the dream worktree folder is gone', async () => {
     const r = await dreamOfMany();
     git(repoPath, 'worktree', 'remove', '--force', r.worktreePath);
     expect(existsSync(r.worktreePath)).toBe(false);
-    expect((await byPath())['a.md'].after).toBe('one\n2\nthree\nfour\n');
+    expect(lines((await byPath())['new.md'])).toEqual(['add:fresh']);
+    expect(await api().handlers['dream:file']('r1', 'p1', 'a.md')).toEqual({
+      before: 'one\ntwo\nthree\n',
+      after: 'one\n2\nthree\nfour\n',
+    });
   });
 
   it('shows at most 50 files of a proposal', async () => {
     const r = await dreamOfMany();
-    for (let i = 0; i < 60; i++)
-      writeFileSync(path.join(r.worktreePath, `f${i}.md`), `${i}\n`);
-    git(r.worktreePath, 'add', '-A');
-    git(r.worktreePath, 'commit', '-q', '-m', 'dream: Sixty');
-    const commit = git(r.worktreePath, 'rev-parse', 'HEAD').trim();
-    await store.setResult('r1', {
-      ...r,
-      proposals: [{ ...r.proposals[0], commit }],
+    await recommit(r, (wt) => {
+      for (let i = 0; i < 60; i++)
+        writeFileSync(path.join(wt, `f${i}.md`), `${i}\n`);
     });
     expect(await api().handlers['dream:diff']('r1', 'p1')).toHaveLength(50);
   });
 
+  it('dream:file gives one file’s two texts, or says it is binary or too large', async () => {
+    await dreamOfMany();
+    const h = api().handlers;
+    expect(await h['dream:file']('r1', 'p1', 'new.md')).toEqual({
+      before: '',
+      after: 'fresh\n',
+    });
+    expect(await h['dream:file']('r1', 'p1', 'old.md')).toEqual({
+      before: 'gone soon\n',
+      after: '',
+    });
+    expect(await h['dream:file']('r1', 'p1', 'pic.png')).toEqual({
+      binary: true,
+    });
+    expect(await h['dream:file']('r1', 'p1', 'big.txt')).toEqual({
+      tooLarge: true,
+    });
+  });
+
+  it.each([
+    ['a file the commit does not change', 'README.md'],
+    ['a path with ..', 'x/../a.md'],
+    ['a path of another case', 'A.md'],
+    ['an absolute path', '/etc/passwd'],
+  ])('dream:file refuses %s', async (_what, file) => {
+    await dreamOfMany();
+    await expect(
+      api().handlers['dream:file']('r1', 'p1', file),
+    ).rejects.toThrow(/^This proposal does not change that file$/);
+  });
+
   it('refuses an unknown proposal or repo in a fixed phrase', async () => {
     await dreamOfMany();
-    await expect(api().handlers['dream:diff']('r1', 'p9')).rejects.toThrow(
+    const h = api().handlers;
+    await expect(h['dream:diff']('r1', 'p9')).rejects.toThrow(
       /^This dream has no such proposal$/,
     );
-    await expect(api().handlers['dream:diff']('r9', 'p1')).rejects.toThrow(
+    await expect(h['dream:diff']('r9', 'p1')).rejects.toThrow(
       /^This repo has no dream to review$/,
+    );
+    await expect(h['dream:file']('r1', 'p9', 'a.md')).rejects.toThrow(
+      /^This dream has no such proposal$/,
     );
   });
 
@@ -1101,6 +1221,9 @@ describe('dream:diff', () => {
     await expect(api().handlers['dream:diff']('r1', 'p1')).rejects.toThrow(
       MISMATCH_PHRASE,
     );
+    await expect(
+      api().handlers['dream:file']('r1', 'p1', 'a.md'),
+    ).rejects.toThrow(MISMATCH_PHRASE);
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -1119,6 +1242,26 @@ describe('dream:diff', () => {
     ).toBe(false);
   });
 
+  it('gives every git call a 15 s timeout, and a hung call the fixed phrase', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await dreamOfMany();
+    const g = deps.git as GitClient;
+    const run = vi.spyOn(g, 'run');
+    await api().handlers['dream:diff']('r1', 'p1');
+    await api().handlers['dream:file']('r1', 'p1', 'a.md');
+    expect(run.mock.calls.length).toBeGreaterThan(0);
+    for (const [, , opts] of run.mock.calls)
+      expect(opts?.timeoutMs).toBe(15_000);
+    run.mockImplementation(async (_cwd, args) => {
+      if (args.includes('diff-tree'))
+        throw new Error('git timed out after 15000 ms');
+      return '';
+    });
+    await expect(api().handlers['dream:diff']('r1', 'p1')).rejects.toThrow(
+      /^The changes could not be read$/,
+    );
+  });
+
   it('says a git failure in a fixed phrase, never a path', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const r = await dreamOfMany();
@@ -1129,5 +1272,8 @@ describe('dream:diff', () => {
     await expect(api().handlers['dream:diff']('r1', 'p1')).rejects.toThrow(
       /^The changes could not be read$/,
     );
+    await expect(
+      api().handlers['dream:file']('r1', 'p1', 'a.md'),
+    ).rejects.toThrow(/^The changes could not be read$/);
   });
 });

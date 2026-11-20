@@ -28,6 +28,7 @@ import type {
 import type { ColorScheme } from './theme';
 import type {
   DreamFileDiff,
+  DreamFileTexts,
   DreamingSettings,
   DreamView,
   DreamWait,
@@ -938,12 +939,17 @@ export type Channels = {
    */
   'dream:openAsTask': { args: [repoId: string]; result: { branch: string } };
   /**
-   * The files a proposal of the open result changes, each against the commit's parent: at most 50, read from the
-   * repo's git objects (so also once the dream worktree is gone).
+   * The files a proposal of the open result changes, each with git's own hunks against the commit's parent, bounded
+   * (`DreamFileDiff`); read from the repo's git objects, so also once the dream worktree is gone.
    */
   'dream:diff': {
     args: [repoId: string, proposalId: string];
     result: DreamFileDiff[];
+  };
+  /** Both texts of one file the proposal's commit changes (exactly as git lists it), for the full diff. */
+  'dream:file': {
+    args: [repoId: string, proposalId: string, path: string];
+    result: DreamFileTexts;
   };
 };
 

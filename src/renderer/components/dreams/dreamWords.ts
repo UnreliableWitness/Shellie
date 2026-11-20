@@ -5,6 +5,7 @@ import type {
   DreamView,
   DreamWait,
 } from '../../../shared/dreams';
+import { taskSlug } from '../../../shared/naming';
 import { plural } from '../../format';
 import { spacedNumber } from './folders';
 
@@ -251,4 +252,25 @@ export function checkLine(removedByCheck: number): string | null {
   if (removedByCheck === 1)
     return "One more idea did not survive the dream's own check. It is remembered in case it comes up again.";
   return `${removedByCheck} more ideas did not survive the dream's own check. They are remembered in case they come up again.`;
+}
+
+/**
+ * The name of a task opened from a dream made at `at`: `Dream <date>`, or `Dream <date> 2`, `3`, … when a task of
+ * the repo already has that name or folder. `tasks:create` refuses a clash the store does not know.
+ */
+export function dreamTaskName(
+  at: string,
+  repoId: string,
+  tasks: { repoId: string | null; name: string; worktreePath: string }[],
+): string {
+  const mine = tasks.filter((t) => t.repoId === repoId);
+  const names = new Set(mine.map((t) => t.name));
+  const folders = new Set(
+    mine.map((t) => t.worktreePath.split(/[\\/]/).pop() ?? ''),
+  );
+  const base = `Dream ${shortDate(at)}`;
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : `${base} ${n}`;
+    if (!names.has(name) && !folders.has(taskSlug(null, name))) return name;
+  }
 }

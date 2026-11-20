@@ -600,6 +600,13 @@
   padding: 1px 14px;
   min-width: max-content;
 }
+.dream-line.is-head {
+  color: var(--muted);
+}
+.dream-line.is-note {
+  color: var(--muted);
+  font-style: italic;
+}
 .dream-line.is-add {
   background: var(--green-bg);
 }

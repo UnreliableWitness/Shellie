@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   checkLine,
+  dreamTaskName,
   journalLine,
   KIND_LABEL,
   proposalLine,
@@ -276,5 +277,33 @@ describe('checkLine', () => {
     expect(checkLine(3)).toBe(
       "3 more ideas did not survive the dream's own check. They are remembered in case they come up again.",
     );
+  });
+});
+
+describe('dreamTaskName', () => {
+  const task = (repoId: string | null, name: string, folder: string) => ({
+    repoId,
+    name,
+    worktreePath: `/src/portal.worktrees/${folder}`,
+  });
+  const AT = '2026-11-20T03:12:00';
+  it('is Dream and the date', () => {
+    expect(dreamTaskName(AT, 'r1', [])).toBe('Dream 20 Nov');
+  });
+  it('counts on past a task or folder of that name in the repo', () => {
+    expect(
+      dreamTaskName(AT, 'r1', [task('r1', 'Dream 20 Nov', 'dream-20-nov')]),
+    ).toBe('Dream 20 Nov 2');
+    expect(
+      dreamTaskName(AT, 'r1', [
+        task('r1', 'Something else', 'dream-20-nov'),
+        task('r1', 'Dream 20 Nov 2', 'x'),
+      ]),
+    ).toBe('Dream 20 Nov 3');
+  });
+  it('ignores other repos', () => {
+    expect(
+      dreamTaskName(AT, 'r1', [task('r2', 'Dream 20 Nov', 'dream-20-nov')]),
+    ).toBe('Dream 20 Nov');
   });
 });

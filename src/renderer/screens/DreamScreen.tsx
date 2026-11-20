@@ -1,6 +1,8 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
+  DreamDiffLine,
   DreamFileDiff,
+  DreamFileTexts,
   DreamProposal,
   DreamResult,
 } from '../../shared/dreams';
@@ -8,13 +10,13 @@ import { errorMessage } from '../../shared/errors';
 import { api } from '../api';
 import {
   checkLine,
+  dreamTaskName,
   KIND_LABEL,
   proposalLine,
   shortDate,
   whenWords,
 } from '../components/dreams/dreamWords';
 import { spacedNumber } from '../components/dreams/folders';
-import { lineDiff } from '../components/dreams/lineDiff';
 import { useDreamsState } from '../components/dreams/useDreams';
 import { DiffView } from '../components/review/DiffView';
 import { ConfirmBar, PageHeader } from '../components/ui';
@@ -61,6 +63,8 @@ export function DreamScreen({ repoId }: { repoId: string }) {
   return <Review key={res.id} repoName={repo.name} result={res} />;
 }
 
+type DiffState = { files: DreamFileDiff[] } | { error: string };
+
 function Review({
   repoName,
   result,
@@ -76,12 +80,45 @@ function Review({
   );
   const chosen =
     proposals.find((p) => p.id === chosenId) ?? proposals[0] ?? null;
-  // The call under way: `drop:<id>`, `open` or `discard`.
+  // The call under way: `open` or `discard`.
   const [busy, setBusy] = useState<string | null>(null);
+  // A Drop or Undo asked for: its buttons stay off until the view main sends shows it (or the call fails).
+  const [pendingDrop, setPendingDrop] = useState<{
+    id: string;
+    dropped: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const kept = proposals.filter((p) => !p.dropped).length;
   const closing = busy === 'open' || busy === 'discard';
+  useEffect(() => {
+    if (
+      pendingDrop &&
+      proposals.find((p) => p.id === pendingDrop.id)?.dropped ===
+        pendingDrop.dropped
+    )
+      setPendingDrop(null);
+  }, [pendingDrop, proposals]);
+
+  // Each proposal's changes, fetched once and kept: a Drop, an Undo or a call under way re-renders none of them.
+  const [diffs, setDiffs] = useState<Record<string, DiffState>>({});
+  const asked = useRef(new Set<string>());
+  const chosenPid = chosen?.id ?? null;
+  const diffKey = chosen
+    ? `${result.repoId}/${result.id}/${chosen.id}/${chosen.commit}`
+    : null;
+  useEffect(() => {
+    if (!chosenPid || !diffKey || asked.current.has(diffKey)) return;
+    asked.current.add(diffKey);
+    // Kept by its key whenever it comes, also once another proposal is chosen.
+    void api()
+      .invoke('dream:diff', result.repoId, chosenPid)
+      .then(
+        (files): DiffState => ({ files }),
+        (e: unknown): DiffState => ({ error: errorMessage(e) }),
+      )
+      .then((state) => setDiffs((d) => ({ ...d, [diffKey]: state })));
+  }, [chosenPid, diffKey, result.repoId]);
 
   const call = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -95,10 +132,17 @@ function Review({
     }
   };
 
-  const drop = (p: DreamProposal, dropped: boolean) =>
-    call(`drop:${p.id}`, () =>
-      api().invoke('dream:drop', result.repoId, p.id, dropped),
-    );
+  const drop = async (p: DreamProposal, dropped: boolean) => {
+    setPendingDrop({ id: p.id, dropped });
+    setError(null);
+    try {
+      await api().invoke('dream:drop', result.repoId, p.id, dropped);
+    } catch (e) {
+      setPendingDrop(null);
+      setError(errorMessage(e));
+    }
+  };
+  const dropping = (p: DreamProposal) => closing || pendingDrop?.id === p.id;
 
   const openAsTask = () =>
     call('open', async () => {
@@ -109,7 +153,11 @@ function Review({
         dream: {
           id: result.id,
           branch,
-          name: `Dream ${shortDate(result.at)}`,
+          name: dreamTaskName(
+            result.at,
+            result.repoId,
+            useStore.getState().tasks,
+          ),
         },
       });
     });
@@ -123,8 +171,11 @@ function Review({
   };
 
   const rowId = (p: DreamProposal) => `${ids}-p-${p.id}`;
+  /** Up and Down on a proposal's own button move between proposals. */
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (!(e.target as HTMLElement).classList.contains('dream-proposal-pick'))
+      return;
     const i = proposals.findIndex((p) => p.id === chosen?.id);
     const next =
       proposals[
@@ -144,7 +195,7 @@ function Review({
     <div className="page dream-review">
       <PageHeader
         inline
-        title={`What ${repoName}'s sessions taught`}
+        title={`What ${repoName}’s sessions taught`}
         commands={
           <>
             <span className="muted small">{`${kept} of ${proposals.length} kept`}</span>
@@ -227,7 +278,7 @@ function Review({
                     type="button"
                     className="btn btn-sm"
                     aria-describedby={`${rowId(p)}-title`}
-                    disabled={busy === `drop:${p.id}` || closing}
+                    disabled={dropping(p)}
                     onClick={() => void drop(p, false)}
                   >
                     Undo
@@ -243,7 +294,8 @@ function Review({
             key={chosen.id}
             result={result}
             proposal={chosen}
-            busy={busy === `drop:${chosen.id}` || closing}
+            diff={diffKey ? (diffs[diffKey] ?? null) : null}
+            busy={dropping(chosen)}
             onDrop={(dropped) => void drop(chosen, dropped)}
           />
         )}
@@ -255,11 +307,13 @@ function Review({
 function Detail({
   result,
   proposal: p,
+  diff,
   busy,
   onDrop,
 }: {
   result: DreamResult;
   proposal: DreamProposal;
+  diff: DiffState | null;
   busy: boolean;
   onDrop: (dropped: boolean) => void;
 }) {
@@ -323,48 +377,68 @@ function Detail({
       )}
       <section aria-labelledby={`${id}-ch`} className="dream-detail-part">
         <h3 id={`${id}-ch`}>What it changes</h3>
-        <Changes result={result} proposalId={p.id} />
+        <Changes
+          repoId={result.repoId}
+          dreamId={result.id}
+          proposalId={p.id}
+          diff={diff}
+        />
       </section>
     </section>
   );
 }
 
-function Changes({
-  result,
+/** A proposal's files as git gave them; memoised, so a re-render of the screen leaves the lines alone. */
+const Changes = memo(function Changes({
+  repoId,
+  dreamId,
   proposalId,
+  diff,
 }: {
-  result: DreamResult;
+  repoId: string;
+  dreamId: string;
   proposalId: string;
+  diff: DiffState | null;
 }) {
-  const [files, setFiles] = useState<DreamFileDiff[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [full, setFull] = useState<DreamFileDiff | null>(null);
+  const [full, setFull] = useState<{
+    path: string;
+    texts: DreamFileTexts | null;
+    error: string | null;
+  } | null>(null);
   const back = useRef<HTMLButtonElement>(null);
+  const fullPath = full?.path ?? null;
   useEffect(() => {
+    if (fullPath === null) return;
+    back.current?.focus();
     let live = true;
     api()
-      .invoke('dream:diff', result.repoId, proposalId)
+      .invoke('dream:file', repoId, proposalId, fullPath)
       .then(
-        (f) => live && setFiles(f),
-        (e: unknown) => live && setError(errorMessage(e)),
+        (texts) => live && setFull({ path: fullPath, texts, error: null }),
+        (e: unknown) =>
+          live &&
+          setFull({ path: fullPath, texts: null, error: errorMessage(e) }),
       );
     return () => {
       live = false;
     };
-  }, [result.repoId, proposalId]);
-  useEffect(() => {
-    if (full) back.current?.focus();
-  }, [full]);
+  }, [fullPath, repoId, proposalId]);
+  const open = useCallback(
+    (path: string) => setFull({ path, texts: null, error: null }),
+    [],
+  );
 
-  if (error)
+  if (!diff) return <p className="muted">Loading the changes&hellip;</p>;
+  if ('error' in diff)
     return (
       <p role="alert" className="text-red">
-        {error}
+        {diff.error}
       </p>
     );
-  if (!files) return <p className="muted">Loading the changes&hellip;</p>;
-  if (files.length === 0) return <p className="muted">No files changed.</p>;
-  if (full)
+  if (diff.files.length === 0)
+    return <p className="muted">No files changed.</p>;
+  if (full) {
+    const t = full.texts;
     return (
       <div className="dream-file">
         <div className="dream-file-head">
@@ -378,51 +452,73 @@ function Changes({
             Back to the changes
           </button>
         </div>
-        <div className="dream-fulldiff">
-          <DiffView
-            uriKey={`dream/${result.repoId}/${result.id}/${proposalId}/${full.path}`}
-            before={full.before}
-            after={full.after}
-            // A new file has nothing on the left: inline shows it over the full width.
-            sideBySide={full.before !== ''}
-            ignoreWhitespace={false}
-            hideUnchanged={false}
-          />
-        </div>
+        {full.error ? (
+          <p role="alert" className="text-red dream-file-note">
+            {full.error}
+          </p>
+        ) : !t ? (
+          <p className="muted small dream-file-note">Loading&hellip;</p>
+        ) : 'binary' in t ? (
+          <p className="muted small dream-file-note">
+            Binary file: no lines to show.
+          </p>
+        ) : 'tooLarge' in t ? (
+          <p className="muted small dream-file-note">Too large to show here.</p>
+        ) : (
+          <div className="dream-fulldiff">
+            <DiffView
+              uriKey={`dream/${repoId}/${dreamId}/${proposalId}/${full.path}`}
+              before={t.before}
+              after={t.after}
+              // A new file has nothing on the left: inline shows it over the full width.
+              sideBySide={t.before !== ''}
+              ignoreWhitespace={false}
+              hideUnchanged={false}
+            />
+          </div>
+        )}
       </div>
     );
+  }
   return (
     <div className="dream-files">
-      {files.map((f) => (
-        <FileChange key={f.path} file={f} onOpen={() => setFull(f)} />
+      {diff.files.map((f) => (
+        <FileChange key={f.path} file={f} onOpen={open} />
       ))}
     </div>
   );
-}
+});
 
-function FileChange({
+const SIGN: Record<DreamDiffLine['kind'], string> = {
+  context: ' ',
+  add: '+',
+  del: '-',
+  note: '',
+};
+
+/** One file: its path, git's counts and git's lines, as main sent them. */
+const FileChange = memo(function FileChange({
   file: f,
   onOpen,
 }: {
   file: DreamFileDiff;
-  onOpen: () => void;
+  onOpen: (path: string) => void;
 }) {
   const id = useId();
-  const text = !f.binary && !f.tooLarge;
   return (
-    <div className="dream-file">
+    <div role="group" aria-labelledby={id} className="dream-file">
       <div className="dream-file-head">
         <span id={id} className="mono small dream-file-path">
           {f.path}
         </span>
         <span className="mono small text-green">{`+${f.added}`}</span>
         <span className="mono small text-red">{`${MINUS}${f.removed}`}</span>
-        {text && (
+        {!f.binary && (
           <button
             type="button"
             className="btn btn-sm"
             aria-describedby={id}
-            onClick={onOpen}
+            onClick={() => onOpen(f.path)}
           >
             Open in full diff
           </button>
@@ -436,28 +532,28 @@ function FileChange({
         <p className="muted small dream-file-note">Too large to show here.</p>
       ) : (
         <div className="dream-diff">
-          {lineDiff(f.before, f.after).map((h, k) => (
+          {f.hunks.map((h, k) => (
             <div key={k} className="dream-hunk">
+              <div className="dream-line is-head">{h.header}</div>
               {h.lines.map((l, n) => (
-                <div
-                  key={n}
-                  className={
-                    l.sign === '+'
-                      ? 'dream-line is-add'
-                      : l.sign === '-'
-                        ? 'dream-line is-del'
-                        : 'dream-line'
-                  }
-                >
-                  <span className="dream-line-no">{l.no}</span>
-                  <span className="dream-line-sign">{l.sign}</span>
+                <div key={n} className={`dream-line is-${l.kind}`}>
+                  <span className="dream-line-no">
+                    {l.newNo ?? l.oldNo ?? ''}
+                  </span>
+                  <span className="dream-line-sign">{SIGN[l.kind]}</span>
                   <span className="dream-line-text">{l.text}</span>
                 </div>
               ))}
             </div>
           ))}
+          {f.truncated && (
+            <p className="muted small dream-file-note">
+              Showing the first 400 lines of this change. Open in full diff for
+              the rest.
+            </p>
+          )}
         </div>
       )}
     </div>
   );
-}
+});

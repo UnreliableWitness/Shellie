@@ -14,7 +14,6 @@ import {
   canSwitchOn,
   DreamingSettingsSchema,
   widens,
-  type DreamFileDiff,
   type DreamingSettings,
   type DreamProposal,
   type DreamResult,
@@ -28,6 +27,7 @@ import type { Platform } from '../platform/Platform';
 import type { GitClient } from '../services/GitClient';
 import { programMissing, type runWithInput } from '../services/prSummary';
 import type { DreamStore } from './DreamStore';
+import { DREAM_READ_TIMEOUT_MS, proposalDiff, proposalFile } from './dreamDiff';
 import { authorConfig, removeDream, unattendedConfig } from './dreamGit';
 import { sessionOf } from './dreamRun';
 import { hasPrice } from './limit';
@@ -47,9 +47,6 @@ const TEST_FAILED = 'The test could not be run';
 const MISMATCH = "The dream's record does not match its folder";
 const SETTINGS_FAILED = 'The dream settings could not be saved';
 const DIFF_FAILED = 'The changes could not be read';
-/** What `dream:diff` returns at most: files per proposal, and bytes of one side's text. */
-const DIFF_FILES = 50;
-const DIFF_BYTES = 500 * 1024;
 /** A full commit id (SHA-1 or SHA-256): never an option or a revision expression. */
 const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** A dream's id as the runner makes it (`<YYYY-MM-DD>-<n>`); its branch is `dream/<id>`. */
@@ -150,6 +147,7 @@ export function noDreams(): DreamApi {
       'dream:discard': no,
       'dream:openAsTask': no,
       'dream:diff': no,
+      'dream:file': no,
     },
     taskLink: { opened: () => false, taskCreated: async () => undefined },
   };
@@ -247,7 +245,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     if (!(await pathExists(r.worktreePath))) return { dir, worktree: 'gone' };
     // Read-only, to learn whether `wt` is a worktree of its own; nothing else runs there unless it is.
     const top = await d.git
-      .run(r.worktreePath, ['rev-parse', '--show-toplevel'])
+      .run(r.worktreePath, ['rev-parse', '--show-toplevel'], {
+        timeoutMs: DREAM_READ_TIMEOUT_MS,
+      })
       .then(
         (x) => fs.realpath(x.trim()),
         () => null,
@@ -256,7 +256,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     if (top === null || wtReal === null || !samePath(top, wtReal))
       return { dir, worktree: 'gone' };
     const head = await d.git
-      .run(r.worktreePath, ['symbolic-ref', '--short', 'HEAD'])
+      .run(r.worktreePath, ['symbolic-ref', '--short', 'HEAD'], {
+        timeoutMs: DREAM_READ_TIMEOUT_MS,
+      })
       .then(
         (x) => x.trim(),
         () => null,
@@ -388,86 +390,22 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   };
 
   /**
-   * The files of a proposal's commit against its parent, from the repo's own git objects (read-only plumbing, no
-   * worktree, no diff driver or text conversion, hooks off), so it answers once the worktree is gone too. At most
-   * `DIFF_FILES` files; a binary side or one over `DIFF_BYTES` gives no text.
+   * The repo, the dream's folder and the commit of a proposal of the open result, for reading its changes. Before
+   * any git: the record must be the dream's own (`checked`) and the commit a plain id.
    */
-  const diffOf = async (
-    repoPath: string,
-    dir: string,
-    commit: string,
-  ): Promise<DreamFileDiff[]> => {
-    const c = flags(unattendedConfig(path.join(dir, 'hooks')));
-    const tree = (format: string) =>
-      d.git.run(repoPath, [
-        ...c,
-        'diff-tree',
-        '-r',
-        '-z',
-        '--no-renames',
-        '--no-commit-id',
-        '--no-ext-diff',
-        '--no-textconv',
-        format,
-        commit,
-      ]);
-    const raw = (await tree('--raw')).split('\0');
-    const counts = new Map<string, { added: number; removed: number } | null>();
-    for (const e of (await tree('--numstat')).split('\0')) {
-      const m = /^(-|\d+)\t(-|\d+)\t([\s\S]*)$/.exec(e);
-      if (m)
-        counts.set(
-          m[3],
-          m[1] === '-' ? null : { added: Number(m[1]), removed: Number(m[2]) },
-        );
-    }
-    const entries: { path: string; modes: string[]; blobs: string[] }[] = [];
-    for (let i = 0; i + 1 < raw.length && entries.length < DIFF_FILES; i += 2) {
-      // `:<mode> <mode> <sha> <sha> <status>`, then the path.
-      const m = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) [A-Z]/.exec(raw[i]);
-      if (!m) break;
-      entries.push({
-        path: raw[i + 1],
-        modes: [m[1], m[2]],
-        blobs: [m[3], m[4]],
-      });
-    }
-    const absent = (blob: string) => /^0+$/.test(blob);
-    const blobSize = async (b: string) =>
-      absent(b)
-        ? 0
-        : Number(
-            (await d.git.run(repoPath, [...c, 'cat-file', '-s', b])).trim(),
-          );
-    const blobText = (b: string) =>
-      absent(b) ? '' : d.git.run(repoPath, [...c, 'cat-file', 'blob', b]);
-    // One file after another: up to 50 files, never a burst of git processes.
-    const files: DreamFileDiff[] = [];
-    for (const e of entries) {
-      const count = counts.get(e.path);
-      const base = {
-        path: e.path,
-        added: count?.added ?? 0,
-        removed: count?.removed ?? 0,
-        before: '',
-        after: '',
-      };
-      // Git counts no lines of a binary; a submodule's entry is a commit, not a blob.
-      if (count === null || e.modes.includes('160000'))
-        files.push({ ...base, binary: true });
-      else if (
-        (await blobSize(e.blobs[0])) > DIFF_BYTES ||
-        (await blobSize(e.blobs[1])) > DIFF_BYTES
-      )
-        files.push({ ...base, tooLarge: true });
-      else
-        files.push({
-          ...base,
-          before: await blobText(e.blobs[0]),
-          after: await blobText(e.blobs[1]),
-        });
-    }
-    return files;
+  const proposalSource = async (repoId: string, proposalId: string) => {
+    const r = openResult(repoId);
+    const p = r.proposals.find((x) => x.id === proposalId);
+    if (!p) throw refuse('This dream has no such proposal');
+    const { dir } = await checked(repoId, r);
+    if (!FULL_SHA.test(p.commit)) throw refuse(MISMATCH);
+    const repo = d.repos().find((x) => x.id === repoId);
+    if (!repo) throw refuse(DIFF_FAILED);
+    return {
+      repoPath: repo.path,
+      config: unattendedConfig(path.join(dir, 'hooks')),
+      commit: p.commit,
+    };
   };
 
   /** One call with the model, as a dream makes it, in an empty folder; null when the model alone answered. */
@@ -757,18 +695,28 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         }),
       ),
 
-    // A read: not one after another with the changes, and answered before the scheduler started.
+    // Reads: not one after another with the changes, and answered before the scheduler started.
     'dream:diff': (repoId, proposalId) =>
       phrased(DIFF_FAILED, async () => {
-        const r = openResult(repoId);
-        const p = r.proposals.find((x) => x.id === proposalId);
-        if (!p) throw refuse('This dream has no such proposal');
-        // Before any git: the record must be the dream's own, and the commit a plain id.
-        const { dir } = await checked(repoId, r);
-        if (!FULL_SHA.test(p.commit)) throw refuse(MISMATCH);
-        const repo = d.repos().find((x) => x.id === repoId);
-        if (!repo) throw refuse(DIFF_FAILED);
-        return diffOf(repo.path, dir, p.commit);
+        const src = await proposalSource(repoId, proposalId);
+        return proposalDiff(d.git, src.repoPath, src.config, src.commit);
+      }),
+
+    'dream:file': (repoId, proposalId, file) =>
+      phrased(DIFF_FAILED, async () => {
+        const src = await proposalSource(repoId, proposalId);
+        const texts =
+          typeof file === 'string'
+            ? await proposalFile(
+                d.git,
+                src.repoPath,
+                src.config,
+                src.commit,
+                file,
+              )
+            : null;
+        if (!texts) throw refuse('This proposal does not change that file');
+        return texts;
       }),
   };
 

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -77,30 +77,53 @@ const twoProposals = (over: Partial<DreamResult> = {}): DreamResult =>
     ...over,
   });
 
+const line = (
+  kind: 'context' | 'add' | 'del' | 'note',
+  text: string,
+  oldNo: number | null,
+  newNo: number | null,
+) => ({ kind, text, oldNo, newNo });
+
 const diffs: Record<string, DreamFileDiff[]> = {
   p1: [
     {
       path: '.apm/instructions/database.instructions.md',
       added: 2,
       removed: 1,
-      before: '## Schema\n- old line\n- keep\n',
-      after: '## Schema\n- new line\n- keep\n- more\n',
+      hunks: [
+        {
+          header: '@@ -1,3 +1,4 @@',
+          lines: [
+            line('context', '## Schema', 1, 1),
+            line('del', '- old line', 2, null),
+            line('add', '- new line', null, 2),
+            line('context', '- keep', 3, 3),
+            line('add', '- more', null, 4),
+          ],
+        },
+      ],
     },
   ],
   p2: [
     {
       path: '.apm/skills/release-notes/SKILL.md',
-      added: 1,
+      added: 400,
       removed: 0,
-      before: '',
-      after: 'description: write release notes\n',
+      truncated: true,
+      hunks: [
+        {
+          header: '@@ -0,0 +1,450 @@',
+          lines: Array.from({ length: 400 }, (_, i) =>
+            line('add', `line ${i}`, null, i + 1),
+          ),
+        },
+      ],
     },
     {
       path: '.apm/skills/release-notes/logo.png',
       added: 0,
       removed: 0,
-      before: '',
-      after: '',
+      hunks: [],
       binary: true,
     },
   ],
@@ -117,6 +140,10 @@ function fakeMain(r: DreamResult | null, extra: FakeHandlers = {}) {
   const api = installFakeApi({
     'dream:get': () => view,
     'dream:diff': (_repoId, id) => diffs[id] ?? [],
+    'dream:file': () => ({
+      before: '## Schema\n- old line\n- keep\n',
+      after: '## Schema\n- new line\n- keep\n- more\n',
+    }),
     'dream:drop': (_repoId, id, dropped) => {
       const res = view.repos[0].state.result!;
       view = withResult({
@@ -154,7 +181,15 @@ beforeEach(() => {
     screen: { kind: 'dream', repoId: 'r1' },
     previous: null,
     notices: [],
-    tasks: [{ id: 't1', status: 'ready' } as TaskView],
+    tasks: [
+      {
+        id: 't1',
+        status: 'ready',
+        repoId: 'r1',
+        name: 'Rounding',
+        worktreePath: '/src/portal.worktrees/rounding',
+      } as TaskView,
+    ],
   });
 });
 
@@ -165,7 +200,7 @@ describe('DreamScreen', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: "What portal's sessions taught",
+        name: 'What portal’s sessions taught',
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/from 6 sessions/)).toBeInTheDocument();
@@ -217,6 +252,12 @@ describe('DreamScreen', () => {
     expect(within(first).getByText('−1')).toBeInTheDocument();
     expect(within(first).getByText('- new line')).toBeInTheDocument();
     expect(within(first).getByText('- old line')).toBeInTheDocument();
+    // As many added and removed lines shown as the counts beside them say.
+    const file = within(first).getByRole('group', {
+      name: '.apm/instructions/database.instructions.md',
+    });
+    expect(file.querySelectorAll('.dream-line.is-add')).toHaveLength(2);
+    expect(file.querySelectorAll('.dream-line.is-del')).toHaveLength(1);
 
     await userEvent.click(rowButton('Skill release-notes'));
     const second = screen.getByRole('region', { name: /^Skill/ });
@@ -229,6 +270,11 @@ describe('DreamScreen', () => {
     ).toBeInTheDocument();
     expect(
       within(second).getByText('Binary file: no lines to show.'),
+    ).toBeInTheDocument();
+    expect(
+      within(second).getByText(
+        'Showing the first 400 lines of this change. Open in full diff for the rest.',
+      ),
     ).toBeInTheDocument();
     expect(callsOf(calls, 'dream:diff')).toEqual([
       ['r1', 'p1'],
@@ -292,9 +338,9 @@ describe('DreamScreen', () => {
     expect(await screen.findByText('2 of 2 kept')).toBeInTheDocument();
   });
 
-  it('disables Drop while the call is under way', async () => {
+  it('keeps Drop disabled until the new view has arrived', async () => {
     let release = () => {};
-    fakeMain(twoProposals(), {
+    const m = fakeMain(twoProposals(), {
       'dream:drop': () =>
         new Promise<void>((resolve) => {
           release = resolve;
@@ -306,8 +352,37 @@ describe('DreamScreen', () => {
     });
     await userEvent.click(drop);
     expect(drop).toBeDisabled();
-    release();
-    await waitFor(() => expect(drop).toBeEnabled());
+    await act(async () => {
+      release();
+      await new Promise((r) => setTimeout(r, 200));
+    });
+    expect(drop).toBeDisabled();
+    const r = twoProposals();
+    r.proposals[0].dropped = true;
+    m.set(r);
+    const detail = screen.getByRole('region', { name: /^Migrations/ });
+    await waitFor(() =>
+      expect(
+        within(detail).getByRole('button', { name: 'Undo' }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it('enables Drop again when the call fails, and says why', async () => {
+    fakeMain(twoProposals(), {
+      'dream:drop': () => {
+        throw new Error('The dream could not be saved');
+      },
+    });
+    render(<DreamScreen repoId="r1" />);
+    const drop = await screen.findByRole('button', {
+      name: 'Drop this proposal',
+    });
+    await userEvent.click(drop);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The dream could not be saved',
+    );
+    expect(drop).toBeEnabled();
   });
 
   it('disables Open as a task when every proposal is dropped', async () => {
@@ -339,6 +414,31 @@ describe('DreamScreen', () => {
       }),
     );
     expect(callsOf(calls, 'dream:openAsTask')).toEqual([['r1']]);
+  });
+
+  it('names the task Dream <date> 2 when the repo has a task of that name', async () => {
+    useStore.setState({
+      tasks: [
+        {
+          id: 't9',
+          status: 'ready',
+          repoId: 'r1',
+          name: 'Dream 20 Nov',
+          worktreePath: '/src/portal.worktrees/dream-20-nov',
+        } as TaskView,
+      ],
+    });
+    fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Open 2 as a task' }),
+    );
+    await waitFor(() =>
+      expect(useStore.getState().screen).toMatchObject({
+        kind: 'new-task',
+        dream: { name: 'Dream 20 Nov 2' },
+      }),
+    );
   });
 
   it('shows a refused Open as a task in its phrase and stays', async () => {
@@ -413,18 +513,49 @@ describe('DreamScreen', () => {
   });
 
   it('opens a file in the full diff with both texts', async () => {
-    fakeMain(twoProposals());
+    const { calls } = fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);
     await userEvent.click(
       await screen.findByRole('button', { name: /^Open in full diff/ }),
     );
-    expect(screen.getByTestId('full-diff').textContent).toBe(
+    expect((await screen.findByTestId('full-diff')).textContent).toBe(
       '## Schema\n- old line\n- keep\n|## Schema\n- new line\n- keep\n- more\n',
     );
     await userEvent.click(
       screen.getByRole('button', { name: 'Back to the changes' }),
     );
     expect(screen.queryByTestId('full-diff')).toBeNull();
+    expect(callsOf(calls, 'dream:file')).toEqual([
+      ['r1', 'p1', '.apm/instructions/database.instructions.md'],
+    ]);
+  });
+
+  it('says when the full diff has no text to show', async () => {
+    fakeMain(twoProposals(), { 'dream:file': () => ({ tooLarge: true }) });
+    render(<DreamScreen repoId="r1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^Open in full diff/ }),
+    );
+    expect(
+      await screen.findByText('Too large to show here.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('full-diff')).toBeNull();
+  });
+
+  it('fetches a proposal’s changes once, also after Drop and choosing it again', async () => {
+    const { calls } = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Drop this proposal' }),
+    );
+    expect(await screen.findByText('1 of 2 kept')).toBeInTheDocument();
+    await userEvent.click(rowButton('Skill release-notes'));
+    await userEvent.click(rowButton('Migrations'));
+    await screen.findByText('- old line');
+    expect(callsOf(calls, 'dream:diff')).toEqual([
+      ['r1', 'p1'],
+      ['r1', 'p2'],
+    ]);
   });
 
   it('moves between proposals with Up and Down', async () => {
@@ -440,6 +571,20 @@ describe('DreamScreen', () => {
     expect(rowButton('Skill release-notes')).toHaveFocus();
     await userEvent.keyboard('{ArrowUp}');
     expect(rowButton('Migrations')).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('leaves Up and Down alone on an Undo button', async () => {
+    const r = twoProposals();
+    r.proposals[0].dropped = true;
+    fakeMain(r);
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    within(list()).getByRole('button', { name: /^Undo/ }).focus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(rowButton('Skill release-notes')).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
   });
 
   it('shows text from the dream as plain text', async () => {

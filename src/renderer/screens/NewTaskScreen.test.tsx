@@ -730,6 +730,27 @@ describe('NewTaskScreen', () => {
       expect(options()).toEqual(['dxp-web', 'iml-hub', 'No repo']);
     });
 
+    it("keeps a dream's repo of another project, locked on it", async () => {
+      installFakeApi({ ...pickerApi, 'repos:config': () => config });
+      useStore.setState({
+        repos: [dxp, iml],
+        connections: conns,
+        connectionId: 'c2',
+      });
+      render(
+        <NewTaskScreen
+          initial={{
+            repoId: 'rA',
+            dream: { id: 'd1', branch: 'dream/d1', name: 'Dream 20 Nov' },
+          }}
+        />,
+      );
+      expect(screen.getByLabelText('Repo')).toHaveValue('rA');
+      expect(screen.getByLabelText('Repo')).toBeDisabled();
+      expect(options()).toEqual(['dxp-web', 'iml-hub']);
+      expect(screen.getByLabelText('Branch')).toHaveValue('dream/d1');
+    });
+
     it('makes a task without a repo when the project has none', async () => {
       const { calls } = installFakeApi({
         ...pickerApi,

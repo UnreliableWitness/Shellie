@@ -222,20 +222,36 @@ export const DreamResultSchema = z.object({
 });
 export type DreamResult = z.infer<typeof DreamResultSchema>;
 
+/** One line of a hunk as git wrote it; `note` is git's "\ No newline at end of file". */
+export type DreamDiffLine = {
+  kind: 'context' | 'add' | 'del' | 'note';
+  text: string;
+  oldNo: number | null;
+  newNo: number | null;
+};
+export type DreamDiffHunk = { header: string; lines: DreamDiffLine[] };
+
 /**
- * One file of a proposal's commit against its parent (`dream:diff`). `before` and `after` are empty for a file that
- * is binary (`binary`) or larger than 500 kB on either side (`tooLarge`); `added` and `removed` are then git's own
- * count when it has one, else 0.
+ * One file of a proposal's commit against its parent (`dream:diff`), as git's own patch has it: the hunks and the
+ * added and removed lines counted from that same patch. No hunks for a binary file (`binary`), for a side over
+ * 500 kB or a file past the answer's 2 MB (`tooLarge`; the counts are git's when it has them, else 0). At most 400
+ * lines per file (`truncated` when cut), each line at most 2 000 characters.
  */
 export type DreamFileDiff = {
   path: string;
   added: number;
   removed: number;
-  before: string;
-  after: string;
+  hunks: DreamDiffHunk[];
   binary?: boolean;
   tooLarge?: boolean;
+  truncated?: boolean;
 };
+
+/** Both texts of one file of a proposal (`dream:file`), for the full diff. */
+export type DreamFileTexts =
+  | { before: string; after: string }
+  | { tooLarge: true }
+  | { binary: true };
 
 export const DreamJournalEntrySchema = z.object({
   dreamId: z.string(),
