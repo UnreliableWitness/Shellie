@@ -105,6 +105,20 @@ describe('DreamSetupScreen: switching on', () => {
     expect(within(panel()).getByText(reason)).toBeInTheDocument();
   });
 
+  it('after a wrong-model switch-off the model is untested and Switch on waits for a new test', async () => {
+    open(
+      viewOf(ready({ enabled: false, testedModel: null }), {
+        switchedOff: { answered: 'a/b', chosen: MODEL, repoId: 'r1' },
+      }),
+    );
+    render(<DreamSetupScreen />);
+    await screen.findByRole('heading', { name: 'What you are switching on' });
+    expect(screen.queryByText('Tested')).toBeNull();
+    expect(within(panel()).getByText(/Test the model/)).toBeInTheDocument();
+    await userEvent.click(tick()).catch(() => undefined);
+    expect(switchOn()).toBeDisabled();
+  });
+
   it('is disabled with all four done until the box is ticked, and the box starts empty', async () => {
     open(viewOf(ready()));
     render(<DreamSetupScreen />);

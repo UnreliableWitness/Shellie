@@ -315,6 +315,9 @@ describe('the dream scheduler', () => {
       expect(scheduler!.status().switchedOff).toEqual(off),
     );
     expect(app.dreaming.enabled).toBe(false);
+    // The passed test no longer counts: switching on again needs a new one.
+    expect(app.dreaming.testedModel).toBeNull();
+    expect(app.dreaming.model).toBe(MODEL);
     expect(store.switchedOff()).toEqual(off);
     expect(deps.broadcast).toHaveBeenCalled();
     await tick();
@@ -343,6 +346,8 @@ describe('the dream scheduler', () => {
     await tick();
     expect(save).toHaveBeenCalledTimes(3);
     expect(app.dreaming.enabled).toBe(false);
+    // The retried write clears the passed test too.
+    expect(app.dreaming.testedModel).toBeNull();
     await tick();
     expect(save).toHaveBeenCalledTimes(3);
     expect(fake.calls).toHaveLength(0);

@@ -36,7 +36,7 @@ const DREAM_BRANCH = /^dream\/\d{4}-\d{2}-\d{2}-\d+$/;
 type Repo = { id: string; name: string; path: string };
 
 export type DreamSchedulerDeps = {
-  /** Reads `dreaming`; writes `enabled: false` only, after a call answered by another model. */
+  /** Reads `dreaming`; writes only `enabled: false` and `testedModel: null`, after a call answered by another model. */
   settings: {
     get(): AppSettings;
     updateDreaming(
@@ -255,11 +255,18 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       );
   };
 
-  /** Saves `enabled: false`; false (logged) when it could not, and the next check tries again. */
+  /**
+   * After another model answered: saves `enabled: false` and forgets the model's passed test, in one write, so
+   * switching on again needs a new test. False (logged) when it could not; the next check tries again.
+   */
   const switchOff = async (): Promise<boolean> => {
     try {
       // From the settings as they are when the write runs, never a snapshot taken before.
-      await d.settings.updateDreaming((cur) => ({ ...cur, enabled: false }));
+      await d.settings.updateDreaming((cur) => ({
+        ...cur,
+        enabled: false,
+        testedModel: null,
+      }));
       return true;
     } catch (e) {
       console.error('[dreams] could not switch dreaming off', e);
