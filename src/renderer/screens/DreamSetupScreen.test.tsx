@@ -293,7 +293,7 @@ describe('DreamSetupScreen: steps', () => {
     ).toBeInTheDocument();
   });
 
-  it('clears Tested when another model is picked, until it is tested', async () => {
+  it('tests a picked model at once and shows Tested only when it passed', async () => {
     const a = open(viewOf(ready()));
     render(<DreamSetupScreen />);
     expect(await screen.findByText('Tested')).toBeInTheDocument();
@@ -301,13 +301,40 @@ describe('DreamSetupScreen: steps', () => {
       screen.getByLabelText(/Model, from OpenCode/),
       'opencode/big-pickle',
     );
-    expect(screen.queryByText('Tested')).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Test' }));
     expect(callsOf(a.calls, 'dream:test')).toEqual([['opencode/big-pickle']]);
     expect(
       await screen.findByText(/opencode\/big-pickle answered/),
     ).toBeInTheDocument();
     expect(screen.getByText('Tested')).toBeInTheDocument();
+  });
+
+  it('never offers Switch on while the select and the saved model differ', async () => {
+    open(viewOf(ready()), {
+      'dream:test': () => ({ ok: false, message: 'No answer from the model.' }),
+    });
+    render(<DreamSetupScreen />);
+    const select = await screen.findByLabelText(/Model, from OpenCode/);
+    await userEvent.selectOptions(select, 'opencode/big-pickle');
+    expect(
+      await screen.findByText('Not tested: No answer from the model.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Tested')).toBeNull();
+    expect(select).toHaveValue('opencode/big-pickle');
+    expect(
+      within(panel()).getByText(/Test the model first/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Switch on dreaming' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Confirm the change' }),
+    ).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: `Back to ${MODEL}` }),
+    );
+    expect(select).toHaveValue(MODEL);
+    expect(screen.getByText('Tested')).toBeInTheDocument();
+    expect(switchOn()).toBeDisabled();
   });
 
   it('shows progress and cannot be pressed twice while a test runs', async () => {
@@ -339,7 +366,9 @@ describe('DreamSetupScreen: steps', () => {
   });
 
   it('warns that dreaming switches off when another model is picked while on', async () => {
-    open(viewOf(ready({ enabled: true })));
+    open(viewOf(ready({ enabled: true })), {
+      'dream:test': () => new Promise(() => undefined),
+    });
     render(<DreamSetupScreen />);
     await userEvent.selectOptions(
       await screen.findByLabelText(/Model, from OpenCode/),
@@ -402,6 +431,122 @@ describe('DreamSetupScreen: steps', () => {
     await screen.findByText(/Not ready to switch on yet/);
     current = viewOf(ready());
     act(() => a.emit('dream:changed', {}));
+    expect(
+      await screen.findByText(/Dreams run on OpenCode/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the saved limit in the field again after Undo', async () => {
+    open(viewOf(ready({ enabled: true })));
+    render(<DreamSetupScreen />);
+    const tokens = await screen.findByLabelText('Tokens a day');
+    await userEvent.clear(tokens);
+    await userEvent.type(tokens, '10.000.000{Enter}');
+    await screen.findByRole('button', { name: 'Confirm the change' });
+    expect(tokens).toHaveValue('10 000 000');
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(tokens).toHaveValue('5 000 000');
+  });
+
+  it('shows a limit changed elsewhere in the field', async () => {
+    let current = viewOf(ready());
+    const a = open(current, { 'dream:get': () => current });
+    render(<DreamSetupScreen />);
+    const tokens = await screen.findByLabelText('Tokens a day');
+    current = viewOf(ready({ limit: { kind: 'tokens', perDay: 3_000_000 } }));
+    act(() => a.emit('dream:changed', {}));
+    await waitFor(() => expect(tokens).toHaveValue('3 000 000'));
+  });
+
+  it('keeps the radio on the saved limit until a number is committed', async () => {
+    const a = open(viewOf(ready({ limit: { kind: 'none' } })));
+    render(<DreamSetupScreen />);
+    await userEvent.click(await screen.findByRole('radio', { name: 'Tokens' }));
+    expect(screen.getByRole('radio', { name: 'Tokens' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'No limit' })).toBeChecked();
+    expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Tokens a day')).toHaveFocus();
+    expect(screen.getByText(/with no limit/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Tokens a day'), '1 000{Enter}');
+    await waitFor(() => expect(callsOf(a.calls, 'dream:save')).toHaveLength(1));
+    expect(await screen.findByRole('radio', { name: 'Tokens' })).toBeChecked();
+  });
+
+  it('empties the box after Switch on, and again when dreaming is switched off elsewhere', async () => {
+    let current = viewOf(ready());
+    const a = open(current, {
+      'dream:get': () => current,
+      'dream:switchOn': () => ready({ enabled: true }),
+    });
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: /I have read this/ }),
+    );
+    await userEvent.click(switchOn());
+    expect(
+      await screen.findByRole('heading', { name: 'Dreaming is on' }),
+    ).toBeInTheDocument();
+    // A view that differs from the one before Switch on, so that it is applied.
+    current = viewOf(ready({ enabled: false, idleMinutes: 11 }));
+    act(() => a.emit('dream:changed', {}));
+    expect(
+      await screen.findByRole('heading', { name: 'What you are switching on' }),
+    ).toBeInTheDocument();
+    expect(tick()).not.toBeChecked();
+    expect(switchOn()).toBeDisabled();
+  });
+
+  it('drops a held change when the settings change elsewhere, and says so', async () => {
+    let current = viewOf(ready({ enabled: true }));
+    const a = open(current, { 'dream:get': () => current });
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: 'billing' }),
+    );
+    await screen.findByRole('button', { name: 'Confirm the change' });
+    current = viewOf(
+      ready({ enabled: true, limit: { kind: 'tokens', perDay: 3_000_000 } }),
+    );
+    act(() => a.emit('dream:changed', {}));
+    expect(
+      await screen.findByText(
+        'The settings changed elsewhere. Your unconfirmed change was dropped.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Confirm the change' }),
+    ).toBeNull();
+    expect(callsOf(a.calls, 'dream:save')).toHaveLength(0);
+  });
+
+  it('does not let a stale view undo a newer saved state', async () => {
+    const older = viewOf(ready());
+    const a = open(older, { 'dream:get': () => older });
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: 'billing' }),
+    );
+    await screen.findByText(/for 2 repos/);
+    act(() => a.emit('dream:changed', {}));
+    await new Promise((r) => setTimeout(r, 250));
+    expect(screen.getByText(/for 2 repos/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'billing' })).toBeChecked();
+  });
+
+  it('says when Dreams could not be loaded and tries again', async () => {
+    let fail = true;
+    installFakeApi({
+      'dream:get': () => {
+        if (fail) throw new Error('boom');
+        return viewOf(ready());
+      },
+    });
+    render(<DreamSetupScreen />);
+    expect(
+      await screen.findByText('Dreams could not be loaded'),
+    ).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(
       await screen.findByText(/Dreams run on OpenCode/),
     ).toBeInTheDocument();

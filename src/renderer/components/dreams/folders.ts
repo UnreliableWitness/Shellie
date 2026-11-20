@@ -1,4 +1,8 @@
-import { DreamRepoSchema, isProtectedPath } from '../../../shared/dreams';
+import {
+  DreamRepoSchema,
+  type DreamLimit,
+  isProtectedPath,
+} from '../../../shared/dreams';
 
 const folderSchema = DreamRepoSchema.shape.folders.element;
 
@@ -20,14 +24,29 @@ export function folderProblem(value: string): string | null {
   return 'Use a path inside the repo, such as .apm or AGENTS.md.';
 }
 
-/** Digits with spaces or dots as separators: the number, or null. */
+/** Digits in groups of three after the first, separated by spaces or dots (or no separators): the number, or null. */
 export function parseTokens(text: string): number | null {
   const t = text.trim();
-  if (!/^\d+([ . ]\d+)*$/.test(t)) return null;
+  if (!/^(\d+|\d{1,3}([ . ]\d{3})+)$/.test(t)) return null;
   const n = Number(t.replace(/[ . ]/g, ''));
   return Number.isSafeInteger(n) && n >= 1 ? n : null;
+}
+
+/** A plain amount above zero, with at most two decimals (a comma is accepted); else null. */
+export function parseEuros(text: string): number | null {
+  const t = text.trim();
+  if (!/^\d+([.,]\d{1,2})?$/.test(t)) return null;
+  const n = Number(t.replace(',', '.'));
+  return n > 0 ? n : null;
 }
 
 /** 5000000 as "5 000 000". */
 export const spacedNumber = (n: number): string =>
   String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+export const limitLabel = (l: DreamLimit | null): string => {
+  if (l === null) return 'Not chosen';
+  if (l.kind === 'none') return 'No limit';
+  if (l.kind === 'eur') return `€ ${l.perDay.toFixed(2)} a day`;
+  return `${spacedNumber(l.perDay)} tokens a day`;
+};

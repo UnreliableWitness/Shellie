@@ -1,18 +1,11 @@
-import type { DreamLimit, DreamView } from '../../../shared/dreams';
+import type { DreamView } from '../../../shared/dreams';
 import { useDreams } from '../../components/dreams/useDreams';
 import {
   SettingRow,
   SettingsCategory,
 } from '../../components/settings/SettingRow';
 import { useStore } from '../../store';
-import { spacedNumber } from '../../components/dreams/folders';
-
-export const limitLabel = (l: DreamLimit | null): string => {
-  if (l === null) return 'Not chosen';
-  if (l.kind === 'none') return 'No limit';
-  if (l.kind === 'eur') return `€ ${l.perDay.toFixed(2)} a day`;
-  return `${spacedNumber(l.perDay)} tokens a day`;
-};
+import { limitLabel } from '../../components/dreams/folders';
 
 const stateLine = (v: DreamView): string => {
   if (v.settings.enabled) return 'Dreaming is on';

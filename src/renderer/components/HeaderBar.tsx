@@ -35,7 +35,7 @@ const PAGE_LABEL: Partial<Record<Screen['kind'], string>> = {
   'brain-new': 'Brain',
   dreams: 'Dreams',
   dream: 'Dreams',
-  'dream-setup': 'Dreams: set up',
+  'dream-setup': 'Set up dreaming',
   'add-repo': 'Add repository',
   secrets: 'Secrets',
   'secrets-import': 'Secrets',
