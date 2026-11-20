@@ -946,6 +946,8 @@ export type Events = {
   'brain:changed': { brainId: string };
   /** A `shellie://join?…` link was opened (macOS open-url, Windows argv); the renderer shows the join screen. */
   'brain:openJoin': { link: string };
+  /** A dream started or ended, or what dreams remember or wait for changed; the renderer fetches `dream:get` again. */
+  'dream:changed': Record<string, never>;
 };
 
 /** `version` is null when the release name holds none. */

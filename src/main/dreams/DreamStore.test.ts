@@ -161,4 +161,21 @@ describe('DreamStore', () => {
     const { s: s2 } = await make(() => T0, dir);
     expect(s2.repo('r').failures).toBe(1);
   });
+
+  it('keeps why dreaming switched itself off across a restart, until cleared', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dreams-'));
+    // A file written before the field existed loads with none.
+    writeFileSync(
+      path.join(dir, 'dreams.json'),
+      JSON.stringify({ version: 1, repos: {}, journal: [] }),
+    );
+    const { s } = await make(() => T0, dir);
+    expect(s.switchedOff()).toBeNull();
+    const off = { answered: 'a/b', chosen: 'zai/glm-5', repoId: 'r' };
+    await s.setSwitchedOff(off);
+    const { s: s2 } = await make(() => T0, dir);
+    expect(s2.switchedOff()).toEqual(off);
+    await s2.setSwitchedOff(null);
+    expect(s2.switchedOff()).toBeNull();
+  });
 });

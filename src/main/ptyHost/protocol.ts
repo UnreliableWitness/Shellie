@@ -28,7 +28,9 @@ export type ToHost =
       timeoutMs: number;
       /** The whole environment, as main built it. */
       env: Record<string, string>;
-    };
+    }
+  /** Stops a run: its process tree is killed and the run fails with `stopped`. Ignored for a run that is done. */
+  | { t: 'cancelRun'; n: number };
 
 export type FromHost =
   | { t: 'spawned'; n: number; pid: number }

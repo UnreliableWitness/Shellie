@@ -142,7 +142,13 @@ describe('createPtyHost', () => {
     await new Promise((r) => setImmediate(r));
     expect(runs[0]).toEqual({
       cmd: { command: 'claude', args: ['-p'] },
-      o: { cwd: '/b', input: 'go', timeoutMs: 5000, env: { K: 'v' } },
+      o: {
+        cwd: '/b',
+        input: 'go',
+        timeoutMs: 5000,
+        env: { K: 'v' },
+        signal: expect.any(AbortSignal),
+      },
     });
     expect(out).toEqual([
       { t: 'ran', n: 1, stdout: '{"result":"ok"}' },
@@ -154,5 +160,40 @@ describe('createPtyHost', () => {
       },
       { t: 'runError', n: 3, message: 'spawn claude ENOENT', code: 'ENOENT' },
     ]);
+  });
+
+  it('cancels a run: its process is killed and the run fails as stopped', async () => {
+    const { pty } = fake();
+    const out: FromHost[] = [];
+    const handle = createPtyHost(pty, (m) => out.push(m));
+    const run = (n: number) =>
+      handle({
+        t: 'run',
+        n,
+        command: process.execPath,
+        // Would wait 30 s.
+        args: ['-e', 'setTimeout(() => {}, 30000)'],
+        cwd: process.cwd(),
+        input: '',
+        timeoutMs: 60_000,
+        env: { ...(process.env as Record<string, string>) },
+      });
+    run(1);
+    run(2);
+    // A cancel for a run that is not there (or done) is ignored.
+    handle({ t: 'cancelRun', n: 9 });
+    await new Promise((r) => setTimeout(r, 300));
+    const started = Date.now();
+    handle({ t: 'cancelRun', n: 1 });
+    await expect
+      .poll(() => out.find((m) => m.n === 1), { timeout: 5000 })
+      .toEqual({ t: 'runError', n: 1, message: 'stopped' });
+    expect(Date.now() - started).toBeLessThan(5000);
+    // The other run is untouched.
+    expect(out.find((m) => m.n === 2)).toBeUndefined();
+    handle({ t: 'cancelRun', n: 2 });
+    await expect
+      .poll(() => out.find((m) => m.n === 2), { timeout: 5000 })
+      .toMatchObject({ message: 'stopped' });
   });
 });

@@ -245,8 +245,11 @@ import { sessionDigest, type Turn } from '../brain/sessionDigest';
 import {
   lastAgentTurnAt as lastClaudeTurnAt,
   readClaudeTurns,
-  type TurnAt,
 } from '../sessions/claudeTranscript';
+import {
+  claudeSessionTurns as claudeTaskTurns,
+  opencodeSessionTurns as opencodeTaskTurns,
+} from '../sessions/taskSessions';
 import { askTab } from '../prDraft/askTab';
 import { pickTab, tabVerdict, type TabCandidate } from '../prDraft/pickTab';
 import {
@@ -256,11 +259,7 @@ import {
 } from '../prDraft/PrDrafts';
 import { opencodeResultWithSession } from '../brain/opencodeResult';
 import type { TabActivity } from '../attention/TabActivity';
-import {
-  prRequestLine,
-  prRequestText,
-  withoutPrRequests,
-} from '../prDraft/protocol';
+import { prRequestLine, prRequestText } from '../prDraft/protocol';
 import { addSource } from '../brain/sources';
 import {
   isOpencodeModel,
@@ -2039,44 +2038,9 @@ export function createHandlers(s: Services): Handlers {
       : undefined;
   };
 
-  /**
-   * What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an
-   * OpenCode tab, and none when OpenCode's database cannot be read (logged, so the Claude lessons still go in).
-   */
-  const opencodeSessionTurns = (task: Task) => {
-    const tabs = [...task.closedTerminals, ...task.terminals];
-    if (!s.opencodeSessionTexts || !tabs.some((t) => t.kind === 'opencode'))
-      return [];
-    const dirs = [
-      ...new Set(
-        taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
-      ),
-    ];
-    try {
-      return s
-        .opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0)
-        .map((turns) => withoutPrRequests(turns));
-    } catch (e) {
-      console.error('[brain] OpenCode sessions not read for lessons', e);
-      return [];
-    }
-  };
-
-  /** The turns of the task's Claude Code sessions (open and closed tabs), each session's in order; unsaved ones are skipped. */
-  const claudeSessionTurns = async (task: Task): Promise<TurnAt[][]> => {
-    const ids = [...task.closedTerminals, ...task.terminals]
-      .filter((t) => t.kind === 'claude' && t.sessionId)
-      .map((t) => t.sessionId!);
-    const out: TurnAt[][] = [];
-    for (const id of new Set(ids)) {
-      const file = sessionFile(id);
-      if (!file) continue;
-      const { turns } = await readClaudeTurns(file);
-      // Shellie's own PR-description requests and their answers are never part of what was said.
-      if (turns.length > 0) out.push(withoutPrRequests(turns));
-    }
-    return out;
-  };
+  const opencodeSessionTurns = (task: Task) =>
+    opencodeTaskTurns(task, s.opencodeSessionTexts);
+  const claudeSessionTurns = (task: Task) => claudeTaskTurns(task, sessionFile);
 
   /**
    * Adds `text` to the brain as a source called `name` (written to a temp file first: the source takes the file's

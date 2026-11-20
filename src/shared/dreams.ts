@@ -246,3 +246,11 @@ export const DreamRepoStateSchema = z.object({
   result: DreamResultSchema.nullable(),
 });
 export type DreamRepoState = z.infer<typeof DreamRepoStateSchema>;
+
+/** Why dreaming switched itself off: a call of a dream of `repoId` was answered by `answered` instead of `chosen`. */
+export const DreamSwitchedOffSchema = z.object({
+  answered: z.string(),
+  chosen: z.string(),
+  repoId: z.string(),
+});
+export type DreamSwitchedOff = z.infer<typeof DreamSwitchedOffSchema>;

@@ -3,12 +3,14 @@ import { z } from 'zod';
 import {
   DreamJournalEntrySchema,
   DreamRepoStateSchema,
+  DreamSwitchedOffSchema,
   type DreamJournalEntry,
   type DreamProposal,
   type DreamRejection,
   type DreamRepoState,
   type DreamResult,
   type DreamSighting,
+  type DreamSwitchedOff,
 } from '../../shared/dreams';
 import { JsonFileStore } from '../usage/JsonFileStore';
 
@@ -21,10 +23,17 @@ const FileSchema = z.object({
   repos: z.record(z.string(), DreamRepoStateSchema),
   /** Newest first. */
   journal: z.array(DreamJournalEntrySchema),
+  /** Why dreaming switched itself off (a call answered by another model); null once switched on again. */
+  switchedOff: DreamSwitchedOffSchema.nullable().default(null),
 });
 type DreamFile = z.infer<typeof FileSchema>;
 
-const emptyFile = (): DreamFile => ({ version: 1, repos: {}, journal: [] });
+const emptyFile = (): DreamFile => ({
+  version: 1,
+  repos: {},
+  journal: [],
+  switchedOff: null,
+});
 const emptyRepo = (): DreamRepoState => ({
   covered: {},
   sightings: [],
@@ -69,6 +78,16 @@ export class DreamStore {
 
   journal(): DreamJournalEntry[] {
     return structuredClone(this.store.value.journal);
+  }
+
+  switchedOff(): DreamSwitchedOff | null {
+    return structuredClone(this.store.value.switchedOff);
+  }
+
+  setSwitchedOff(value: DreamSwitchedOff | null): Promise<void> {
+    return this.write((f) => {
+      f.switchedOff = value;
+    });
   }
 
   markCovered(repoId: string, marks: Record<string, number>): Promise<void> {

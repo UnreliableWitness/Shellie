@@ -3,6 +3,7 @@ import { PR_JOB_TITLE, type PrSummaryModel } from '../../shared/prDraft';
 import { clip } from '../../shared/text';
 import type { Turn } from '../brain/sessionDigest';
 import type { Command } from '../platform/Platform';
+import { killTree } from './GitClient';
 
 /**
  * The "what changed and why" of a draft pull request (#111), written at Finish. This module is the headless writer
@@ -290,7 +291,12 @@ export function runWithInput(
     }, o.timeoutMs);
     const onAbort = () => {
       stopped = true;
-      child.kill();
+      // The whole tree: on Windows an agent's helpers would outlive it and keep its worktree locked.
+      killTree(
+        child.pid,
+        () => child.kill(),
+        () => undefined,
+      );
     };
     o.signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (d: Buffer) => {
