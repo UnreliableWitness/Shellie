@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultDreaming, type DreamView } from '../../shared/dreams';
 import {
   journalEntry,
@@ -10,6 +10,7 @@ import {
 } from '../test-helpers/dreamFixtures';
 import { useStore } from '../store';
 import { installFakeApi } from '../test-helpers/fakeApi';
+import { AwayBand } from '../components/dreams/AwayBand';
 import { DreamsScreen } from './DreamsScreen';
 
 beforeEach(() => {
@@ -232,6 +233,30 @@ describe('DreamsScreen: on', () => {
     expect(journal).toHaveTextContent('220 000');
     expect(journal).toHaveTextContent('Failed: OpenCode stopped');
     expect(journal).toHaveTextContent('2 Jan');
+  });
+
+  it('keeps the rows of two repos that dreamt the same day apart (dream ids are per repo)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const v = withResults({
+      journal: [
+        journalEntry({ dreamId: '2020-01-02-1', repoId: 'r1' }),
+        journalEntry({ dreamId: '2020-01-02-1', repoId: 'r2' }),
+      ],
+    });
+    v.repos[1].state.result!.id = v.repos[0].state.result!.id;
+    open(v);
+    render(
+      <>
+        <AwayBand />
+        <DreamsScreen />
+      </>,
+    );
+    await screen.findByRole('region', { name: 'Journal' });
+    await screen.findByRole('region', { name: 'While you were away' });
+    expect(
+      error.mock.calls.some((c) => String(c[0]).includes('same key')),
+    ).toBe(false);
+    error.mockRestore();
   });
 
   it('offers Try again when the first load fails', async () => {

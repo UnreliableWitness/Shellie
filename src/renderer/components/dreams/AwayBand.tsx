@@ -10,7 +10,13 @@ import { useDreams } from './useDreams';
 
 const KEY = 'shellie.dreams.hiddenOnHome';
 
-/** Hidden dream ids by repo id. A storage that is missing, full or holds something else counts as empty. */
+/**
+ * What Not now remembers of a result: its id and when it was dreamt. An id alone comes back: a dream that was stopped
+ * or discarded leaves no branch, so a later dream that day may get the same `<date>-<n>`.
+ */
+const hideKey = (r: { id: string; at: string }) => `${r.id}@${r.at}`;
+
+/** Hidden results (`hideKey`) by repo id. A storage that is missing, full or holds something else counts as empty. */
 function readHidden(): Record<string, string[]> {
   try {
     const parsed: unknown = JSON.parse(local()?.getItem(KEY) ?? '{}');
@@ -26,10 +32,13 @@ function readHidden(): Record<string, string[]> {
   }
 }
 
-/** Keeps only the ids that still have an open result: a closed dream's id is never needed again. */
+/** Keeps only the keys of results still open: a closed result is never needed again. */
 function writeHidden(hidden: Record<string, string[]>, view: DreamView) {
   const open = new Map(
-    openResults(view).map((r) => [r.id, r.state.result?.id]),
+    openResults(view).map((r) => [
+      r.id,
+      r.state.result ? hideKey(r.state.result) : undefined,
+    ]),
   );
   const pruned = Object.fromEntries(
     Object.entries(hidden)
@@ -58,7 +67,7 @@ export function AwayBand() {
   if (!view) return null;
   const now = Date.now();
   const cards = openResults(view).filter(
-    (r) => !hidden[r.id]?.includes(r.state.result?.id ?? ''),
+    (r) => !r.state.result || !hidden[r.id]?.includes(hideKey(r.state.result)),
   );
   // A dream that found nothing: one quiet line, only inside the band, for the newest journal entry under 24 hours old.
   const latest = view.journal[0];
@@ -66,10 +75,10 @@ export function AwayBand() {
     latest?.outcome === 'nothing' &&
     now - Date.parse(latest.at) < 86_400_000 &&
     latest;
-  const notNow = (repoId: string, dreamId: string) =>
+  const notNow = (repoId: string, key: string) =>
     setHidden(
       writeHidden(
-        { ...hidden, [repoId]: [...(hidden[repoId] ?? []), dreamId] },
+        { ...hidden, [repoId]: [...(hidden[repoId] ?? []), key] },
         view,
       ),
     );
@@ -91,7 +100,7 @@ export function AwayBand() {
               const res = r.state.result;
               if (!res) return null;
               return (
-                <article key={res.id} className="dream-card">
+                <article key={`${r.id}/${res.id}`} className="dream-card">
                   <div className="dream-card-head">
                     <strong>{r.name}</strong>
                     <span className="muted small">
@@ -119,7 +128,7 @@ export function AwayBand() {
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => notNow(r.id, res.id)}
+                      onClick={() => notNow(r.id, hideKey(res))}
                     >
                       Not now
                     </button>

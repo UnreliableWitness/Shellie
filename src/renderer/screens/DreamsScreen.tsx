@@ -141,7 +141,10 @@ function Dreams({ view }: { view: DreamView }) {
           ) : (
             <div className="dream-list dream-journal">
               {view.journal.map((e) => (
-                <div key={`${e.dreamId}`} className="dream-row">
+                <div
+                  key={`${e.repoId}/${e.dreamId}/${e.at}`}
+                  className="dream-row"
+                >
                   <span className="muted small dream-when">
                     {whenWords(e.at, now)}
                   </span>
@@ -213,7 +216,7 @@ function Waiting({ view, now }: { view: DreamView; now: number }) {
             if (!res) return null;
             const more = res.proposals.length - 1;
             return (
-              <div key={res.id} className="dream-row">
+              <div key={`${r.id}/${res.id}`} className="dream-row">
                 <strong className="dream-name" id={`dream-name-w-${r.id}`}>
                   {r.name}
                 </strong>

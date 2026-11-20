@@ -77,6 +77,27 @@ describe('AwayBand', () => {
     expect(await screen.findByText('Fresh idea')).toBeInTheDocument();
   });
 
+  it('shows a later dream that got the same id again (an earlier one of that day was removed)', async () => {
+    let view = withResults();
+    installFakeApi({ 'dream:get': () => view });
+    const first = render(<AwayBand />);
+    await screen.findByRole('region', { name: 'While you were away' });
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Not now' })[0],
+    );
+    expect(screen.queryByText('Skill: release notes')).toBeNull();
+    first.unmount();
+    const hiddenId = view.repos[0].state.result!.id;
+    view = withResults();
+    view.repos[0].state = emptyState({
+      result: result(hiddenId, 'r1', ['Same id, new dream'], {
+        at: '2026-11-20T19:47:53.462Z',
+      }),
+    });
+    render(<AwayBand />);
+    expect(await screen.findByText('Same id, new dream')).toBeInTheDocument();
+  });
+
   it('prunes stored ids that no longer have an open result', async () => {
     localStorage.setItem(
       'shellie.dreams.hiddenOnHome',
@@ -91,7 +112,7 @@ describe('AwayBand', () => {
     expect(
       JSON.parse(localStorage.getItem('shellie.dreams.hiddenOnHome')!),
     ).toEqual({
-      r2: ['b'],
+      r2: ['b@2026-11-20T03:41:00'],
     });
   });
 
