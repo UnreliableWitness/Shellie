@@ -45,8 +45,12 @@ describe('dreamGit', () => {
     rmSync(path.join(repo, 'gone.md'));
     mkdirSync(path.join(repo, 'a', 'b'), { recursive: true });
     writeFileSync(path.join(repo, 'a', 'b', 'new file é.md'), 'y');
+    writeFileSync(path.join(repo, '.gitignore'), '*.log\n');
+    writeFileSync(path.join(repo, 'a.log'), 'z');
     expect(await changedPaths(gc, repo, [])).toEqual([
+      '.gitignore',
       'README.md',
+      'a.log',
       'a/b/new file é.md',
       'gone.md',
     ]);
@@ -68,7 +72,7 @@ describe('dreamGit', () => {
     });
     expect(git(repo, 'rev-parse', 'HEAD').trim()).toBe(sha);
     expect(git(repo, 'log', '-1', '--format=%s%n%b', sha).trim()).toBe(
-      `dream: ${'x'.repeat(72)}\nWhy.`,
+      `dream: ${'x'.repeat(64)}…\nWhy.`,
     );
     expect(git(repo, 'show', '--name-only', '--format=', sha).trim()).toBe(
       'one.md',
@@ -130,5 +134,17 @@ describe('dreamGit', () => {
     expect(
       (await gc.worktreeList(repo)).map((w) => path.basename(w.path)),
     ).toEqual(['repo']);
+  });
+
+  it('keeps the whole subject within 72 characters, on one line, without splitting a surrogate pair', () => {
+    expect(commitSubject('Short')).toBe('dream: Short');
+    const long = commitSubject('y'.repeat(100));
+    expect(long).toHaveLength(72);
+    expect(long.endsWith('y…')).toBe(true);
+    expect(commitSubject('a\r\nb\tc\u0000\u0007d')).toBe('dream: a b c d');
+    // 63 y's, then an emoji whose surrogate pair would straddle the cut at 71.
+    const emoji = commitSubject(`${'y'.repeat(63)}\u{1F600}${'z'.repeat(20)}`);
+    expect(emoji).toBe(`dream: ${'y'.repeat(63)}…`);
+    expect(emoji.length).toBeLessThanOrEqual(72);
   });
 });

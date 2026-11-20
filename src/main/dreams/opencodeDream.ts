@@ -86,8 +86,16 @@ const inside = (parent: string, child: string): boolean => {
  * leaves a tool whose last rule is a plain deny out of the tool list. `edit` patterns are paths from the worktree
  * (an absolute pattern never matches), `external_directory` patterns are absolute; both take forward slashes.
  */
-function dreamPermission(worktree: string, dataDir: string) {
+function dreamPermission(
+  worktree: string,
+  dataDir: string,
+  readOnlyWorktree: boolean,
+) {
   const data = slashes(pathFor(worktree).relative(worktree, dataDir));
+  // Every path in the worktree, then back out: a path above the worktree or on another drive.
+  const worktreeRules = readOnlyWorktree
+    ? {}
+    : { '**': 'allow', '../**': 'deny', '?:/**': 'deny', '//**': 'deny' };
   return {
     '*': 'deny',
     read: 'allow',
@@ -97,11 +105,7 @@ function dreamPermission(worktree: string, dataDir: string) {
     todowrite: 'allow',
     edit: {
       '*': 'deny',
-      // Every path in the worktree, then back out: a path above the worktree or on another drive.
-      '**': 'allow',
-      '../**': 'deny',
-      '?:/**': 'deny',
-      '//**': 'deny',
+      ...worktreeRules,
       [`${data}/**`]: 'allow',
       // Last, so they win everywhere: OpenCode's own config, at the root and at any depth.
       ...Object.fromEntries(
@@ -168,7 +172,13 @@ function dreamPermission(worktree: string, dataDir: string) {
  */
 export function dreamEnv(
   base: Record<string, string>,
-  o: { model: string; worktree: string; dataDir: string },
+  o: {
+    model: string;
+    worktree: string;
+    dataDir: string;
+    /** The check run: edits only in the data folder (its report), none in the worktree. */
+    readOnlyWorktree?: boolean;
+  },
 ): Record<string, string> {
   const model = checkedModel(o.model);
   const worktree = real(o.worktree);
@@ -177,7 +187,11 @@ export function dreamEnv(
     throw new Error(
       'The dream data folder must be outside the worktree and not hold it',
     );
-  const permission = dreamPermission(worktree, dataDir);
+  const permission = dreamPermission(
+    worktree,
+    dataDir,
+    o.readOnlyWorktree === true,
+  );
   return {
     ...base,
     // `opencode run` takes its folder from PWD before the process folder (checked live): an inherited PWD would run

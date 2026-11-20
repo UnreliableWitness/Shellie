@@ -229,6 +229,39 @@ describe('dreamEnv', () => {
     expect(decide(permission, 'edit', 'docs/opencode.json.md')).toBe('allow');
   });
 
+  it('lets a read-only run (the check) edit the data folder only, nothing in the worktree', () => {
+    const env = dreamEnv(
+      {},
+      {
+        model: MODEL,
+        worktree: WORKTREE,
+        dataDir: DATA,
+        readOnlyWorktree: true,
+      },
+    );
+    const c = JSON.parse(env.OPENCODE_CONFIG_CONTENT) as ReturnType<
+      typeof config
+    >;
+    const { permission } = c;
+    expect(c.agent.build.permission).toEqual(permission);
+    for (const p of [
+      'README.md',
+      '.apm/skills/x/SKILL.md',
+      'a/b/c.md',
+      '../other/x.md',
+      'D:/elsewhere/x.md',
+      '//server/share/x.md',
+      '../data/opencode.json',
+    ])
+      expect(decide(permission, 'edit', p), p).toBe('deny');
+    expect(decide(permission, 'edit', '../data/report.json')).toBe('allow');
+    expect(decide(permission, 'edit', '../data/sub/notes.md')).toBe('allow');
+    expect(decide(permission, 'read', 'src/a.ts')).toBe('allow');
+    expect(
+      decide(permission, 'external_directory', `${DATA}/report.json`),
+    ).toBe('allow');
+  });
+
   it('opens only the data folder outside the worktree', () => {
     const { permission } = config();
     const ext = permission.external_directory as Rules;

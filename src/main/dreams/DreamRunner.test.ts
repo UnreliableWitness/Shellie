@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -100,6 +101,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   fake?.dispose();
   fake = null;
   cleanupTempRepos();
@@ -456,5 +459,223 @@ describe('DreamRunner', () => {
     expect(fake!.calls()).toHaveLength(0);
     expect(store.journal()).toEqual([]);
     expect(existsSync(dreamsDir)).toBe(false);
+  });
+
+  it('refuses a second dream started in the same tick and leaves the first alone', async () => {
+    const r = runner(twoProposals());
+    const first = r.dream(repoArg(), opts());
+    const second = r.dream(repoArg(), opts());
+    expect(await second).toEqual({
+      outcome: 'failed',
+      reason: 'A dream is already running',
+    });
+    const out = await first;
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(dreamBranches()).toEqual([out.result.branch]);
+    expect(existsSync(out.result.worktreePath)).toBe(true);
+    expect(store.journal()).toHaveLength(1);
+    expect(store.repo('r1').failures).toBe(0);
+  });
+
+  it('fails without touching a dream branch someone else made meanwhile', async () => {
+    class Racing extends GitClient {
+      override async worktreeAdd(
+        cwd: string,
+        o: Parameters<GitClient['worktreeAdd']>[1],
+      ): Promise<string> {
+        git(cwd, 'branch', o.branch);
+        return super.worktreeAdd(cwd, o);
+      }
+    }
+    const out = await runner(twoProposals(), { git: new Racing() }).dream(
+      repoArg(),
+      opts(),
+    );
+    expect(out).toEqual({
+      outcome: 'failed',
+      reason: 'A dream of that name already exists',
+    });
+    expect(dreamBranches()).toEqual([`dream/${DATE}-1`]);
+    expect(readdirSync(path.join(dreamsDir, 'r1'))).toEqual([]);
+    expect(fake!.calls()).toHaveLength(0);
+  });
+
+  it('fails with a fixed reason when the target branch is not there', async () => {
+    const out = await runner(twoProposals(), {
+      baseBranch: async () => 'no-such-branch',
+    }).dream(repoArg(), opts());
+    expect(out).toEqual({
+      outcome: 'failed',
+      reason: 'the target branch was not found',
+    });
+    expectNothingLeft();
+    expect(store.journal()).toMatchObject([
+      { dreamId: `${DATE}-0`, outcome: 'failed' },
+    ]);
+  });
+
+  it('runs no repo hook: not when adding the worktree, reverting or committing', async () => {
+    const markers = ['post-checkout', 'pre-commit', 'post-commit'].map(
+      (name) => {
+        const marker = path.join(root, `${name}.ran`);
+        const file = path.join(repo, '.git', 'hooks', name);
+        writeFileSync(file, `#!/bin/sh\ntouch '${marker}'\n`);
+        chmodSync(file, 0o755);
+        return marker;
+      },
+    );
+    const runs = twoProposals();
+    runs[0].edits!['src/app.ts'] = 'changed\n';
+    const out = await runner(runs).dream(repoArg(), opts());
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(out.result.reverted).toEqual(['src/app.ts']);
+    expect(markers.filter((m) => existsSync(m))).toEqual([]);
+  });
+
+  it('reverts a write to an ignored path like any other outside change', async () => {
+    writeFileSync(path.join(repo, '.gitignore'), '*.log\n');
+    git(repo, 'add', '.gitignore');
+    git(repo, 'commit', '-q', '-m', 'ignore logs');
+    git(repo, 'push', '-q', 'origin', 'main');
+    const runs = twoProposals();
+    runs[0].edits!['src/debug.log'] = 'secret\n';
+    const out = await runner(runs).dream(repoArg(), opts());
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(out.result.reverted).toEqual(['src/debug.log']);
+    expect(
+      existsSync(path.join(out.result.worktreePath, 'src/debug.log')),
+    ).toBe(false);
+  });
+
+  it('bases the dream on the fetched target when origin is ahead', async () => {
+    const other = path.join(root, 'other');
+    git(root, 'clone', '-q', bare, 'other');
+    git(other, 'config', 'user.email', 'o@x');
+    git(other, 'config', 'user.name', 'O');
+    writeFileSync(path.join(other, 'ahead.txt'), 'ahead\n');
+    git(other, 'add', 'ahead.txt');
+    git(other, 'commit', '-q', '-m', 'ahead');
+    git(other, 'push', '-q', 'origin', 'main');
+    const ahead = show(other, 'rev-parse', 'HEAD');
+    const out = await runner(twoProposals()).dream(repoArg(), opts());
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(out.result.baseSha).toBe(ahead);
+    expect(show(repo, 'rev-parse', 'main')).not.toBe(ahead);
+  });
+
+  it('blanks an inherited OPENCODE_PERMISSION and gives the check run no edits in the worktree', async () => {
+    vi.stubEnv('OPENCODE_PERMISSION', '{"*":"allow"}');
+    try {
+      const out = await runner(twoProposals()).dream(repoArg(), opts());
+      expect(out.outcome).toBe('proposed');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    const [propose, check] = fake!.calls();
+    expect(propose.env.OPENCODE_PERMISSION).toBe('');
+    expect(check.env.OPENCODE_PERMISSION).toBe('');
+    const edit = (c: typeof propose) =>
+      JSON.parse(c.env.OPENCODE_CONFIG_CONTENT!).permission.edit as Record<
+        string,
+        string
+      >;
+    expect(edit(propose)['**']).toBe('allow');
+    expect(edit(check)['**']).toBeUndefined();
+  });
+
+  it('fails and removes everything when the check run changes a file', async () => {
+    const runs = twoProposals();
+    runs[1].edits = { '.apm/rules/a.md': 'rewritten by the check\n' };
+    const out = await runner(runs).dream(repoArg(), opts());
+    expect(out).toEqual({
+      outcome: 'failed',
+      reason: 'The check run changed files',
+    });
+    expectNothingLeft();
+    expect(store.repo('r1').covered).toEqual({});
+  });
+
+  it('fails as a dream when the sessions cannot be read', async () => {
+    const out = await runner(twoProposals(), {
+      sessionsOf: async () => {
+        throw new Error('/home/me/secret path');
+      },
+    }).dream(repoArg(), opts());
+    expect(out).toEqual({
+      outcome: 'failed',
+      reason: 'The sessions could not be read',
+    });
+    expect(store.repo('r1').failures).toBe(1);
+    expect(store.journal()).toMatchObject([
+      {
+        dreamId: `${DATE}-0`,
+        outcome: 'failed',
+        reason: 'The sessions could not be read',
+      },
+    ]);
+    expect(existsSync(dreamsDir)).toBe(false);
+  });
+
+  it('keeps the journal entry and the marks when another store call fails', async () => {
+    vi.spyOn(store, 'succeeded').mockRejectedValue(new Error('disk'));
+    vi.spyOn(store, 'addSightings').mockRejectedValue(new Error('disk'));
+    const out = await runner(twoProposals()).dream(repoArg(), opts());
+    expect(out.outcome).toBe('proposed');
+    expect(store.journal()).toMatchObject([{ outcome: 'proposed' }]);
+    expect(store.repo('r1').covered).toEqual({ t1: NOW - 4000 });
+  });
+
+  it('removes the dream and stores no marks when its result cannot be stored', async () => {
+    vi.spyOn(store, 'setResult').mockRejectedValue(new Error('disk'));
+    const out = await runner(twoProposals()).dream(repoArg(), opts());
+    expect(out).toEqual({
+      outcome: 'failed',
+      reason: 'The dream could not be saved',
+    });
+    expectNothingLeft();
+    expect(store.repo('r1').covered).toEqual({});
+    expect(store.journal()).toMatchObject([{ outcome: 'failed' }]);
+  });
+
+  /** A run that ignores its signal and settles only when told to. */
+  function lateRun() {
+    let settle: () => void = () => undefined;
+    let started = false;
+    const run = (() =>
+      new Promise<string>((_, reject) => {
+        started = true;
+        settle = () => reject(new Error('killed late'));
+      })) as DreamRunnerDeps['run'];
+    return { run, started: () => started, settle: () => settle() };
+  }
+
+  it('waits for a stopped run to end before removing its folders', async () => {
+    const late = lateRun();
+    const r = runner([], { run: late.run });
+    const ac = new AbortController();
+    const done = r.dream(repoArg(), opts(ac.signal));
+    await vi.waitFor(() => expect(late.started()).toBe(true));
+    ac.abort();
+    await new Promise((res) => setTimeout(res, 300));
+    expect(readdirSync(path.join(dreamsDir, 'r1'))).toEqual([`${DATE}-1`]);
+    late.settle();
+    expect(await done).toEqual({ outcome: 'interrupted', why: 'stopped' });
+    expectNothingLeft();
+  });
+
+  it('removes the folders after 10 s when a stopped run never ends', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const late = lateRun();
+    const r = runner([], { run: late.run });
+    const ac = new AbortController();
+    const done = r.dream(repoArg(), opts(ac.signal));
+    await vi.waitFor(() => expect(late.started()).toBe(true));
+    ac.abort();
+    await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(readdirSync(path.join(dreamsDir, 'r1'))).toEqual([`${DATE}-1`]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await done).toEqual({ outcome: 'interrupted', why: 'stopped' });
+    expectNothingLeft();
   });
 });

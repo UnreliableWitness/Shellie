@@ -3,9 +3,11 @@
  * on the dream branch. Git runs unattended here: no repo hook, no fsmonitor program and no signing prompt.
  */
 
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathExists, removeTree } from '../fsRetry';
-import { GitError, type GitClient } from '../services/GitClient';
+import type { GitClient } from '../services/GitClient';
 
 /** The author of Shellie's dream commits when the repo has none configured. */
 export const FALLBACK_AUTHOR = {
@@ -54,7 +56,10 @@ export async function nextDreamId(
   }
 }
 
-/** Every path that differs from HEAD in the worktree, untracked files included: repo-relative, `/`, sorted. */
+/**
+ * Every path that differs from HEAD in the worktree, untracked and ignored files included (an agent's write to an
+ * ignored path is a change like any other): repo-relative, `/`, sorted.
+ */
 export async function changedPaths(
   git: Git,
   worktree: string,
@@ -66,6 +71,7 @@ export async function changedPaths(
     '--porcelain=v1',
     '-z',
     '--untracked-files=all',
+    '--ignored',
     '--no-renames',
   ]);
   const paths = out
@@ -75,10 +81,56 @@ export async function changedPaths(
   return [...new Set(paths)].sort();
 }
 
+/** What each changed path holds now: a hash of its content (a symlink's target), `-` when it is gone. */
+export async function snapshot(
+  worktree: string,
+  paths: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const p of paths) {
+    const abs = path.join(worktree, p);
+    const st = await fs.lstat(abs).catch(() => null);
+    const content = !st
+      ? null
+      : st.isSymbolicLink()
+        ? Buffer.from(`link:${await fs.readlink(abs)}`)
+        : st.isFile()
+          ? await fs.readFile(abs)
+          : Buffer.from('other');
+    out.set(
+      p,
+      content === null
+        ? '-'
+        : createHash('sha256').update(content).digest('hex'),
+    );
+  }
+  return out;
+}
+
+export const sameSnapshot = (
+  a: Map<string, string>,
+  b: Map<string, string>,
+): boolean => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
+
+/** Puts `paths` back as they are at `base` (a path `base` does not have is deleted), without hooks. */
+export function revertPaths(
+  git: Pick<GitClient, 'discardPaths'>,
+  worktree: string,
+  base: string,
+  paths: string[],
+  config: string[],
+): Promise<void> {
+  return git.discardPaths(worktree, base, paths, config);
+}
+
 /** The author settings for a commit: none when the repo has an author, else Shellie's own. */
-async function authorConfig(git: Git, worktree: string): Promise<string[]> {
+async function authorConfig(
+  git: Git,
+  worktree: string,
+  config: string[],
+): Promise<string[]> {
   const get = (key: string) =>
-    git.run(worktree, ['config', '--get', key]).then(
+    git.run(worktree, [...withConfig(config), 'config', '--get', key]).then(
       (s) => s.trim(),
       () => '',
     );
@@ -95,19 +147,23 @@ async function authorConfig(git: Git, worktree: string): Promise<string[]> {
 }
 
 /**
- * Commits exactly `files` (changed, added or deleted) with `subject` and `body`; returns the new commit's sha. Nothing
- * else is staged: the caller has reverted every other change.
+ * Commits exactly `files` (changed, added, deleted, or ignored and named on purpose) with `subject` and `body`;
+ * returns the new commit's sha. Nothing else is staged: the caller has reverted every other change.
  */
 export async function commitFiles(
   git: Git,
   worktree: string,
   o: { files: string[]; subject: string; body: string; config: string[] },
 ): Promise<string> {
-  const c = withConfig([...o.config, ...(await authorConfig(git, worktree))]);
+  const c = withConfig([
+    ...o.config,
+    ...(await authorConfig(git, worktree, o.config)),
+  ]);
   await git.run(worktree, [
     ...c,
     '--literal-pathspecs',
     'add',
+    '-f',
     '--',
     ...o.files,
   ]);
@@ -120,32 +176,57 @@ export async function commitFiles(
     o.subject,
     ...(o.body.trim() ? ['-m', o.body] : []),
   ]);
-  return (await git.run(worktree, ['rev-parse', 'HEAD'])).trim();
+  return (await git.run(worktree, [...c, 'rev-parse', 'HEAD'])).trim();
 }
 
-/** `dream: <title>`, the title cut to 72 characters. */
-export const commitSubject = (title: string): string =>
-  `dream: ${title.length > 72 ? title.slice(0, 72) : title}`;
+const SUBJECT_MAX = 72;
+const PREFIX = 'dream: ';
 
 /**
- * Removes a dream's worktree, its folder (worktree, data, hooks) and its branch; also after a half-made worktree.
- * Best effort: git's own removal first, then what is left.
+ * `dream: <title>`, at most 72 characters in all: line breaks and control characters become single spaces, a longer
+ * title is cut with an ellipsis, never inside a surrogate pair.
+ */
+export function commitSubject(title: string): string {
+  const clean = title.replace(
+    // eslint-disable-next-line no-control-regex -- control characters are what is replaced
+    /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,
+    ' ',
+  );
+  const full = PREFIX + clean;
+  if (full.length <= SUBJECT_MAX) return full;
+  let cut = full.slice(0, SUBJECT_MAX - 1);
+  if (/[\ud800-\udbff]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut}…`;
+}
+
+/** What a dream made itself, and so may remove; null for what it did not make (or found already there). */
+export type DreamMade = {
+  dir: string | null;
+  worktree: string | null;
+  branch: string | null;
+};
+
+/**
+ * Removes what the dream made: its worktree (git's own removal first), its folder (worktree, data, hooks) and its
+ * branch; also after a half-made worktree. Never anything it did not make. Best effort; the first failure is returned.
  */
 export async function removeDream(
   git: Git,
   repoPath: string,
-  o: { dir: string; worktree: string; branch: string },
-): Promise<void> {
-  await git.worktreeRemove(repoPath, o.worktree, true).catch(() => undefined);
-  await removeTree(o.dir).catch(() => undefined);
-  await git.worktreePrune(repoPath).catch(() => undefined);
-  if (await git.branchExists(repoPath, o.branch))
-    await git.deleteBranch(repoPath, o.branch).catch(() => undefined);
-}
-
-/** `git: <first line of git's own error>` for a git failure, null for anything else. */
-export function gitReason(e: unknown): string | null {
-  if (!(e instanceof GitError)) return null;
-  const first = e.stderr.trim().split(/\r?\n/)[0]?.trim();
-  return `git: ${first || 'failed'}`;
+  made: DreamMade,
+): Promise<unknown> {
+  let failure: unknown = null;
+  const step = (p: Promise<unknown>) =>
+    p.catch((e: unknown) => {
+      failure ??= e;
+    });
+  if (made.worktree)
+    await git
+      .worktreeRemove(repoPath, made.worktree, true)
+      .catch(() => undefined);
+  if (made.dir) await step(removeTree(made.dir));
+  if (made.worktree) await step(git.worktreePrune(repoPath));
+  if (made.branch && (await git.branchExists(repoPath, made.branch)))
+    await step(git.deleteBranch(repoPath, made.branch));
+  return failure;
 }
