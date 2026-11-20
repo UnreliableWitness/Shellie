@@ -3,7 +3,7 @@
  * Bump `DREAM_PROMPT_VERSION` when the wording changes in a way that matters.
  */
 
-export const DREAM_PROMPT_VERSION = 3;
+export const DREAM_PROMPT_VERSION = 4;
 
 const REPORT_SHAPE = `{
   "proposals": [
@@ -61,9 +61,12 @@ export function checkPrompt(o: { dataDir: string; folders: string[] }): string {
 
 ${rules(o.dataDir, o.folders)}
 
-Read ${o.dataDir}/report.json and the changed files in the allowed folders (the proposals' "files"). For each proposal ask:
+Read ${o.dataDir}/report.json, ${o.dataDir}/changes.diff and the changed files in the allowed folders (the proposals' "files").
+The files in the worktree already contain the proposed changes. ${o.dataDir}/changes.diff shows exactly what the proposals added and removed: lines with a leading + were added by them, lines with a leading - were removed by them.
+
+For each proposal ask:
 - Is the evidence really in the sessions (${o.dataDir}/tasks/), with those words? Each quote must be found word for word in a line that starts with **Developer:**. A proposal without such a quote, or with a quote that is not found word for word in the session files: fail it.
-- Does it repeat, or contradict, a skill, rule or agent that already exists?
+- Does it repeat, or contradict, a skill, rule or agent that already exists? "Repeats or contradicts an existing source" means something that was in the repo before these changes: lines without a leading + in changes.diff, and files it does not list. Never fail a proposal because its own added text is now in the file.
 - Is the file well formed for its kind (frontmatter, name)?
 
 You must change no source file: edit no file in the allowed folders. The only file you write is ${o.dataDir}/report.json: keep its content as it is and add to each proposal

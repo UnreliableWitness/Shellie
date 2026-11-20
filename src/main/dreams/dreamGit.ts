@@ -86,6 +86,63 @@ export async function changedPaths(
   return [...new Set(paths)].sort();
 }
 
+/** `changes.diff` is cut to at most this many bytes. */
+export const CHANGES_DIFF_MAX = 2 * 1024 * 1024;
+/** The last line of a cut `changes.diff`. */
+export const CHANGES_DIFF_CUT =
+  '[Shellie: this diff was cut at 2 MB; the changes go on past this line.]';
+
+/**
+ * Writes git's own diff of the worktree against `base` to `file`: changed, added and deleted files, untracked new
+ * files included (ignored ones not). Uses a temporary index at `index` (removed afterwards), so the worktree's own
+ * index stays as it was; no external diff, text conversion or colour. Over `CHANGES_DIFF_MAX` bytes the file is cut
+ * at a line end and ends with `CHANGES_DIFF_CUT`.
+ */
+export async function writeChangesDiff(
+  git: Git,
+  worktree: string,
+  o: { base: string; file: string; index: string; config: string[] },
+): Promise<void> {
+  const c = withConfig(o.config);
+  const env = { GIT_INDEX_FILE: o.index };
+  try {
+    await git.run(worktree, [...c, 'read-tree', o.base], { env });
+    await git.run(worktree, [...c, 'add', '-A', '--', '.'], { env });
+    await git.run(
+      worktree,
+      [
+        ...c,
+        'diff',
+        '--cached',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--no-color',
+        '--no-renames',
+        `--output=${o.file}`,
+        o.base,
+      ],
+      { env },
+    );
+  } finally {
+    await fs.rm(o.index, { force: true });
+  }
+  const { size } = await fs.stat(o.file);
+  if (size <= CHANGES_DIFF_MAX) return;
+  const note = Buffer.from(`\n${CHANGES_DIFF_CUT}\n`);
+  const keep = CHANGES_DIFF_MAX - note.length;
+  const handle = await fs.open(o.file, 'r+');
+  try {
+    const head = Buffer.alloc(keep);
+    await handle.read(head, 0, keep, 0);
+    const lastLine = head.lastIndexOf(0x0a);
+    const end = lastLine < 0 ? 0 : lastLine;
+    await handle.truncate(end);
+    await handle.write(note, 0, note.length, end);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** What each changed path holds now: a hash of its content (a symlink's target), `-` when it is gone. */
 export async function snapshot(
   worktree: string,

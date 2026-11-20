@@ -2,7 +2,9 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -12,10 +14,13 @@ import { cleanupTempRepos, git, makeRepo } from '../test-helpers/gitRepo';
 import {
   changedPaths,
   commitFiles,
+  CHANGES_DIFF_CUT,
+  CHANGES_DIFF_MAX,
   commitSubject,
   nextDreamId,
   removeDream,
   unattendedConfig,
+  writeChangesDiff,
 } from './dreamGit';
 
 const NOW = new Date(2026, 10, 20, 12).getTime();
@@ -154,5 +159,61 @@ describe('dreamGit', () => {
     const emoji = commitSubject(`${'y'.repeat(63)}\u{1F600}${'z'.repeat(20)}`);
     expect(emoji).toBe(`dream: ${'y'.repeat(63)}…`);
     expect(emoji.length).toBeLessThanOrEqual(72);
+  });
+
+  it('writes the worktree against the base as git’s diff, a new untracked file included, index untouched', async () => {
+    const repo = makeRepo();
+    const base = git(repo, 'rev-parse', 'HEAD').trim();
+    writeFileSync(path.join(repo, 'README.md'), 'changed line\n');
+    mkdirSync(path.join(repo, '.apm', 'rules'), { recursive: true });
+    writeFileSync(
+      path.join(repo, '.apm', 'rules', 'logging.md'),
+      'Write every log message in English.\n',
+    );
+    const out = path.join(path.dirname(repo), 'data', 'changes.diff');
+    mkdirSync(path.dirname(out));
+    const statusBefore = git(repo, 'status', '--porcelain');
+    const hooks = path.join(path.dirname(repo), 'nohooks');
+    mkdirSync(hooks);
+    await writeChangesDiff(gc, repo, {
+      base,
+      file: out,
+      index: path.join(path.dirname(repo), 'changes.index'),
+      config: unattendedConfig(hooks),
+    });
+    const diff = readFileSync(out, 'utf8');
+    expect(diff).toContain('+++ b/.apm/rules/logging.md');
+    expect(diff).toContain('+Write every log message in English.');
+    expect(diff).toContain('+++ b/README.md');
+    expect(diff).toContain('+changed line');
+    expect(diff).not.toContain(CHANGES_DIFF_CUT);
+    // The worktree's own index and status stay as they were; the temporary index is gone.
+    expect(git(repo, 'status', '--porcelain')).toBe(statusBefore);
+    expect(existsSync(path.join(path.dirname(repo), 'changes.index'))).toBe(
+      false,
+    );
+  });
+
+  it('cuts the diff at 2 MB and ends it with a line saying so', async () => {
+    const repo = makeRepo();
+    const base = git(repo, 'rev-parse', 'HEAD').trim();
+    const line = `${'x'.repeat(99)}\n`;
+    writeFileSync(path.join(repo, 'big.md'), line.repeat(30_000));
+    const out = path.join(path.dirname(repo), 'changes.diff');
+    await writeChangesDiff(gc, repo, {
+      base,
+      file: out,
+      index: path.join(path.dirname(repo), 'changes.index'),
+      config: [],
+    });
+    expect(CHANGES_DIFF_MAX).toBe(2 * 1024 * 1024);
+    expect(statSync(out).size).toBeLessThanOrEqual(CHANGES_DIFF_MAX);
+    const diff = readFileSync(out, 'utf8');
+    expect(diff.endsWith(`\n${CHANGES_DIFF_CUT}\n`)).toBe(true);
+    // Cut at a line end: every line before the note is a whole diff line.
+    const lines = diff.split('\n').slice(0, -2);
+    expect(lines.filter((l) => l.startsWith('+x')).at(-1)).toBe(
+      `+${'x'.repeat(99)}`,
+    );
   });
 });

@@ -9,7 +9,7 @@ describe('prompts', () => {
     check: checkPrompt(o),
   };
   it('has a version', () => {
-    expect(DREAM_PROMPT_VERSION).toBe(3);
+    expect(DREAM_PROMPT_VERSION).toBe(4);
   });
   it.each(Object.entries(texts))(
     '%s names data dir, folders and report',
@@ -51,5 +51,23 @@ describe('prompts', () => {
     expect(texts.check).toContain('change no source file');
     expect(texts.check).toContain('verdict');
     expect(texts.check).toContain('verdictWhy');
+  });
+  it('check judges against the sources as they were before the proposals, from changes.diff', () => {
+    expect(texts.check).toContain('/data/dreams/d1/changes.diff');
+    expect(texts.check).toContain(
+      'The files in the worktree already contain the proposed changes.',
+    );
+    expect(texts.check).toContain(
+      'shows exactly what the proposals added and removed',
+    );
+    expect(texts.check).toContain(
+      'means something that was in the repo before these changes',
+    );
+    expect(texts.check).toContain(
+      'lines without a leading + in changes.diff, and files it does not list',
+    );
+    expect(texts.check).toContain(
+      'Never fail a proposal because its own added text is now in the file.',
+    );
   });
 });

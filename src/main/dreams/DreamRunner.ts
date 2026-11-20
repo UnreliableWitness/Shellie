@@ -31,6 +31,7 @@ import {
   sameSnapshot,
   snapshot,
   unattendedConfig,
+  writeChangesDiff,
   type DreamMade,
 } from './dreamGit';
 import {
@@ -329,6 +330,16 @@ export class DreamRunner {
     m.sightings = proposed.sightings;
     if (proposed.proposals.length === 0) return { outcome: 'nothing' };
     const before = await changes();
+    // What the propose run changed, for the check run: the worktree already holds it, the sources as they were are
+    // the diff's old side. In the data folder, outside the worktree, so the read-only comparison does not count it.
+    await step(REASON.changes, () =>
+      writeChangesDiff(git, m.worktree, {
+        base: baseSha,
+        file: path.join(m.dataDir, 'changes.diff'),
+        index: path.join(dir, 'changes.index'),
+        config,
+      }),
+    );
 
     if (this.current) this.current.step = 'checking';
     await this.opencode(

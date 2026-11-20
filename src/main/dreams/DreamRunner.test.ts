@@ -690,6 +690,28 @@ describe('DreamRunner', () => {
     expect(edit(check)['**']).toBeUndefined();
   });
 
+  it('writes the propose run’s changes to changes.diff in the data folder before the check run', async () => {
+    let seen: string | null = null;
+    let calls = 0;
+    const r = runner(twoProposals(), {
+      run: (cmd, o) => {
+        calls += 1;
+        if (calls === 2) {
+          const file = path.join(path.dirname(o.cwd), 'data', 'changes.diff');
+          seen = existsSync(file) ? readFileSync(file, 'utf8') : null;
+        }
+        return runWithInput(cmd, o);
+      },
+    });
+    const out = await r.dream(repoArg(), opts());
+    // Outside the worktree: the read-only backstop does not count it, and nothing of it is committed.
+    expect(out.outcome).toBe('proposed');
+    expect(seen).toContain('+++ b/.apm/rules/a.md');
+    expect(seen).toContain('+A');
+    expect(seen).toContain('+++ b/.apm/rules/b.md');
+    expect(fake!.calls()[1].input).toContain('changes.diff');
+  });
+
   it('fails and removes everything when the check run changes a file', async () => {
     const runs = twoProposals();
     runs[1].edits = { '.apm/rules/a.md': 'rewritten by the check\n' };
