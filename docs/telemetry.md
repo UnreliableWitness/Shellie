@@ -65,7 +65,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `pr.created` | Finish created a draft pull request; none |
 | `pr.linked` | Finish linked an existing active pull request instead of creating one; none |
 | `pr.summary` | Finish got a PR's "what changed and why" (#111, from the session since 2026-11-14); `ok`; `source`: `tab` (the task's own agent tab wrote it) or `headless` (a background run); `agent`: `claude` or `opencode`; `reason` for a headless one, why the tab was not used (`no-tab`, `busy`, `stale`: not used in the last hour, `typing`: unsent text in its prompt, `no-reply`, `exited`, `timeout`); `failure` when it failed (`no-base`: the branch's start is unknown, `no-agent`: neither Claude Code nor OpenCode is installed, `timeout`, `empty`, `failed`); measurements `ms` and, when written, `chars`. Never the text, the prompt, the session or the diff |
-| `pr.failed` | Finish stopped because the push or pull request failed; `kind` (`git`, or the Azure DevOps error kind: `unauthorized`, `not-found`, `unreachable`, `http`) |
+| `pr.failed` | Finish stopped because the push or pull request failed; `kind` (`git`, or the Azure DevOps error kind: `unauthorized`, `not-found`, `unreachable`, `http`); for Azure DevOps errors also `status` (the HTTP status) and `code` (the `TF…` number in its message), when there is one |
 | `setup.finished` | ok; retry; kind of the failed step (`fetch`, `worktree`, `copy`, `task-file`, `command`, `terminals`); duration; step count |
 | `setup.retried`, `setup.cancelled` | none |
 | `task.reopened` | where the branch came from (`folder`: worktree kept, `branch`, `origin`, `commit`, `base`) |

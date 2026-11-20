@@ -587,6 +587,34 @@ export class GitClient {
     }
   }
 
+  /**
+   * Whether `remote` has the branch now (`git ls-remote`), or null when git could not ask (offline, no
+   * sign-in, timeout). Runs without a console like `push`, and gives up after `fetchTimeoutMs`.
+   */
+  async remoteBranchExists(
+    cwd: string,
+    remote: string,
+    branch: string,
+  ): Promise<boolean | null> {
+    try {
+      const ctx = await this.remoteAuth(cwd, remote);
+      const env: Record<string, string> = {
+        ...((await this.hasOwnSshCommand(cwd))
+          ? {}
+          : { GIT_SSH_COMMAND: BATCH_SSH }),
+        ...ctx.auth.env,
+      };
+      const out = await this.run(
+        cwd,
+        ['ls-remote', '--heads', remote, `refs/heads/${branch}`],
+        { timeoutMs: this.fetchTimeoutMs, env },
+      );
+      return out.trim() !== '';
+    } catch {
+      return null;
+    }
+  }
+
   private async hasOwnSshCommand(cwd: string): Promise<boolean> {
     if (process.env.GIT_SSH_COMMAND || process.env.GIT_SSH) return true;
     const configured = await this.run(cwd, [
