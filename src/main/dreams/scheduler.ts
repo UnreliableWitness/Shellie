@@ -294,9 +294,12 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
 
   const tick = async () => {
     if (stopped) return;
+    const before = wait;
     const r = await decide();
     if ('wait' in r) wait = r.wait;
     else if (!start(r.repoId)) wait = 'nothing-ready';
+    // The screens show why no dream starts: a new reason is news (`start` sends its own).
+    if (wait !== null && wait !== before) d.broadcast();
   };
 
   // ── sweep ──
@@ -444,6 +447,8 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     switchOn(save: () => Promise<void>): Promise<void> {
       return serial(async () => {
         await save();
+        // The last check's wait (`off`) no longer holds; the next check says why a dream waits.
+        wait = null;
         await d.store.setSwitchedOff(null);
         offUnrecorded = false;
       });

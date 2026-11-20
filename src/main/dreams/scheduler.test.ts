@@ -360,6 +360,33 @@ describe('the dream scheduler', () => {
     error.mockRestore();
   });
 
+  it('tells the screens when a check finds a new reason to wait, and only then', async () => {
+    idle = 0;
+    start();
+    await tick();
+    expect(scheduler!.status().wait).toBe('active');
+    expect(deps.broadcast).toHaveBeenCalledTimes(1);
+    await tick();
+    expect(deps.broadcast).toHaveBeenCalledTimes(1);
+    deps.limit.hasRoom = () => false;
+    idle = 3600;
+    await tick();
+    expect(scheduler!.status().wait).toBe('limit');
+    expect(deps.broadcast).toHaveBeenCalledTimes(2);
+  });
+
+  it('switchOn() forgets the wait of a check made while dreaming was off', async () => {
+    app = { ...app, dreaming: dreaming({ enabled: false }) };
+    start();
+    await tick();
+    expect(scheduler!.status().wait).toBe('off');
+    await scheduler!.switchOn(async () => {
+      app = { ...app, dreaming: dreaming() };
+    });
+    // Until the next check: no reason to wait is known, rather than "Dreams are off".
+    expect(scheduler!.status().wait).toBeNull();
+  });
+
   it('switchOn() ends a switch-off at once', async () => {
     start();
     await tick();
