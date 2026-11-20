@@ -241,6 +241,14 @@ describe('dreamEnv', () => {
     expect(decide(permission, 'edit', '.apm/rules/hooks.md')).toBe('allow');
   });
 
+  it('lets a case variant of hooks through OpenCode’s rules; the revert after the run catches it', () => {
+    const { permission } = config();
+    // OpenCode's patterns match with case (as its wildcard does), so `.apm/Hooks/x` is not denied by the edit rules.
+    expect(decide(permission, 'edit', '.apm/Hooks/x')).toBe('allow');
+    // `isProtectedPath` ignores case: `splitAllowed` counts it as outside, so it is reverted and listed on the result.
+    expect(isProtectedPath('.apm/Hooks/x')).toBe(true);
+  });
+
   it('lets a read-only run (the check) edit the data folder only, nothing in the worktree', () => {
     const env = dreamEnv(
       {},

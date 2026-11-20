@@ -825,12 +825,12 @@ export function createHandlers(s: Services): Handlers {
       connections: s.connections.list().length,
     });
     // A tracker after all: the earlier No-tracker choice no longer holds.
-    const current = s.settings.get();
-    if (current.onboarding.tracker === 'none')
-      await s.settings.save({
-        ...current,
-        onboarding: { ...current.onboarding, tracker: null },
-      });
+    if (s.settings.get().onboarding.tracker === 'none')
+      await s.settings.update((cur) =>
+        cur.onboarding.tracker === 'none'
+          ? { ...cur, onboarding: { ...cur.onboarding, tracker: null } }
+          : cur,
+      );
     return verified;
   };
 
@@ -2618,7 +2618,7 @@ export function createHandlers(s: Services): Handlers {
       scan: scanProject,
       prefs: () => s.settings.get().editor,
       savePrefs: async (editor) => {
-        await s.settings.save({ ...s.settings.get(), editor });
+        await s.settings.update((cur) => ({ ...cur, editor }));
       },
       launch: s.launch,
       event: (n, p) => tel.event(n, p),
@@ -5058,11 +5058,8 @@ export function createHandlers(s: Services): Handlers {
     'settings:get': async () => s.settings.get(),
     'settings:save': async (next) => {
       const before = s.settings.get();
-      // Dreaming is never written from here (only `dream:*` change it): the block stays as stored when the write runs.
-      const saved = await s.settings.update((cur) => ({
-        ...next,
-        dreaming: cur.dreaming,
-      }));
+      // `dreaming` stays as stored (SettingsStore): only `dream:*` change it.
+      const saved = await s.settings.save(next);
       const changed = changedKeys(before, saved);
       if (saved.theme !== before.theme) s.applyTheme?.(saved.theme);
       // Turning telemetry off is the one change that is not reported.

@@ -7,7 +7,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { DreamSwitchedOff } from '../../shared/dreams';
+import type { DreamingSettings, DreamSwitchedOff } from '../../shared/dreams';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
 import { withTimeout } from '../async';
@@ -38,7 +38,9 @@ export type DreamSchedulerDeps = {
   /** Reads `dreaming`; writes `enabled: false` only, after a call answered by another model. */
   settings: {
     get(): AppSettings;
-    save(next: AppSettings): Promise<unknown>;
+    updateDreaming(
+      fn: (current: DreamingSettings) => DreamingSettings,
+    ): Promise<unknown>;
   };
   store: DreamStore;
   runner: Pick<DreamRunner, 'dream' | 'running'>;
@@ -178,7 +180,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     repoId: string;
   }): Promise<{ repoId: string } | { wait: Wait }> => {
     // A stored switch-off always wins, also across a restart: nothing starts (Dream now included), and settings
-    // that still say on are saved off again on every check. Only `clearSwitchedOff` (switching on) ends it.
+    // that still say on are saved off again on every check. Only `switchOn` ends it.
     if (offUnrecorded || d.store.switchedOff()) {
       if (d.settings.get().dreaming.enabled) await switchOff();
       return { wait: 'off' };
@@ -243,23 +245,14 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
 
   /** Saves `enabled: false`; false (logged) when it could not, and the next check tries again. */
   const switchOff = async (): Promise<boolean> => {
-    const cur = d.settings.get();
     try {
-      await d.settings.save({
-        ...cur,
-        dreaming: { ...cur.dreaming, enabled: false },
-      });
+      // From the settings as they are when the write runs, never a snapshot taken before.
+      await d.settings.updateDreaming((cur) => ({ ...cur, enabled: false }));
       return true;
     } catch (e) {
       console.error('[dreams] could not switch dreaming off', e);
       return false;
     }
-  };
-
-  const clearSwitchedOff = async () => {
-    await d.store.setSwitchedOff(null);
-    offUnrecorded = false;
-    d.broadcast();
   };
 
   const start = (repoId: string): boolean => {
@@ -429,20 +422,17 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           : { wait: 'nothing-ready' as const };
       });
     },
-    /** Ends a switch-off without switching on; `switchOn` is what the owner's switch uses. */
-    clearSwitchedOff(): Promise<void> {
-      return clearSwitchedOff();
-    },
     /**
-     * The owner switches dreaming on (`dream:switchOn`): the switch-off ends, then `save` writes `enabled: true`. Both
-     * run in the serial chain, so no check can find the switch-off gone and the settings still off, or save them off
-     * again, in between. Nothing is saved when the switch-off cannot be cleared. The caller broadcasts.
+     * The only way a switch-off ends: the owner switches dreaming on (`dream:switchOn`). `save` writes `enabled: true`,
+     * then the switch-off record is cleared, both in the serial chain, so no check runs in between. A save that throws
+     * keeps the record; a record that cannot be cleared keeps the switch-off in force (the next check saves off
+     * again). The caller broadcasts.
      */
     switchOn(save: () => Promise<void>): Promise<void> {
       return serial(async () => {
+        await save();
         await d.store.setSwitchedOff(null);
         offUnrecorded = false;
-        await save();
       });
     },
     stopDream(): void {

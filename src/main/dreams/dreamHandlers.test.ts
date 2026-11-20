@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   writeFileSync,
 } from 'node:fs';
@@ -66,8 +67,7 @@ const ready = (over: Partial<DreamingSettings> = {}): DreamingSettings => ({
   ...over,
 });
 
-const setDreaming = (d: DreamingSettings) =>
-  settings.save({ ...settings.get(), dreaming: d });
+const setDreaming = (d: DreamingSettings) => settings.updateDreaming(() => d);
 
 const entry = (dreamId: string, at: string): DreamJournalEntry => ({
   dreamId,
@@ -101,8 +101,8 @@ beforeEach(async () => {
     stopDream: vi.fn(),
     status: vi.fn(() => status),
     switchOn: vi.fn(async (save: () => Promise<void>) => {
-      await store.setSwitchedOff(null);
       await save();
+      await store.setSwitchedOff(null);
     }),
   };
   started = true;
@@ -328,6 +328,31 @@ describe('dream:save', () => {
     ]);
   });
 
+  it('a narrowing change that leaves nothing to dream switches dreaming off in the same write', async () => {
+    await setDreaming(ready({ enabled: true }));
+    const saved = await api().handlers['dream:save'](
+      {
+        ...ready({ enabled: true }),
+        repos: { r1: { on: false, folders: ['.apm'] } },
+      },
+      false,
+    );
+    expect(saved.enabled).toBe(false);
+    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(changed()).toBe(1);
+  });
+
+  it('says a settings write failure in a fixed phrase', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await setDreaming(ready({ enabled: true }));
+    vi.spyOn(settings, 'updateDreaming').mockRejectedValueOnce(
+      new Error(`ENOSPC: no space left, write '${dir}/settings.json'`),
+    );
+    await expect(api().handlers['dream:switchOff']()).rejects.toThrow(
+      /^The dream settings could not be saved$/,
+    );
+  });
+
   it('applies a widening change while off without the tick', async () => {
     await setDreaming(ready());
     await api().handlers['dream:save'](wider(ready()), false);
@@ -479,6 +504,16 @@ describe('dream:test', () => {
       ok: false,
       message: `${MODEL} did not answer`,
     });
+  });
+
+  it('says a test folder that cannot be made in a fixed phrase', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    deps.tmpDir = path.join(dir, 'missing', 'deeper');
+    expect(await api().handlers['dream:test'](MODEL)).toEqual({
+      ok: false,
+      message: 'The test could not be run',
+    });
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('runs one test at a time', async () => {
@@ -681,6 +716,8 @@ describe('a dream result', () => {
     expect(changed()).toBe(1);
   });
 
+  const MISMATCH = "The dream's record does not match its folder";
+
   it('never removes a folder outside the dreams folder', async () => {
     const r = await dreamWithThree();
     const elsewhere = mkdtempSync(path.join(tmpdir(), 'not-a-dream-'));
@@ -690,8 +727,73 @@ describe('a dream result', () => {
       worktreePath: path.join(elsewhere, 'wt'),
       dataDir: path.join(elsewhere, 'data'),
     });
-    await expect(api().handlers['dream:discard']('r1')).rejects.toThrow();
+    await expect(api().handlers['dream:discard']('r1')).rejects.toThrow(
+      MISMATCH,
+    );
     expect(existsSync(path.join(elsewhere, 'wt'))).toBe(true);
+    expect(await new GitClient().branchExists(repoPath, BRANCH)).toBe(true);
+  });
+
+  it('open as task never touches a checkout outside the dreams folder', async () => {
+    const r = await dreamWithThree();
+    await store.setDropped('r1', 'p2', true);
+    // A record pointing at the main checkout, which has uncommitted work.
+    writeFileSync(path.join(repoPath, 'README.md'), '# work in progress\n');
+    const head = git(repoPath, 'rev-parse', 'HEAD').trim();
+    const tip = git(repoPath, 'rev-parse', BRANCH).trim();
+    const bad = { ...store.repo('r1').result!, worktreePath: repoPath };
+    await store.setResult('r1', bad);
+    await expect(api().handlers['dream:openAsTask']('r1')).rejects.toThrow(
+      MISMATCH,
+    );
+    expect(git(repoPath, 'rev-parse', 'HEAD').trim()).toBe(head);
+    expect(readFileSync(path.join(repoPath, 'README.md'), 'utf8')).toBe(
+      '# work in progress\n',
+    );
+    expect(existsSync(path.join(path.dirname(repoPath), 'hooks'))).toBe(false);
+    expect(git(repoPath, 'rev-parse', BRANCH).trim()).toBe(tip);
+    expect(existsSync(r.worktreePath)).toBe(true);
+    expect(store.repo('r1').result).not.toBeNull();
+  });
+
+  it.each([
+    ['a branch of another shape', { branch: 'main' }],
+    ['a branch not named after the dream', { branch: 'dream/2026-11-20-2' }],
+    ['another repo id', { repoId: 'r2' }],
+  ] as const)('refuses a record with %s', async (_what, over) => {
+    const r = await dreamWithThree();
+    await store.setResult('r1', { ...r, ...over });
+    await expect(api().handlers['dream:openAsTask']('r1')).rejects.toThrow(
+      MISMATCH,
+    );
+    await expect(api().handlers['dream:discard']('r1')).rejects.toThrow(
+      MISMATCH,
+    );
+    expect(existsSync(r.worktreePath)).toBe(true);
+    expect(git(r.worktreePath, 'branch', '--show-current').trim()).toBe(BRANCH);
+  });
+
+  it('refuses when the dream worktree is not on the dream branch', async () => {
+    const r = await dreamWithThree();
+    git(r.worktreePath, 'checkout', '-q', '-b', 'elsewhere');
+    await expect(api().handlers['dream:openAsTask']('r1')).rejects.toThrow(
+      MISMATCH,
+    );
+    expect(git(r.worktreePath, 'branch', '--show-current').trim()).toBe(
+      'elsewhere',
+    );
+    expect(subjects(r.baseSha, BRANCH)).toHaveLength(3);
+  });
+
+  it('says a store failure in a fixed phrase, never the error’s path', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await dreamWithThree();
+    vi.spyOn(store, 'reject').mockRejectedValueOnce(
+      new Error(`EACCES: permission denied, open '${dir}/dreams.json'`),
+    );
+    await expect(api().handlers['dream:discard']('r1')).rejects.toThrow(
+      /^The dream could not be saved$/,
+    );
   });
 
   it('refuses result changes before the scheduler started (the store may not be loaded)', async () => {

@@ -229,4 +229,57 @@ describe('SettingsStore', () => {
     expect(s.get().showSplash).toBe(false);
     expect(s.get().receiverPort).toBe(4500);
   });
+  describe('dreaming is written only through updateDreaming', () => {
+    const on = (s: SettingsStore) =>
+      s.updateDreaming((d) => ({ ...d, enabled: true, model: 'zai/glm-5' }));
+
+    it('updateDreaming switches dreaming on and off', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await on(s);
+      expect(s.get().dreaming).toMatchObject({
+        enabled: true,
+        model: 'zai/glm-5',
+      });
+      await s.updateDreaming((d) => ({ ...d, enabled: false }));
+      expect(s.get().dreaming.enabled).toBe(false);
+    });
+
+    it('save and update keep the stored dreaming block as it is when the write runs', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await s.save({
+        ...s.get(),
+        dreaming: { ...s.get().dreaming, enabled: true, idleMinutes: 99 },
+      });
+      await s.update((cur) => ({
+        ...cur,
+        dreaming: { ...cur.dreaming, enabled: true },
+      }));
+      expect(s.get().dreaming).toEqual(defaultDreaming());
+    });
+
+    it('a whole stale object saved after a switch-off leaves dreaming off', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await on(s);
+      const stale = s.get();
+      // Queued together: the switch-off, then a writer that read the settings before it landed.
+      const off = s.updateDreaming((d) => ({ ...d, enabled: false }));
+      const late = s.save({ ...stale, showSplash: false });
+      await Promise.all([off, late]);
+      expect(s.get().dreaming.enabled).toBe(false);
+      expect(s.get().showSplash).toBe(false);
+    });
+
+    it('updateDreaming keeps every other setting as it is when the write runs', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      const first = s.save({ ...s.get(), receiverPort: 4600 });
+      const second = on(s);
+      await Promise.all([first, second]);
+      expect(s.get().receiverPort).toBe(4600);
+      expect(s.get().dreaming.enabled).toBe(true);
+    });
+  });
 });

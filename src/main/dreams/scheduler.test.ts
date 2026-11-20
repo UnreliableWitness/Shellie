@@ -96,10 +96,12 @@ beforeEach(async () => {
   deps = {
     settings: {
       get: () => app,
-      save: vi.fn(async (next: AppSettings) => {
-        app = next;
-        return next;
-      }),
+      updateDreaming: vi.fn(
+        async (fn: (d: DreamingSettings) => DreamingSettings) => {
+          app = { ...app, dreaming: fn(app.dreaming) };
+          return app;
+        },
+      ),
     },
     store,
     runner: fake.runner,
@@ -272,7 +274,7 @@ describe('the dream scheduler', () => {
     // Nothing running: both are no-ops.
     await vi.advanceTimersByTimeAsync(0);
     expect(() => scheduler!.stopDream()).not.toThrow();
-    expect(deps.settings.save).not.toHaveBeenCalled();
+    expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
   });
 
   it('quit() suspends and waits for the dream to end, never longer than asked', async () => {
@@ -320,18 +322,20 @@ describe('the dream scheduler', () => {
     expect(scheduler!.status().wait).toBe('off');
   });
 
-  it('a stored switch-off wins across a restart: no dream, the save retried each check, cleared only by clearSwitchedOff()', async () => {
+  it('a stored switch-off wins across a restart: no dream, the save retried each check, cleared only by switchOn()', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
     // As the last run left it: recorded, but `enabled: false` never saved.
     await store.setSwitchedOff(off);
     let failures = 2;
-    const save = vi.fn(async (next: AppSettings) => {
-      if (failures-- > 0) throw new Error('disk full');
-      app = next;
-      return next;
-    });
-    start({ settings: { get: () => app, save } });
+    const save = vi.fn(
+      async (fn: (d: DreamingSettings) => DreamingSettings) => {
+        if (failures-- > 0) throw new Error('disk full');
+        app = { ...app, dreaming: fn(app.dreaming) };
+        return app;
+      },
+    );
+    start({ settings: { get: () => app, updateDreaming: save } });
     expect(await scheduler!.dreamNow(REPO.id)).toEqual({ wait: 'off' });
     await tick();
     expect(save).toHaveBeenCalledTimes(2);
@@ -343,39 +347,40 @@ describe('the dream scheduler', () => {
     expect(save).toHaveBeenCalledTimes(3);
     expect(fake.calls).toHaveLength(0);
     expect(store.switchedOff()).toEqual(off);
-    // Even with dreaming on again, only clearSwitchedOff() lets a dream start.
+    // Even with dreaming on again, only switchOn() lets a dream start.
     app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
     await tick();
     expect(fake.calls).toHaveLength(0);
     expect(store.switchedOff()).toEqual(off);
-    app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
-    await scheduler!.clearSwitchedOff();
+    await scheduler!.switchOn(async () => {
+      app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+    });
     await tick();
     expect(fake.calls).toHaveLength(1);
     error.mockRestore();
   });
 
-  it('clearSwitchedOff() clears it at once', async () => {
+  it('switchOn() ends a switch-off at once', async () => {
     start();
     await tick();
     fake.finish({ outcome: 'wrong-model', answered: ['a/b'] });
     await vi.waitFor(() => expect(store.switchedOff()).not.toBeNull());
-    vi.mocked(deps.broadcast).mockClear();
-    await scheduler!.clearSwitchedOff();
+    await scheduler!.switchOn(async () => undefined);
     expect(store.switchedOff()).toBeNull();
     expect(scheduler!.status().switchedOff).toBeNull();
-    expect(deps.broadcast).toHaveBeenCalled();
   });
 
   it('after a wrong model, a failed save is retried each check and nothing starts meanwhile, Dream now included', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     let failures = 2;
-    const save = vi.fn(async (next: AppSettings) => {
-      if (failures-- > 0) throw new Error('disk full');
-      app = next;
-      return next;
-    });
-    start({ settings: { get: () => app, save } });
+    const save = vi.fn(
+      async (fn: (d: DreamingSettings) => DreamingSettings) => {
+        if (failures-- > 0) throw new Error('disk full');
+        app = { ...app, dreaming: fn(app.dreaming) };
+        return app;
+      },
+    );
+    start({ settings: { get: () => app, updateDreaming: save } });
     await tick();
     fake.finish({ outcome: 'wrong-model', answered: ['a/b'] });
     await vi.waitFor(() => expect(store.switchedOff()).not.toBeNull());
@@ -394,7 +399,7 @@ describe('the dream scheduler', () => {
     error.mockRestore();
   });
 
-  it('switchOn() clears the switch-off and saves in one step: no check runs its retry in between', async () => {
+  it('switchOn() saves, then clears the switch-off, in one step: no check runs its retry in between', async () => {
     const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
     await store.setSwitchedOff(off);
     app = { ...app, dreaming: { ...app.dreaming, enabled: false } };
@@ -402,35 +407,52 @@ describe('the dream scheduler', () => {
     let release!: () => void;
     const saved = new Promise<void>((r) => (release = r));
     const on = scheduler!.switchOn(async () => {
-      expect(store.switchedOff()).toBeNull();
+      // Cleared only once the save went through.
+      expect(store.switchedOff()).toEqual(off);
       // A check falls due while the save is still writing.
       await tick();
-      expect(deps.settings.save).not.toHaveBeenCalled();
+      expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
       await saved;
       app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
     });
     await vi.advanceTimersByTimeAsync(0);
     release();
     await on;
-    expect(deps.settings.save).not.toHaveBeenCalled();
+    expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
     await tick();
     expect(app.dreaming.enabled).toBe(true);
     expect(fake.calls).toHaveLength(1);
   });
 
-  it('switchOn() saves nothing when the switch-off cannot be cleared', async () => {
-    await store.setSwitchedOff({
-      answered: 'a/b',
-      chosen: MODEL,
-      repoId: REPO.id,
-    });
+  it('switchOn() keeps the switch-off record when its save throws', async () => {
+    const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
+    await store.setSwitchedOff(off);
+    start();
+    await expect(
+      scheduler!.switchOn(async () => {
+        throw new Error('disk full');
+      }),
+    ).rejects.toThrow('disk full');
+    expect(store.switchedOff()).toEqual(off);
+    await tick();
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('switchOn() that saved but could not clear the record leaves the switch-off in force', async () => {
+    const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
+    await store.setSwitchedOff(off);
     start();
     vi.spyOn(store, 'setSwitchedOff').mockRejectedValueOnce(
       new Error('disk full'),
     );
-    const save = vi.fn(async () => undefined);
-    await expect(scheduler!.switchOn(save)).rejects.toThrow('disk full');
-    expect(save).not.toHaveBeenCalled();
+    await expect(
+      scheduler!.switchOn(async () => {
+        app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+      }),
+    ).rejects.toThrow('disk full');
+    await tick();
+    expect(app.dreaming.enabled).toBe(false);
+    expect(fake.calls).toHaveLength(0);
   });
 
   it('status() names the running dream and the sessions it knows per repo', async () => {
@@ -452,7 +474,7 @@ describe('the dream scheduler', () => {
     await tick();
     fake.finish({ outcome: 'interrupted', why: 'limit' });
     await vi.advanceTimersByTimeAsync(0);
-    expect(deps.settings.save).not.toHaveBeenCalled();
+    expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
     expect(app.dreaming.enabled).toBe(true);
   });
 

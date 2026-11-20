@@ -23,7 +23,6 @@ import {
 import type { Handlers } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
-import { isInside } from '../paths';
 import type { Platform } from '../platform/Platform';
 import type { GitClient } from '../services/GitClient';
 import { programMissing, type runWithInput } from '../services/prSummary';
@@ -43,6 +42,34 @@ const OPENED_MS = 10 * 60_000;
 const MODELS_MS = 10 * 60_000;
 
 const OPEN_FAILED = 'The dream could not be opened as a task';
+const TEST_FAILED = 'The test could not be run';
+const MISMATCH = "The dream's record does not match its folder";
+const SETTINGS_FAILED = 'The dream settings could not be saved';
+/** A dream's id as the runner makes it (`<YYYY-MM-DD>-<n>`); its branch is `dream/<id>`. */
+const DREAM_ID = /^\d{4}-\d{2}-\d{2}-\d+$/;
+
+/** A fixed phrase for the renderer. Any other error is logged and replaced by the handler's own phrase. */
+class Refusal extends Error {}
+const refuse = (message: string) => new Refusal(message);
+
+/** Runs `fn`; an error that is not a `Refusal` (a disk or git error, which may name a path) becomes `message`. */
+async function phrased<T>(message: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof Refusal) throw e;
+    console.error(`[dreams] ${message}`, e);
+    throw refuse(message);
+  }
+}
+
+const samePath = (a: string, b: string): boolean => {
+  const norm = (p: string) =>
+    process.platform === 'win32'
+      ? path.resolve(p).toLowerCase()
+      : path.resolve(p);
+  return norm(a) === norm(b);
+};
 
 export type DreamChannel = Extract<keyof Handlers, `dream:${string}`>;
 export type DreamHandlers = Pick<Handlers, DreamChannel>;
@@ -62,7 +89,10 @@ type Repo = { id: string; name: string; path: string };
 export type DreamHandlerDeps = {
   settings: {
     get(): AppSettings;
-    update(fn: (current: AppSettings) => AppSettings): Promise<AppSettings>;
+    /** The one way `dreaming` is written (`SettingsStore.updateDreaming`). */
+    updateDreaming(
+      fn: (current: DreamingSettings) => DreamingSettings,
+    ): Promise<AppSettings>;
   };
   store: DreamStore;
   /** Null until the scheduler started (the store is loaded then); only reads are answered before. */
@@ -156,42 +186,72 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   /** The scheduler, for a call that writes the dream store: it is loaded once the scheduler started. */
   const started = () => {
     const s = d.scheduler();
-    if (!s) throw new Error('Dreams are still starting');
+    if (!s) throw refuse('Dreams are still starting');
     return s;
   };
 
   const saveDreaming = async (
     fn: (cur: DreamingSettings) => DreamingSettings,
   ): Promise<DreamingSettings> =>
-    (await d.settings.update((cur) => ({ ...cur, dreaming: fn(cur.dreaming) })))
-      .dreaming;
+    (await d.settings.updateDreaming(fn)).dreaming;
 
   const openResult = (repoId: string): DreamResult => {
     const r = d.store.repo(repoId).result;
-    if (!r) throw new Error('This repo has no dream to review');
+    if (!r) throw refuse('This repo has no dream to review');
     return r;
   };
 
-  /** The dream's folder (worktree, data, hooks), refused when it is not in the dreams folder. */
-  const dreamDir = async (r: DreamResult): Promise<string> => {
-    const dir = path.dirname(r.worktreePath);
+  /**
+   * The stored result as the runner made it, checked before anything acts on its paths: this repo's id, an id and
+   * branch of the runner's shape, worktree and data at `<dreamsDir>/<repoId>/<id>/{wt,data}`, and the worktree (while
+   * it is there) checked out on the dream branch. A hand-edited or damaged record never reaches git or a removal.
+   * Returns the dream's folder.
+   */
+  const checked = async (repoId: string, r: DreamResult): Promise<string> => {
+    const plainId = (x: string) =>
+      x !== '' &&
+      x !== '.' &&
+      x !== '..' &&
+      path.basename(x) === x &&
+      !/[\\/]/.test(x);
+    if (
+      r.repoId !== repoId ||
+      !plainId(repoId) ||
+      !DREAM_ID.test(r.id) ||
+      r.branch !== `dream/${r.id}`
+    )
+      throw refuse(MISMATCH);
     const real = await fs.realpath(d.dreamsDir).catch(() => d.dreamsDir);
-    const inDreams = (p: string) =>
-      p !== d.dreamsDir &&
-      p !== real &&
-      (isInside(d.dreamsDir, p) || isInside(real, p));
-    if (!inDreams(dir) || !inDreams(r.dataDir))
-      throw new Error('The dream is not in the dreams folder');
+    const dir = [d.dreamsDir, real]
+      .map((root) => path.join(root, repoId, r.id))
+      .find(
+        (x) =>
+          samePath(r.worktreePath, path.join(x, 'wt')) &&
+          samePath(r.dataDir, path.join(x, 'data')),
+      );
+    if (!dir) throw refuse(MISMATCH);
+    if (await pathExists(r.worktreePath)) {
+      const head = await d.git
+        .run(r.worktreePath, ['symbolic-ref', '--short', 'HEAD'])
+        .then(
+          (x) => x.trim(),
+          () => null,
+        );
+      if (head !== r.branch) throw refuse(MISMATCH);
+    }
     return dir;
   };
 
-  /** Removes what the result made: its folder, and with `branch` its branch. Throws a fixed phrase on a failure. */
+  /**
+   * Removes what the result made: its folder (`dir`, from `checked`), and with `branch` its branch. Throws a fixed
+   * phrase on a failure.
+   */
   const removeResult = async (
     r: DreamResult,
+    dir: string,
     branch: boolean,
     message: string,
   ) => {
-    const dir = await dreamDir(r);
     const repo = d.repos().find((x) => x.id === r.repoId);
     const failure = repo
       ? await removeDream(d.git, repo.path, {
@@ -212,12 +272,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         );
     if (failure || data) {
       console.error('[dreams] a dream could not be removed', failure ?? data);
-      throw new Error(message);
+      throw refuse(message);
     }
   };
 
-  const discard = async (repoId: string, r: DreamResult) => {
-    await removeResult(r, true, 'The dream could not be removed');
+  const discard = async (repoId: string, r: DreamResult, dir: string) => {
+    await removeResult(r, dir, true, 'The dream could not be removed');
     await d.store.reject(repoId, r.proposals);
     await d.store.closeJournal(repoId, r.id, {
       as: 'discarded',
@@ -276,16 +336,17 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
    */
   const rebuild = async (r: DreamResult, kept: DreamProposal[]) => {
     const wt = r.worktreePath;
-    if (!(await pathExists(wt))) throw new Error(OPEN_FAILED);
-    const hooks = path.join(path.dirname(wt), 'hooks');
-    await fs.mkdir(hooks, { recursive: true });
-    const base = unattendedConfig(hooks);
-    const c = flags([...base, ...(await authorConfig(d.git, wt, base))]);
+    if (!(await pathExists(wt))) throw refuse(OPEN_FAILED);
+    let c: string[];
     let tip: string;
     try {
+      const hooks = path.join(path.dirname(wt), 'hooks');
+      await fs.mkdir(hooks, { recursive: true });
+      const base = unattendedConfig(hooks);
+      c = flags([...base, ...(await authorConfig(d.git, wt, base))]);
       tip = (await d.git.run(wt, [...c, 'rev-parse', 'HEAD'])).trim();
     } catch {
-      throw new Error(OPEN_FAILED);
+      throw refuse(OPEN_FAILED);
     }
     try {
       await d.git.run(wt, [...c, 'reset', '-q', '--hard', r.baseSha]);
@@ -299,21 +360,33 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         .catch((e: unknown) =>
           console.error('[dreams] the dream branch could not be put back', e),
         );
-      throw new Error(OPEN_FAILED);
+      throw refuse(OPEN_FAILED);
     }
   };
 
   /** One call with the model, as a dream makes it, in an empty folder; null when the model alone answered. */
   const testCall = async (model: string): Promise<string | null> => {
-    const root = await fs.mkdtemp(
-      path.join(d.tmpDir ?? os.tmpdir(), 'shellie-dream-test-'),
-    );
+    let root: string;
+    try {
+      root = await fs.mkdtemp(
+        path.join(d.tmpDir ?? os.tmpdir(), 'shellie-dream-test-'),
+      );
+    } catch (e) {
+      console.error('[dreams] the test folder could not be made', e);
+      return TEST_FAILED;
+    }
     try {
       const worktree = path.join(root, 'wt');
       const dataDir = path.join(root, 'data');
-      await fs.mkdir(worktree);
-      await fs.mkdir(dataDir);
-      const cwd = await fs.realpath(worktree);
+      let cwd: string;
+      try {
+        await fs.mkdir(worktree);
+        await fs.mkdir(dataDir);
+        cwd = await fs.realpath(worktree);
+      } catch (e) {
+        console.error('[dreams] the test folder could not be made', e);
+        return TEST_FAILED;
+      }
       const cmd = d.platform.opencodeCommand(
         undefined,
         dreamArgs(model, 'test'),
@@ -373,36 +446,37 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   };
 
   const handlers: DreamHandlers = {
-    'dream:get': async (): Promise<DreamView> => {
-      const settings = d.settings.get().dreaming;
-      const st = status();
-      const repos = await Promise.all(
-        d.repos().map(async (r) => ({
-          id: r.id,
-          name: r.name,
-          suggestedFolders: (await fs
-            .stat(path.join(r.path, '.apm'))
-            .then((x) => x.isDirectory())
-            .catch(() => false))
-            ? ['.apm']
-            : [],
-          newSessions: st?.newSessions[r.id] ?? 0,
-          state: d.store.repo(r.id),
-        })),
-      );
-      return {
-        settings,
-        models: await modelList(),
-        euroLimitOffered: settings.model !== null && hasPrice(settings.model),
-        usage: usageNow(),
-        waiting: st?.wait ?? null,
-        next: st?.next ?? null,
-        running: st?.running ?? null,
-        switchedOff: d.store.switchedOff(),
-        repos,
-        journal: d.store.journal(),
-      };
-    },
+    'dream:get': () =>
+      phrased('Dreams could not be read', async (): Promise<DreamView> => {
+        const settings = d.settings.get().dreaming;
+        const st = status();
+        const repos = await Promise.all(
+          d.repos().map(async (r) => ({
+            id: r.id,
+            name: r.name,
+            suggestedFolders: (await fs
+              .stat(path.join(r.path, '.apm'))
+              .then((x) => x.isDirectory())
+              .catch(() => false))
+              ? ['.apm']
+              : [],
+            newSessions: st?.newSessions[r.id] ?? 0,
+            state: d.store.repo(r.id),
+          })),
+        );
+        return {
+          settings,
+          models: await modelList(),
+          euroLimitOffered: settings.model !== null && hasPrice(settings.model),
+          usage: usageNow(),
+          waiting: st?.wait ?? null,
+          next: st?.next ?? null,
+          running: st?.running ?? null,
+          switchedOff: d.store.switchedOff(),
+          repos,
+          journal: d.store.journal(),
+        };
+      }),
 
     'dream:test': async (model) => {
       if (testing) return { ok: false, message: 'A test is already running' };
@@ -421,122 +495,148 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           };
         const failure = await testCall(model);
         if (failure) return { ok: false, message: failure };
-        await saveDreaming((cur) => ({
-          ...cur,
-          model,
-          testedModel: model,
-          // A new model is confirmed again before it dreams.
-          enabled: cur.model === model ? cur.enabled : false,
-        }));
+        await phrased(SETTINGS_FAILED, () =>
+          saveDreaming((cur) => ({
+            ...cur,
+            model,
+            testedModel: model,
+            // A new model is confirmed again before it dreams.
+            enabled: cur.model === model ? cur.enabled : false,
+          })),
+        );
         d.broadcast();
         return { ok: true };
+      } catch (e) {
+        console.error('[dreams] the test could not be run', e);
+        return {
+          ok: false,
+          message: e instanceof Refusal ? e.message : TEST_FAILED,
+        };
       } finally {
         testing = false;
       }
     },
 
-    'dream:save': async (next, acknowledged) => {
-      const parsed = DreamingSettingsSchema.safeParse(next);
-      if (!parsed.success)
-        throw new Error('These dream settings are not valid');
-      const known = new Set(d.repos().map((r) => r.id));
-      const saved = await saveDreaming((prev) => {
-        const merged: DreamingSettings = {
-          ...parsed.data,
-          enabled: prev.enabled,
-          model: prev.model,
-          testedModel: prev.testedModel,
-          repos: Object.fromEntries(
-            Object.entries(parsed.data.repos).filter(([id]) => known.has(id)),
-          ),
-        };
-        if (prev.enabled && widens(prev, merged) && acknowledged !== true)
-          throw new Error('Confirm the change first');
-        return merged;
-      });
-      d.broadcast();
-      return saved;
-    },
-
-    'dream:switchOn': async (acknowledged) => {
-      const reason = canSwitchOn(d.settings.get().dreaming);
-      if (reason)
-        throw new Error(`Dreaming cannot be switched on yet: ${reason}`);
-      if (acknowledged !== true) throw new Error('Tick the box first');
-      await started().switchOn(async () => {
-        await saveDreaming((cur) => {
-          // Checked again as the write runs: a save queued meanwhile may have changed the settings.
-          const again = canSwitchOn(cur);
-          if (again)
-            throw new Error(`Dreaming cannot be switched on yet: ${again}`);
-          return { ...cur, enabled: true };
+    'dream:save': (next, acknowledged) =>
+      phrased(SETTINGS_FAILED, async () => {
+        const parsed = DreamingSettingsSchema.safeParse(next);
+        if (!parsed.success) throw refuse('These dream settings are not valid');
+        const known = new Set(d.repos().map((r) => r.id));
+        const saved = await saveDreaming((prev) => {
+          const merged: DreamingSettings = {
+            ...parsed.data,
+            enabled: prev.enabled,
+            model: prev.model,
+            testedModel: prev.testedModel,
+            repos: Object.fromEntries(
+              Object.entries(parsed.data.repos).filter(([id]) => known.has(id)),
+            ),
+          };
+          if (prev.enabled && widens(prev, merged) && acknowledged !== true)
+            throw refuse('Confirm the change first');
+          // A narrowing that leaves no limit or no repo to dream about switches dreaming off with it.
+          return {
+            ...merged,
+            enabled: merged.enabled && canSwitchOn(merged) === null,
+          };
         });
-      });
-      d.broadcast();
-      return d.settings.get().dreaming;
-    },
+        d.broadcast();
+        return saved;
+      }),
 
-    'dream:switchOff': async () => {
-      const saved = await saveDreaming((cur) => ({ ...cur, enabled: false }));
-      // Switched off means no model calls: a dream that runs now stops too.
-      d.scheduler()?.stopDream();
-      d.broadcast();
-      return saved;
-    },
+    'dream:switchOn': (acknowledged) =>
+      phrased(SETTINGS_FAILED, async () => {
+        const reason = canSwitchOn(d.settings.get().dreaming);
+        if (reason)
+          throw refuse(`Dreaming cannot be switched on yet: ${reason}`);
+        if (acknowledged !== true) throw refuse('Tick the box first');
+        await started().switchOn(async () => {
+          await saveDreaming((cur) => {
+            // Checked again as the write runs: a save queued meanwhile may have changed the settings.
+            const again = canSwitchOn(cur);
+            if (again)
+              throw refuse(`Dreaming cannot be switched on yet: ${again}`);
+            return { ...cur, enabled: true };
+          });
+        });
+        d.broadcast();
+        return d.settings.get().dreaming;
+      }),
+
+    'dream:switchOff': () =>
+      phrased(SETTINGS_FAILED, async () => {
+        const saved = await saveDreaming((cur) => ({ ...cur, enabled: false }));
+        // Switched off means no model calls: a dream that runs now stops too.
+        d.scheduler()?.stopDream();
+        d.broadcast();
+        return saved;
+      }),
 
     // The scheduler decides, as for its own checks, and sends `dream:changed` when a dream starts or ends.
-    'dream:now': (repoId) => started().dreamNow(repoId),
+    'dream:now': (repoId) =>
+      phrased('The dream could not be started', () =>
+        started().dreamNow(repoId),
+      ),
 
     'dream:stop': async () => {
       d.scheduler()?.stopDream();
     },
 
     'dream:drop': (repoId, proposalId, dropped) =>
-      serial(async () => {
-        started();
-        if (!openResult(repoId).proposals.some((p) => p.id === proposalId))
-          throw new Error('This dream has no such proposal');
-        await d.store.setDropped(repoId, proposalId, dropped === true);
-        d.broadcast();
-      }),
+      serial(() =>
+        phrased('The dream could not be saved', async () => {
+          started();
+          if (!openResult(repoId).proposals.some((p) => p.id === proposalId))
+            throw refuse('This dream has no such proposal');
+          await d.store.setDropped(repoId, proposalId, dropped === true);
+          d.broadcast();
+        }),
+      ),
 
     'dream:discard': (repoId) =>
-      serial(async () => {
-        started();
-        await discard(repoId, openResult(repoId));
-      }),
+      serial(() =>
+        phrased('The dream could not be saved', async () => {
+          started();
+          const r = openResult(repoId);
+          await discard(repoId, r, await checked(repoId, r));
+        }),
+      ),
 
     'dream:openAsTask': (repoId) =>
-      serial(async () => {
-        started();
-        const r = openResult(repoId);
-        const kept = r.proposals.filter((p) => !p.dropped);
-        const dropped = r.proposals.filter((p) => p.dropped);
-        if (kept.length === 0) {
-          await discard(repoId, r);
-          throw new Error('Nothing left to open');
-        }
-        // A second call after a failed removal finds the branch built already.
-        if (!(await built(r, kept))) await rebuild(r, kept);
-        // The branch stays for the task; the worktree and the data go.
-        await removeResult(r, false, OPEN_FAILED);
-        await d.store.reject(repoId, dropped);
-        await d.store.closeJournal(repoId, r.id, {
-          as: 'task',
-          kept: kept.length,
-          dropped: dropped.length,
-          taskName: null,
-        });
-        await d.store.setResult(repoId, null);
-        opened.set(key(repoId, r.id), {
-          branch: r.branch,
-          kept: kept.length,
-          dropped: dropped.length,
-          until: now() + OPENED_MS,
-        });
-        d.broadcast();
-        return { branch: r.branch };
-      }),
+      serial(() =>
+        phrased(OPEN_FAILED, async () => {
+          started();
+          const r = openResult(repoId);
+          // Before any git or removal: the record must be the dream's own.
+          const dir = await checked(repoId, r);
+          const kept = r.proposals.filter((p) => !p.dropped);
+          const dropped = r.proposals.filter((p) => p.dropped);
+          if (kept.length === 0) {
+            await discard(repoId, r, dir);
+            throw refuse('Nothing left to open');
+          }
+          // A second call after a failed removal finds the branch built already.
+          if (!(await built(r, kept))) await rebuild(r, kept);
+          // The branch stays for the task; the worktree and the data go.
+          await removeResult(r, dir, false, OPEN_FAILED);
+          await d.store.reject(repoId, dropped);
+          await d.store.closeJournal(repoId, r.id, {
+            as: 'task',
+            kept: kept.length,
+            dropped: dropped.length,
+            taskName: null,
+          });
+          await d.store.setResult(repoId, null);
+          opened.set(key(repoId, r.id), {
+            branch: r.branch,
+            kept: kept.length,
+            dropped: dropped.length,
+            until: now() + OPENED_MS,
+          });
+          d.broadcast();
+          return { branch: r.branch };
+        }),
+      ),
   };
 
   const taskLink: DreamTaskLink = {

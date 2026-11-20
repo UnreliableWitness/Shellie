@@ -652,7 +652,14 @@ async function boot(): Promise<void> {
     );
     if (migrated)
       await settings
-        .save(migrated)
+        .update(
+          (cur) =>
+            migrateOnboarding(
+              cur,
+              store.state.repos.length,
+              new Date().toISOString(),
+            ) ?? cur,
+        )
         .catch((err) => console.error('Onboarding migration failed', err));
     // Once: the global write-time flag moves onto every project, and repo copies of a project's start options go.
     await applyProjectScopeMigration({
@@ -665,7 +672,7 @@ async function boot(): Promise<void> {
     const seen = seenAtBoot(settings.get(), app.getVersion());
     if (seen)
       await settings
-        .save({ ...settings.get(), whatsNewSeen: seen })
+        .update((cur) => ({ ...cur, whatsNewSeen: seen }))
         .catch((err) => console.error('Saving whatsNewSeen failed', err));
     const recovered = await recoverInterruptedTasks(store);
     // Fetch and push to Azure Repos sign in with the connection's token, not a credential helper that may not start.
