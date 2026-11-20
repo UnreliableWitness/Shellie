@@ -57,6 +57,8 @@ import {
 import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { AttentionDot } from './AttentionDot';
+import { DreamNavStatus } from './dreams/DreamNavStatus';
+import { DreamsNavItem } from './dreams/DreamsNavItem';
 import { WorkItemTypeIcon } from './ui';
 
 /** Tasks in these states always sit in Active: they have no PR story yet. */
@@ -759,6 +761,7 @@ export function TaskNav() {
         current={screen.kind === 'sprint'}
         onClick={() => go({ kind: 'sprint' })}
       />
+      <DreamsNavItem rail={rail} />
       {!rail && connection && (
         <JoinCard connectionId={connection.id} project={connection.project} />
       )}
@@ -866,6 +869,7 @@ export function TaskNav() {
           <span className="dot" style={{ background: footer.color }} />
           {!rail && <span className="nav-status-text">{footer.text}</span>}
         </div>
+        <DreamNavStatus rail={rail} />
         {!rail && pulse?.error === 'auth' && (
           <div className="nav-status nav-status-note">
             <span className="nav-status-text">{PULSE_AUTH_NOTE}</span>

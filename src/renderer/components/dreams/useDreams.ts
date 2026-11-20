@@ -5,6 +5,20 @@ import { api } from '../../api';
 /** Bursts of `dream:changed` collapse into one refetch. */
 const DEBOUNCE_MS = 100;
 
+/** The fetch that is under way: screens that mount together (navigation, Home, Dreams) share one call. */
+let inflight: Promise<DreamView> | null = null;
+const fetchView = (): Promise<DreamView> => {
+  if (!inflight) {
+    const p = api().invoke('dream:get');
+    const done = () => {
+      if (inflight === p) inflight = null;
+    };
+    inflight = p;
+    p.then(done, done);
+  }
+  return inflight;
+};
+
 /**
  * Everything the Dreams screens show: fetched on mount and again on `dream:changed`. `view` is null while loading
  * and when the first load failed (`failed`); `retry` loads again. An answer older than one already shown is ignored.
@@ -23,20 +37,18 @@ export function useDreamsState(): {
   const shown = useRef(0);
   const load = useCallback(() => {
     const n = ++asked.current;
-    api()
-      .invoke('dream:get')
-      .then(
-        (view) => {
-          if (!live.current || n < shown.current) return;
-          shown.current = n;
-          setState({ view, failed: false });
-        },
-        () => {
-          // A failed refetch keeps what was shown; a failed first load says so.
-          if (live.current)
-            setState((s) => (s.view ? s : { view: null, failed: true }));
-        },
-      );
+    fetchView().then(
+      (view) => {
+        if (!live.current || n < shown.current) return;
+        shown.current = n;
+        setState({ view, failed: false });
+      },
+      () => {
+        // A failed refetch keeps what was shown; a failed first load says so.
+        if (live.current)
+          setState((s) => (s.view ? s : { view: null, failed: true }));
+      },
+    );
   }, []);
   useEffect(() => {
     live.current = true;

@@ -1,5 +1,6 @@
 import { ArrowClockwise16Regular } from '@fluentui/react-icons';
 import { useEffect, useMemo } from 'react';
+import { AwayBand } from '../components/dreams/AwayBand';
 import { Band } from '../components/home/Band';
 import { GetStartedBand } from '../components/home/GetStartedBand';
 import { PrBand } from '../components/home/PrBand';
@@ -111,6 +112,7 @@ export function HomeScreen() {
       <div className="home-bands">
         <WhatsNewBand />
         <GetStartedBand />
+        <AwayBand />
         <TasksBand snapshot={snapshot} />
         <ReadingBand />
         {connections.length > 0 && (

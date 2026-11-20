@@ -200,6 +200,14 @@ describe('widenings', () => {
       ),
     ).toEqual(['r1 may now also change a']);
   });
+  it('names a change from no limit to a limit as such', () => {
+    expect(
+      widenings(
+        ready({ limit: { kind: 'none' } }),
+        ready({ limit: { kind: 'eur', perDay: 1 } }),
+      ),
+    ).toEqual(['Changes the limit from no limit to up to € 1.00 a day']);
+  });
   it('sets a limit that was not chosen', () => {
     expect(widenings(ready({ limit: null }), base)).toEqual([
       'Sets the limit to up to 5 million tokens a day',

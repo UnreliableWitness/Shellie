@@ -141,7 +141,7 @@ export function widenings(
       lines.push(
         n.kind === 'none'
           ? 'Removes the daily limit'
-          : `Changes the limit from ${limitText(p)} to ${limitText(n)}`,
+          : `Changes the limit from ${p.kind === 'none' ? 'no limit' : limitText(p)} to ${limitText(n)}`,
       );
     else if (n.kind !== 'none' && n.perDay > (p as { perDay: number }).perDay)
       lines.push(`Raises the limit from ${limitText(p)} to ${limitText(n)}`);

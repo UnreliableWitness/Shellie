@@ -1,0 +1,253 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { defaultDreaming, type DreamView } from '../../shared/dreams';
+import {
+  journalEntry,
+  settings,
+  viewOf,
+  withResults,
+} from '../components/dreams/dreamFixtures';
+import { useStore } from '../store';
+import { installFakeApi } from '../test-helpers/fakeApi';
+import { DreamsScreen } from './DreamsScreen';
+
+beforeEach(() => {
+  useStore.setState({
+    screen: { kind: 'dreams' },
+    previous: null,
+    notices: [],
+  });
+});
+
+const open = (
+  view: DreamView,
+  extra: Parameters<typeof installFakeApi>[0] = {},
+) => installFakeApi({ 'dream:get': () => view, ...extra });
+
+const callsOf = (
+  calls: { channel: string; args: unknown[] }[],
+  channel: string,
+) => calls.filter((c) => c.channel === channel).map((c) => c.args);
+
+describe('DreamsScreen: off', () => {
+  const off = () =>
+    viewOf({
+      settings: defaultDreaming(),
+      journal: [journalEntry({ at: '2020-01-01T10:00:00' })],
+    });
+
+  it('shows the invitation, no status strip and only the journal below', async () => {
+    open(off());
+    render(<DreamsScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Set up dreaming' }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dream-setup' });
+    expect(screen.queryByRole('region', { name: 'Status' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Repos' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Switch off' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Journal' })).toHaveTextContent(
+      '2 proposals, waiting for you',
+    );
+  });
+
+  it('names both models when dreaming switched itself off, and goes to setup', async () => {
+    open(
+      viewOf({
+        settings: defaultDreaming(),
+        switchedOff: {
+          answered: 'github-copilot/gpt-5',
+          chosen: 'zai/glm-5.3',
+          repoId: 'r1',
+        },
+      }),
+    );
+    render(<DreamsScreen />);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('github-copilot/gpt-5');
+    expect(alert).toHaveTextContent('zai/glm-5.3');
+    await userEvent.click(
+      within(alert).getByRole('button', { name: 'Test the model again' }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dream-setup' });
+  });
+});
+
+describe('DreamsScreen: on', () => {
+  it('shows four status cells with the usage as a progress bar', async () => {
+    open(viewOf());
+    render(<DreamsScreen />);
+    const strip = await screen.findByRole('region', { name: 'Status' });
+    expect(within(strip).getByText('zai/glm-5.3')).toBeInTheDocument();
+    expect(
+      within(strip).getByText('1.2 of 5 million tokens'),
+    ).toBeInTheDocument();
+    expect(within(strip).getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '24',
+    );
+    expect(
+      within(strip).getByText('After 10 minutes idle'),
+    ).toBeInTheDocument();
+    expect(
+      within(strip).getByText('Waiting until you are away'),
+    ).toBeInTheDocument();
+  });
+
+  it('has no bar without a limit', async () => {
+    open(viewOf({ settings: settings({ limit: { kind: 'none' } }) }));
+    render(<DreamsScreen />);
+    await screen.findByText('1.2 million tokens · no limit');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('lists a Review row per open result and opens it', async () => {
+    open(withResults());
+    render(<DreamsScreen />);
+    const waiting = await screen.findByRole('region', {
+      name: 'Waiting for you',
+    });
+    expect(
+      within(waiting).getAllByRole('button', { name: 'Review' }),
+    ).toHaveLength(2);
+    expect(waiting).toHaveTextContent(
+      'New rule: write migrations by hand, and 1 more',
+    );
+    await userEvent.click(
+      within(waiting).getAllByRole('button', { name: 'Review' })[1],
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dream', repoId: 'r2' });
+  });
+
+  it('Dream now calls dream:now and is disabled for a repo with an open result', async () => {
+    const v = withResults();
+    v.repos[2].state = { ...v.repos[2].state };
+    const { calls } = open({
+      ...v,
+      settings: settings({
+        repos: { ...v.settings.repos, r3: { on: true, folders: ['x'] } },
+      }),
+    });
+    render(<DreamsScreen />);
+    const repos = await screen.findByRole('region', { name: 'Repos' });
+    const buttons = within(repos).getAllByRole('button', { name: 'Dream now' });
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[1]).toBeDisabled();
+    await userEvent.click(buttons[2]);
+    expect(callsOf(calls, 'dream:now')).toEqual([['r3']]);
+  });
+
+  it('says in words why a dream did not start', async () => {
+    open(viewOf(), { 'dream:now': () => ({ wait: 'battery' }) });
+    render(<DreamsScreen />);
+    const repos = await screen.findByRole('region', { name: 'Repos' });
+    await userEvent.click(
+      within(repos).getAllByRole('button', { name: 'Dream now' })[0],
+    );
+    expect(await within(repos).findByRole('status')).toHaveTextContent(
+      'Waiting for mains power',
+    );
+  });
+
+  it('offers Add for a repo that is off, which opens setup', async () => {
+    open(viewOf());
+    render(<DreamsScreen />);
+    const repos = await screen.findByRole('region', { name: 'Repos' });
+    expect(
+      within(repos).getByText('Its sessions are never read'),
+    ).toBeInTheDocument();
+    await userEvent.click(within(repos).getByRole('button', { name: 'Add' }));
+    expect(useStore.getState().screen).toEqual({ kind: 'dream-setup' });
+  });
+
+  it('Change setup goes to setup', async () => {
+    open(viewOf());
+    render(<DreamsScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Change setup' }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dream-setup' });
+  });
+
+  it('Switch off asks first, then calls dream:switchOff', async () => {
+    const { calls } = open(viewOf());
+    render(<DreamsScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Switch off' }),
+    );
+    expect(
+      screen.getByText(
+        'Switch off dreaming? A dream that is running is stopped.',
+      ),
+    ).toBeInTheDocument();
+    expect(callsOf(calls, 'dream:switchOff')).toEqual([]);
+    await userEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: 'Switch off',
+      }),
+    );
+    await waitFor(() =>
+      expect(callsOf(calls, 'dream:switchOff')).toEqual([[]]),
+    );
+  });
+
+  it('shows dream text as plain text, never as HTML', async () => {
+    const v = withResults();
+    v.repos[0].state.result!.proposals[0].title =
+      '<img src=x onerror=alert(1)>';
+    open(v);
+    render(<DreamsScreen />);
+    const waiting = await screen.findByRole('region', {
+      name: 'Waiting for you',
+    });
+    expect(waiting).toHaveTextContent('<img src=x onerror=alert(1)>');
+    expect(waiting.querySelector('img')).toBeNull();
+  });
+
+  it('lists the journal newest first with tokens', async () => {
+    open(
+      viewOf({
+        journal: [
+          journalEntry({
+            dreamId: 'a',
+            outcome: 'nothing',
+            proposals: 0,
+            tokens: 220_000,
+            at: '2020-01-02T10:00:00',
+          }),
+          journalEntry({
+            dreamId: 'b',
+            outcome: 'failed',
+            reason: 'OpenCode stopped',
+            tokens: 2_140_000,
+            at: '2020-01-01T10:00:00',
+          }),
+        ],
+      }),
+    );
+    render(<DreamsScreen />);
+    const journal = await screen.findByRole('region', { name: 'Journal' });
+    expect(journal).toHaveTextContent('Nothing to propose');
+    expect(journal).toHaveTextContent('220 000');
+    expect(journal).toHaveTextContent('Failed: OpenCode stopped');
+    expect(journal).toHaveTextContent('2 Jan');
+  });
+
+  it('offers Try again when the first load fails', async () => {
+    let n = 0;
+    installFakeApi({
+      'dream:get': () => {
+        if (n++ === 0) throw new Error('boom');
+        return viewOf();
+      },
+    });
+    render(<DreamsScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Try again' }),
+    );
+    expect(
+      await screen.findByRole('region', { name: 'Status' }),
+    ).toBeInTheDocument();
+  });
+});

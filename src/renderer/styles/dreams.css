@@ -168,3 +168,229 @@
   flex-direction: column;
   gap: 4px;
 }
+
+/* Dreams: the screen, the Home band, the navigation. */
+.dreams {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.dream-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dream-section h2,
+.dream-invite h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.dream-invite {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dream-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.dream-cell {
+  background: var(--bg-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.dream-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-selected);
+  overflow: hidden;
+}
+.dream-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--link);
+}
+.dream-list {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.dream-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.dream-row:last-child {
+  border-bottom: 0;
+}
+.dream-row .grow {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.dream-name {
+  width: 84px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dream-when {
+  width: 108px;
+  flex: none;
+}
+.dream-when::first-letter {
+  text-transform: uppercase;
+}
+.dream-folders {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.dream-folder {
+  padding: 1px 8px;
+  border-radius: 2px;
+  background: var(--bg-selected);
+  font-size: 12px;
+}
+.dream-state {
+  flex: 1 1 220px;
+}
+/* Text that comes from a dream: plain text, at most two lines. */
+.dream-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.dream-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-card);
+}
+.dream-notice strong {
+  color: var(--warn);
+}
+.home-bands > .dream-notice {
+  margin: 0;
+}
+.dream-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+.dream-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-page);
+}
+.dream-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dream-card-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dream-card-list li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.dream-card-list .dream-clamp {
+  min-width: 0;
+}
+.navitem-count {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--amber);
+  color: var(--bg-page);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.is-rail .navitem-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+}
+.nav-dream-wrap {
+  position: relative;
+}
+.nav-dream {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.nav-dream:hover {
+  background: var(--bg-hover);
+}
+.nav-dream.is-active {
+  color: var(--link);
+}
+.nav-dream.is-warn {
+  color: var(--warn);
+}
+.dream-pop {
+  top: auto;
+  bottom: 100%;
+  padding: 14px 16px;
+  gap: 10px;
+  font-size: 13px;
+}
+.is-rail .dream-pop {
+  left: 100%;
+  right: auto;
+  bottom: 0;
+  width: 280px;
+}
+.dream-pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dream-pop-head .grow {
+  flex: 1;
+}
