@@ -320,6 +320,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   const sweepFolders = async (
     repoId: string,
     repo: Repo | undefined,
+    config: string[],
   ): Promise<string[]> => {
     const keep = d.store.repo(repoId).result?.id;
     const repoDir = path.join(d.dreamsDir, repoId);
@@ -330,11 +331,12 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       found.push(e.name);
       const dir = path.join(repoDir, e.name);
       const failure = repo
-        ? await removeDream(d.git, repo.path, {
-            dir,
-            worktree: path.join(dir, 'wt'),
-            branch: null,
-          })
+        ? await removeDream(
+            d.git,
+            repo.path,
+            { dir, worktree: path.join(dir, 'wt'), branch: null },
+            config,
+          )
         : await removeTree(dir).then(
             () => null,
             (x: unknown) => x,
@@ -417,10 +419,12 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         const repo = repos.get(e.name);
         // A repo that is gone from disk is left as it is.
         if (repo && !onDisk.get(repo.id)) continue;
-        const found = await sweepFolders(e.name, repo).catch((x: unknown) => {
-          console.error('[dreams] sweep', x);
-          return [] as string[];
-        });
+        const found = await sweepFolders(e.name, repo, config).catch(
+          (x: unknown) => {
+            console.error('[dreams] sweep', x);
+            return [] as string[];
+          },
+        );
         if (repo)
           await sweepBranches(repo, config, found).catch((x: unknown) =>
             console.error('[dreams] sweep', x),

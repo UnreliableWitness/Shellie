@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -692,6 +693,40 @@ describe('DreamRunner', () => {
     expect(markers.filter((m) => existsSync(m))).toEqual([]);
   });
 
+  it('passes core.longpaths=true to every git call that works in the dream worktree or deletes its branch', async () => {
+    const spy = vi.spyOn(GitClient.prototype, 'run');
+    const runs = twoProposals();
+    runs[0].edits!['src/app.ts'] = 'changed\n';
+    const out = await runner(runs).dream(repoArg(), opts());
+    expect(out.outcome).toBe('proposed');
+    // And one that removes what it made: its branch is deleted with the same settings.
+    tasks = [task('t2')];
+    const nothing = await runner([
+      {
+        sessionId: 'ses_p',
+        edits: { '.apm/rules/x.md': 'X\n' },
+        report: report(),
+      },
+    ]).dream({ ...repoArg() }, opts());
+    expect(nothing.outcome).toBe('nothing');
+    const calls = spy.mock.calls.map(([cwd, args]) => ({ cwd, args }));
+    const roots = [dreamsDir, realpathSync(dreamsDir)];
+    const inDreams = calls.filter((c) =>
+      roots.some((d) => !path.relative(d, c.cwd).startsWith('..')),
+    );
+    expect(inDreams.length).toBeGreaterThan(5);
+    const unattended = calls.filter((c) =>
+      c.args.some((a) => a.startsWith('core.hooksPath=')),
+    );
+    for (const c of [...inDreams, ...unattended])
+      expect(c.args, c.args.join(' ')).toContain('core.longpaths=true');
+    expect(
+      unattended.some(
+        (c) => c.args.includes('branch') && c.args.includes('-D'),
+      ),
+    ).toBe(true);
+  });
+
   it('reverts a write to an ignored path like any other outside change', async () => {
     writeFileSync(path.join(repo, '.gitignore'), '*.log\n');
     git(repo, 'add', '.gitignore');
@@ -763,6 +798,27 @@ describe('DreamRunner', () => {
     expect(seen).toContain('+A');
     expect(seen).toContain('+++ b/.apm/rules/b.md');
     expect(fake!.calls()[1].input).toContain('changes.diff');
+  });
+
+  it('fails with git could not read the changes when writing changes.diff times out, and removes everything', async () => {
+    const real = GitClient.prototype.run;
+    vi.spyOn(GitClient.prototype, 'run').mockImplementation(function (
+      this: GitClient,
+      cwd,
+      args,
+      o,
+    ) {
+      if (args.includes('read-tree'))
+        return Promise.reject(new Error('git read-tree timed out'));
+      return real.call(this, cwd, args, o);
+    });
+    const out = await runner(twoProposals()).dream(repoArg(), opts());
+    expect(out).toEqual({
+      outcome: 'failed',
+      reason: 'git could not read the changes',
+    });
+    expect(fake!.calls()).toHaveLength(1);
+    expectNothingLeft();
   });
 
   it('fails and removes everything when the check run changes a file', async () => {

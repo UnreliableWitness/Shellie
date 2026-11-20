@@ -41,6 +41,15 @@ function hook(repo: string, name: string): string {
 }
 
 describe('dreamGit', () => {
+  it('runs every dream git call with long paths on, hooks to an empty folder, no fsmonitor, no signing', () => {
+    expect(unattendedConfig('/h')).toEqual([
+      'core.hooksPath=/h',
+      'core.fsmonitor=false',
+      'commit.gpgsign=false',
+      'core.longpaths=true',
+    ]);
+  });
+
   it('lists changed, added and deleted paths, untracked folders file by file', async () => {
     const repo = makeRepo();
     writeFileSync(path.join(repo, 'gone.md'), 'x');
@@ -141,7 +150,12 @@ describe('dreamGit', () => {
     expect(existsSync(marker)).toBe(false);
     // Half made: git no longer knows the worktree, but its folder and branch are there.
     rmSync(path.join(wt, '.git'));
-    await removeDream(gc, repo, { dir, worktree: wt, branch: 'dream/d1' });
+    await removeDream(
+      gc,
+      repo,
+      { dir, worktree: wt, branch: 'dream/d1' },
+      unattendedConfig(hooks),
+    );
     expect(existsSync(dir)).toBe(false);
     expect(git(repo, 'branch', '--list', 'dream/*').trim()).toBe('');
     expect(
@@ -180,6 +194,7 @@ describe('dreamGit', () => {
       file: out,
       index: path.join(path.dirname(repo), 'changes.index'),
       config: unattendedConfig(hooks),
+      paths: ['.apm/rules/logging.md', 'README.md'],
     });
     const diff = readFileSync(out, 'utf8');
     expect(diff).toContain('+++ b/.apm/rules/logging.md');
@@ -205,6 +220,7 @@ describe('dreamGit', () => {
       file: out,
       index: path.join(path.dirname(repo), 'changes.index'),
       config: [],
+      paths: ['big.md'],
     });
     expect(CHANGES_DIFF_MAX).toBe(2 * 1024 * 1024);
     expect(statSync(out).size).toBeLessThanOrEqual(CHANGES_DIFF_MAX);
@@ -215,5 +231,74 @@ describe('dreamGit', () => {
     expect(lines.filter((l) => l.startsWith('+x')).at(-1)).toBe(
       `+${'x'.repeat(99)}`,
     );
+  });
+  it('adds only the changed paths, literally and ignored ones too, with a 120 s timeout, and leaves no index or lock', async () => {
+    const repo = makeRepo();
+    writeFileSync(path.join(repo, '.gitignore'), '*.log\n');
+    writeFileSync(path.join(repo, 'gone.md'), 'gone\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-q', '-m', 'ignore logs');
+    const base = git(repo, 'rev-parse', 'HEAD').trim();
+    mkdirSync(path.join(repo, '.apm'));
+    // Ignored, but written by the propose run inside an allowed folder: the check run must see it.
+    writeFileSync(path.join(repo, '.apm', 'notes.log'), 'an ignored write\n');
+    writeFileSync(path.join(repo, '.apm', '*.md'), 'a literal star\n');
+    writeFileSync(path.join(repo, '.apm', 'x.md'), 'not changed by name\n');
+    rmSync(path.join(repo, 'gone.md'));
+    writeFileSync(path.join(repo, 'elsewhere.md'), 'not in the list\n');
+    const index = path.join(path.dirname(repo), 'changes.index');
+    // A lock a killed git left: removed afterwards too.
+    const real: GitClient['run'] = (cwd, args, o) =>
+      GitClient.prototype.run.call(gc, cwd, args, o);
+    const spy = vi.spyOn(gc, 'run');
+    spy.mockImplementation(async (cwd, args, o) => {
+      if (args.includes('add')) writeFileSync(`${index}.lock`, '');
+      return real(cwd, args, o);
+    });
+    const out = path.join(path.dirname(repo), 'changes.diff');
+    await expect(
+      writeChangesDiff(gc, repo, {
+        base,
+        file: out,
+        index,
+        config: [],
+        paths: ['.apm/*.md', '.apm/notes.log', 'gone.md'],
+      }),
+    ).rejects.toThrow();
+    spy.mockRestore();
+    expect(existsSync(`${index}.lock`)).toBe(false);
+    expect(existsSync(index)).toBe(false);
+    const calls = vi.fn();
+    const watched = vi
+      .spyOn(gc, 'run')
+      .mockImplementation(async (cwd, args, o) => {
+        calls(args, o);
+        return real(cwd, args, o);
+      });
+    await writeChangesDiff(gc, repo, {
+      base,
+      file: out,
+      index,
+      config: [],
+      paths: ['.apm/*.md', '.apm/notes.log', 'gone.md'],
+    });
+    watched.mockRestore();
+    const diff = readFileSync(out, 'utf8');
+    expect(diff).toContain('+++ b/.apm/notes.log');
+    expect(diff).toContain('+++ b/.apm/*.md');
+    expect(diff).toContain('--- a/gone.md');
+    expect(diff).not.toContain('x.md');
+    expect(diff).not.toContain('elsewhere.md');
+    for (const [args, o] of calls.mock.calls as [
+      string[],
+      { timeoutMs?: number },
+    ][]) {
+      expect(o?.timeoutMs).toBe(120_000);
+      expect(args).not.toContain('-A');
+    }
+    const add = (calls.mock.calls as [string[]][]).find(([a]) =>
+      a.includes('add'),
+    )![0];
+    expect(add).toEqual(expect.arrayContaining(['--literal-pathspecs', '-f']));
   });
 });

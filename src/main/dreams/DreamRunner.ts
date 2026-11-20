@@ -338,6 +338,7 @@ export class DreamRunner {
         file: path.join(m.dataDir, 'changes.diff'),
         index: path.join(dir, 'changes.index'),
         config,
+        paths: before.paths,
       }),
     );
 
@@ -532,9 +533,15 @@ export class DreamRunner {
         outcome = { outcome: 'failed', reason: REASON.saved };
     }
     if (outcome.outcome !== 'proposed') {
-      const failure = await removeDream(d.git, m.repo.path, m.made).catch(
-        (e: unknown) => e,
+      const config = unattendedConfig(
+        path.join(d.dreamsDir, m.repo.id, m.id, 'hooks'),
       );
+      const failure = await removeDream(
+        d.git,
+        m.repo.path,
+        m.made,
+        config,
+      ).catch((e: unknown) => e);
       if (failure && outcome.outcome === 'nothing')
         outcome = { outcome: 'failed', reason: REASON.remove };
     }

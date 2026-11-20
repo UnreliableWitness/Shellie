@@ -445,7 +445,11 @@ export class GitClient {
       throw e;
     }
     return (
-      await this.runWorktreeStep(o.path, ['rev-parse', 'HEAD'], 'git rev-parse')
+      await this.runWorktreeStep(
+        o.path,
+        [...(o.config ?? []).flatMap((c) => ['-c', c]), 'rev-parse', 'HEAD'],
+        'git rev-parse',
+      )
     ).trim();
   }
 

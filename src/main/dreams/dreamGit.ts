@@ -31,6 +31,8 @@ export const unattendedConfig = (emptyHooksDir: string): string[] => [
   `core.hooksPath=${emptyHooksDir}`,
   'core.fsmonitor=false',
   'commit.gpgsign=false',
+  // The dream worktree sits about 100 characters deep: without this, Windows git reports long files as deleted.
+  'core.longpaths=true',
 ];
 
 const withConfig = (config: string[]): string[] =>
@@ -98,22 +100,52 @@ export const CHANGES_DIFF_MAX = 2 * 1024 * 1024;
 export const CHANGES_DIFF_CUT =
   '[Shellie: this diff was cut at 2 MB; the changes go on past this line.]';
 
+/** Every git call of `writeChangesDiff` ends after this: hashing a large repo's changes takes longer than a read. */
+export const CHANGES_DIFF_TIMEOUT_MS = 120_000;
+
 /**
- * Writes git's own diff of the worktree against `base` to `file`: changed, added and deleted files, untracked new
- * files included (ignored ones not). Uses a temporary index at `index` (removed afterwards), so the worktree's own
- * index stays as it was; no external diff, text conversion or colour. Over `CHANGES_DIFF_MAX` bytes the file is cut
- * at a line end and ends with `CHANGES_DIFF_CUT`.
+ * Writes git's own diff of the worktree against `base` to `file` for `paths`, the changed paths as `changedPaths`
+ * lists them (changed, added and deleted, untracked and ignored ones included: what the check run sees is all that
+ * can be committed). Only those paths are added, literally and with `-f`, to a temporary index at `index` (removed
+ * afterwards with its lock), so the worktree's own index stays as it was and no other file is rehashed; no external
+ * diff, text conversion or colour. Each git call ends after `CHANGES_DIFF_TIMEOUT_MS`. Over `CHANGES_DIFF_MAX` bytes
+ * the file is cut at a line end and ends with `CHANGES_DIFF_CUT`.
  */
 export async function writeChangesDiff(
   git: Git,
   worktree: string,
-  o: { base: string; file: string; index: string; config: string[] },
+  o: {
+    base: string;
+    file: string;
+    index: string;
+    config: string[];
+    paths: string[];
+  },
 ): Promise<void> {
   const c = withConfig(o.config);
-  const env = { GIT_INDEX_FILE: o.index };
+  const opts = {
+    env: { GIT_INDEX_FILE: o.index },
+    timeoutMs: CHANGES_DIFF_TIMEOUT_MS,
+  };
+  const list = `${o.index}.paths`;
   try {
-    await git.run(worktree, [...c, 'read-tree', o.base], { env });
-    await git.run(worktree, [...c, 'add', '-A', '--', '.'], { env });
+    await git.run(worktree, [...c, 'read-tree', o.base], opts);
+    if (o.paths.length > 0) {
+      // From a file, NUL-separated: no command line grows with the number of paths.
+      await fs.writeFile(list, o.paths.map((p) => `${p}\0`).join(''));
+      await git.run(
+        worktree,
+        [
+          ...c,
+          '--literal-pathspecs',
+          'add',
+          '-f',
+          `--pathspec-from-file=${list}`,
+          '--pathspec-file-nul',
+        ],
+        opts,
+      );
+    }
     await git.run(
       worktree,
       [
@@ -127,10 +159,12 @@ export async function writeChangesDiff(
         `--output=${o.file}`,
         o.base,
       ],
-      { env },
+      opts,
     );
   } finally {
     await fs.rm(o.index, { force: true });
+    await fs.rm(`${o.index}.lock`, { force: true });
+    await fs.rm(list, { force: true });
   }
   const { size } = await fs.stat(o.file);
   if (size <= CHANGES_DIFF_MAX) return;
@@ -276,12 +310,14 @@ export type DreamMade = {
 
 /**
  * Removes what the dream made: its worktree (git's own removal first), its folder (worktree, data, hooks) and its
- * branch; also after a half-made worktree. Never anything it did not make. Best effort; the first failure is returned.
+ * branch (with `config`, `unattendedConfig`); also after a half-made worktree. Never anything it did not make. Best
+ * effort; the first failure is returned.
  */
 export async function removeDream(
   git: Git,
   repoPath: string,
   made: DreamMade,
+  config: string[],
 ): Promise<unknown> {
   let failure: unknown = null;
   const step = (p: Promise<unknown>) =>
@@ -295,6 +331,8 @@ export async function removeDream(
   if (made.dir) await step(removeTree(made.dir));
   if (made.worktree) await step(git.worktreePrune(repoPath));
   if (made.branch && (await git.branchExists(repoPath, made.branch)))
-    await step(git.deleteBranch(repoPath, made.branch));
+    await step(
+      git.run(repoPath, [...withConfig(config), 'branch', '-D', made.branch]),
+    );
   return failure;
 }

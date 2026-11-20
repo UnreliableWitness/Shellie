@@ -666,6 +666,39 @@ describe('a dream result', () => {
     expect(a.taskLink.opened(DREAM_ID, 'r1', BRANCH)).toBe(false);
   });
 
+  it('passes core.longpaths=true to every git call it makes in the worktree or with hooks off', async () => {
+    const g = deps.git as GitClient;
+    const spy = vi.spyOn(g, 'run');
+    await dreamWithThree();
+    const h = api().handlers;
+    await h['dream:drop']('r1', 'p2', true);
+    await h['dream:diff']('r1', 'p1');
+    await h['dream:openAsTask']('r1');
+    git(repoPath, 'branch', '-D', BRANCH);
+    await dreamWithThree();
+    await h['dream:discard']('r1');
+    const calls = spy.mock.calls.map(([cwd, args]) => ({ cwd, args }));
+    const own = calls.filter(
+      (c) =>
+        !path.relative(deps.dreamsDir, c.cwd).startsWith('..') ||
+        c.args.some((a) => a.startsWith('core.hooksPath=')),
+    );
+    // checked, built, rebuild, the diff, and the branch deleted on discard.
+    for (const cmd of [
+      'symbolic-ref',
+      'merge-base',
+      'cherry-pick',
+      'diff-tree',
+    ])
+      expect(
+        own.some((c) => c.args.includes(cmd)),
+        cmd,
+      ).toBe(true);
+    expect(own.some((c) => c.args.includes('-D'))).toBe(true);
+    for (const c of own)
+      expect(c.args, c.args.join(' ')).toContain('core.longpaths=true');
+  });
+
   it('open as task finishes on a second call when removing the worktree failed after the rebuild', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const r = await dreamWithThree();

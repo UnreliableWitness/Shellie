@@ -254,9 +254,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       );
     if (!dir) throw refuse(MISMATCH);
     if (!(await pathExists(r.worktreePath))) return { dir, worktree: 'gone' };
+    const c = flags(unattendedConfig(path.join(dir, 'hooks')));
     // Read-only, to learn whether `wt` is a worktree of its own; nothing else runs there unless it is.
     const top = await d.git
-      .run(r.worktreePath, ['rev-parse', '--show-toplevel'], {
+      .run(r.worktreePath, [...c, 'rev-parse', '--show-toplevel'], {
         timeoutMs: DREAM_READ_TIMEOUT_MS,
       })
       .then(
@@ -267,7 +268,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     if (top === null || wtReal === null || !samePath(top, wtReal))
       return { dir, worktree: 'gone' };
     const head = await d.git
-      .run(r.worktreePath, ['symbolic-ref', '--short', 'HEAD'], {
+      .run(r.worktreePath, [...c, 'symbolic-ref', '--short', 'HEAD'], {
         timeoutMs: DREAM_READ_TIMEOUT_MS,
       })
       .then(
@@ -290,11 +291,16 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   ) => {
     const repo = d.repos().find((x) => x.id === r.repoId);
     const failure = repo
-      ? await removeDream(d.git, repo.path, {
-          dir,
-          worktree: r.worktreePath,
-          branch: branch ? r.branch : null,
-        })
+      ? await removeDream(
+          d.git,
+          repo.path,
+          {
+            dir,
+            worktree: r.worktreePath,
+            branch: branch ? r.branch : null,
+          },
+          unattendedConfig(path.join(dir, 'hooks')),
+        )
       : await removeTree(dir).then(
           () => null,
           (e: unknown) => e,
@@ -331,12 +337,14 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
    * earlier call rebuilt it and then failed to remove the worktree. Asked in the repo (read-only git, no hooks), so it
    * also answers once the worktree is gone. Any doubt is false.
    */
-  const built = async (r: DreamResult, kept: DreamProposal[]) => {
+  const built = async (r: DreamResult, kept: DreamProposal[], dir: string) => {
     const repo = d.repos().find((x) => x.id === r.repoId);
     if (!repo) return false;
     const ref = `refs/heads/${r.branch}`;
+    const c = flags(unattendedConfig(path.join(dir, 'hooks')));
     try {
       await d.git.run(repo.path, [
+        ...c,
         'merge-base',
         '--is-ancestor',
         r.baseSha,
@@ -344,6 +352,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       ]);
       const count = (
         await d.git.run(repo.path, [
+          ...c,
           'rev-list',
           '--count',
           `${r.baseSha}..${ref}`,
@@ -354,6 +363,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         // Nothing when the commit is on the branch itself, `-` when the branch holds one with the same change (patch
         // id), `+` when it holds none.
         const out = await d.git.run(repo.path, [
+          ...c,
           'cherry',
           ref,
           p.commit,
@@ -696,7 +706,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           }
           // A second call after a failed removal finds the branch built already. Without a live worktree there is
           // nothing to build in: it goes on only when the branch is built.
-          if (!(await built(r, kept))) {
+          if (!(await built(r, kept, dir))) {
             if (worktree !== 'live') throw refuse(OPEN_FAILED);
             await rebuild(r, kept);
           }

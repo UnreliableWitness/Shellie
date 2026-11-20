@@ -196,4 +196,27 @@ describe('createPtyHost', () => {
       .poll(() => out.find((m) => m.n === 2), { timeout: 5000 })
       .toMatchObject({ message: 'stopped' });
   });
+  it('ends a timed-out run as timed out, also when a child of it keeps the pipes open', async () => {
+    const { pty } = fake();
+    const out: FromHost[] = [];
+    const handle = createPtyHost(pty, (m) => out.push(m));
+    const started = Date.now();
+    handle({
+      t: 'run',
+      n: 1,
+      command: process.execPath,
+      args: [
+        '-e',
+        `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 8000)'], { stdio: 'inherit' }); setTimeout(() => {}, 8000)`,
+      ],
+      cwd: process.cwd(),
+      input: '',
+      timeoutMs: 300,
+      env: { ...(process.env as Record<string, string>) },
+    });
+    await expect
+      .poll(() => out.find((m) => m.n === 1), { timeout: 6000 })
+      .toEqual({ t: 'runError', n: 1, message: 'timed out after 0 s' });
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 10_000);
 });

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { killTree } from './GitClient';
 import {
   claudeResult,
   PR_PROMPT_MAX,
@@ -16,6 +17,12 @@ import {
   programMissing,
   type PrSummaryContext,
 } from './prSummary';
+
+// The real killTree, watched: a timeout must take the whole tree, as Stop does.
+vi.mock('./GitClient', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./GitClient')>();
+  return { ...real, killTree: vi.fn(real.killTree) };
+});
 
 const ctx: PrSummaryContext = {
   heading:
@@ -284,14 +291,29 @@ describe('runWithInput', () => {
     ).rejects.toThrow(/not found/);
   });
 
-  it('kills a run that takes too long', async () => {
+  it('kills a run that takes too long, with its whole process tree', async () => {
+    vi.mocked(killTree).mockClear();
     await expect(
       runWithInput(
         { command: node, args: ['-e', 'setTimeout(() => {}, 10000)'] },
         { cwd: process.cwd(), input: '', timeoutMs: 200 },
       ),
-    ).rejects.toThrow(/timed out/);
+    ).rejects.toThrow('timed out after 0 s');
+    expect(killTree).toHaveBeenCalledOnce();
   });
+
+  it('settles on its timeout even when a child it started keeps the pipes open', async () => {
+    // The parent starts a child that shares its stdout and outlives it (an npm shim's PowerShell, OpenCode below).
+    const script = `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 8000)'], { stdio: 'inherit' }); setTimeout(() => {}, 8000)`;
+    const started = Date.now();
+    await expect(
+      runWithInput(
+        { command: node, args: ['-e', script] },
+        { cwd: process.cwd(), input: '', timeoutMs: 300 },
+      ),
+    ).rejects.toThrow(/timed out/);
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 10_000);
 });
 
 describe('programMissing', () => {
