@@ -246,6 +246,7 @@ describe('proposalLine', () => {
       label: taskId,
       date: '2026-11-14',
       quote: 'q',
+      who: 'you' as const,
     })),
   });
   it('names the kind and in how many tasks it was seen', () => {

@@ -51,12 +51,14 @@ const twoProposals = (over: Partial<DreamResult> = {}): DreamResult =>
             label: '812 Rounding in invoice totals',
             date: '2026-11-14',
             quote: 'No, we never use the generator here.',
+            who: 'you',
           },
           {
             taskId: 'gone',
             label: '820 Archive old statements',
             date: '2026-11-17',
             quote: 'Again a generated migration.',
+            who: 'agent',
           },
         ],
       }),
@@ -70,6 +72,7 @@ const twoProposals = (over: Partial<DreamResult> = {}): DreamResult =>
             label: '812 Rounding in invoice totals',
             date: '2026-11-19',
             quote: 'Use the release-notes skill.',
+            who: 'you',
           },
         ],
       }),
@@ -292,6 +295,53 @@ describe('DreamScreen', () => {
     expect(rowButton('Skill release-notes')).toHaveTextContent(
       'Changed skill · seen in 1 task',
     );
+  });
+
+  it('says who said each quote, and shows quotes nobody was found to say last', async () => {
+    const r = twoProposals();
+    r.proposals[0].evidence = [
+      {
+        taskId: 'gone',
+        label: '820 Archive old statements',
+        date: '2026-11-17',
+        quote: 'Words not in the sessions.',
+        who: 'unknown',
+      },
+      {
+        taskId: 't1',
+        label: '812 Rounding in invoice totals',
+        date: '2026-11-14',
+        quote: 'No, we never use the generator here.',
+        who: 'you',
+      },
+      {
+        taskId: 'gone',
+        label: '820 Archive old statements',
+        date: '2026-11-17',
+        quote: 'I generated the migration.',
+        who: 'agent',
+      },
+    ];
+    fakeMain(r);
+    const { container } = render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('region', { name: 'Where it comes from' });
+    const captions = [...container.querySelectorAll('.dream-quote')].map(
+      (f) => [
+        f.querySelector('blockquote')!.textContent,
+        f.querySelector('figcaption')!.textContent,
+      ],
+    );
+    expect(captions).toEqual([
+      [
+        '“No, we never use the generator here.”',
+        'You, in812 Rounding in invoice totals14 Nov',
+      ],
+      [
+        '“I generated the migration.”',
+        'The agent, in820 Archive old statements17 Nov',
+      ],
+      ['“Words not in the sessions.”', 'From820 Archive old statements17 Nov'],
+    ]);
   });
 
   it('links evidence to a task in the store and leaves a missing one plain', async () => {

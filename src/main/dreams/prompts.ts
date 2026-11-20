@@ -3,7 +3,7 @@
  * Bump `DREAM_PROMPT_VERSION` when the wording changes in a way that matters.
  */
 
-export const DREAM_PROMPT_VERSION = 2;
+export const DREAM_PROMPT_VERSION = 3;
 
 const REPORT_SHAPE = `{
   "proposals": [
@@ -11,7 +11,7 @@ const REPORT_SHAPE = `{
       "kind": "new-rule | changed-rule | new-skill | changed-skill | new-agent | changed-agent",
       "title": "short title, one line",
       "why": "the reason, two or three sentences",
-      "evidence": [{ "task": "task id from the index", "date": "YYYY-MM-DD", "quote": "the quoted lines" }],
+      "evidence": [{ "task": "task id from the index", "date": "YYYY-MM-DD", "quote": "the developer's own words, copied exactly, without the label" }],
       "files": ["repo-relative/path/you/changed.md"]
     }
   ],
@@ -48,7 +48,7 @@ Look for:
 - steps the developer walked the agent through by hand more than once.
 
 Write at most ${o.maxProposals} proposals. Make each by editing or adding files in the allowed folders. Every file belongs to exactly one proposal; two proposals must not touch the same file. Make each new or changed file well formed for its kind (frontmatter, name).
-Only propose what the sessions really show, and quote them. Never invent a proposal: no proposal is a good answer, then change no file and write an empty list.
+Only propose what the sessions really show, and quote them. Evidence quotes are the developer's own words: one or two sentences copied exactly from a line that starts with **Developer:** in the session files, without the label. Each proposal needs at least one such quote; without one, do not make the proposal. Never invent a proposal: no proposal is a good answer, then change no file and write an empty list.
 Something seen once, that is not yet a proposal, goes in "sightings".
 
 Then write ${o.dataDir}/report.json, as JSON of exactly this shape (nothing else in the file):
@@ -62,7 +62,7 @@ export function checkPrompt(o: { dataDir: string; folders: string[] }): string {
 ${rules(o.dataDir, o.folders)}
 
 Read ${o.dataDir}/report.json and the changed files in the allowed folders (the proposals' "files"). For each proposal ask:
-- Is the evidence really in the sessions (${o.dataDir}/tasks/), with those words?
+- Is the evidence really in the sessions (${o.dataDir}/tasks/), with those words? Each quote must be found word for word in a line that starts with **Developer:**. A proposal without such a quote, or with a quote that is not found word for word in the session files: fail it.
 - Does it repeat, or contradict, a skill, rule or agent that already exists?
 - Is the file well formed for its kind (frontmatter, name)?
 

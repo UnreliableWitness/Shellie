@@ -177,11 +177,17 @@ export type DreamProposalKind =
   | 'new-agent'
   | 'changed-agent';
 
+/** Who said a quote, as Shellie found it in the task's turns (`src/main/dreams/evidence.ts`). */
+export const DreamEvidenceWhoSchema = z.enum(['you', 'agent', 'unknown']);
+export type DreamEvidenceWho = z.infer<typeof DreamEvidenceWhoSchema>;
+
 export const DreamEvidenceSchema = z.object({
   taskId: z.string(),
   label: z.string(),
   date: z.string(),
   quote: z.string(),
+  /** Missing in a result stored before the check: reads as `unknown`. */
+  who: DreamEvidenceWhoSchema.default('unknown'),
 });
 export type DreamEvidence = z.infer<typeof DreamEvidenceSchema>;
 

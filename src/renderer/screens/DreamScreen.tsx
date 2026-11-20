@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
   DreamDiffLine,
+  DreamEvidence,
   DreamFileDiff,
   DreamFileTexts,
   DreamProposal,
@@ -29,6 +30,13 @@ const MINUS = String.fromCharCode(0x2212);
  * One repo's dream result, for review (spec section 8): the proposals, each with where it comes from and what it
  * changes; drop some, open the rest as a task or discard the dream. Every count comes from the view main holds.
  */
+/** A quote's caption, by who Shellie found said it in the task's turns; a quote found nowhere says only where from. */
+const WHO_CAPTION: Record<DreamEvidence['who'], string> = {
+  you: 'You, in',
+  agent: 'The agent, in',
+  unknown: 'From',
+};
+
 export function DreamScreen({ repoId }: { repoId: string }) {
   const { view, failed, retry } = useDreamsState();
   const go = useStore((s) => s.go);
@@ -352,11 +360,14 @@ function Detail({
         <section aria-labelledby={`${id}-ev`} className="dream-detail-part">
           <h3 id={`${id}-ev`}>Where it comes from</h3>
           <div className="dream-quotes">
-            {p.evidence.map((e, i) => (
+            {[
+              ...p.evidence.filter((e) => e.who !== 'unknown'),
+              ...p.evidence.filter((e) => e.who === 'unknown'),
+            ].map((e, i) => (
               <figure key={i} className="dream-quote">
                 <blockquote>{`“${e.quote}”`}</blockquote>
                 <figcaption className="muted small">
-                  <span>You, in</span>
+                  <span>{WHO_CAPTION[e.who]}</span>
                   {tasks.some((t) => t.id === e.taskId) ? (
                     <button
                       type="button"

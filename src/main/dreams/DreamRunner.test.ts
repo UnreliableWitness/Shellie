@@ -253,6 +253,90 @@ describe('DreamRunner', () => {
     expect(r.running()).toBeNull();
   });
 
+  it('keeps only proposals with a quote of the developer, and says who said each quote', async () => {
+    tasks = [
+      {
+        ...task('t1'),
+        sessions: [
+          [
+            { who: 'Developer', text: 'use the helper', at: NOW - 5000 },
+            {
+              who: 'Claude',
+              text: 'I used the helper everywhere',
+              at: NOW - 4000,
+            },
+          ],
+        ],
+      },
+    ];
+    const withQuotes = (title: string, file: string, quotes: string[]) => ({
+      ...proposal(title, file),
+      evidence: quotes.map((quote) => ({
+        task: 't1',
+        date: '2026-11-19',
+        quote,
+      })),
+    });
+    const out = await runner([
+      {
+        sessionId: 'ses_p',
+        edits: { '.apm/rules/a.md': 'A\n', '.apm/rules/b.md': 'B\n' },
+        report: report(
+          withQuotes('Rule A', '.apm/rules/a.md', [
+            '**Claude:** I used the helper everywhere',
+            '**Developer:** use the helper',
+            'something nobody said at all',
+          ]),
+          withQuotes('Rule B', '.apm/rules/b.md', [
+            'I used the helper everywhere',
+          ]),
+        ),
+      },
+      { sessionId: 'ses_c', verdicts: ['pass', 'pass'] },
+    ]).dream(repoArg(), opts());
+    expect(out.outcome).toBe('proposed');
+    if (out.outcome !== 'proposed') return;
+    expect(out.result.proposals.map((p) => p.title)).toEqual(['Rule A']);
+    expect(out.result.proposals[0].evidence.map((e) => e.who)).toEqual([
+      'agent',
+      'you',
+      'unknown',
+    ]);
+    expect(out.result.removedByCheck).toBe(1);
+    // Rule B's file is reverted like a failed proposal's: not on the branch, not in the worktree.
+    expect(
+      show(repo, 'show', '--name-only', '--format=', out.result.branch),
+    ).toBe('.apm/rules/a.md');
+    expect(
+      existsSync(path.join(out.result.worktreePath, '.apm/rules/b.md')),
+    ).toBe(false);
+    expect(store.journal()[0]).toMatchObject({
+      proposals: 1,
+      removedByCheck: 1,
+    });
+  });
+
+  it('ends with nothing when no proposal has a quote of the developer', async () => {
+    const out = await runner([
+      {
+        sessionId: 'ses_p',
+        edits: { '.apm/rules/a.md': 'A\n' },
+        report: report({
+          ...proposal('Rule A', '.apm/rules/a.md'),
+          evidence: [
+            { task: 't1', date: '2026-11-19', quote: 'a quote nobody said' },
+          ],
+        }),
+      },
+      { sessionId: 'ses_c', verdicts: ['pass'] },
+    ]).dream(repoArg(), opts());
+    expect(out.outcome).toBe('nothing');
+    expect(store.journal()[0]).toMatchObject({
+      outcome: 'nothing',
+      removedByCheck: 1,
+    });
+  });
+
   it('maps evidence to tasks by id, digest file or label, and keeps an unknown one as given', async () => {
     tasks = [task('t1'), { ...task('t2'), label: 'Fix the login page' }];
     const runs = twoProposals();
@@ -260,7 +344,7 @@ describe('DreamRunner', () => {
     p.evidence = ['tasks/t1.md', 'the login page', 'nope'].map((t) => ({
       task: t,
       date: '2026-11-19',
-      quote: 'q',
+      quote: t === 'tasks/t1.md' ? 'use the helper' : 'q',
     }));
     runs[0].report = report(p, proposal('Rule B', '.apm/rules/b.md'));
     const out = await runner(runs).dream(repoArg(), opts());

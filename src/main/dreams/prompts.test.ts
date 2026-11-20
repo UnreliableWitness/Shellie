@@ -9,7 +9,7 @@ describe('prompts', () => {
     check: checkPrompt(o),
   };
   it('has a version', () => {
-    expect(DREAM_PROMPT_VERSION).toBe(2);
+    expect(DREAM_PROMPT_VERSION).toBe(3);
   });
   it.each(Object.entries(texts))(
     '%s names data dir, folders and report',
@@ -35,6 +35,17 @@ describe('prompts', () => {
     expect(texts.propose).toContain('"sightings"');
     expect(texts.propose).toContain('"evidence"');
     expect(texts.propose).toMatch(/no proposal is a good answer/i);
+  });
+  it('propose asks for the developer’s own words as evidence, at least one per proposal', () => {
+    expect(texts.propose).toContain(
+      'copied exactly from a line that starts with **Developer:**',
+    );
+    expect(texts.propose).toContain('without the label');
+    expect(texts.propose).toMatch(/at least one such quote/i);
+  });
+  it('check fails a proposal whose quotes are not in the session files word for word', () => {
+    expect(texts.check).toContain('word for word');
+    expect(texts.check).toMatch(/fail it/i);
   });
   it('check changes no source file and writes verdicts', () => {
     expect(texts.check).toContain('change no source file');

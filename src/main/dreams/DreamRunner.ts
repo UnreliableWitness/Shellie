@@ -47,6 +47,7 @@ import {
   type Material,
   type TaskSessions,
 } from './material';
+import { quoteWho } from './evidence';
 import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
 import { checkPrompt, proposePrompt } from './prompts';
 import {
@@ -342,11 +343,27 @@ export class DreamRunner {
       throw new DreamFailed(REASON.checkEdited);
 
     const { allowed, outside } = splitAllowed(after.paths, m.folders);
-    const { groups, unlisted, removedByCheck } = groupProposals(
-      checked,
-      allowed,
-      true,
+    const grouped = groupProposals(checked, allowed, true);
+    // Who said each quote, from the task's own turns; a proposal needs one of the developer's.
+    const withWho = grouped.groups.map((g) => ({
+      ...g,
+      evidence: g.evidence.map((e): DreamEvidence => {
+        const ref = taskRef(e.task, m.material.tasks);
+        const t = m.material.tasks.find((x) => x.taskId === ref.taskId);
+        return {
+          ...ref,
+          date: e.date,
+          quote: e.quote,
+          who: t ? quoteWho(e.quote, t.sessions) : 'unknown',
+        };
+      }),
+    }));
+    const groups = withWho.filter((g) =>
+      g.evidence.some((e) => e.who === 'you'),
     );
+    const unheard = withWho.filter((g) => !groups.includes(g));
+    const unlisted = [...grouped.unlisted, ...unheard.flatMap((g) => g.files)];
+    const removedByCheck = grouped.removedByCheck + unheard.length;
     m.removedByCheck = removedByCheck;
     await step(REASON.undo, () =>
       revertPaths(git, m.worktree, baseSha, [...outside, ...unlisted], config),
@@ -368,11 +385,7 @@ export class DreamRunner {
         kind: g.kind,
         title: g.title,
         why: g.why,
-        evidence: g.evidence.map((e): DreamEvidence => ({
-          ...taskRef(e.task, m.material.tasks),
-          date: e.date,
-          quote: e.quote,
-        })),
+        evidence: g.evidence,
         files: g.files,
         commit,
         dropped: false,
