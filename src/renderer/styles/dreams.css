@@ -373,14 +373,15 @@
 .nav-dream.is-warn {
   color: var(--warn);
 }
-.dream-pop {
+/* `.menu.` so these win over the generic `.menu` rule, whatever order the style sheets load in. */
+.menu.dream-pop {
   top: auto;
   bottom: 100%;
   padding: 14px 16px;
   gap: 10px;
   font-size: 13px;
 }
-.is-rail .dream-pop {
+.is-rail .menu.dream-pop {
   left: 100%;
   right: auto;
   bottom: 0;
@@ -632,7 +633,10 @@
 .dream-line-text {
   white-space: pre;
 }
+/* A flex column: the diff viewer's host (`.review-diff`) takes its height with `flex: 1`. */
 .dream-fulldiff {
+  display: flex;
+  flex-direction: column;
   height: 60vh;
   min-height: 320px;
 }
