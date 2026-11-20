@@ -693,6 +693,17 @@ describe('sweep', () => {
     const taskWt = path.join(root, 'task-wt');
     git(repo, 'worktree', 'add', '-q', taskWt, 'dream/2026-11-17-1');
     git(repo, 'branch', 'feature/x');
+    // A result opened as a task and not made into one yet: no folder, its branch stays.
+    git(repo, 'branch', 'dream/2026-11-18-1');
+    await store.setOpened(REPO.id, {
+      dreamId: '2026-11-18-1',
+      branch: 'dream/2026-11-18-1',
+      at: new Date(NOW).toISOString(),
+      kept: 1,
+      titles: ['A rule'],
+    });
+    // State of a repo Shellie no longer knows is forgotten.
+    await store.failed('gone', 'x');
     // Folders of a repo Shellie no longer knows go; a file at the top stays.
     mkdirSync(path.join(dreamsDir, 'gone', '2026-11-01-1'), {
       recursive: true,
@@ -736,6 +747,7 @@ describe('sweep', () => {
       .sort();
     expect(branches).toEqual([
       'dream/2026-11-17-1',
+      'dream/2026-11-18-1',
       'dream/2026-11-19-1',
       'dream/2026-11-20-1',
       'dream/my-idea',
@@ -746,15 +758,14 @@ describe('sweep', () => {
     expect(existsSync(path.join(repoDir, '2026-11-20-2'))).toBe(false);
     expect(existsSync(path.join(kept, 'wt'))).toBe(true);
     expect(existsSync(stray)).toBe(false);
-    expect(existsSync(path.join(dreamsDir, 'gone', '2026-11-01-1'))).toBe(
-      false,
-    );
+    expect(existsSync(path.join(dreamsDir, 'gone'))).toBe(false);
+    expect(store.repoIds()).toEqual([REPO.id]);
+    expect(store.repo(REPO.id).opened).not.toBeNull();
     expect(existsSync(path.join(dreamsDir, 'note.txt'))).toBe(true);
     expect(existsSync(path.join(root, 'outside.txt'))).toBe(true);
     expect(existsSync(taskWt)).toBe(true);
     // Its own empty hooks folder is gone again.
     expect((await import('node:fs')).readdirSync(dreamsDir).sort()).toEqual([
-      'gone',
       'note.txt',
       REPO.id,
     ]);

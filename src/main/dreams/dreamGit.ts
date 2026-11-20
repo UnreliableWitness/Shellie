@@ -311,7 +311,8 @@ export type DreamMade = {
 /**
  * Removes what the dream made: its worktree (git's own removal first), its folder (worktree, data, hooks) and its
  * branch (with `config`, `unattendedConfig`); also after a half-made worktree. Never anything it did not make. Best
- * effort; the first failure is returned.
+ * effort; the first failure is returned. When the repo's folder is gone from disk, removing the dream's folder is all
+ * there is to do: git has nothing to prune or delete there.
  */
 export async function removeDream(
   git: Git,
@@ -324,6 +325,10 @@ export async function removeDream(
     p.catch((e: unknown) => {
       failure ??= e;
     });
+  if (!(await pathExists(repoPath))) {
+    if (made.dir) await step(removeTree(made.dir));
+    return failure;
+  }
   if (made.worktree)
     await git
       .worktreeRemove(repoPath, made.worktree, true)

@@ -313,34 +313,25 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
 
   // ── sweep ──
 
-  /**
-   * The dream folders of one repo id but the open result's, with git when the repo is known; returns the names of
-   * the folders it found to remove.
-   */
+  /** The dream folders of a known repo but the open result's, with git; returns the names of the folders found. */
   const sweepFolders = async (
-    repoId: string,
-    repo: Repo | undefined,
+    repo: Repo,
     config: string[],
   ): Promise<string[]> => {
-    const keep = d.store.repo(repoId).result?.id;
-    const repoDir = path.join(d.dreamsDir, repoId);
+    const keep = d.store.repo(repo.id).result?.id;
+    const repoDir = path.join(d.dreamsDir, repo.id);
     const entries = await fs.readdir(repoDir, { withFileTypes: true });
     const found: string[] = [];
     for (const e of entries) {
       if (!e.isDirectory() || e.name === keep) continue;
       found.push(e.name);
       const dir = path.join(repoDir, e.name);
-      const failure = repo
-        ? await removeDream(
-            d.git,
-            repo.path,
-            { dir, worktree: path.join(dir, 'wt'), branch: null },
-            config,
-          )
-        : await removeTree(dir).then(
-            () => null,
-            (x: unknown) => x,
-          );
+      const failure = await removeDream(
+        d.git,
+        repo.path,
+        { dir, worktree: path.join(dir, 'wt'), branch: null },
+        config,
+      );
       if (failure)
         console.error(
           '[dreams] sweep could not remove a dream folder',
@@ -417,19 +408,30 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           continue;
         }
         const repo = repos.get(e.name);
-        // A repo that is gone from disk is left as it is.
-        if (repo && !onDisk.get(repo.id)) continue;
-        const found = await sweepFolders(e.name, repo, config).catch(
-          (x: unknown) => {
-            console.error('[dreams] sweep', x);
-            return [] as string[];
-          },
-        );
-        if (repo)
-          await sweepBranches(repo, config, found).catch((x: unknown) =>
-            console.error('[dreams] sweep', x),
+        // A repo Shellie no longer knows: its whole folder goes, without git (there is no repo to run it in).
+        if (!repo) {
+          await removeTree(path.join(d.dreamsDir, e.name)).catch((x: unknown) =>
+            console.error('[dreams] sweep could not remove a dream folder', x),
           );
+          continue;
+        }
+        // A repo that is gone from disk is left as it is.
+        if (!onDisk.get(repo.id)) continue;
+        const found = await sweepFolders(repo, config).catch((x: unknown) => {
+          console.error('[dreams] sweep', x);
+          return [] as string[];
+        });
+        await sweepBranches(repo, config, found).catch((x: unknown) =>
+          console.error('[dreams] sweep', x),
+        );
       }
+      // Stored state of a repo Shellie no longer knows (removed while dreams were not running): the journal keeps
+      // its lines.
+      for (const id of d.store.repoIds())
+        if (!repos.has(id))
+          await d.store
+            .forgetRepo(id)
+            .catch((x: unknown) => console.error('[dreams] sweep', x));
     } finally {
       await removeTree(hooks).catch(() => undefined);
     }
@@ -476,6 +478,16 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     },
     stopDream(): void {
       abort('stopped');
+    },
+    /**
+     * Stops the dream running for `repoId` (its repo was removed), as Stop does; resolves once it ended, at most after
+     * `ms`. At once when none runs for it.
+     */
+    stopDreamOf(repoId: string, ms: number): Promise<void> {
+      const running = dream;
+      if (!running || running.repoId !== repoId) return Promise.resolve();
+      running.stop.abort('stopped');
+      return settledWithin(running.done, ms);
     },
     suspend(): void {
       abort('suspend');

@@ -19,6 +19,7 @@ import { DocsWatcher } from '../docs/DocsWatcher';
 import type { WorkspaceDetector } from '../workspaces/WorkspaceDetector';
 import { commitFile, git, makeRepo } from '../test-helpers/gitRepo';
 import { isWindows, sleepCmd, writeLineCmd } from '../test-helpers/shell';
+import { noDreams } from '../dreams/dreamHandlers';
 import { createHandlers } from './handlers';
 import {
   connDirs,
@@ -315,6 +316,21 @@ describe('handlers: repos', () => {
     });
     await h['repos:remove'](added.id);
     expect(await h['repos:list']()).toEqual([]);
+  });
+
+  it('repos:remove tells dreams which repo went, after it is gone; a dream failure never fails the removal', async () => {
+    const repoRemoved = vi.fn(async () => {
+      expect(await h['repos:list']()).toEqual([]);
+      throw new Error('dreams broke');
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { h, added } = await harness(undefined, {
+      dreams: { ...noDreams(), repoRemoved },
+    });
+    await h['repos:remove'](added.id);
+    expect(repoRemoved).toHaveBeenCalledWith(added);
+    expect(await h['repos:list']()).toEqual([]);
+    error.mockRestore();
   });
 
   it('repos:config gives a repo kept in Shellie only the base branch it was added with', async () => {

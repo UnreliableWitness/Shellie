@@ -215,6 +215,7 @@ describe('DreamRunner', () => {
     expect(store.journal()).toMatchObject([
       {
         dreamId: result.id,
+        repoName: 'repo',
         outcome: 'proposed',
         model: MODEL,
         tokens: 1234,

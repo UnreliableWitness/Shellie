@@ -649,7 +649,7 @@ export function NewTaskScreen({
             <p className="muted small">
               This task uses the branch{' '}
               <span className="mono">{dream.branch}</span> that the dream left.
-              It stays in the repo if you leave now.
+              If you leave now, Dreams keeps offering to make the task.
             </p>
           )}
           <div className="actions">

@@ -3693,9 +3693,20 @@ export function createHandlers(s: Services): Handlers {
       return repo;
     },
     'repos:remove': async (id) => {
+      const repo = s.repos.find(id);
       await s.repos.remove(id);
       reposChanged();
       tel.event('repo.removed');
+      // Its dreams go with it: a running dream, an open result, its dream settings and state. Never fails the removal.
+      if (repo)
+        await dreams
+          .repoRemoved(repo)
+          .catch((e: unknown) =>
+            console.error(
+              '[dreams] a removed repo’s dreams were not cleared',
+              e,
+            ),
+          );
     },
     'repos:refresh': async (id) => {
       const repo = await s.repos.refresh(id);

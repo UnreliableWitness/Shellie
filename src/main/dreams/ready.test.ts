@@ -20,6 +20,7 @@ const state = (over: Partial<DreamRepoState> = {}): DreamRepoState => ({
   lastFailure: null,
   lastDreamAt: null,
   lastOutcome: null,
+  opened: null,
   result: null,
   ...over,
 });

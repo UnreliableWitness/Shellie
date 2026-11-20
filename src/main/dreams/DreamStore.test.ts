@@ -43,7 +43,73 @@ describe('DreamStore', () => {
       lastDreamAt: null,
       lastOutcome: null,
       result: null,
+      opened: null,
     });
+  });
+
+  it('loads a dreams.json written before `opened` and `repoName` existed', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dreams-'));
+    const { opened: _none, ...oldRepo } = (await make()).s.repo('r');
+    const { repoName: _n, ...oldEntry } = entry(1);
+    writeFileSync(
+      path.join(dir, 'dreams.json'),
+      JSON.stringify({
+        version: 1,
+        repos: { r: { ...oldRepo, failures: 2 } },
+        journal: [oldEntry],
+        switchedOff: null,
+      }),
+    );
+    const { s } = await make(() => T0, dir);
+    expect(s.repo('r')).toMatchObject({ failures: 2, opened: null });
+    expect(s.journal()).toEqual([oldEntry]);
+  });
+
+  it('opens a result as a task in one write: the result goes, the branch is remembered until the task is named', async () => {
+    const { s, dir } = await make();
+    await s.log({ ...entry(1), dreamId: 'd1', outcome: 'proposed' });
+    await s.closeJournal('r', 'd1', {
+      as: 'task',
+      kept: 2,
+      dropped: 1,
+      taskName: null,
+    });
+    const fn = vi.fn();
+    s.onChange(fn);
+    const opened = {
+      dreamId: 'd1',
+      branch: 'dream/d1',
+      at: new Date(T0).toISOString(),
+      kept: 2,
+      titles: ['A', 'B'],
+    };
+    await s.openedAsTask('r', opened);
+    expect(fn).toHaveBeenCalledTimes(1);
+    const { s: again } = await make(() => T0, dir);
+    expect(again.repo('r')).toMatchObject({ result: null, opened });
+    await again.taskMade('r', 'd1', 'Rules from a dream');
+    expect(again.repo('r').opened).toBeNull();
+    expect(again.journal()[0].closed).toEqual({
+      as: 'task',
+      kept: 2,
+      dropped: 1,
+      taskName: 'Rules from a dream',
+    });
+    // Another dream's id changes nothing.
+    await again.openedAsTask('r', opened);
+    await again.taskMade('r', 'd9', 'x');
+    expect(again.repo('r').opened).toEqual(opened);
+    await again.setOpened('r', null);
+    expect(again.repo('r').opened).toBeNull();
+  });
+
+  it('lists the repo ids it holds state for, and forgets one', async () => {
+    const { s } = await make();
+    await s.failed('a', 'x');
+    await s.failed('b', 'x');
+    expect(s.repoIds().sort()).toEqual(['a', 'b']);
+    await s.forgetRepo('a');
+    expect(s.repoIds()).toEqual(['b']);
   });
 
   it('counts failures, keeps the reason, and succeeded resets', async () => {

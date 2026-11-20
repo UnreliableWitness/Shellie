@@ -31,6 +31,7 @@ const state = {
   lastFailure: null,
   lastDreamAt: null,
   lastOutcome: null,
+  opened: null,
   result: null,
 };
 

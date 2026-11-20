@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultDreaming, type DreamView } from '../../shared/dreams';
 import {
+  emptyState,
   journalEntry,
+  OPENED,
   settings,
   viewOf,
   withResults,
@@ -119,6 +121,76 @@ describe('DreamsScreen: on', () => {
       within(waiting).getAllByRole('button', { name: 'Review' })[1],
     );
     expect(useStore.getState().screen).toEqual({ kind: 'dream', repoId: 'r2' });
+  });
+
+  it('offers to make the task of a result opened as a task whose task was never made', async () => {
+    const v = viewOf();
+    v.repos[0].state = emptyState({ opened: OPENED });
+    open(v);
+    render(<DreamsScreen />);
+    const waiting = await screen.findByRole('region', {
+      name: 'Waiting for you',
+    });
+    expect(waiting).toHaveTextContent(
+      'portal · 2 kept proposals on dream/2026-11-20-1, no task yet',
+    );
+    await userEvent.click(
+      within(waiting).getByRole('button', { name: 'Make the task' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'new-task',
+      repoId: 'r1',
+      dream: {
+        id: '2026-11-20-1',
+        branch: 'dream/2026-11-20-1',
+        name: 'Dream 20 Nov',
+      },
+    });
+  });
+
+  it('Leave the branch asks first, then forgets the record (the branch stays)', async () => {
+    const v = viewOf();
+    v.repos[0].state = emptyState({ opened: OPENED });
+    const { calls } = open(v);
+    render(<DreamsScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Leave the branch' }),
+    );
+    expect(callsOf(calls, 'dream:leaveBranch')).toEqual([]);
+    expect(
+      screen.getByText(
+        'Forget this? The branch dream/2026-11-20-1 stays in the repo, but Shellie no longer offers to make a task from it.',
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Forget it' }));
+    await waitFor(() =>
+      expect(callsOf(calls, 'dream:leaveBranch')).toEqual([['r1']]),
+    );
+  });
+
+  it('shows what waits also while dreaming is off', async () => {
+    const v = viewOf({ settings: defaultDreaming() });
+    v.repos[0].state = emptyState({ opened: OPENED });
+    open(v);
+    render(<DreamsScreen />);
+    await screen.findByRole('button', { name: 'Make the task' });
+    expect(screen.queryByRole('region', { name: 'Status' })).toBeNull();
+  });
+
+  it('names a removed repo’s journal line by the name stored with it', async () => {
+    open(
+      viewOf({
+        journal: [
+          journalEntry({ dreamId: 'a', repoId: 'gone', repoName: 'shop' }),
+          journalEntry({ dreamId: 'b', repoId: 'gone2' }),
+        ],
+      }),
+    );
+    render(<DreamsScreen />);
+    const journal = await screen.findByRole('region', { name: 'Journal' });
+    expect(journal).toHaveTextContent('shop');
+    expect(journal).toHaveTextContent('a removed repo');
+    expect(journal).not.toHaveTextContent('gone2');
   });
 
   it('Dream now calls dream:now and is disabled for a repo with an open result', async () => {

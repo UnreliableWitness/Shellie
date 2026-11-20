@@ -939,6 +939,11 @@ export type Channels = {
    */
   'dream:openAsTask': { args: [repoId: string]; result: { branch: string } };
   /**
+   * Forgets a result opened as a task whose task was never made: Shellie no longer offers to make it. The branch stays
+   * in the repo.
+   */
+  'dream:leaveBranch': { args: [repoId: string]; result: void };
+  /**
    * The files a proposal of the open result changes, each with git's own hunks against the commit's parent, bounded
    * (`DreamFileDiff`); read from the repo's git objects, so also once the dream worktree is gone.
    */

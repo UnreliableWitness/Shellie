@@ -107,6 +107,7 @@ beforeEach(async () => {
   scheduler = {
     dreamNow: vi.fn<Scheduler['dreamNow']>(async () => ({ started: true })),
     stopDream: vi.fn(),
+    stopDreamOf: vi.fn(async () => undefined),
     status: vi.fn(() => status),
     switchOn: vi.fn(async (save: () => Promise<void>) => {
       await save();
@@ -748,14 +749,55 @@ describe('a dream result', () => {
     });
   });
 
-  it('forgets the pair after 10 minutes', async () => {
+  it('remembers the opened branch in the store, with no time limit and across a restart, until the task is made', async () => {
     let t = 1_000_000;
     deps.now = () => t;
     await dreamWithThree();
+    await api().handlers['dream:drop']('r1', 'p2', true);
+    await api().handlers['dream:openAsTask']('r1');
+    expect(store.repo('r1')).toMatchObject({
+      result: null,
+      opened: {
+        dreamId: DREAM_ID,
+        branch: BRANCH,
+        kept: 2,
+        titles: ['Rule 1', 'Rule 3'],
+      },
+    });
+    t += 24 * 60 * 60_000;
+    // A restart: new handlers on the same file.
+    const again = new DreamStore(dir);
+    await again.load();
+    const after = createDreamHandlers({ ...deps, store: again });
+    expect(after.taskLink.opened(DREAM_ID, 'r1', BRANCH)).toBe(true);
+    expect(after.taskLink.opened(DREAM_ID, 'r1', 'dream/other')).toBe(false);
+    expect(after.taskLink.opened('2026-11-20-9', 'r1', BRANCH)).toBe(false);
+    expect(after.taskLink.opened(DREAM_ID, 'r2', BRANCH)).toBe(false);
+    await after.taskLink.taskCreated(DREAM_ID, 'r1', 'Rules from a dream');
+    expect(again.repo('r1').opened).toBeNull();
+    expect(after.taskLink.opened(DREAM_ID, 'r1', BRANCH)).toBe(false);
+    expect(again.journal()[0].closed).toEqual({
+      as: 'task',
+      kept: 2,
+      dropped: 1,
+      taskName: 'Rules from a dream',
+    });
+  });
+
+  it('Leave the branch forgets the opened record and keeps the branch', async () => {
+    await dreamWithThree();
     const a = api();
     await a.handlers['dream:openAsTask']('r1');
-    t += 10 * 60_000;
+    const tip = git(repoPath, 'rev-parse', BRANCH).trim();
+    vi.mocked(deps.broadcast).mockClear();
+    await a.handlers['dream:leaveBranch']('r1');
+    expect(store.repo('r1').opened).toBeNull();
     expect(a.taskLink.opened(DREAM_ID, 'r1', BRANCH)).toBe(false);
+    expect(git(repoPath, 'rev-parse', BRANCH).trim()).toBe(tip);
+    expect(changed()).toBe(1);
+    await expect(a.handlers['dream:leaveBranch']('r1')).rejects.toThrow(
+      'This repo has no dream branch waiting for a task',
+    );
   });
 
   it('a cherry-pick that fails puts the branch back and removes nothing', async () => {
@@ -972,6 +1014,85 @@ describe('a dream result', () => {
     await expect(api().handlers['dream:discard']('r1')).rejects.toThrow(
       'Dreams are still starting',
     );
+  });
+});
+
+describe('a repo that goes away', () => {
+  it('removed from Shellie: stops its dream, discards its result, forgets its state and its settings', async () => {
+    const r = await dreamWithThree();
+    await setDreaming(ready({ enabled: true }));
+    status = {
+      ...status,
+      running: { repoId: 'r1', startedAt: 1, step: 'reading' },
+    };
+    await store.setOpened('r1', {
+      dreamId: '2026-11-19-1',
+      branch: 'dream/2026-11-19-1',
+      at: '2026-11-19T03:00:00.000Z',
+      kept: 1,
+      titles: ['Old'],
+    });
+    git(repoPath, 'branch', 'dream/2026-11-19-1');
+    const events: [string, unknown][] = [];
+    deps.event = (name, props) => events.push([name, props]);
+    const repo = { id: 'r1', name: 'Portal', path: repoPath };
+    // As Shellie has it once `repos:remove` ran.
+    deps.repos = () => [];
+    await api().repoRemoved(repo);
+    expect(scheduler.stopDreamOf).toHaveBeenCalledWith(
+      'r1',
+      expect.any(Number),
+    );
+    expect(existsSync(path.join(deps.dreamsDir, 'r1', DREAM_ID))).toBe(false);
+    expect(git(repoPath, 'branch', '--list', BRANCH).trim()).toBe('');
+    expect(git(repoPath, 'worktree', 'list')).not.toContain(DREAM_ID);
+    // The branch of a result opened as a task is the owner's: it stays.
+    expect(
+      git(repoPath, 'branch', '--list', 'dream/2026-11-19-1').trim(),
+    ).not.toBe('');
+    expect(store.repoIds()).toEqual([]);
+    expect(store.repo('r1').opened).toBeNull();
+    expect(store.journal()[0]).toMatchObject({
+      dreamId: r.id,
+      closed: { as: 'discarded', kept: 0, dropped: 3 },
+    });
+    expect(settings.get().dreaming.repos).toEqual({});
+    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(events).toContainEqual(['dream.switched_off', { by: 'narrowed' }]);
+    expect(events).toContainEqual([
+      'dream.result',
+      expect.objectContaining({ outcome: 'discarded' }),
+    ]);
+    expect(changed()).toBeGreaterThan(0);
+  });
+
+  it('removed from Shellie with another repo still ticked: dreaming stays on for it', async () => {
+    await setDreaming(
+      ready({
+        enabled: true,
+        repos: {
+          r1: { on: true, folders: ['.apm'] },
+          r2: { on: true, folders: ['.apm'] },
+        },
+      }),
+    );
+    deps.repos = () => [{ id: 'r2', name: 'Billing', path: repoPath }];
+    await api().repoRemoved({ id: 'r1', name: 'Portal', path: repoPath });
+    expect(settings.get().dreaming.enabled).toBe(true);
+    expect(Object.keys(settings.get().dreaming.repos)).toEqual(['r2']);
+  });
+
+  it('a repo folder deleted on disk: Discard removes the dream folder and closes the result', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await dreamWithThree();
+    rmSync(repoPath, { recursive: true, force: true });
+    await api().handlers['dream:discard']('r1');
+    expect(existsSync(path.join(deps.dreamsDir, 'r1', DREAM_ID))).toBe(false);
+    expect(store.repo('r1').result).toBeNull();
+    expect(store.journal()[0]).toMatchObject({
+      dreamId: r.id,
+      closed: { as: 'discarded' },
+    });
   });
 });
 

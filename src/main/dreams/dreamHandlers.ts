@@ -47,12 +47,11 @@ import type { DreamScheduler } from './scheduler';
 export const DREAM_TEST_TIMEOUT_MS = 2 * 60_000;
 /** The test call's prompt: tiny and fixed. */
 export const DREAM_TEST_PROMPT = 'Reply with the single word: ok';
-/** How long the branch `dream:openAsTask` returned may be made into a task. */
-const OPENED_MS = 10 * 60_000;
 /** OpenCode's model list counts as known this long. */
 const MODELS_MS = 10 * 60_000;
 
 const OPEN_FAILED = 'The dream could not be opened as a task';
+const NO_OPENED = 'This repo has no dream branch waiting for a task';
 const TEST_FAILED = 'The test could not be run';
 const MISMATCH = "The dream's record does not match its folder";
 const SETTINGS_FAILED = 'The dream settings could not be saved';
@@ -90,15 +89,24 @@ export type DreamHandlers = Pick<Handlers, DreamChannel>;
 
 /** What `tasks:create` asks about a `fromDream` task. */
 export type DreamTaskLink = {
-  /** True when `dream:openAsTask` returned `branch` for this dream of this repo less than 10 minutes ago. */
+  /** True when the repo's stored `opened` record (`dream:openAsTask`) is this dream's, on `branch`. No time limit. */
   opened(dreamId: string, repoId: string, branch: string): boolean;
-  /** The task was made: the pair is used up and the journal names the task. */
+  /** The task was made: the record is cleared and the journal names the task. */
   taskCreated(dreamId: string, repoId: string, taskName: string): Promise<void>;
 };
 
-export type DreamApi = { handlers: DreamHandlers; taskLink: DreamTaskLink };
-
 type Repo = { id: string; name: string; path: string };
+
+export type DreamApi = {
+  handlers: DreamHandlers;
+  taskLink: DreamTaskLink;
+  /**
+   * The repo was removed from Shellie (`repos:remove`): its running dream is stopped, its open result discarded, its
+   * `opened` record forgotten (the branch stays), its entry removed from the settings and its stored state forgotten.
+   * The journal keeps its past entries. Best effort: never throws.
+   */
+  repoRemoved(repo: Repo): Promise<void>;
+};
 
 export type DreamHandlerDeps = {
   settings: {
@@ -112,7 +120,7 @@ export type DreamHandlerDeps = {
   /** Null until the scheduler started (the store is loaded then); only reads are answered before. */
   scheduler: () => Pick<
     DreamScheduler,
-    'dreamNow' | 'stopDream' | 'status' | 'switchOn'
+    'dreamNow' | 'stopDream' | 'stopDreamOf' | 'status' | 'switchOn'
   > | null;
   repos: () => Repo[];
   git: Pick<
@@ -156,12 +164,17 @@ export function noDreams(): DreamApi {
       'dream:drop': no,
       'dream:discard': no,
       'dream:openAsTask': no,
+      'dream:leaveBranch': no,
       'dream:diff': no,
       'dream:file': no,
     },
     taskLink: { opened: () => false, taskCreated: async () => undefined },
+    repoRemoved: async () => undefined,
   };
 }
+
+/** How long a removed repo's running dream may take to end before its result and state are forgotten anyway. */
+const REMOVED_STOP_MS = 15_000;
 
 export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   const now = d.now ?? Date.now;
@@ -169,12 +182,6 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   let models: { at: number; list: string[] } | null = null;
   let asking: Promise<string[] | null> | null = null;
   let testing = false;
-  /** `<repoId>\0<dreamId>` → the branch `dream:openAsTask` returned, until a task is made from it or 10 minutes pass. */
-  const opened = new Map<
-    string,
-    { branch: string; kept: number; dropped: number; until: number }
-  >();
-  const key = (repoId: string, dreamId: string) => `${repoId}\0${dreamId}`;
   // Drop, discard and open as task change the open result: one after another.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -288,8 +295,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     dir: string,
     branch: boolean,
     message: string,
+    /** The repo when Shellie no longer lists it (it is being removed). */
+    gone?: Repo,
   ) => {
-    const repo = d.repos().find((x) => x.id === r.repoId);
+    const repo = gone ?? d.repos().find((x) => x.id === r.repoId);
     const failure = repo
       ? await removeDream(
           d.git,
@@ -719,19 +728,32 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             dropped: dropped.length,
             taskName: null,
           });
-          await d.store.setResult(repoId, null);
+          // The result goes and its branch is remembered in one write: until a task is made from it (also after a
+          // restart), Dreams offers to make it.
+          await d.store.openedAsTask(repoId, {
+            dreamId: r.id,
+            branch: r.branch,
+            at: new Date(now()).toISOString(),
+            kept: kept.length,
+            titles: kept.map((p) => p.title),
+          });
           event(
             'dream.result',
             resultProps(kept.length, dropped.length, 'task'),
           );
-          opened.set(key(repoId, r.id), {
-            branch: r.branch,
-            kept: kept.length,
-            dropped: dropped.length,
-            until: now() + OPENED_MS,
-          });
           d.broadcast();
           return { branch: r.branch };
+        }),
+      ),
+
+    'dream:leaveBranch': (repoId) =>
+      serial(() =>
+        phrased('The dream could not be saved', async () => {
+          started();
+          if (!d.store.repo(repoId).opened) throw refuse(NO_OPENED);
+          // Only the record: the branch is the owner's now and is never deleted here.
+          await d.store.setOpened(repoId, null);
+          d.broadcast();
         }),
       ),
 
@@ -762,23 +784,81 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
 
   const taskLink: DreamTaskLink = {
     opened(dreamId, repoId, branch) {
-      const o = opened.get(key(repoId, dreamId));
-      if (o && o.until <= now()) opened.delete(key(repoId, dreamId));
-      return !!o && o.until > now() && o.branch === branch;
+      const o = d.store.repo(repoId).opened;
+      return o !== null && o.dreamId === dreamId && o.branch === branch;
     },
     async taskCreated(dreamId, repoId, taskName) {
-      const o = opened.get(key(repoId, dreamId));
-      if (!o) return;
-      opened.delete(key(repoId, dreamId));
-      await d.store.closeJournal(repoId, dreamId, {
-        as: 'task',
-        kept: o.kept,
-        dropped: o.dropped,
-        taskName,
-      });
+      if (d.store.repo(repoId).opened?.dreamId !== dreamId) return;
+      await d.store.taskMade(repoId, dreamId, taskName);
       d.broadcast();
     },
   };
 
-  return { handlers, taskLink };
+  const repoRemoved = (repo: Repo): Promise<void> =>
+    serial(async () => {
+      const s = d.scheduler();
+      await s
+        ?.stopDreamOf(repo.id, REMOVED_STOP_MS)
+        .catch((e: unknown) =>
+          console.error('[dreams] the dream of a removed repo did not end', e),
+        );
+      // The store is loaded once the scheduler started; before, the next launch's sweep forgets the repo.
+      if (s) {
+        const r = d.store.repo(repo.id).result;
+        if (r) {
+          await checked(repo.id, r)
+            .then(({ dir }) =>
+              removeResult(
+                r,
+                dir,
+                true,
+                'The dream could not be removed',
+                repo,
+              ),
+            )
+            .catch((e: unknown) =>
+              console.error(
+                '[dreams] a removed repo’s dream was not removed',
+                e,
+              ),
+            );
+          await d.store
+            .closeJournal(repo.id, r.id, {
+              as: 'discarded',
+              kept: 0,
+              dropped: r.proposals.length,
+              taskName: null,
+            })
+            .catch((e: unknown) => console.error('[dreams] journal', e));
+          event(
+            'dream.result',
+            resultProps(0, r.proposals.length, 'discarded'),
+          );
+        }
+        // `opened` goes with the state; its branch is the owner's and stays.
+        await d.store
+          .forgetRepo(repo.id)
+          .catch((e: unknown) =>
+            console.error('[dreams] a removed repo was not forgotten', e),
+          );
+      }
+      let wasOn = false;
+      const saved = await saveDreaming((cur) => {
+        wasOn = cur.enabled;
+        const { [repo.id]: _gone, ...repos } = cur.repos;
+        const next = { ...cur, repos };
+        // As a narrowing save: nothing left to dream about switches dreaming off.
+        return { ...next, enabled: next.enabled && canSwitchOn(next) === null };
+      }).catch((e: unknown) => {
+        console.error('[dreams] a removed repo stays in the dream settings', e);
+        return null;
+      });
+      if (wasOn && saved && !saved.enabled) {
+        event('dream.switched_off', { by: 'narrowed' });
+        s?.stopDream();
+      }
+      d.broadcast();
+    });
+
+  return { handlers, taskLink, repoRemoved };
 }

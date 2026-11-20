@@ -815,7 +815,7 @@ describe('NewTaskScreen: from a dream', () => {
         (_, el) =>
           el?.tagName === 'P' &&
           el.textContent ===
-            'This task uses the branch dream/2026-11-20-1 that the dream left. It stays in the repo if you leave now.',
+            'This task uses the branch dream/2026-11-20-1 that the dream left. If you leave now, Dreams keeps offering to make the task.',
       ),
     ).toBeInTheDocument();
     await waitFor(() =>

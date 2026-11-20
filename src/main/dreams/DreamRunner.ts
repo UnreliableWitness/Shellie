@@ -568,6 +568,8 @@ export class DreamRunner {
     const base = {
       dreamId: m.id,
       repoId: m.repo.id,
+      // The journal outlives the repo: a removed repo's line still names it.
+      repoName: m.repo.name,
       at,
       model: m.model,
       tokens,

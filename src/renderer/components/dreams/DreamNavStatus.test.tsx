@@ -7,6 +7,8 @@ import { installFakeApi } from '../../test-helpers/fakeApi';
 import { DreamNavStatus } from './DreamNavStatus';
 import { DreamsNavItem } from './DreamsNavItem';
 import {
+  emptyState,
+  OPENED,
   settings,
   viewOf,
   withResults,
@@ -35,6 +37,16 @@ describe('DreamsNavItem', () => {
     ).toHaveTextContent('2');
     await userEvent.click(screen.getByRole('button', { name: /Dreams/ }));
     expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
+  });
+
+  it('counts a result opened as a task whose task is not made yet', async () => {
+    const v = withResults();
+    v.repos[2].state = emptyState({ opened: OPENED });
+    installFakeApi({ 'dream:get': () => v });
+    render(<DreamsNavItem rail={false} />);
+    expect(
+      await screen.findByLabelText('3 dreams to review'),
+    ).toHaveTextContent('3');
   });
 
   it('shows no count at zero and is there while dreaming is off', async () => {

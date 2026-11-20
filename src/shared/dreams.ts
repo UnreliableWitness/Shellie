@@ -262,6 +262,8 @@ export type DreamFileTexts =
 export const DreamJournalEntrySchema = z.object({
   dreamId: z.string(),
   repoId: z.string(),
+  /** The repo's name when the dream ran, for a repo removed since; missing in an older entry. */
+  repoName: z.string().optional(),
   at: z.string(),
   model: z.string(),
   tokens: z.number(),
@@ -303,6 +305,19 @@ export const DreamRejectionSchema = z.object({
 });
 export type DreamRejection = z.infer<typeof DreamRejectionSchema>;
 
+/**
+ * A result opened as a task whose task is not made yet (`dream:openAsTask`): its branch, the kept proposals' count and
+ * titles. `tasks:create` with `fromDream` makes the task on that branch and clears it; Leave the branch clears it too.
+ */
+export const DreamOpenedSchema = z.object({
+  dreamId: z.string(),
+  branch: z.string(),
+  at: z.string(),
+  kept: z.number(),
+  titles: z.array(z.string()),
+});
+export type DreamOpened = z.infer<typeof DreamOpenedSchema>;
+
 export const DreamRepoStateSchema = z.object({
   /** Task id to the time (ms) of the last covered turn. */
   covered: z.record(z.string(), z.number()),
@@ -315,6 +330,8 @@ export const DreamRepoStateSchema = z.object({
   lastOutcome: z.enum(['proposed', 'nothing']).nullable(),
   /** The one open result. */
   result: DreamResultSchema.nullable(),
+  /** A result opened as a task, until its task is made; missing in a file written before it existed. */
+  opened: DreamOpenedSchema.nullable().default(null),
 });
 export type DreamRepoState = z.infer<typeof DreamRepoStateSchema>;
 

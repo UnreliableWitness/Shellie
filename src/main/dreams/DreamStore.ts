@@ -5,6 +5,7 @@ import {
   DreamRepoStateSchema,
   DreamSwitchedOffSchema,
   type DreamJournalEntry,
+  type DreamOpened,
   type DreamProposal,
   type DreamRejection,
   type DreamRepoState,
@@ -44,6 +45,7 @@ const emptyRepo = (): DreamRepoState => ({
   lastDreamAt: null,
   lastOutcome: null,
   result: null,
+  opened: null,
 });
 
 /** What dreams remember between runs: covered sessions, sightings, rejections, failures, the open result and a journal. */
@@ -102,6 +104,41 @@ export class DreamStore {
     return this.change(repoId, (r) => {
       r.result = result;
     });
+  }
+
+  /** Open as task: the result goes and its branch is remembered, in one write. */
+  openedAsTask(repoId: string, opened: DreamOpened): Promise<void> {
+    return this.change(repoId, (r) => {
+      r.result = null;
+      r.opened = opened;
+    });
+  }
+
+  setOpened(repoId: string, opened: DreamOpened | null): Promise<void> {
+    return this.change(repoId, (r) => {
+      r.opened = opened;
+    });
+  }
+
+  /**
+   * The task of an opened result was made: the journal entry names it and the record is cleared, in one write.
+   * Nothing for another dream's id.
+   */
+  taskMade(repoId: string, dreamId: string, taskName: string): Promise<void> {
+    return this.write((f) => {
+      const r = f.repos[repoId];
+      if (!r?.opened || r.opened.dreamId !== dreamId) return;
+      r.opened = null;
+      const e = f.journal.find(
+        (x) => x.repoId === repoId && x.dreamId === dreamId,
+      );
+      if (e?.closed) e.closed = { ...e.closed, taskName };
+    });
+  }
+
+  /** The repo ids that have stored state. */
+  repoIds(): string[] {
+    return Object.keys(this.store.value.repos);
   }
 
   setDropped(

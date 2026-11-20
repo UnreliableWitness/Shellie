@@ -9,6 +9,15 @@ import {
 
 export const MODEL = 'zai/glm-5.3';
 
+/** A result of portal opened as a task, its task not made yet. */
+export const OPENED = {
+  dreamId: '2026-11-20-1',
+  branch: 'dream/2026-11-20-1',
+  at: '2026-11-20T03:12:00',
+  kept: 2,
+  titles: ['New rule: write migrations by hand', 'Skill: release notes'],
+};
+
 export const settings = (
   patch: Partial<DreamingSettings> = {},
 ): DreamingSettings => ({
@@ -35,6 +44,7 @@ export const emptyState = (
   lastFailure: null,
   lastDreamAt: null,
   lastOutcome: null,
+  opened: null,
   result: null,
   ...patch,
 });

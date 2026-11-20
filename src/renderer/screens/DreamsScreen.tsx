@@ -3,8 +3,10 @@ import type { DreamView } from '../../shared/dreams';
 import { errorMessage } from '../../shared/errors';
 import { api } from '../api';
 import {
+  dreamTaskName,
   journalLine,
   nowLine,
+  openedResults,
   openResults,
   repoStateLine,
   waitLine,
@@ -52,8 +54,10 @@ function Dreams({ view }: { view: DreamView }) {
   const [confirmOff, setConfirmOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const now = Date.now();
-  const nameOf = (id: string) =>
-    view.repos.find((r) => r.id === id)?.name ?? id;
+  // A repo removed since: the name stored with the journal line, else none.
+  const nameOf = (id: string, stored?: string) =>
+    view.repos.find((r) => r.id === id)?.name ?? stored ?? 'a removed repo';
+  const waits = openResults(view).length + openedResults(view).length > 0;
 
   const switchOff = async () => {
     setConfirmOff(false);
@@ -116,23 +120,28 @@ function Dreams({ view }: { view: DreamView }) {
             <Repos view={view} now={now} />
           </>
         ) : (
-          <section className="card dream-invite" aria-label="Dreaming is off">
-            <h2>Let Shellie dream</h2>
-            <p className="muted">
-              While you are away, Shellie reads what was said in a repo&rsquo;s
-              agent sessions and proposes better skills and rules for it, on a
-              branch you review. Nothing dreams until you switch it on.
-            </p>
-            <div className="actions">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => go({ kind: 'dream-setup' })}
-              >
-                Set up dreaming
-              </button>
-            </div>
-          </section>
+          <>
+            {/* What waits stays reachable while off: a branch opened as a task, a result. */}
+            {waits && <Waiting view={view} now={now} />}
+            <section className="card dream-invite" aria-label="Dreaming is off">
+              <h2>Let Shellie dream</h2>
+              <p className="muted">
+                While you are away, Shellie reads what was said in a
+                repo&rsquo;s agent sessions and proposes better skills and rules
+                for it, on a branch you review. Nothing dreams until you switch
+                it on.
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => go({ kind: 'dream-setup' })}
+                >
+                  Set up dreaming
+                </button>
+              </div>
+            </section>
+          </>
         )}
         <section aria-label="Journal" className="dream-section">
           <h2>Journal</h2>
@@ -148,7 +157,9 @@ function Dreams({ view }: { view: DreamView }) {
                   <span className="muted small dream-when">
                     {whenWords(e.at, now)}
                   </span>
-                  <strong className="dream-name">{nameOf(e.repoId)}</strong>
+                  <strong className="dream-name">
+                    {nameOf(e.repoId, e.repoName)}
+                  </strong>
                   <span className="grow dream-clamp">{journalLine(e)}</span>
                   <span className="muted mono small">
                     {spacedNumber(e.tokens)}
@@ -204,12 +215,85 @@ function Strip({ view, now }: { view: DreamView; now: number }) {
 function Waiting({ view, now }: { view: DreamView; now: number }) {
   const go = useStore((s) => s.go);
   const rows = openResults(view);
+  const opened = openedResults(view);
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const leave = async (repoId: string) => {
+    setLeaving(null);
+    setError(null);
+    try {
+      await api().invoke('dream:leaveBranch', repoId);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+  const leavingRow = opened.find((r) => r.id === leaving);
   return (
     <section aria-label="Waiting for you" className="dream-section">
       <h2>Waiting for you</h2>
-      {rows.length === 0 ? (
+      {leavingRow?.state.opened && (
+        <ConfirmBar
+          message={`Forget this? The branch ${leavingRow.state.opened.branch} stays in the repo, but Shellie no longer offers to make a task from it.`}
+          confirmLabel="Forget it"
+          onConfirm={() => void leave(leavingRow.id)}
+          onCancel={() => setLeaving(null)}
+        />
+      )}
+      {error && (
+        <p role="alert" className="text-red">
+          {error}
+        </p>
+      )}
+      {opened.length > 0 && (
+        <div className="dream-list">
+          {opened.map((r) => {
+            const o = r.state.opened;
+            if (!o) return null;
+            return (
+              <div key={`${r.id}/opened/${o.dreamId}`} className="dream-row">
+                <span className="grow dream-clamp" id={`dream-name-o-${r.id}`}>
+                  {r.name} · {plural(o.kept, 'kept proposal')} on{' '}
+                  <span className="mono">{o.branch}</span>, no task yet
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  aria-describedby={`dream-name-o-${r.id}`}
+                  onClick={() =>
+                    go({
+                      kind: 'new-task',
+                      repoId: r.id,
+                      dream: {
+                        id: o.dreamId,
+                        branch: o.branch,
+                        name: dreamTaskName(
+                          o.at,
+                          r.id,
+                          useStore.getState().tasks,
+                        ),
+                      },
+                    })
+                  }
+                >
+                  Make the task
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  aria-describedby={`dream-name-o-${r.id}`}
+                  onClick={() => setLeaving(r.id)}
+                >
+                  Leave the branch
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {rows.length === 0 && opened.length === 0 && (
         <p className="muted">Nothing waits for you.</p>
-      ) : (
+      )}
+      {rows.length > 0 && (
         <div className="dream-list">
           {rows.map((r) => {
             const res = r.state.result;

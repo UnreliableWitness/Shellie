@@ -226,6 +226,14 @@ export function stepLine(
 export const openResults = (view: DreamView): ViewRepo[] =>
   view.repos.filter((r) => r.state.result !== null);
 
+/** The repos with a result opened as a task whose task is not made yet. */
+export const openedResults = (view: DreamView): ViewRepo[] =>
+  view.repos.filter((r) => r.state.opened !== null);
+
+/** What waits for the owner: open results and results opened as a task without their task. */
+export const waitingCount = (view: DreamView): number =>
+  openResults(view).length + openedResults(view).length;
+
 export const KIND_LABEL: Record<DreamProposalKind, string> = {
   'new-rule': 'New rule',
   'changed-rule': 'Changed rule',
