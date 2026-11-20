@@ -123,6 +123,8 @@ export type Screen =
       workItem?: WorkItemRef;
       repoId?: string;
       connectionId?: string;
+      /** Opened as a task from a dream of `repoId`. */
+      dream?: NewTaskDream;
     }
   | { kind: 'setup'; taskId: string }
   | { kind: 'finish'; taskId: string }
@@ -148,6 +150,9 @@ export type Screen =
     }
   | { kind: 'secrets'; repoId?: string }
   | { kind: 'secrets-import'; repoId: string };
+
+/** A dream's branch to make a task on (`dream:openAsTask`), the dream's id for `fromDream`, and the task's name. */
+export type NewTaskDream = { id: string; branch: string; name: string };
 
 /** A file dropped on a brain, waiting for its type and note before it goes in. */
 export type BrainPendingFile = {

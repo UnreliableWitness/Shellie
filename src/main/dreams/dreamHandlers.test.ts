@@ -28,7 +28,12 @@ import type {
 import { GitClient } from '../services/GitClient';
 import { ExitError } from '../services/prSummary';
 import { SettingsStore } from '../usage/SettingsStore';
-import { cleanupTempRepos, git, makeRepo } from '../test-helpers/gitRepo';
+import {
+  cleanupTempRepos,
+  commitFile,
+  git,
+  makeRepo,
+} from '../test-helpers/gitRepo';
 import { testPlatform } from '../test-helpers/shell';
 import { commitFiles } from './dreamGit';
 import {
@@ -45,6 +50,7 @@ const MODEL = 'zai/glm-5';
 const OTHER = 'zai/glm-6';
 const DREAM_ID = '2026-11-20-1';
 const BRANCH = `dream/${DREAM_ID}`;
+const MISMATCH_PHRASE = "The dream's record does not match its folder";
 
 let dir: string;
 let repoPath: string;
@@ -927,6 +933,201 @@ describe('a dream result', () => {
     started = false;
     await expect(api().handlers['dream:discard']('r1')).rejects.toThrow(
       'Dreams are still starting',
+    );
+  });
+});
+
+describe('dream:diff', () => {
+  const BIG = 600 * 1024;
+
+  /**
+   * A dream of one proposal whose commit changes a.md, adds new.md, deletes old.md, adds a binary and a file over
+   * 500 kB, on a real dream worktree.
+   */
+  async function dreamOfMany(): Promise<DreamResult> {
+    commitFile(repoPath, 'a.md', 'one\ntwo\nthree\n');
+    commitFile(repoPath, 'old.md', 'gone soon\n');
+    const dreamDir = path.join(deps.dreamsDir, 'r1', DREAM_ID);
+    mkdirSync(path.join(dreamDir, 'data'), { recursive: true });
+    const baseSha = git(repoPath, 'rev-parse', 'HEAD').trim();
+    git(
+      repoPath,
+      'worktree',
+      'add',
+      '-q',
+      '-b',
+      BRANCH,
+      path.join(dreamDir, 'wt'),
+      'main',
+    );
+    const wt = realpathSync(path.join(dreamDir, 'wt'));
+    writeFileSync(path.join(wt, 'a.md'), 'one\n2\nthree\nfour\n');
+    writeFileSync(path.join(wt, 'new.md'), 'fresh\n');
+    rmSync(path.join(wt, 'old.md'));
+    writeFileSync(path.join(wt, 'pic.png'), Buffer.from([0x89, 0, 1, 2, 0]));
+    writeFileSync(path.join(wt, 'big.txt'), 'x\n'.repeat(BIG / 2));
+    git(wt, 'add', '-A');
+    git(wt, 'commit', '-q', '-m', 'dream: Many');
+    const commit = git(wt, 'rev-parse', 'HEAD').trim();
+    const result: DreamResult = {
+      id: DREAM_ID,
+      repoId: 'r1',
+      branch: BRANCH,
+      baseSha,
+      worktreePath: wt,
+      dataDir: realpathSync(path.join(dreamDir, 'data')),
+      at: '2026-11-20T03:00:00.000Z',
+      model: MODEL,
+      tokens: 100,
+      sessions: 2,
+      proposals: [
+        {
+          id: 'p1',
+          kind: 'changed-rule',
+          title: 'Many',
+          why: 'Why',
+          evidence: [],
+          files: ['a.md'],
+          commit,
+          dropped: false,
+        },
+      ],
+      reverted: [],
+      removedByCheck: 0,
+    };
+    await store.setResult('r1', result);
+    return result;
+  }
+
+  const byPath = async () =>
+    Object.fromEntries(
+      (await api().handlers['dream:diff']('r1', 'p1')).map((f) => [f.path, f]),
+    );
+
+  it('returns each file of the commit with its counts and both texts', async () => {
+    await dreamOfMany();
+    const files = await byPath();
+    expect(Object.keys(files).sort()).toEqual([
+      'a.md',
+      'big.txt',
+      'new.md',
+      'old.md',
+      'pic.png',
+    ]);
+    expect(files['a.md']).toEqual({
+      path: 'a.md',
+      added: 2,
+      removed: 1,
+      before: 'one\ntwo\nthree\n',
+      after: 'one\n2\nthree\nfour\n',
+    });
+    expect(files['new.md']).toEqual({
+      path: 'new.md',
+      added: 1,
+      removed: 0,
+      before: '',
+      after: 'fresh\n',
+    });
+    expect(files['old.md']).toEqual({
+      path: 'old.md',
+      added: 0,
+      removed: 1,
+      before: 'gone soon\n',
+      after: '',
+    });
+  });
+
+  it('gives a binary file and a file over 500 kB no text, but says so and counts what git counts', async () => {
+    await dreamOfMany();
+    const files = await byPath();
+    expect(files['pic.png']).toEqual({
+      path: 'pic.png',
+      added: 0,
+      removed: 0,
+      before: '',
+      after: '',
+      binary: true,
+    });
+    expect(files['big.txt']).toEqual({
+      path: 'big.txt',
+      added: BIG / 2,
+      removed: 0,
+      before: '',
+      after: '',
+      tooLarge: true,
+    });
+  });
+
+  it('reads from the repo when the dream worktree folder is gone', async () => {
+    const r = await dreamOfMany();
+    git(repoPath, 'worktree', 'remove', '--force', r.worktreePath);
+    expect(existsSync(r.worktreePath)).toBe(false);
+    expect((await byPath())['a.md'].after).toBe('one\n2\nthree\nfour\n');
+  });
+
+  it('shows at most 50 files of a proposal', async () => {
+    const r = await dreamOfMany();
+    for (let i = 0; i < 60; i++)
+      writeFileSync(path.join(r.worktreePath, `f${i}.md`), `${i}\n`);
+    git(r.worktreePath, 'add', '-A');
+    git(r.worktreePath, 'commit', '-q', '-m', 'dream: Sixty');
+    const commit = git(r.worktreePath, 'rev-parse', 'HEAD').trim();
+    await store.setResult('r1', {
+      ...r,
+      proposals: [{ ...r.proposals[0], commit }],
+    });
+    expect(await api().handlers['dream:diff']('r1', 'p1')).toHaveLength(50);
+  });
+
+  it('refuses an unknown proposal or repo in a fixed phrase', async () => {
+    await dreamOfMany();
+    await expect(api().handlers['dream:diff']('r1', 'p9')).rejects.toThrow(
+      /^This dream has no such proposal$/,
+    );
+    await expect(api().handlers['dream:diff']('r9', 'p1')).rejects.toThrow(
+      /^This repo has no dream to review$/,
+    );
+  });
+
+  it('reads nothing for a stored result that fails the check', async () => {
+    const r = await dreamOfMany();
+    const elsewhere = mkdtempSync(path.join(tmpdir(), 'not-a-dream-'));
+    await store.setResult('r1', {
+      ...r,
+      worktreePath: path.join(elsewhere, 'wt'),
+      dataDir: path.join(elsewhere, 'data'),
+    });
+    const run = vi.spyOn(deps.git as GitClient, 'run');
+    await expect(api().handlers['dream:diff']('r1', 'p1')).rejects.toThrow(
+      MISMATCH_PHRASE,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses a commit that is not a full sha, without running git with it', async () => {
+    const r = await dreamOfMany();
+    await store.setResult('r1', {
+      ...r,
+      proposals: [{ ...r.proposals[0], commit: '--output=/tmp/x' }],
+    });
+    const run = vi.spyOn(deps.git as GitClient, 'run');
+    await expect(api().handlers['dream:diff']('r1', 'p1')).rejects.toThrow(
+      MISMATCH_PHRASE,
+    );
+    expect(
+      run.mock.calls.some(([, args]) => args.includes('--output=/tmp/x')),
+    ).toBe(false);
+  });
+
+  it('says a git failure in a fixed phrase, never a path', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await dreamOfMany();
+    await store.setResult('r1', {
+      ...r,
+      proposals: [{ ...r.proposals[0], commit: 'f'.repeat(40) }],
+    });
+    await expect(api().handlers['dream:diff']('r1', 'p1')).rejects.toThrow(
+      /^The changes could not be read$/,
     );
   });
 });

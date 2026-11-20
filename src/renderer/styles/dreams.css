@@ -394,3 +394,238 @@
 .dream-pop-head .grow {
   flex: 1;
 }
+
+/* Dreams: reviewing a dream result. */
+.dream-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 0 32px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.dream-review-meta > * {
+  overflow-wrap: anywhere;
+}
+.dream-review-note {
+  margin: 8px 32px 0;
+  overflow-wrap: anywhere;
+}
+.dream-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.dream-review-list {
+  flex: 1 1 300px;
+  max-width: 360px;
+  min-width: 260px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: stretch;
+}
+.dream-proposals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dream-proposal {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.dream-proposal-pick {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.dream-proposal-pick:hover {
+  background: var(--bg-hover);
+}
+.dream-proposal-pick[aria-current='true'] {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
+}
+.dream-proposal-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.dream-proposal-title {
+  font-weight: 600;
+}
+.dream-proposal-dropped {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.dream-proposal .btn-sm {
+  margin-top: 10px;
+}
+.dream-review-list > p {
+  margin: 0 8px;
+}
+.dream-detail {
+  flex: 999 1 560px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 20px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.dream-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+}
+.dream-detail-claim {
+  flex: 1 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.dream-detail-claim h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.dream-detail-why {
+  margin: 0;
+  max-width: 68ch;
+  white-space: pre-wrap;
+}
+.dream-detail-part {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dream-detail-part h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dream-quotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.dream-quote {
+  margin: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow-wrap: anywhere;
+}
+.dream-quote blockquote {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.dream-quote figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.dream-files {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dream-file {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.dream-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.dream-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dream-file-note {
+  margin: 0;
+  padding: 8px 14px;
+}
+.dream-diff {
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.dream-hunk + .dream-hunk {
+  border-top: 1px dashed var(--line-strong);
+}
+.dream-line {
+  display: flex;
+  gap: 8px;
+  padding: 1px 14px;
+  min-width: max-content;
+}
+.dream-line.is-add {
+  background: var(--green-bg);
+}
+.dream-line.is-del {
+  background: var(--red-bg);
+}
+.dream-line-no {
+  width: 28px;
+  flex: none;
+  text-align: right;
+  color: var(--muted);
+}
+.dream-line-sign {
+  width: 12px;
+  flex: none;
+}
+.dream-line.is-add .dream-line-sign {
+  color: var(--green);
+}
+.dream-line.is-del .dream-line-sign {
+  color: var(--red);
+}
+.dream-line-text {
+  white-space: pre;
+}
+.dream-fulldiff {
+  height: 60vh;
+  min-height: 320px;
+}

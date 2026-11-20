@@ -1,5 +1,7 @@
 import type {
   DreamJournalEntry,
+  DreamProposal,
+  DreamProposalKind,
   DreamView,
   DreamWait,
 } from '../../../shared/dreams';
@@ -48,6 +50,16 @@ export function whenWords(iso: string, now: number): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${day} ${hh}:${mm}`;
+}
+
+/** A date as "14 Nov": a `YYYY-MM-DD` day or an ISO moment (local); anything else as it is. */
+export function shortDate(s: string): string {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const d = day
+    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
+    : new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
 export const minutesSince = (startedAt: number, now: number): number =>
@@ -212,3 +224,31 @@ export function stepLine(
 /** The repos with a result waiting for review, as the navigation counts them. */
 export const openResults = (view: DreamView): ViewRepo[] =>
   view.repos.filter((r) => r.state.result !== null);
+
+export const KIND_LABEL: Record<DreamProposalKind, string> = {
+  'new-rule': 'New rule',
+  'changed-rule': 'Changed rule',
+  'new-skill': 'New skill',
+  'changed-skill': 'Changed skill',
+  'new-agent': 'New agent',
+  'changed-agent': 'Changed agent',
+};
+
+/** A proposal's short line in the list: its kind and in how many tasks it was seen, or Dropped. */
+export function proposalLine(
+  p: Pick<DreamProposal, 'kind' | 'dropped' | 'evidence'>,
+): string {
+  if (p.dropped) return 'Dropped';
+  const tasks = new Set(p.evidence.map((e) => e.taskId)).size;
+  return tasks > 0
+    ? `${KIND_LABEL[p.kind]} · seen in ${plural(tasks, 'task')}`
+    : KIND_LABEL[p.kind];
+}
+
+/** The line under the proposals when the dream's own check removed ideas; null when it removed none. */
+export function checkLine(removedByCheck: number): string | null {
+  if (removedByCheck <= 0) return null;
+  if (removedByCheck === 1)
+    return "One more idea did not survive the dream's own check. It is remembered in case it comes up again.";
+  return `${removedByCheck} more ideas did not survive the dream's own check. They are remembered in case they come up again.`;
+}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  checkLine,
   journalLine,
+  KIND_LABEL,
+  proposalLine,
+  shortDate,
   navLine,
   nowLine,
   repoStateLine,
@@ -220,4 +224,57 @@ describe('stepLine', () => {
     expect(stepLine('reading', null)).toBe('Reading sessions'));
   it('checks', () =>
     expect(stepLine('checking', 4)).toBe('Checking its own proposals'));
+});
+
+describe('shortDate', () => {
+  it.each([
+    ['2026-11-14', '14 Nov'],
+    ['2026-11-20T03:12:00', '20 Nov'],
+    ['last week', 'last week'],
+  ])('%s is %s', (s, words) => expect(shortDate(s)).toBe(words));
+});
+
+describe('proposalLine', () => {
+  const p = (taskIds: string[], dropped = false) => ({
+    kind: 'changed-skill' as const,
+    dropped,
+    evidence: taskIds.map((taskId) => ({
+      taskId,
+      label: taskId,
+      date: '2026-11-14',
+      quote: 'q',
+    })),
+  });
+  it('names the kind and in how many tasks it was seen', () => {
+    expect(proposalLine(p(['t1', 't2', 't1']))).toBe(
+      'Changed skill · seen in 2 tasks',
+    );
+    expect(proposalLine(p(['t1']))).toBe('Changed skill · seen in 1 task');
+    expect(proposalLine(p([]))).toBe('Changed skill');
+  });
+  it('says Dropped for a dropped one', () => {
+    expect(proposalLine(p(['t1'], true))).toBe('Dropped');
+  });
+  it('labels every kind', () => {
+    expect(KIND_LABEL).toEqual({
+      'new-rule': 'New rule',
+      'changed-rule': 'Changed rule',
+      'new-skill': 'New skill',
+      'changed-skill': 'Changed skill',
+      'new-agent': 'New agent',
+      'changed-agent': 'Changed agent',
+    });
+  });
+});
+
+describe('checkLine', () => {
+  it('counts the ideas the dream’s own check removed', () => {
+    expect(checkLine(0)).toBeNull();
+    expect(checkLine(1)).toBe(
+      "One more idea did not survive the dream's own check. It is remembered in case it comes up again.",
+    );
+    expect(checkLine(3)).toBe(
+      "3 more ideas did not survive the dream's own check. They are remembered in case they come up again.",
+    );
+  });
 });

@@ -28,13 +28,16 @@ import { PageHeader, Pivots, WorkItemTypeIcon } from '../components/ui';
 import { WorkItemPicker } from '../components/WorkItemPicker';
 import { useEscape } from '../hooks/useEscape';
 import { startOf } from '../../shared/startSettings';
-import { activeConnection, useStore } from '../store';
+import { activeConnection, type NewTaskDream, useStore } from '../store';
 import { useTypeMeta } from '../workItemTypes';
 
 type Mode = 'pick' | 'typed' | 'blank';
 const TYPES: WorkItemType[] = ['Issue', 'User Story', 'Bug', 'Task', 'Epic'];
 
-/** Opening New task from a sprint row passes the work item and its repo. */
+/**
+ * Opening New task from a sprint row passes the work item and its repo; from a dream (`dream`), its repo and the
+ * branch `dream:openAsTask` returned, which the task is made on as it is.
+ */
 export function NewTaskScreen({
   initial = {},
 }: {
@@ -42,8 +45,10 @@ export function NewTaskScreen({
     workItem?: WorkItemRef;
     repoId?: string;
     connectionId?: string;
+    dream?: NewTaskDream;
   };
 }) {
+  const dream = initial.dream ?? null;
   const repos = useStore((s) => s.repos);
   const go = useStore((s) => s.go);
   const back = useStore((s) => s.back);
@@ -73,10 +78,11 @@ export function NewTaskScreen({
     const cid = repos.find((x) => x.id === rid)?.connectionId;
     return cid ? (connections.find((c) => c.id === cid) ?? null) : null;
   };
+  // A dream's task needs no work item: it starts as Blank, with its name (one can still be picked).
   const [rawMode, setMode] = useState<Mode>(() =>
-    connectionOf(repoId) ? 'pick' : 'typed',
+    dream ? 'blank' : connectionOf(repoId) ? 'pick' : 'typed',
   );
-  const modeChosen = useRef(false);
+  const modeChosen = useRef(dream !== null);
   const lastRepo = useRef(repoId);
   const lastConnection = useRef<string | null>(
     connectionOf(repoId)?.id ?? null,
@@ -93,7 +99,7 @@ export function NewTaskScreen({
   const [id, setId] = useState('');
   const [type, setType] = useState<WorkItemType>('User Story');
   const [title, setTitle] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(dream?.name ?? '');
   const [baseRef, setBaseRef] = useState('');
   // A hand-typed branch; null follows the repo's template.
   const [editedBranch, setEditedBranch] = useState<string | null>(null);
@@ -229,6 +235,7 @@ export function NewTaskScreen({
   const template = config?.config.branch ?? '{type}/{id}-{slug}';
 
   const branch =
+    dream?.branch ??
     editedBranch ??
     (label.trim() || workItem?.id
       ? renderBranch(template, { workItem, name })
@@ -367,6 +374,7 @@ export function NewTaskScreen({
       openOpencode,
       environment,
       ...(confirmed ? { environmentConfirmed: true } : {}),
+      ...(dream ? { fromDream: dream.id } : {}),
     });
   };
 
@@ -467,6 +475,8 @@ export function NewTaskScreen({
               id="nt-repo"
               className="field"
               value={repoId}
+              // A dream's branch is in its own repo.
+              disabled={dream !== null}
               onChange={(e) => setRepoId(e.target.value)}
             >
               {candidates.map((r) => (
@@ -474,7 +484,7 @@ export function NewTaskScreen({
                   {r.name}
                 </option>
               ))}
-              <option value="">No repo</option>
+              {!dream && <option value="">No repo</option>}
             </select>
             {noRepo && (
               <p className="muted small form-grid-full">
@@ -506,6 +516,7 @@ export function NewTaskScreen({
                   id="nt-branch"
                   className="field mono"
                   value={branch}
+                  readOnly={dream !== null}
                   onChange={(e) => setEditedBranch(e.target.value)}
                   onBlur={(e) => {
                     if (!e.target.value) setEditedBranch(null);
@@ -633,6 +644,13 @@ export function NewTaskScreen({
               onCancel={() => setAsking(false)}
               onConfirm={() => void create(true)}
             />
+          )}
+          {dream && (
+            <p className="muted small">
+              This task uses the branch{' '}
+              <span className="mono">{dream.branch}</span> that the dream left.
+              It stays in the repo if you leave now.
+            </p>
           )}
           <div className="actions">
             <button type="button" className="btn" onClick={back}>

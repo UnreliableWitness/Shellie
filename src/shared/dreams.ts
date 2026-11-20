@@ -222,6 +222,21 @@ export const DreamResultSchema = z.object({
 });
 export type DreamResult = z.infer<typeof DreamResultSchema>;
 
+/**
+ * One file of a proposal's commit against its parent (`dream:diff`). `before` and `after` are empty for a file that
+ * is binary (`binary`) or larger than 500 kB on either side (`tooLarge`); `added` and `removed` are then git's own
+ * count when it has one, else 0.
+ */
+export type DreamFileDiff = {
+  path: string;
+  added: number;
+  removed: number;
+  before: string;
+  after: string;
+  binary?: boolean;
+  tooLarge?: boolean;
+};
+
 export const DreamJournalEntrySchema = z.object({
   dreamId: z.string(),
   repoId: z.string(),

@@ -26,7 +26,12 @@ import type {
   JoinPreview,
 } from './brainShare';
 import type { ColorScheme } from './theme';
-import type { DreamingSettings, DreamView, DreamWait } from './dreams';
+import type {
+  DreamFileDiff,
+  DreamingSettings,
+  DreamView,
+  DreamWait,
+} from './dreams';
 import type {
   DiscoverResult,
   Environment,
@@ -932,6 +937,14 @@ export type Channels = {
    * then makes a task on it.
    */
   'dream:openAsTask': { args: [repoId: string]; result: { branch: string } };
+  /**
+   * The files a proposal of the open result changes, each against the commit's parent: at most 50, read from the
+   * repo's git objects (so also once the dream worktree is gone).
+   */
+  'dream:diff': {
+    args: [repoId: string, proposalId: string];
+    result: DreamFileDiff[];
+  };
 };
 
 /** Push events from main to the renderer. */
