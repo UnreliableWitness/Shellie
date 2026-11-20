@@ -3,6 +3,9 @@
  * command line and pins it in the inline config, and afterwards the models that answered are compared with it.
  */
 
+import { realpathSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { isOpencodeModel } from '../../shared/brain';
 import { DREAM_JOB_TITLE } from '../../shared/dreams';
 import { pathFor, slashes } from '../attention/opencodePlugin';
@@ -59,6 +62,29 @@ export function isProtectedPath(repoRelativePath: string): boolean {
     .split(/[\\/]/)
     .some((segment) => DREAM_PROTECTED.includes(segment));
 }
+
+/**
+ * The global config folder as OpenCode 1.19.3 computes it on every platform (`xdg-basedir`): `$XDG_CONFIG_HOME`, or
+ * `~/.config` when that is unset or empty, joined with `opencode`.
+ */
+export function opencodeConfigDir(
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir(),
+): string {
+  return path.join(
+    env.XDG_CONFIG_HOME || path.join(home, '.config'),
+    'opencode',
+  );
+}
+
+/** The real path (OpenCode and git report real paths; `/tmp` is `/private/tmp` on macOS), or `p` when it does not exist yet. */
+const real = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
 
 const inside = (parent: string, child: string): boolean => {
   const p = pathFor(parent);
@@ -136,35 +162,47 @@ function dreamPermission(worktree: string, dataDir: string) {
  * - `OPENCODE_PERMISSION` in the parent env, blanked here, did not reach the run. (Even unblanked it did not loosen
  *   the build agent, whose own copy of the rules is applied after the top-level ones; blanked anyway.)
  * - `opencode run` takes its folder from PWD before the process folder: spawned with an inherited PWD it ran in the
- *   wrong folder, with that folder's rules. PWD is set to the worktree here.
+ *   wrong folder, with that folder's rules. PWD is set to the worktree's real path here.
+ * Third check, same day, a worktree with a root AGENTS.md "End every reply with the word ZEBRA." (the owner has no
+ * global AGENTS.md or ~/.claude/CLAUDE.md): with `OPENCODE_CONFIG_DIR=''` the reply was "ok ZEBRA" (the empty folder
+ * joined with AGENTS.md is the worktree's file, read as the global instructions); with it set to the real global
+ * folder the reply was "ok" and the log read config only from `~/.config/opencode` ("loading config from
+ * OPENCODE_CONFIG_DIR" path=~/.config/opencode). With the project switch the repo's AGENTS.md is not loaded as
+ * project instructions either.
  * Not pinned by config: the user's own global config, agents and plugins; a repo agent reached by name (`--agent`,
  * never passed, or the task tool, denied). The after-run check (`OpenCodeReader.sessionModels` and `otherModels`) is
  * what decides on the model.
  */
 /**
  * Inline config: every model key pinned to `model`, subagents off, permissions per spec §4. The result is the run's
- * whole OpenCode env: spawn with it on top of everything inherited, so its empty values blank inherited ones.
+ * whole OpenCode env: spawn with it on top of everything inherited, so its values replace inherited ones (the empty
+ * ones blank them).
  */
 export function dreamEnv(
   base: Record<string, string>,
   o: { model: string; worktree: string; dataDir: string },
 ): Record<string, string> {
   const model = checkedModel(o.model);
-  if (inside(o.worktree, o.dataDir) || inside(o.dataDir, o.worktree))
+  const worktree = real(o.worktree);
+  const dataDir = real(o.dataDir);
+  if (inside(worktree, dataDir) || inside(dataDir, worktree))
     throw new Error(
       'The dream data folder must be outside the worktree and not hold it',
     );
-  const permission = dreamPermission(o.worktree, o.dataDir);
+  const permission = dreamPermission(worktree, dataDir);
   return {
     ...base,
     // `opencode run` takes its folder from PWD before the process folder (checked live): an inherited PWD would run
     // the dream elsewhere.
-    PWD: o.worktree,
+    PWD: worktree,
     OPENCODE_DISABLE_PROJECT_CONFIG: '1',
-    // Each of these would add to or override the config below. Empty rather than left out: the spawn helpers spread
-    // process.env under this env, and OpenCode treats an empty value as unset.
+    // Each of these would add to or override the config below. The spawn helpers spread process.env under this env,
+    // so they cannot be left out. OpenCode 1.19.3 reads OPENCODE_PERMISSION and OPENCODE_CONFIG only for truthiness
+    // (every read checked), so empty is unset for them. Not for OPENCODE_CONFIG_DIR: its `?? Global.config` keeps an
+    // empty value, and the process folder (the worktree) would become the global config folder, its AGENTS.md the
+    // global instructions. It is set to the real global folder instead.
     OPENCODE_PERMISSION: '',
-    OPENCODE_CONFIG_DIR: '',
+    OPENCODE_CONFIG_DIR: opencodeConfigDir({ ...process.env, ...base }),
     OPENCODE_CONFIG: '',
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
       model,

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DREAM_PROTECTED,
@@ -116,22 +119,36 @@ describe('dreamEnv', () => {
       expect(decide(permission, tool, 'src/a.ts')).toBe('allow');
   });
 
-  it('switches off project config and blanks every inherited way in to OpenCode config', () => {
+  it('switches off project config and blanks the inherited extra config and permission', () => {
     const env = dreamEnv(
       {
         A: '1',
         OPENCODE_PERMISSION: '{"bash":"allow"}',
-        OPENCODE_CONFIG_DIR: '/x/cfg',
         OPENCODE_CONFIG: '/x/opencode.json',
       },
       { model: MODEL, worktree: WORKTREE, dataDir: DATA },
     );
     expect(env.A).toBe('1');
     expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1');
-    // Empty, not left out: the spawn helpers spread process.env first, and OpenCode reads an empty one as unset.
+    // Empty, not left out: the spawn helpers spread process.env first, and OpenCode 1.19.3 reads these two only for
+    // truthiness, so empty is unset.
     expect(env.OPENCODE_PERMISSION).toBe('');
-    expect(env.OPENCODE_CONFIG_DIR).toBe('');
     expect(env.OPENCODE_CONFIG).toBe('');
+  });
+
+  it("points OPENCODE_CONFIG_DIR at the user's real global config folder, as OpenCode computes it, never empty", () => {
+    const opts = { model: MODEL, worktree: WORKTREE, dataDir: DATA };
+    expect(
+      dreamEnv(
+        { OPENCODE_CONFIG_DIR: '/x/cfg', XDG_CONFIG_HOME: '/x/xdg' },
+        opts,
+      ).OPENCODE_CONFIG_DIR,
+    ).toBe(path.join('/x/xdg', 'opencode'));
+    // An empty XDG_CONFIG_HOME is unset to OpenCode (`||`).
+    expect(
+      dreamEnv({ OPENCODE_CONFIG_DIR: '', XDG_CONFIG_HOME: '' }, opts)
+        .OPENCODE_CONFIG_DIR,
+    ).toBe(path.join(os.homedir(), '.config', 'opencode'));
   });
 
   it('sets PWD to the worktree: `opencode run` takes its folder from PWD before the process folder', () =>
@@ -141,6 +158,40 @@ describe('dreamEnv', () => {
         { model: MODEL, worktree: WORKTREE, dataDir: DATA },
       ).PWD,
     ).toBe(WORKTREE));
+
+  // Making a symlink needs extra rights on Windows.
+  it.skipIf(process.platform === 'win32')(
+    'resolves a worktree reached through a symlink to its real path, for PWD and the edit patterns',
+    () => {
+      const real = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'dream-')),
+      );
+      fs.mkdirSync(path.join(real, 'worktree'));
+      fs.mkdirSync(path.join(real, 'data'));
+      const link = `${real}-link`;
+      fs.symlinkSync(real, link);
+      try {
+        const env = dreamEnv(
+          {},
+          {
+            model: MODEL,
+            worktree: path.join(link, 'worktree'),
+            dataDir: path.join(link, 'data'),
+          },
+        );
+        expect(env.PWD).toBe(path.join(real, 'worktree'));
+        const { permission } = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
+        expect(permission.edit).toHaveProperty(['../data/**'], 'allow');
+        expect(permission.external_directory).toHaveProperty(
+          [`${path.join(real, 'data')}/**`],
+          'allow',
+        );
+      } finally {
+        fs.rmSync(link);
+        fs.rmSync(real, { recursive: true });
+      }
+    },
+  );
 
   it('gives the build agent rules equal to the top-level ones', () => {
     const c = config();
