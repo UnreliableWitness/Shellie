@@ -17,6 +17,7 @@ import type { DreamRunner } from './DreamRunner';
 import type { DreamStore } from './DreamStore';
 import { removeDream, unattendedConfig } from './dreamGit';
 import { settledWithin } from './dreamRun';
+import { runProps, sendSafely, type DreamEvent } from './dreamTelemetry';
 import { pickMaterial, type TaskSessions } from './material';
 import { nextDream, type ReadyInput, type Wait } from './ready';
 
@@ -67,6 +68,8 @@ export type DreamSchedulerDeps = {
   >;
   /** The dreams folder: every dream's worktree, data and hooks lie in it. */
   dreamsDir: string;
+  /** `dream.run` and `dream.switched_off` (`docs/telemetry.md`); none when absent. */
+  event?: DreamEvent;
   tick?: number;
 };
 
@@ -218,9 +221,18 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   const finished = async (
     repoId: string,
     model: string,
+    startedAt: number,
     out: Awaited<ReturnType<DreamRunner['dream']>>,
   ) => {
+    // The journal line the runner wrote for this dream, when it wrote one: newest first, at or after the start.
+    const entry =
+      d.store
+        .journal()
+        .find((e) => e.repoId === repoId && Date.parse(e.at) >= startedAt) ??
+      null;
+    sendSafely(d.event, 'dream.run', runProps(out, entry, d.now() - startedAt));
     if (out.outcome !== 'wrong-model') return;
+    sendSafely(d.event, 'dream.switched_off', { by: 'wrong-model' });
     // Recorded first: the record keeps dreaming off even when the settings cannot be saved (retried each check).
     const recorded = await d.store
       .setSwitchedOff({
@@ -262,9 +274,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     if (!repo || !cfg || s.model === null) return false;
     const model = s.model;
     const stop = new AbortController();
+    const startedAt = d.now();
     const done = d.runner
       .dream(repo, { model, folders: cfg.folders, signal: stop.signal })
-      .then((out) => finished(repoId, model, out))
+      .then((out) => finished(repoId, model, startedAt, out))
       .catch((e: unknown) =>
         console.error('[dreams] the dream did not settle', e),
       )

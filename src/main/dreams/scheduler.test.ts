@@ -494,6 +494,121 @@ describe('the dream scheduler', () => {
   });
 });
 
+describe('telemetry', () => {
+  const events = () =>
+    vi.mocked(deps.event!).mock.calls as [string, Record<string, unknown>][];
+  const OUTCOMES = new Set([
+    'proposed',
+    'nothing',
+    'interrupted',
+    'limit',
+    'wrong-model',
+    'failed',
+  ]);
+  /** The keys, and the value types: an outcome from the fixed list and counts. Never a model, repo or path. */
+  const safeRun = (p: Record<string, unknown>) => {
+    expect(Object.keys(p).sort()).toEqual(
+      ['droppedByCheck', 'ms', 'outcome', 'proposals'].sort(),
+    );
+    expect(OUTCOMES.has(p.outcome as string)).toBe(true);
+    expect(typeof p.ms).toBe('number');
+    expect(typeof p.proposals).toBe('number');
+    expect(typeof p.droppedByCheck).toBe('number');
+  };
+  const result = (): DreamResult => ({
+    id: '2026-11-20-1',
+    repoId: REPO.id,
+    branch: 'dream/2026-11-20-1',
+    baseSha: 'a'.repeat(40),
+    worktreePath: '/x/wt',
+    dataDir: '/x/data',
+    at: new Date(NOW).toISOString(),
+    model: MODEL,
+    tokens: 5,
+    sessions: 1,
+    proposals: [1, 2].map((i) => ({
+      id: `p${i}`,
+      kind: 'new-rule' as const,
+      title: `Rule ${i}`,
+      why: 'why',
+      evidence: [],
+      files: [`.apm/rules/${i}.md`],
+      commit: 'b'.repeat(40),
+      dropped: false,
+    })),
+    reverted: [],
+    removedByCheck: 1,
+  });
+
+  beforeEach(() => {
+    deps.event = vi.fn();
+  });
+
+  it('dream.run carries the outcome, how long it took, the proposals and what the check removed', async () => {
+    start();
+    await tick();
+    await vi.advanceTimersByTimeAsync(90_000);
+    fake.finish({ outcome: 'proposed', result: result() });
+    await vi.waitFor(() => expect(events()).toHaveLength(1));
+    const [name, props] = events()[0];
+    expect(name).toBe('dream.run');
+    expect(props).toEqual({
+      outcome: 'proposed',
+      ms: expect.any(Number),
+      proposals: 2,
+      droppedByCheck: 1,
+    });
+    // vi.waitFor moves the fake clock on a little while it waits.
+    expect(props.ms).toBeGreaterThanOrEqual(90_000);
+    expect(props.ms).toBeLessThan(91_000);
+    safeRun(props);
+  });
+
+  it('dream.run says limit for a dream the day’s limit interrupted, and takes counts from its journal line', async () => {
+    start();
+    await tick();
+    await store.log({
+      dreamId: '2026-11-20-1',
+      repoId: REPO.id,
+      at: new Date(Date.now()).toISOString(),
+      model: MODEL,
+      tokens: 9,
+      outcome: 'nothing',
+      reason: null,
+      proposals: 0,
+      removedByCheck: 3,
+      closed: null,
+    });
+    fake.finish({ outcome: 'nothing' });
+    await vi.waitFor(() => expect(events()).toHaveLength(1));
+    expect(events()[0][1]).toMatchObject({
+      outcome: 'nothing',
+      droppedByCheck: 3,
+    });
+    await tick();
+    fake.finish({ outcome: 'interrupted', why: 'limit' });
+    await vi.waitFor(() => expect(events()).toHaveLength(2));
+    expect(events()[1][1]).toMatchObject({ outcome: 'limit' });
+    events().forEach(([, p]) => safeRun(p));
+  });
+
+  it('a wrong model sends dream.run and dream.switched_off by wrong-model, never the model', async () => {
+    start();
+    await tick();
+    fake.finish({ outcome: 'wrong-model', answered: ['anthropic/claude-x'] });
+    await vi.waitFor(() => expect(events()).toHaveLength(2));
+    expect(
+      events()
+        .map(([n]) => n)
+        .sort(),
+    ).toEqual(['dream.run', 'dream.switched_off']);
+    expect(events().find(([n]) => n === 'dream.switched_off')![1]).toEqual({
+      by: 'wrong-model',
+    });
+    expect(JSON.stringify(events())).not.toMatch(/claude|zai|glm|Portal|r1/);
+  });
+});
+
 describe('sweep', () => {
   it('removes every dream folder and dream branch no open result refers to, and nothing else', async () => {
     vi.useRealTimers();

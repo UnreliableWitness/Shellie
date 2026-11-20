@@ -1271,6 +1271,7 @@ async function boot(): Promise<void> {
       }).usage,
       dreamsDir,
       broadcast: () => broadcast('dream:changed', {}),
+      event: (name, props) => telemetry.event(name, props),
     });
     const handlers = createHandlers({
       dreams: dreamApi,
@@ -1644,6 +1645,7 @@ async function boot(): Promise<void> {
             (id) => tabActivity.view(id)?.state ?? null,
           ),
         broadcast: () => broadcast('dream:changed', {}),
+        event: (name, props) => telemetry.event(name, props),
       }).then(
         (s) => {
           dreams = s;

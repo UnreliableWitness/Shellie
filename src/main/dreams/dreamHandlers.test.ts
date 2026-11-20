@@ -1277,3 +1277,89 @@ describe('dream:diff and dream:file', () => {
     ).rejects.toThrow(/^The changes could not be read$/);
   });
 });
+
+describe('telemetry', () => {
+  /** Only enums, counts and booleans: no model, repo, branch, path or text. */
+  const ENUMS = new Set([
+    'tokens',
+    'eur',
+    'none',
+    'owner',
+    'wrong-model',
+    'narrowed',
+    'task',
+    'discarded',
+  ]);
+  const events = () =>
+    vi.mocked(deps.event!).mock.calls as [string, Record<string, unknown>][];
+  const safe = (props: Record<string, unknown>) => {
+    for (const v of Object.values(props))
+      if (typeof v === 'string') expect(ENUMS.has(v)).toBe(true);
+      else expect(['number', 'boolean']).toContain(typeof v);
+    expect(JSON.stringify(props)).not.toMatch(
+      /Portal|zai|glm|dream\/|\.apm|r1/,
+    );
+  };
+
+  beforeEach(() => {
+    deps.event = vi.fn();
+  });
+
+  it('dream.enabled carries the limit kind and the repo count when switched on', async () => {
+    await setDreaming(ready());
+    await api().handlers['dream:switchOn'](true);
+    expect(events()).toEqual([
+      ['dream.enabled', { limit: 'tokens', repos: 1 }],
+    ]);
+    safe(events()[0][1]);
+  });
+
+  it('dream.switched_off says the owner switched off, or a narrowing did; nothing when it was off', async () => {
+    await setDreaming(ready({ enabled: true }));
+    await api().handlers['dream:switchOff']();
+    await api().handlers['dream:switchOff']();
+    await setDreaming(ready({ enabled: true }));
+    await api().handlers['dream:save'](
+      {
+        ...ready({ enabled: true }),
+        repos: { r1: { on: false, folders: ['.apm'] } },
+      },
+      false,
+    );
+    expect(events()).toEqual([
+      ['dream.switched_off', { by: 'owner' }],
+      ['dream.switched_off', { by: 'narrowed' }],
+    ]);
+    events().forEach(([, p]) => safe(p));
+  });
+
+  it('dream.test carries whether the test passed, never the model or the message', async () => {
+    await setDreaming(ready({ testedModel: null }));
+    await api().handlers['dream:test'](MODEL);
+    answered = [OTHER];
+    await api().handlers['dream:test'](MODEL);
+    expect(events()).toEqual([
+      ['dream.test', { ok: true }],
+      ['dream.test', { ok: false }],
+    ]);
+  });
+
+  it('dream.result carries kept, dropped and how the result was closed', async () => {
+    await dreamWithThree();
+    const a = api();
+    await a.handlers['dream:drop']('r1', 'p2', true);
+    await a.handlers['dream:openAsTask']('r1');
+    expect(events()).toEqual([
+      ['dream.result', { kept: 2, dropped: 1, outcome: 'task' }],
+    ]);
+    safe(events()[0][1]);
+  });
+
+  it('dream.result says discarded for Discard dream', async () => {
+    await dreamWithThree();
+    await api().handlers['dream:discard']('r1');
+    expect(events()).toEqual([
+      ['dream.result', { kept: 0, dropped: 3, outcome: 'discarded' }],
+    ]);
+  });
+});

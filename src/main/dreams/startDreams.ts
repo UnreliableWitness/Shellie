@@ -85,6 +85,7 @@ export async function startDreams(
     | 'agentWorking'
     | 'broadcast'
     | 'dreamsDir'
+    | 'event'
   > &
     Pick<DreamRunnerDeps, 'git' | 'platform' | 'run'> & {
       store: DreamStore;

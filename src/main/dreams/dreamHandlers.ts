@@ -30,6 +30,12 @@ import type { DreamStore } from './DreamStore';
 import { DREAM_READ_TIMEOUT_MS, proposalDiff, proposalFile } from './dreamDiff';
 import { authorConfig, removeDream, unattendedConfig } from './dreamGit';
 import { sessionOf } from './dreamRun';
+import {
+  enabledProps,
+  resultProps,
+  sendSafely,
+  type DreamEvent,
+} from './dreamTelemetry';
 import { hasPrice } from './limit';
 import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
 import type { DreamScheduler } from './scheduler';
@@ -125,6 +131,8 @@ export type DreamHandlerDeps = {
   now?: () => number;
   /** Where the test call's empty folders are made; the system temp folder by default. */
   tmpDir?: string;
+  /** `dream.enabled`, `dream.switched_off`, `dream.test`, `dream.result` (`docs/telemetry.md`); none when absent. */
+  event?: DreamEvent;
 };
 
 const flags = (config: string[]) => config.flatMap((c) => ['-c', c]);
@@ -155,6 +163,7 @@ export function noDreams(): DreamApi {
 
 export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   const now = d.now ?? Date.now;
+  const event: DreamEvent = (name, props) => sendSafely(d.event, name, props);
   let models: { at: number; list: string[] } | null = null;
   let asking: Promise<string[] | null> | null = null;
   let testing = false;
@@ -311,6 +320,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       taskName: null,
     });
     await d.store.setResult(repoId, null);
+    event('dream.result', resultProps(0, r.proposals.length, 'discarded'));
     d.broadcast();
   };
 
@@ -525,6 +535,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     'dream:test': async (model) => {
       if (testing) return { ok: false, message: 'A test is already running' };
       testing = true;
+      let ok = false;
       try {
         const listed = async (fresh: boolean) =>
           (await modelList(fresh))?.includes(model) ?? false;
@@ -549,6 +560,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           })),
         );
         d.broadcast();
+        ok = true;
         return { ok: true };
       } catch (e) {
         console.error('[dreams] the test could not be run', e);
@@ -558,6 +570,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         };
       } finally {
         testing = false;
+        event('dream.test', { ok });
       }
     },
 
@@ -588,6 +601,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         });
         // As `dream:switchOff`: no more calls once dreaming is off or the running dream's repo is unticked.
         const running = status()?.running ?? null;
+        if (wasOn && !saved.enabled)
+          event('dream.switched_off', { by: 'narrowed' });
         if (
           (wasOn && !saved.enabled) ||
           (running && saved.repos[running.repoId]?.on !== true)
@@ -603,8 +618,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         if (reason)
           throw refuse(`Dreaming cannot be switched on yet: ${reason}`);
         if (acknowledged !== true) throw refuse('Tick the box first');
+        let on: DreamingSettings | null = null;
         await started().switchOn(async () => {
-          await saveDreaming((cur) => {
+          on = await saveDreaming((cur) => {
             // Checked again as the write runs: a save queued meanwhile may have changed the settings.
             const again = canSwitchOn(cur);
             if (again)
@@ -612,13 +628,19 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             return { ...cur, enabled: true };
           });
         });
+        if (on) event('dream.enabled', enabledProps(on));
         d.broadcast();
         return d.settings.get().dreaming;
       }),
 
     'dream:switchOff': () =>
       phrased(SETTINGS_FAILED, async () => {
-        const saved = await saveDreaming((cur) => ({ ...cur, enabled: false }));
+        let wasOn = false;
+        const saved = await saveDreaming((cur) => {
+          wasOn = cur.enabled;
+          return { ...cur, enabled: false };
+        });
+        if (wasOn) event('dream.switched_off', { by: 'owner' });
         // Switched off means no model calls: a dream that runs now stops too.
         d.scheduler()?.stopDream();
         d.broadcast();
@@ -684,6 +706,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             taskName: null,
           });
           await d.store.setResult(repoId, null);
+          event(
+            'dream.result',
+            resultProps(kept.length, dropped.length, 'task'),
+          );
           opened.set(key(repoId, r.id), {
             branch: r.branch,
             kept: kept.length,
