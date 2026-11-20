@@ -112,3 +112,115 @@ export function confirmSentence(
     `What was said in those repos' agent sessions is sent to that model.`
   );
 }
+
+export type DreamProposalKind =
+  | 'new-rule'
+  | 'changed-rule'
+  | 'new-skill'
+  | 'changed-skill'
+  | 'new-agent'
+  | 'changed-agent';
+
+export const DreamEvidenceSchema = z.object({
+  taskId: z.string(),
+  label: z.string(),
+  date: z.string(),
+  quote: z.string(),
+});
+export type DreamEvidence = z.infer<typeof DreamEvidenceSchema>;
+
+export const DreamProposalSchema = z.object({
+  id: z.string(),
+  kind: z.enum([
+    'new-rule',
+    'changed-rule',
+    'new-skill',
+    'changed-skill',
+    'new-agent',
+    'changed-agent',
+  ]),
+  title: z.string(),
+  why: z.string(),
+  evidence: z.array(DreamEvidenceSchema),
+  files: z.array(z.string()),
+  commit: z.string(),
+  dropped: z.boolean(),
+});
+export type DreamProposal = z.infer<typeof DreamProposalSchema>;
+
+export const DreamResultSchema = z.object({
+  id: z.string(),
+  repoId: z.string(),
+  branch: z.string(),
+  baseSha: z.string(),
+  worktreePath: z.string(),
+  dataDir: z.string(),
+  at: z.string(),
+  model: z.string(),
+  tokens: z.number(),
+  sessions: z.number(),
+  proposals: z.array(DreamProposalSchema),
+  /** Paths changed outside the allowed folders. */
+  reverted: z.array(z.string()),
+  removedByCheck: z.number(),
+});
+export type DreamResult = z.infer<typeof DreamResultSchema>;
+
+export const DreamJournalEntrySchema = z.object({
+  dreamId: z.string(),
+  repoId: z.string(),
+  at: z.string(),
+  model: z.string(),
+  tokens: z.number(),
+  outcome: z.enum([
+    'proposed',
+    'nothing',
+    'interrupted',
+    'limit',
+    'wrong-model',
+    'failed',
+  ]),
+  /** Why it was interrupted or failed. */
+  reason: z.string().nullable(),
+  proposals: z.number(),
+  removedByCheck: z.number(),
+  closed: z
+    .object({
+      as: z.enum(['task', 'discarded']),
+      kept: z.number(),
+      dropped: z.number(),
+      taskName: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type DreamJournalEntry = z.infer<typeof DreamJournalEntrySchema>;
+
+export const DreamSightingSchema = z.object({
+  at: z.string(),
+  note: z.string(),
+  taskId: z.string(),
+  quote: z.string(),
+});
+export type DreamSighting = z.infer<typeof DreamSightingSchema>;
+
+export const DreamRejectionSchema = z.object({
+  at: z.string(),
+  title: z.string(),
+  why: z.string(),
+});
+export type DreamRejection = z.infer<typeof DreamRejectionSchema>;
+
+export const DreamRepoStateSchema = z.object({
+  /** Task id to the time (ms) of the last covered turn. */
+  covered: z.record(z.string(), z.number()),
+  sightings: z.array(DreamSightingSchema),
+  rejections: z.array(DreamRejectionSchema),
+  failures: z.number(),
+  lastFailureAt: z.string().nullable(),
+  lastFailure: z.string().nullable(),
+  lastDreamAt: z.string().nullable(),
+  lastOutcome: z.enum(['proposed', 'nothing']).nullable(),
+  /** The one open result. */
+  result: DreamResultSchema.nullable(),
+});
+export type DreamRepoState = z.infer<typeof DreamRepoStateSchema>;
