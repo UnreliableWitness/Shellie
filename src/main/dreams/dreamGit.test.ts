@@ -104,6 +104,14 @@ describe('dreamGit', () => {
     );
   });
 
+  it('skips a number it is told is taken', async () => {
+    const repo = makeRepo();
+    const dir = path.join(path.dirname(repo), 'dreams');
+    expect(
+      await nextDreamId(gc, repo, dir, NOW, new Set(['2026-11-20-1'])),
+    ).toBe('2026-11-20-2');
+  });
+
   it('skips a number whose branch or folder exists', async () => {
     const repo = makeRepo();
     const dir = path.join(path.dirname(repo), 'dreams');

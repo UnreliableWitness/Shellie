@@ -38,17 +38,22 @@ export function dreamDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** `<date>-<n>`, the first `n` for which neither the branch `dream/<id>` nor the folder `<repoDir>/<id>` exists. */
+/**
+ * `<date>-<n>`, the first `n` not in `taken` (the ids the journal names) for which neither the branch `dream/<id>` nor
+ * the folder `<repoDir>/<id>` exists.
+ */
 export async function nextDreamId(
   git: Git,
   repoPath: string,
   repoDir: string,
   ms: number,
+  taken: ReadonlySet<string> = new Set(),
 ): Promise<string> {
   const date = dreamDate(ms);
   for (let n = 1; ; n++) {
     const id = `${date}-${n}`;
     if (
+      !taken.has(id) &&
       !(await git.branchExists(repoPath, `dream/${id}`)) &&
       !(await pathExists(path.join(repoDir, id)))
     )

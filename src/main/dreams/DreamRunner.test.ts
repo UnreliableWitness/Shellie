@@ -283,6 +283,23 @@ describe('DreamRunner', () => {
     );
   });
 
+  it('never takes a number the journal already names for this repo (an earlier dream left no branch)', async () => {
+    await store.log({
+      dreamId: `${DATE}-1`,
+      repoId: repoArg().id,
+      at: new Date().toISOString(),
+      model: 'x/y',
+      tokens: 0,
+      outcome: 'interrupted',
+      reason: 'stopped',
+      proposals: 0,
+      removedByCheck: 0,
+      closed: null,
+    });
+    const out = await runner(twoProposals()).dream(repoArg(), opts());
+    expect(out.outcome === 'proposed' && out.result.id).toBe(`${DATE}-2`);
+  });
+
   it('reverts a change outside the allowed folders and commits none of it', async () => {
     const runs = twoProposals();
     runs[0].edits!['src/app.ts'] = 'changed\n';

@@ -269,7 +269,14 @@ export class DreamRunner {
     this.checkStop(m);
 
     const repoDir = path.join(d.dreamsDir, m.repo.id);
-    m.id = await nextDreamId(git, repoPath, repoDir, m.startedAt);
+    // Nor an id the journal names: a stopped or discarded dream leaves no branch or folder, but keeps its line.
+    const journaled = new Set(
+      d.store
+        .journal()
+        .filter((e) => e.repoId === m.repo.id)
+        .map((e) => e.dreamId),
+    );
+    m.id = await nextDreamId(git, repoPath, repoDir, m.startedAt, journaled);
     const dir = path.join(repoDir, m.id);
     m.branch = `dream/${m.id}`;
     // A folder or branch that is there already is not this dream's: it fails and leaves them alone.
