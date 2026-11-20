@@ -341,10 +341,20 @@ Rulings made while building (2026-11-20) that change or add to what the sections
 - Section 8, Open as task: a setup failure or cancel of the task never deletes the dream branch, and the task
   remembers its branch already existed.
 - Section 4, step 3 and section 8, evidence: Shellie checks each quote against the turns of the task it names
-  (label, quotation marks and spare whitespace off, cut at a label inside; found inside one turn, case-sensitively,
-  at least 12 characters). Who said it is stored with the evidence (`you`, `agent`, `unknown`; missing in an older
-  record reads as `unknown`) and shown as "You, in", "The agent, in" or "From", unknown quotes last. A proposal
-  without a quote of the developer is removed like one the check failed. Both prompts ask for the developer's own
-  words, copied exactly, without the label.
+  (label, quotation marks as a matching pair around it and spare whitespace off, cut at a label inside; found inside
+  one turn, case-sensitively, on word boundaries at both ends with Unicode letters and digits, at least 3 words and 12
+  characters). Who said it is stored with the evidence (`you`, `agent`, `unknown`; missing in an older record reads
+  as `unknown`) and shown as "You, in", "The agent, in" or "From", unknown quotes last. A proposal without a quote of
+  the developer is removed like one the check failed; this is decided before the cap of 3 and the merge of proposals
+  that share a file, so such a proposal takes no place and joins no kept group (`removedByCheck` counts it). Both
+  prompts ask for the developer's own words, copied exactly, without the label.
+- Section 4, step 3: the check run reads the worktree, which already holds the proposals, so a real run failed every
+  proposal as repeating "an existing rule" that was its own edit. Before the check run Shellie writes the propose
+  run's changes to `changes.diff` in the dream's data folder (git's diff of the worktree against the base, hooks off,
+  untracked new files included, at most 2 MB, a cut file ending with a line saying so). The check prompt says the
+  worktree already contains the proposed changes, that `changes.diff` shows what was added and removed, that
+  "repeats or contradicts an existing source" means what was in the repo before these changes (lines without a
+  leading `+`, and files the diff does not list), and that a proposal is never failed because its own added text is
+  now in the file. The check run stays read-only on the worktree; `changes.diff` is outside it.
 - Section 5: when another model answered, the write that switches dreaming off also clears the model's passed test,
   so the setup's step 1 is not done until the model is tested again.
