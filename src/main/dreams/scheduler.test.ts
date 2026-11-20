@@ -193,6 +193,41 @@ describe('the dream scheduler', () => {
     expect(deps.models).toHaveBeenCalledTimes(2);
   });
 
+  it('learns of a model removed from OpenCode within 10 minutes', async () => {
+    sessions = [];
+    const lists: (string[] | null)[] = [[MODEL], ['other/model']];
+    start({ models: async () => lists.shift() ?? null });
+    await tick();
+    expect(scheduler!.status().wait).toBe('nothing-ready');
+    await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
+    expect(scheduler!.status().wait).toBe('model-missing');
+  });
+
+  it('keeps the last good list for one more interval after a failed refresh, then knows none', async () => {
+    sessions = [];
+    const lists: (string[] | null)[] = [[MODEL], null, null, [MODEL]];
+    start({ models: async () => lists.shift() ?? null });
+    await tick();
+    await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
+    expect(scheduler!.status().wait).toBe('nothing-ready');
+    await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
+    expect(scheduler!.status().wait).toBe('model-missing');
+    await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
+    expect(scheduler!.status().wait).toBe('nothing-ready');
+  });
+
+  it('gives up on a hung `opencode models` after 30 s, so Dream now still answers', async () => {
+    start({ models: () => new Promise<string[] | null>(() => {}) });
+    const answer = scheduler!.dreamNow(REPO.id);
+    await vi.advanceTimersByTimeAsync(29_999);
+    let got: unknown = null;
+    void answer.then((a) => (got = a));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(got).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(got).toEqual({ wait: 'model-missing' });
+  });
+
   it('says what dreams next from the material it read, and checks the limit before reading', async () => {
     start({ limit: { hasRoom: () => false } });
     await tick();
@@ -289,6 +324,45 @@ describe('the dream scheduler', () => {
     expect(scheduler!.status().switchedOff).toBeNull();
   });
 
+  it('clearSwitchedOff() clears it at once', async () => {
+    start();
+    await tick();
+    fake.finish({ outcome: 'wrong-model', answered: ['a/b'] });
+    await vi.waitFor(() => expect(store.switchedOff()).not.toBeNull());
+    vi.mocked(deps.broadcast).mockClear();
+    await scheduler!.clearSwitchedOff();
+    expect(store.switchedOff()).toBeNull();
+    expect(scheduler!.status().switchedOff).toBeNull();
+    expect(deps.broadcast).toHaveBeenCalled();
+  });
+
+  it('after a wrong model, a failed save is retried each check and nothing starts meanwhile, Dream now included', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let failures = 2;
+    const save = vi.fn(async (next: AppSettings) => {
+      if (failures-- > 0) throw new Error('disk full');
+      app = next;
+      return next;
+    });
+    start({ settings: { get: () => app, save } });
+    await tick();
+    fake.finish({ outcome: 'wrong-model', answered: ['a/b'] });
+    await vi.waitFor(() => expect(store.switchedOff()).not.toBeNull());
+    expect(error).toHaveBeenCalledWith(
+      '[dreams] could not switch dreaming off',
+      expect.anything(),
+    );
+    expect(app.dreaming.enabled).toBe(true);
+    expect(await scheduler!.dreamNow(REPO.id)).toEqual({ wait: 'off' });
+    expect(fake.calls).toHaveLength(1);
+    await tick();
+    expect(app.dreaming.enabled).toBe(false);
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(store.switchedOff()).not.toBeNull();
+    expect(fake.calls).toHaveLength(1);
+    error.mockRestore();
+  });
+
   it('a failed or interrupted outcome changes no setting', async () => {
     start();
     await tick();
@@ -349,11 +423,18 @@ describe('sweep', () => {
       path.join(stray, 'wt'),
     );
     mkdirSync(path.join(stray, 'data'));
-    // A branch with no folder at all goes; one the owner checked out as a task stays.
-    git(repo, 'branch', 'dream/2026-11-18-1');
-    git(repo, 'branch', 'dream/opened-as-task');
+    // A dream branch is a dream's leftover only with its folder: without one it is the owner's (a dream opened as
+    // a task), and so is any other name under dream/.
+    git(repo, 'branch', 'dream/2026-11-20-1');
+    // A leftover folder (its worktree gone already) and its branch: both go.
+    mkdirSync(path.join(repoDir, '2026-11-20-2', 'data'), { recursive: true });
+    git(repo, 'branch', 'dream/2026-11-20-2');
+    git(repo, 'branch', 'dream/my-idea');
+    // A leftover folder whose branch the owner checked out as a task: the folder goes, the branch stays.
+    mkdirSync(path.join(repoDir, '2026-11-17-1'), { recursive: true });
+    git(repo, 'branch', 'dream/2026-11-17-1');
     const taskWt = path.join(root, 'task-wt');
-    git(repo, 'worktree', 'add', '-q', taskWt, 'dream/opened-as-task');
+    git(repo, 'worktree', 'add', '-q', taskWt, 'dream/2026-11-17-1');
     git(repo, 'branch', 'feature/x');
     // Folders of a repo Shellie no longer knows go; a file at the top stays.
     mkdirSync(path.join(dreamsDir, 'gone', '2026-11-01-1'), {
@@ -397,11 +478,15 @@ describe('sweep', () => {
       .split('\n')
       .sort();
     expect(branches).toEqual([
+      'dream/2026-11-17-1',
       'dream/2026-11-19-1',
-      'dream/opened-as-task',
+      'dream/2026-11-20-1',
+      'dream/my-idea',
       'feature/x',
       'main',
     ]);
+    expect(existsSync(path.join(repoDir, '2026-11-17-1'))).toBe(false);
+    expect(existsSync(path.join(repoDir, '2026-11-20-2'))).toBe(false);
     expect(existsSync(path.join(kept, 'wt'))).toBe(true);
     expect(existsSync(stray)).toBe(false);
     expect(existsSync(path.join(dreamsDir, 'gone', '2026-11-01-1'))).toBe(

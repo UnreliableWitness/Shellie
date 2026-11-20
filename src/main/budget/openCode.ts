@@ -267,6 +267,13 @@ export class OpenCodeReader {
    * injected (`synthetic`), the agent's consecutive texts as one turn.
    */
   sessionTexts(dirs: readonly string[], since = 0): Turn[][] {
+    return this.sessionTurns(dirs, since).map((turns) =>
+      turns.map(({ who, text }) => ({ who, text })),
+    );
+  }
+
+  /** `sessionTexts` with when each turn was said (`at`, epoch ms: its message's creation, a joined turn's last). */
+  sessionTurns(dirs: readonly string[], since = 0): TurnAt[][] {
     if (!existsSync(this.file) || dirs.length === 0) return [];
     const db = new DatabaseSync(this.file, { readOnly: true, timeout: 2000 });
     try {
@@ -279,9 +286,7 @@ export class OpenCodeReader {
           ids,
         ),
       );
-      return ids.map((id) =>
-        (bySession.get(id) ?? []).map(({ who, text }) => ({ who, text })),
-      );
+      return ids.map((id) => bySession.get(id) ?? []);
     } finally {
       db.close();
     }

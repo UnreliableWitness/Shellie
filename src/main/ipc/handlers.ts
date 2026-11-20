@@ -140,6 +140,7 @@ import { GitDirWatcher } from '../review/GitDirWatcher';
 import { type AgentsDetected, apmTargetsOfList } from '../../shared/agents';
 import {
   detectAgents,
+  opencodeModels,
   runProbe,
   type ProbeRunner,
 } from '../services/agentDetector';
@@ -262,7 +263,6 @@ import type { TabActivity } from '../attention/TabActivity';
 import { prRequestLine, prRequestText } from '../prDraft/protocol';
 import { addSource } from '../brain/sources';
 import {
-  isOpencodeModel,
   type Brain,
   type BrainJobKind,
   type RefreshResult,
@@ -3703,22 +3703,7 @@ export function createHandlers(s: Services): Handlers {
     },
     'agents:opencodeModels': () => {
       if (opencodeModelsRun) return opencodeModelsRun;
-      const run = (async () => {
-        try {
-          const { code, stdout } = await (s.runProbe ?? runProbe)(
-            s.platform.opencodeCommand(undefined, ['models']),
-            15_000,
-          );
-          if (code !== 0) return null;
-          const models = stdout
-            .split(/\r?\n/)
-            .map((l) => l.trim())
-            .filter(isOpencodeModel);
-          return models.length > 0 ? models : null;
-        } catch {
-          return null;
-        }
-      })();
+      const run = opencodeModels(s.platform, s.runProbe ?? runProbe);
       opencodeModelsRun = run;
       void run.then((models) => {
         if (!models && opencodeModelsRun === run) opencodeModelsRun = null;

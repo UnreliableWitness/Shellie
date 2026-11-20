@@ -438,6 +438,31 @@ describe('OpenCodeReader.sessionTexts', () => {
       new OpenCodeReader('/nope/opencode.db').sessionTexts(['/w']),
     ).toEqual([]);
   });
+
+  it('sessionTurns gives the same turns with when each was said (epoch ms, a joined turn its last message)', () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_a', '/w', 100);
+    say('ses_a', 'user', 1_763_600_000_000, ['Fix the bug']);
+    say('ses_a', 'assistant', 1_763_600_001_000, ['Looking.']);
+    say('ses_a', 'assistant', 1_763_600_002_000, ['Fixed.']);
+    const r = new OpenCodeReader(file);
+    expect(r.sessionTurns(['/w'])).toEqual([
+      [
+        { who: 'Developer', text: 'Fix the bug', at: 1_763_600_000_000 },
+        { who: 'Agent', text: 'Looking.\nFixed.', at: 1_763_600_002_000 },
+      ],
+    ]);
+    expect(r.sessionTexts(['/w'])).toEqual([
+      [
+        { who: 'Developer', text: 'Fix the bug' },
+        { who: 'Agent', text: 'Looking.\nFixed.' },
+      ],
+    ]);
+    close();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').sessionTurns(['/w']),
+    ).toEqual([]);
+  });
 });
 
 describe('OpenCodeReader session reads for the PR draft', () => {

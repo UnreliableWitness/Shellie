@@ -53,7 +53,7 @@ import { getInstallId } from './main/installId';
 import { startBrainScheduler } from './main/brain/scheduler';
 import { DreamStore } from './main/dreams/DreamStore';
 import type { DreamScheduler } from './main/dreams/scheduler';
-import { startDreams } from './main/dreams/startDreams';
+import { startDreams, taskAgentWorking } from './main/dreams/startDreams';
 import {
   commitJobOutput,
   OUTSIDE_EDIT_MESSAGE,
@@ -122,6 +122,7 @@ import {
 } from './main/services/gitAuth';
 import { loadEffectiveConfig } from './main/services/effectiveConfig';
 import { claudeSessionFile } from './main/services/claudeSessions';
+import { opencodeModels, runProbe } from './main/services/agentDetector';
 import { RETRY_EVERY_MS as CLEANUP_RETRY_EVERY_MS } from './main/services/worktreeCleanup';
 import { RepoRegistry } from './main/services/RepoRegistry';
 import { taskWorkspaces } from './shared/workspaces';
@@ -1604,13 +1605,15 @@ async function boot(): Promise<void> {
               { lenient: true },
             )
           ).base,
-        models: () => handlers['agents:opencodeModels'](),
+        // Asked afresh (at most every 10 min); the renderer's list keeps its own cache.
+        models: () => opencodeModels(platform, runProbe),
         idleSeconds: () => powerMonitor.getSystemIdleTime(),
         onBattery: () => powerMonitor.isOnBatteryPower(),
         agentWorking: () =>
-          terminals
-            .ids()
-            .some((id) => tabActivity.view(id)?.state === 'working'),
+          taskAgentWorking(
+            store.state.tasks,
+            (id) => tabActivity.view(id)?.state ?? null,
+          ),
         broadcast: () => broadcast('dream:changed', {}),
       }).then(
         (s) => {

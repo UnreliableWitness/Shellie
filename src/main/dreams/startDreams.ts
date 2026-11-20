@@ -3,9 +3,10 @@
  * the scheduler, swept once before its first check. `src/main.ts` passes the app's own pieces.
  */
 
+import type { AttentionState } from '../../shared/attention';
 import type { Repo, Task } from '../../shared/types';
 import type { OpenCodeReader } from '../budget/openCode';
-import type { Turn } from '../brain/sessionDigest';
+import type { TurnAt } from '../sessions/claudeTranscript';
 import { targetBranch } from '../services/azureRepos';
 import {
   claudeSessionTurns,
@@ -18,6 +19,24 @@ import type { TaskSessions } from './material';
 import { startDreamScheduler, type DreamSchedulerDeps } from './scheduler';
 
 const AGENTS = ['claude', 'opencode'] as const;
+/** The tabs that use the owner's agent licences. */
+const AGENT_TABS = new Set(['claude', 'opencode', 'copilot']);
+
+/**
+ * Some open task's agent tab last reported `working`. Only agent tabs of tasks count: every tab gets the attention
+ * route in its environment (src/main.ts `terminalEnv`), so a shell could post a state too, and the brain terminal
+ * is no task's. Brain jobs and PR descriptions run headless and have no tab.
+ */
+export function taskAgentWorking(
+  tasks: Task[],
+  state: (terminalId: string) => AttentionState | null,
+): boolean {
+  return tasks.some((t) =>
+    t.terminals.some(
+      (x) => AGENT_TABS.has(x.kind) && state(x.id) === 'working',
+    ),
+  );
+}
 
 /** What was said in each stored task (open and finished) whose home is the repo. */
 export async function dreamSessionsOf(
@@ -25,7 +44,11 @@ export async function dreamSessionsOf(
   repoId: string,
   read: {
     sessionFile: (sessionId: string) => string | null;
-    opencodeSessionTexts: (dirs: readonly string[], since: number) => Turn[][];
+    /** OpenCode's turns with their times (epoch ms), as Claude's carry them. */
+    opencodeSessionTurns: (
+      dirs: readonly string[],
+      since: number,
+    ) => TurnAt[][];
   },
 ): Promise<TaskSessions[]> {
   const out: TaskSessions[] = [];
@@ -41,9 +64,10 @@ export async function dreamSessionsOf(
       agents: AGENTS.filter((a) => tabs.some((x) => x.kind === a)),
       sessions: [
         ...(await claudeSessionTurns(t, read.sessionFile)),
-        // OpenCode's turns carry no time.
-        ...opencodeSessionTurns(t, read.opencodeSessionTexts).map((s) =>
-          s.map((turn) => ({ ...turn, at: null })),
+        ...opencodeSessionTurns(
+          t,
+          read.opencodeSessionTurns,
+          '[dreams] OpenCode sessions not read',
         ),
       ],
     });
@@ -66,7 +90,7 @@ export async function startDreams(
       store: DreamStore;
       reader: Pick<
         OpenCodeReader,
-        'sessionModels' | 'dreamTokens' | 'sessionTexts'
+        'sessionModels' | 'dreamTokens' | 'sessionTurns'
       >;
       tasks: () => Task[];
       repos: () => Repo[];
@@ -85,7 +109,7 @@ export async function startDreams(
   const sessionsOf = (repoId: string) =>
     dreamSessionsOf(d.tasks(), repoId, {
       sessionFile: d.sessionFile,
-      opencodeSessionTexts: (dirs, since) => d.reader.sessionTexts(dirs, since),
+      opencodeSessionTurns: (dirs, since) => d.reader.sessionTurns(dirs, since),
     });
   const runner: DreamRunner = new DreamRunner({
     git: d.git,

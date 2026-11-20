@@ -12,13 +12,14 @@ import { readClaudeTurns, type TurnAt } from './claudeTranscript';
 
 /**
  * What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an
- * OpenCode tab or without `texts`, and none when OpenCode's database cannot be read (logged, so the Claude lessons
- * still go in).
+ * OpenCode tab or without `texts`, and none when OpenCode's database cannot be read (logged under `tag`, so the
+ * Claude sessions still count).
  */
-export function opencodeSessionTurns(
+export function opencodeSessionTurns<T extends Turn>(
   task: Task,
-  texts: ((dirs: readonly string[], since: number) => Turn[][]) | undefined,
-): Turn[][] {
+  texts: ((dirs: readonly string[], since: number) => T[][]) | undefined,
+  tag = '[brain] OpenCode sessions not read for lessons',
+): T[][] {
   const tabs = [...task.closedTerminals, ...task.terminals];
   if (!texts || !tabs.some((t) => t.kind === 'opencode')) return [];
   const dirs = [
@@ -31,7 +32,7 @@ export function opencodeSessionTurns(
       withoutPrRequests(turns),
     );
   } catch (e) {
-    console.error('[brain] OpenCode sessions not read for lessons', e);
+    console.error(tag, e);
     return [];
   }
 }

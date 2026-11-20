@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskSchema, type Task } from '../../shared/types';
-import { dreamSessionsOf } from './startDreams';
+import { pickMaterial } from './material';
+import { dreamSessionsOf, taskAgentWorking } from './startDreams';
 
+const T1 = Date.parse('2026-11-19T11:30:00.000Z');
 const line = (o: Record<string, unknown>) => JSON.stringify(o) + '\n';
 
 const makeTask = (over: Partial<Task>): Task =>
@@ -62,10 +64,12 @@ describe('dreamSessionsOf', () => {
       closedTerminals: [{ id: 'b', kind: 'opencode', label: 'OpenCode' }],
     });
     const other = makeTask({ id: 'other', repoId: 'r2' });
-    const texts = vi.fn(() => [[{ who: 'Developer' as const, text: 'hi' }]]);
+    const texts = vi.fn(() => [
+      [{ who: 'Developer' as const, text: 'hi', at: T1 }],
+    ]);
     const out = await dreamSessionsOf([open, finished, other], 'r1', {
       sessionFile: (id) => (id === 's1' ? file : null),
-      opencodeSessionTexts: texts,
+      opencodeSessionTurns: texts,
     });
     expect(out.map((t) => t.taskId)).toEqual(['open', 'done']);
     expect(out[0]).toMatchObject({
@@ -86,7 +90,56 @@ describe('dreamSessionsOf', () => {
       label: 'Fix login',
       workItemId: null,
       agents: ['opencode'],
-      sessions: [[{ who: 'Developer', text: 'hi', at: null }]],
+      sessions: [[{ who: 'Developer', text: 'hi', at: T1 }]],
     });
+  });
+
+  describe('an OpenCode-only task', () => {
+    const oc = makeTask({
+      id: 'oc',
+      terminals: [{ id: 'o', kind: 'opencode', label: 'OpenCode' }],
+    });
+    const sessionsAt = (...times: number[]) =>
+      dreamSessionsOf([oc], 'r1', {
+        sessionFile: () => null,
+        opencodeSessionTurns: () => [
+          times.map((at) => ({ who: 'Developer' as const, text: 'x', at })),
+        ],
+      });
+
+    it('is picked again for a developer turn after its mark, and its newest turn is the mark', async () => {
+      const m = pickMaterial(await sessionsAt(T1, T1 + 5000), { oc: T1 });
+      expect(m.tasks.map((t) => t.taskId)).toEqual(['oc']);
+      expect(m.marks).toEqual({ oc: T1 + 5000 });
+    });
+
+    it('is not picked with turns before its mark only', async () => {
+      const m = pickMaterial(await sessionsAt(T1 - 5000, T1), { oc: T1 });
+      expect(m.tasks).toEqual([]);
+    });
+  });
+});
+
+describe('taskAgentWorking', () => {
+  const t = makeTask({
+    terminals: [
+      { id: 'sh', kind: 'shell', label: 'Shell' },
+      { id: 'cl', kind: 'claude', label: 'Claude' },
+      { id: 'cp', kind: 'copilot', label: 'Copilot' },
+    ],
+  });
+  const states = (m: Record<string, string>) => (id: string) =>
+    (m[id] as 'working' | undefined) ?? null;
+
+  it('is true for an agent tab of a task whose last state is working', () => {
+    expect(taskAgentWorking([t], states({ cl: 'working' }))).toBe(true);
+    expect(taskAgentWorking([t], states({ cp: 'working' }))).toBe(true);
+    expect(taskAgentWorking([t], states({ cl: 'idle' }))).toBe(false);
+  });
+
+  it('ignores a shell tab (it has the attention route too) and tabs of no task, such as the brain terminal', () => {
+    expect(
+      taskAgentWorking([t], states({ sh: 'working', brain: 'working' })),
+    ).toBe(false);
   });
 });

@@ -10,6 +10,7 @@ import path from 'node:path';
 import type { DreamSwitchedOff } from '../../shared/dreams';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
+import { withTimeout } from '../async';
 import { isInside } from '../paths';
 import type { GitClient } from '../services/GitClient';
 import type { DreamRunner } from './DreamRunner';
@@ -22,10 +23,14 @@ import { nextDream, type ReadyInput, type Wait } from './ready';
 export const DREAM_TICK_MS = 60_000;
 /** `opencode models` is asked again at most this often. */
 const MODELS_MS = 10 * 60_000;
+/** A hung `opencode models` is given up on after this. */
+const MODELS_TIMEOUT_MS = 30_000;
 /** How long a repo's material counts as known without reading its sessions again. */
 const MATERIAL_MS = 5 * 60_000;
 /** The empty hooks folders of a sweep, inside the dreams folder; one left by a crash goes in the next sweep. */
 const SWEEP_PREFIX = '.sweep-';
+/** The branch name a dream gets (`DreamRunner`): `dream/<YYYY-MM-DD>-<n>`. */
+const DREAM_BRANCH = /^dream\/\d{4}-\d{2}-\d{2}-\d+$/;
 
 type Repo = { id: string; name: string; path: string };
 
@@ -87,7 +92,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     done: Promise<void>;
   } | null = null;
   const material = new Map<string, Known>();
-  let models: { at: number; list: string[] | null } | null = null;
+  /** A wrong-model outcome whose `enabled: false` is not saved yet. */
+  let offPending = false;
+  let models: { at: number; list: string[] | null; failed: boolean } | null =
+    null;
   // Decisions, Dream now and the sweep run one after another, never side by side.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -97,11 +105,22 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   };
   const unsubscribe = d.store.onChange(() => material.clear());
 
+  /**
+   * OpenCode's models, asked at most every 10 minutes and given up on after 30 s. A failed ask keeps the last good
+   * list for one more interval; a second in a row gives none.
+   */
   const modelList = async (): Promise<string[] | null> => {
     if (models && d.now() - models.at < MODELS_MS) return models.list;
-    const list = await d.models().catch(() => null);
-    models = { at: d.now(), list };
-    return list;
+    const asked = await withTimeout(
+      d.models().catch(() => null),
+      MODELS_TIMEOUT_MS,
+      () => null,
+    );
+    const keep = asked === null && models?.list && !models.failed;
+    models = keep
+      ? { at: d.now(), list: models!.list, failed: true }
+      : { at: d.now(), list: asked, failed: asked === null };
+    return models.list;
   };
 
   const hasRoom = (): boolean => {
@@ -154,13 +173,16 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   const decide = async (manual?: {
     repoId: string;
   }): Promise<{ repoId: string } | { wait: Wait }> => {
+    if (offPending) await switchOff();
+    // Dreaming switched itself off and that is not saved yet: nothing starts, Dream now included.
+    if (offPending) return { wait: 'off' };
     const s = d.settings.get().dreaming;
+    // A backstop: switching on clears it (`clearSwitchedOff`).
     if (s.enabled && d.store.switchedOff())
-      await d.store
-        .setSwitchedOff(null)
-        .then(d.broadcast, (e: unknown) =>
-          console.error('[dreams] switchedOff', e),
-        );
+      await clearSwitchedOff().catch((e: unknown) =>
+        console.error('[dreams] switchedOff', e),
+      );
+    if (d.store.switchedOff()) return { wait: 'off' };
     const base: ReadyInput = {
       settings: s,
       models: s.enabled ? await modelList() : null,
@@ -196,16 +218,35 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     out: Awaited<ReturnType<DreamRunner['dream']>>,
   ) => {
     if (out.outcome !== 'wrong-model') return;
+    // Recorded first, so Home says why even when the settings cannot be saved; the save is retried each check.
+    await d.store
+      .setSwitchedOff({
+        answered: out.answered.join(', '),
+        chosen: model,
+        repoId,
+      })
+      .catch((e: unknown) => console.error('[dreams] switchedOff', e));
+    offPending = true;
+    await switchOff();
+  };
+
+  /** Saves `enabled: false`; on failure `offPending` stays set and the next check tries again. */
+  const switchOff = async () => {
     const cur = d.settings.get();
-    await d.settings.save({
-      ...cur,
-      dreaming: { ...cur.dreaming, enabled: false },
-    });
-    await d.store.setSwitchedOff({
-      answered: out.answered.join(', '),
-      chosen: model,
-      repoId,
-    });
+    try {
+      await d.settings.save({
+        ...cur,
+        dreaming: { ...cur.dreaming, enabled: false },
+      });
+      offPending = false;
+    } catch (e) {
+      console.error('[dreams] could not switch dreaming off', e);
+    }
+  };
+
+  const clearSwitchedOff = async () => {
+    await d.store.setSwitchedOff(null);
+    d.broadcast();
   };
 
   const start = (repoId: string): boolean => {
@@ -241,13 +282,21 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
 
   // ── sweep ──
 
-  /** The dream folders of one repo id but the open result's; with git when the repo is known. */
-  const sweepFolders = async (repoId: string, repo: Repo | undefined) => {
+  /**
+   * The dream folders of one repo id but the open result's, with git when the repo is known; returns the names of
+   * the folders it found to remove.
+   */
+  const sweepFolders = async (
+    repoId: string,
+    repo: Repo | undefined,
+  ): Promise<string[]> => {
     const keep = d.store.repo(repoId).result?.id;
     const repoDir = path.join(d.dreamsDir, repoId);
     const entries = await fs.readdir(repoDir, { withFileTypes: true });
+    const found: string[] = [];
     for (const e of entries) {
       if (!e.isDirectory() || e.name === keep) continue;
+      found.push(e.name);
       const dir = path.join(repoDir, e.name);
       const failure = repo
         ? await removeDream(d.git, repo.path, {
@@ -265,22 +314,31 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           failure,
         );
     }
+    return found;
   };
 
-  /** Local `dream/*` branches but the open result's and any checked out outside the dreams folder. */
-  const sweepBranches = async (repo: Repo, config: string[]) => {
+  /**
+   * The branches of the dream folders found to remove: `dream/<YYYY-MM-DD>-<n>` of such a folder only (the runner
+   * makes the folder before the branch and removes it last), never one checked out outside the dreams folder. A
+   * `dream/` branch without its folder is the owner's (a dream opened as a task keeps its branch) and stays.
+   */
+  const sweepBranches = async (
+    repo: Repo,
+    config: string[],
+    folders: string[],
+  ) => {
     const c = config.flatMap((x) => ['-c', x]);
     const keep = d.store.repo(repo.id).result?.branch;
-    const out = await d.git.run(repo.path, [
-      ...c,
-      'for-each-ref',
-      '--format=%(refname)',
-      'refs/heads/dream/',
-    ]);
-    const branches = out
-      .split(/\r?\n/)
-      .map((l) => l.trim().replace(/^refs\/heads\//, ''))
-      .filter((b) => b.startsWith('dream/') && b !== keep);
+    const branches: string[] = [];
+    for (const id of folders) {
+      const b = `dream/${id}`;
+      if (
+        DREAM_BRANCH.test(b) &&
+        b !== keep &&
+        (await d.git.branchExists(repo.path, b))
+      )
+        branches.push(b);
+    }
     if (branches.length === 0) return;
     const dreamsReal = await fs.realpath(d.dreamsDir).catch(() => d.dreamsDir);
     const inDreams = (p: string) =>
@@ -320,15 +378,15 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         const repo = repos.get(e.name);
         // A repo that is gone from disk is left as it is.
         if (repo && !onDisk.get(repo.id)) continue;
-        await sweepFolders(e.name, repo).catch((x: unknown) =>
-          console.error('[dreams] sweep', x),
-        );
-      }
-      for (const r of repos.values())
-        if (onDisk.get(r.id))
-          await sweepBranches(r, config).catch((x: unknown) =>
+        const found = await sweepFolders(e.name, repo).catch((x: unknown) => {
+          console.error('[dreams] sweep', x);
+          return [] as string[];
+        });
+        if (repo)
+          await sweepBranches(repo, config, found).catch((x: unknown) =>
             console.error('[dreams] sweep', x),
           );
+      }
     } finally {
       await removeTree(hooks).catch(() => undefined);
     }
@@ -357,6 +415,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
           ? { started: true as const }
           : { wait: 'nothing-ready' as const };
       });
+    },
+    /** Dreaming was switched on: what switched it off before is forgotten at once. */
+    clearSwitchedOff(): Promise<void> {
+      return clearSwitchedOff();
     },
     stopDream(): void {
       abort('stopped');
