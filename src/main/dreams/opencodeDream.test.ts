@@ -81,6 +81,10 @@ describe('dreamEnv', () => {
     );
   });
 
+  it('never lets a dream session be shared (OpenCode 1.19.3 config key `share`)', () => {
+    expect((config() as unknown as { share: string }).share).toBe('disabled');
+  });
+
   it('pins every model key to the chosen model and the agent to build', () => {
     const c = config();
     expect(c.model).toBe(MODEL);

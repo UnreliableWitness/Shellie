@@ -269,6 +269,7 @@ const defaults: FakeHandlers = {
   'dream:discard': () => undefined,
   'dream:openAsTask': () => ({ branch: 'dream/2026-11-20-1' }),
   'dream:leaveBranch': () => undefined,
+  'dream:folderExists': () => true,
   'dream:diff': () => [],
   'dream:file': () => ({ before: '', after: '' }),
   'editor:options': () => ({

@@ -1112,6 +1112,43 @@ describe('a dream result', () => {
   });
 });
 
+describe('dream:folderExists', () => {
+  it('checks the exact spelling in the repo’s HEAD tree, a folder or a file, literally', async () => {
+    mkdirSync(path.join(repoPath, '.apm', 'rules'), { recursive: true });
+    mkdirSync(path.join(repoPath, 'odd'));
+    commitFile(repoPath, '.apm/rules/a.md', 'a\n', 'apm');
+    commitFile(repoPath, 'AGENTS.md', 'x\n', 'agents');
+    commitFile(repoPath, 'odd/*.md', 'x\n', 'star');
+    const h = api().handlers;
+    expect(await h['dream:folderExists']('r1', '.apm')).toBe(true);
+    expect(await h['dream:folderExists']('r1', '.apm/rules')).toBe(true);
+    expect(await h['dream:folderExists']('r1', 'AGENTS.md')).toBe(true);
+    expect(await h['dream:folderExists']('r1', '.APM')).toBe(false);
+    expect(await h['dream:folderExists']('r1', 'agents.md')).toBe(false);
+    expect(await h['dream:folderExists']('r1', 'odd/*.md')).toBe(true);
+    expect(await h['dream:folderExists']('r1', '*.md')).toBe(false);
+    // After `--`: never an option.
+    expect(await h['dream:folderExists']('r1', '--help')).toBe(false);
+    // Not on disk only: a file in the work tree that HEAD lacks does not count.
+    writeFileSync(path.join(repoPath, 'loose.md'), 'x');
+    expect(await h['dream:folderExists']('r1', 'loose.md')).toBe(false);
+  });
+
+  it('refuses a folder the settings refuse, and an unknown repo, before any git', async () => {
+    const g = deps.git as GitClient;
+    const spy = vi.spyOn(g, 'run');
+    const h = api().handlers;
+    for (const f of ['../x', '/etc', '.opencode', 'a//b'])
+      await expect(h['dream:folderExists']('r1', f)).rejects.toThrow(
+        'This is not a folder a dream may change',
+      );
+    await expect(h['dream:folderExists']('r9', '.apm')).rejects.toThrow(
+      'Unknown repo',
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
 describe('a repo that goes away', () => {
   it('removed from Shellie: stops its dream, discards its result, forgets its state and its settings', async () => {
     const r = await dreamWithThree();

@@ -120,6 +120,23 @@ describe('writeMaterial', () => {
     expect(index).toContain('No tabs');
   });
 
+  it('tells the model the newest 30 rejections only', async () => {
+    const m = pickMaterial([task('a', [[dev(1)]])], {});
+    await writeMaterial(dir, m, {
+      sightings: [],
+      rejections: Array.from({ length: 40 }, (_, i) => ({
+        at: '2026-11-03',
+        title: `Rejected ${i}`,
+        why: 'because',
+      })),
+    });
+    const index = fs.readFileSync(path.join(dir, 'index.md'), 'utf8');
+    expect(index).not.toContain('Rejected 9:');
+    expect(index).toContain('Rejected 10:');
+    expect(index).toContain('Rejected 39:');
+    expect(index.match(/Rejected \d+:/g)).toHaveLength(30);
+  });
+
   it('makes file names safe and distinct', async () => {
     const m = pickMaterial(
       [

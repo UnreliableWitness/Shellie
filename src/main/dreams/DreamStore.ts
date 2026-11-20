@@ -17,6 +17,8 @@ import { JsonFileStore } from '../usage/JsonFileStore';
 
 const SIGHTING_DAYS = 90;
 const JOURNAL_KEEP = 100;
+/** Rejections kept per repo, the newest; the prompt gets fewer (`material.ts`). */
+const REJECTIONS_KEEP = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const FileSchema = z.object({
@@ -64,9 +66,16 @@ export class DreamStore {
     );
   }
 
-  /** A corrupt file is backed up and loads as empty. */
-  load(): Promise<{ recovered: boolean; backup?: string }> {
-    return this.store.load();
+  /**
+   * A corrupt file is backed up and loads as empty. Sightings past 90 days are dropped as it loads (written with the
+   * next change), so a repo that stopped dreaming does not keep them.
+   */
+  async load(): Promise<{ recovered: boolean; backup?: string }> {
+    const loaded = await this.store.load();
+    const cutoff = this.now() - SIGHTING_DAYS * DAY_MS;
+    for (const r of Object.values(this.store.value.repos))
+      r.sightings = r.sightings.filter((x) => Date.parse(x.at) >= cutoff);
+    return loaded;
   }
 
   onChange(fn: () => void): () => void {
@@ -171,7 +180,7 @@ export class DreamStore {
         title: p.title,
         why: p.why,
       }));
-      r.rejections.push(...rejected);
+      r.rejections = [...r.rejections, ...rejected].slice(-REJECTIONS_KEEP);
     });
   }
 

@@ -123,6 +123,7 @@ function runner(runs: FakeRun[], over: Partial<DreamRunnerDeps> = {}) {
     baseBranch: async () => 'main',
     now: () => NOW,
     overLimit: () => limited,
+    folders: () => ['.apm'],
     ...over,
   });
 }
@@ -173,7 +174,8 @@ describe('DreamRunner', () => {
     expect(commits).toHaveLength(2);
     expect(result.proposals.map((p) => p.commit)).toEqual(commits);
     expect(show(repo, 'log', '-1', '--format=%s%n%b', commits[0])).toBe(
-      'dream: Rule A\nBecause Rule A.',
+      // Never the model's reason: the owner's later pull request pushes this commit.
+      'dream: Rule A\nProposed by a Shellie dream. Review before merging.',
     );
     expect(show(repo, 'show', '--name-only', '--format=', commits[1])).toBe(
       '.apm/rules/b.md',
@@ -480,6 +482,30 @@ describe('DreamRunner', () => {
     expect(existsSync(path.join(wt, '.apm/stray.md'))).toBe(false);
     expect(readFileSync(path.join(wt, '.apm/keep.md'), 'utf8')).toBe('keep\n');
     expect(show(wt, 'status', '--porcelain')).toBe('');
+  });
+
+  it('keeps only changes in folders allowed both at the start and at the end of the run', async () => {
+    const runs = twoProposals();
+    runs[0].edits!['AGENTS.md'] = 'agents\n';
+    (runs[0].report as ReturnType<typeof report>).proposals.push(
+      proposal('Agents', 'AGENTS.md'),
+    );
+    runs[1].verdicts = ['pass', 'pass', 'pass'];
+    const asked: string[] = [];
+    const out = await runner(runs, {
+      // `.apm/rules` was removed from the allowed folders while the dream ran; AGENTS.md stays.
+      folders: (id) => {
+        asked.push(id);
+        return ['AGENTS.md', '.apm/other'];
+      },
+    }).dream(repoArg(), { ...opts(), folders: ['.apm', 'AGENTS.md'] });
+    expect(asked).toEqual(['r1']);
+    if (out.outcome !== 'proposed') throw new Error(out.outcome);
+    expect(out.result.proposals.map((p) => p.title)).toEqual(['Agents']);
+    expect(out.result.reverted.sort()).toEqual([
+      '.apm/rules/a.md',
+      '.apm/rules/b.md',
+    ]);
   });
 
   it('commits only the proposals that pass the check', async () => {

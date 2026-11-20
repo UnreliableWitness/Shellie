@@ -12,6 +12,7 @@ import { isOpencodeModel } from '../../shared/brain';
 import {
   canSwitchOn,
   DreamingSettingsSchema,
+  DreamRepoSchema,
   widens,
   type DreamingSettings,
   type DreamProposal,
@@ -164,6 +165,7 @@ export function noDreams(): DreamApi {
       'dream:discard': no,
       'dream:openAsTask': no,
       'dream:leaveBranch': no,
+      'dream:folderExists': no,
       'dream:diff': no,
       'dream:file': no,
     },
@@ -781,6 +783,40 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           d.broadcast();
         }),
       ),
+
+    // Read-only git in a known repo's own tree: no file-system walk, the folder checked by the settings' schema first.
+    'dream:folderExists': (repoId, folder) =>
+      phrased('The folder could not be checked', async () => {
+        if (!DreamRepoSchema.shape.folders.element.safeParse(folder).success)
+          throw refuse('This is not a folder a dream may change');
+        const repo = d.repos().find((x) => x.id === repoId);
+        if (!repo) throw refuse('Unknown repo');
+        const c = flags([
+          ...unattendedConfig(path.join(d.dreamsDir, '.no-hooks')),
+          'core.ignorecase=false',
+        ]);
+        const out = await d.git
+          .run(
+            repo.path,
+            [
+              ...c,
+              '--literal-pathspecs',
+              'ls-tree',
+              '-z',
+              '--name-only',
+              'HEAD',
+              '--',
+              folder,
+            ],
+            { timeoutMs: DREAM_READ_TIMEOUT_MS },
+          )
+          .catch((e: unknown) => {
+            // No HEAD yet, or git failed: no warning rather than a wrong one.
+            console.error('[dreams] a folder could not be checked', e);
+            return null;
+          });
+        return out === null || out.split('\0').includes(folder);
+      }),
 
     // Reads: not one after another with the changes, and answered before the scheduler started.
     'dream:diff': (repoId, proposalId) =>

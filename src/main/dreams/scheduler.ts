@@ -2,7 +2,7 @@
  * When a dream starts (spec section 2): a check once a minute, the one dream at a time, Dream now, Stop, suspend and
  * quit, and the sweep at launch of what an earlier run left behind. The decision itself is `nextDream`; this module
  * gathers its facts, cheapest first: a repo's sessions are read only once every other check has passed, and kept
- * for five minutes or until the dream store or the tasks change.
+ * until something that can change them happens (at most an hour).
  */
 
 import fs from 'node:fs/promises';
@@ -22,8 +22,11 @@ import { pickMaterial, type TaskSessions } from './material';
 import { nextDream, type ReadyInput, type Wait } from './ready';
 
 export const DREAM_TICK_MS = 60_000;
-/** How long a repo's material counts as known without reading its sessions again. */
-const MATERIAL_MS = 5 * 60_000;
+/**
+ * How long a repo's material counts as known without reading its sessions again. Anything that can change it clears
+ * it sooner: the dream store, a task (`tasks:changed`), an agent tab of the repo's task reporting, a dream's end.
+ */
+const MATERIAL_MS = 60 * 60_000;
 /** The empty hooks folders of a sweep, inside the dreams folder; one left by a crash goes in the next sweep. */
 const SWEEP_PREFIX = '.sweep-';
 /** A test call's folder older than this is a crash's leftover (a test gives up after 2 minutes). */
@@ -79,7 +82,7 @@ export type DreamStatus = {
   switchedOff: DreamSwitchedOff | null;
   /** The dream that runs now; null when none does. */
   running: ReturnType<DreamRunner['running']>;
-  /** Sessions to read per repo, for the repos whose material was read in the last five minutes. */
+  /** Sessions to read per repo, for the repos whose material is known. */
   newSessions: Record<string, number>;
 };
 
@@ -485,9 +488,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     sweep(): Promise<void> {
       return serial(sweep);
     },
-    /** A task changed: its sessions may hold new material. */
-    materialChanged(): void {
-      material.clear();
+    /** A task changed (any repo), or an agent tab of a task of `repoId` reported: its sessions may hold new material. */
+    materialChanged(repoId?: string): void {
+      if (repoId === undefined) material.clear();
+      else material.delete(repoId);
     },
     status(): DreamStatus {
       const s = d.settings.get().dreaming;

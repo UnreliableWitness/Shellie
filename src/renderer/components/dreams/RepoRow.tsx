@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DreamingSettings, DreamView } from '../../../shared/dreams';
+import { api } from '../../api';
 import { folderProblem } from './folders';
 
 /** One repo of step 4: its tick box, folder chips and Add folder / Choose folder. */
@@ -19,14 +20,30 @@ export function RepoRow({
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
+  // The folder already warned about: a second Add takes it (a dream may create it).
+  const [warned, setWarned] = useState<string | null>(null);
 
-  const add = () => {
+  const add = async () => {
     const value = text.trim();
     const why = folderProblem(value);
     if (why) {
       setProblem(why);
       return;
     }
+    if (!folders.includes(value) && warned !== value) {
+      // Git paths are case-sensitive: `.APM` is not `.apm`. A check that fails warns of nothing.
+      const exists = await api()
+        .invoke('dream:folderExists', repo.id, value)
+        .catch(() => true);
+      if (!exists) {
+        setWarned(value);
+        setProblem(
+          `${value} was not found in ${repo.name}. Check upper and lower case.`,
+        );
+        return;
+      }
+    }
+    setWarned(null);
     if (!folders.includes(value))
       onChange({ on, folders: [...folders, value] });
     setText('');
@@ -83,7 +100,7 @@ export function RepoRow({
           className="dream-add"
           onSubmit={(e) => {
             e.preventDefault();
-            add();
+            void add();
           }}
         >
           <input
@@ -104,6 +121,7 @@ export function RepoRow({
             onClick={() => {
               setAdding(false);
               setProblem(null);
+              setWarned(null);
               setText('');
             }}
           >

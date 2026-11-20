@@ -87,6 +87,20 @@ describe('whole words', () => {
     expect(quoteWho('refuse the helpers here', s)).toBe('you');
   });
 
+  it('is unknown for a quote that starts or ends on punctuation inside a word', () => {
+    const s = dev("Don't use the helper.x for this");
+    expect(quoteWho("'t use the helper", s)).toBe('unknown');
+    expect(quoteWho('use the helper.', s)).toBe('unknown');
+    expect(quoteWho("Don't use the helper", s)).toBe('you');
+    // Punctuation at an edge is fine where the turn has no letter or digit beside it.
+    expect(
+      quoteWho('use the helper.', dev('Please use the helper. Thanks')),
+    ).toBe('you');
+    expect(quoteWho('(use the helper', dev('Do it (use the helper)'))).toBe(
+      'you',
+    );
+  });
+
   it('takes a later whole-word match when an earlier one is mid-word', () => {
     expect(
       quoteWho('use the helper', dev('refuse the helpers, use the helper')),

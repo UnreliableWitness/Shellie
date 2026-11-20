@@ -944,6 +944,14 @@ export type Channels = {
    */
   'dream:leaveBranch': { args: [repoId: string]; result: void };
   /**
+   * Whether a folder or file a dream may change exists, with that exact spelling, in the repo's HEAD tree (git paths
+   * are case-sensitive). The setup warns once when it does not; a dream may still create it.
+   */
+  'dream:folderExists': {
+    args: [repoId: string, folder: string];
+    result: boolean;
+  };
+  /**
    * The files a proposal of the open result changes, each with git's own hunks against the commit's parent, bounded
    * (`DreamFileDiff`); read from the repo's git objects, so also once the dream worktree is gone.
    */

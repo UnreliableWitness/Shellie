@@ -1538,6 +1538,13 @@ async function boot(): Promise<void> {
     terminals.on('exit', (id) => retheme.exit(id));
     terminals.on('data', (id) => tabActivity.output(id));
     terminals.on('exit', (id) => tabActivity.exit(id));
+    // An agent tab's turn began or ended: its task's repo may have new material for a dream.
+    tabActivity.onState((id) => {
+      const t = store.state.tasks.find((x) =>
+        x.terminals.some((term) => term.id === id),
+      );
+      if (t?.repoId) dreams?.materialChanged(t.repoId);
+    });
     nativeTheme.on('updated', () => retheme.tick());
     const retick = setInterval(() => retheme.tick(), 1000);
     const timeTick = setInterval(() => {

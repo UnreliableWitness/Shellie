@@ -180,16 +180,16 @@ describe('the dream scheduler', () => {
     expect(deps.sessionsOf).not.toHaveBeenCalled();
   });
 
-  it('keeps a repo’s material for 5 minutes, and reads again once the dream store changes', async () => {
+  it('keeps a repo’s material until something can change it, at most 60 minutes', async () => {
     sessions = [];
     start();
     await tick();
     expect(scheduler!.status().wait).toBe('nothing-ready');
     expect(deps.sessionsOf).toHaveBeenCalledTimes(1);
-    await tick();
-    await tick();
+    // Idle all night with nothing new: not read again every few minutes.
+    await vi.advanceTimersByTimeAsync(58 * DREAM_TICK_MS);
     expect(deps.sessionsOf).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(3 * DREAM_TICK_MS);
+    await vi.advanceTimersByTimeAsync(2 * DREAM_TICK_MS);
     expect(deps.sessionsOf).toHaveBeenCalledTimes(2);
     await store.markCovered(REPO.id, { t9: 1 });
     await tick();
@@ -197,6 +197,13 @@ describe('the dream scheduler', () => {
     scheduler!.materialChanged();
     await tick();
     expect(deps.sessionsOf).toHaveBeenCalledTimes(4);
+    // An agent tab of another repo's task reported: this repo's answer stands.
+    scheduler!.materialChanged('other');
+    await tick();
+    expect(deps.sessionsOf).toHaveBeenCalledTimes(4);
+    scheduler!.materialChanged(REPO.id);
+    await tick();
+    expect(deps.sessionsOf).toHaveBeenCalledTimes(5);
   });
 
   it('asks OpenCode for its models at most once every 10 minutes', async () => {

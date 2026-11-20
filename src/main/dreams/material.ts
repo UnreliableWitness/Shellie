@@ -86,6 +86,8 @@ function fileNames(ids: string[]): string[] {
 }
 
 const day = (iso: string): string => iso.slice(0, 10);
+/** At most this many rejections, the newest, go to the model. */
+const PROMPT_REJECTIONS = 30;
 
 /** Writes `index.md` and `tasks/<taskId>.md` into `dir`; returns the file names. */
 export async function writeMaterial(
@@ -117,7 +119,8 @@ export async function writeMaterial(
   }
   if (memory.rejections.length) {
     lines.push('## Rejected before', '');
-    for (const r of memory.rejections)
+    // The newest only: the list grows with every dropped or discarded proposal.
+    for (const r of memory.rejections.slice(-PROMPT_REJECTIONS))
       lines.push(`- ${day(r.at)} ${r.title}: ${r.why}`);
     lines.push('');
   }

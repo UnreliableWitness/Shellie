@@ -64,6 +64,9 @@ const LIMIT_CHECK_MS = 30_000;
 /** How long a stopped run may take to end before its folders are removed anyway. */
 export const RUN_GRACE_MS = 10_000;
 const MAX_PROPOSALS = 3;
+/** The body of every dream commit. */
+export const COMMIT_BODY =
+  'Proposed by a Shellie dream. Review before merging.';
 
 /** The reasons a dream fails for (besides those of a run, `runReason`). */
 const REASON = {
@@ -108,6 +111,8 @@ export type DreamRunnerDeps = {
   now: () => number;
   /** Polled every 30 s during a dream; true stops it with `why: 'limit'`. */
   overLimit: () => boolean;
+  /** The folders a dream of the repo may change as the settings say now; asked again when a run ends. */
+  folders: (repoId: string) => string[];
 };
 
 type DreamRepoArg = { id: string; path: string; name: string };
@@ -354,7 +359,12 @@ export class DreamRunner {
     if (!sameSnapshot(before.snap, after.snap))
       throw new DreamFailed(REASON.checkEdited);
 
-    const { allowed, outside } = splitAllowed(after.paths, m.folders);
+    // Allowed at the start and still at the end: a folder the owner removed during the run is not kept.
+    const now = new Set(d.folders(m.repo.id));
+    const { allowed, outside } = splitAllowed(
+      after.paths,
+      m.folders.filter((f) => now.has(f)),
+    );
     // Who said each quote, from the task's own turns, decided before the cap and the merge: a proposal without a
     // quote of the developer counts as failed, so it takes no place and joins no kept group.
     const evidence = (
@@ -401,7 +411,8 @@ export class DreamRunner {
         commitFiles(git, m.worktree, {
           files: g.files,
           subject: commitSubject(g.title),
-          body: g.why,
+          // A fixed line: the model's reason stays on the result screen, never in a commit a pull request pushes.
+          body: COMMIT_BODY,
           config,
         }),
       );

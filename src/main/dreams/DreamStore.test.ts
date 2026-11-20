@@ -138,6 +138,53 @@ describe('DreamStore', () => {
     expect(s.repo('r').sightings.map((x) => x.note)).toEqual(['new']);
   });
 
+  it('drops sightings older than 90 days when it loads, too', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dreams-'));
+    const { opened: _o, ...repo } = (await make()).s.repo('r');
+    const at = (ms: number) => new Date(ms).toISOString();
+    writeFileSync(
+      path.join(dir, 'dreams.json'),
+      JSON.stringify({
+        version: 1,
+        repos: {
+          r: {
+            ...repo,
+            sightings: [
+              { at: at(T0 - 91 * DAY), note: 'old', taskId: 't', quote: 'q' },
+              { at: at(T0 - DAY), note: 'new', taskId: 't', quote: 'q' },
+            ],
+          },
+        },
+        journal: [],
+      }),
+    );
+    const { s } = await make(() => T0, dir);
+    expect(s.repo('r').sightings.map((x) => x.note)).toEqual(['new']);
+  });
+
+  it('keeps the newest 100 rejections of a repo', async () => {
+    const { s } = await make();
+    const p = (title: string) => ({
+      id: title,
+      kind: 'new-rule' as const,
+      title,
+      why: 'w',
+      evidence: [],
+      files: [],
+      commit: 'c',
+      dropped: false,
+    });
+    await s.reject(
+      'r',
+      Array.from({ length: 99 }, (_, i) => p(`t${i}`)),
+    );
+    await s.reject('r', [p('t99'), p('t100'), p('t101')]);
+    const titles = s.repo('r').rejections.map((x) => x.title);
+    expect(titles).toHaveLength(100);
+    expect(titles[0]).toBe('t2');
+    expect(titles.at(-1)).toBe('t101');
+  });
+
   it('markCovered keeps the larger time per task', async () => {
     const { s } = await make();
     await s.markCovered('r', { a: 5, b: 9 });

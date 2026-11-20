@@ -56,14 +56,13 @@ const STARTS_IN_WORD = /^[\p{L}\p{M}\p{N}]/u;
 
 /**
  * `q` lies in `text` on word boundaries: no letter or digit runs on across either end of the match (Unicode, so
- * accented words count); the start or end of the text is a boundary.
+ * accented words count); the start or end of the text is a boundary. Also when the quote's first or last character
+ * is punctuation: `'t use the helper` is not found inside `Don't use the helper`.
  */
 function containsWords(text: string, q: string): boolean {
-  const opensWord = STARTS_IN_WORD.test(q);
-  const closesWord = ENDS_IN_WORD.test(q);
   for (let at = text.indexOf(q); at >= 0; at = text.indexOf(q, at + 1)) {
-    if (opensWord && ENDS_IN_WORD.test(text.slice(0, at))) continue;
-    if (closesWord && STARTS_IN_WORD.test(text.slice(at + q.length))) continue;
+    if (ENDS_IN_WORD.test(text.slice(0, at))) continue;
+    if (STARTS_IN_WORD.test(text.slice(at + q.length))) continue;
     return true;
   }
   return false;

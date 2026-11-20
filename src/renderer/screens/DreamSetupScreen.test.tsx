@@ -454,6 +454,32 @@ describe('DreamSetupScreen: steps', () => {
     );
   });
 
+  it('warns once when the folder is not in the repo with that spelling, and adds it on a second Add', async () => {
+    const a = open(viewOf(ready()), {
+      'dream:folderExists': (_repo, folder) => folder === 'AGENTS.md',
+    });
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add folder for portal' }),
+    );
+    const field = screen.getByLabelText('Folder for portal');
+    await userEvent.type(field, 'agents.md{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'agents.md was not found in portal. Check upper and lower case.',
+    );
+    expect(callsOf(a.calls, 'dream:folderExists')).toEqual([
+      ['r1', 'agents.md'],
+    ]);
+    expect(callsOf(a.calls, 'dream:save')).toHaveLength(0);
+    // A dream may create it: the same folder again is added.
+    await userEvent.type(field, '{Enter}');
+    await waitFor(() =>
+      expect(callsOf(a.calls, 'dream:save')[0][0]).toMatchObject({
+        repos: { r1: { on: true, folders: ['.apm', 'agents.md'] } },
+      }),
+    );
+  });
+
   it('accepts minutes from 1 to 120 only', async () => {
     const a = open(viewOf(ready()));
     render(<DreamSetupScreen />);

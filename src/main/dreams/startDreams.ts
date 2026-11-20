@@ -130,6 +130,10 @@ export async function startDreams(
     now,
     overLimit: () =>
       checks.overLimitFor(runner.running()?.startedAt ?? now())(),
+    folders: (repoId) => {
+      const r = d.settings.get().dreaming.repos[repoId];
+      return r?.on ? r.folders : [];
+    },
   });
   const scheduler = startDreamScheduler({
     ...d,

@@ -222,6 +222,8 @@ export function dreamEnv(
       ),
       permission,
       mcp: {},
+      // Session text is customer material: no share link, by hand or automatic (key checked in 1.19.3's schema).
+      share: 'disabled',
     }),
   };
 }
