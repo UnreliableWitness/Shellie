@@ -7,7 +7,11 @@ import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isOpencodeModel } from '../../shared/brain';
-import { DREAM_JOB_TITLE } from '../../shared/dreams';
+import {
+  DREAM_JOB_TITLE,
+  DREAM_PROTECTED,
+  isProtectedPath,
+} from '../../shared/dreams';
 import { pathFor, slashes } from '../attention/opencodePlugin';
 
 const checkedModel = (model: string): string => {
@@ -45,23 +49,7 @@ const AGENTS = [
 /** Switched off: the two subagents, and title generation. */
 const DISABLED = new Set<string>(['general', 'explore', 'title']);
 
-/**
- * OpenCode's own configuration: config files, and the folder that holds agents, plugins (code OpenCode runs) and more.
- * A dream never writes these, at any depth: OpenCode refuses the edit, and later steps refuse them as allowed folders
- * and revert them after a run.
- */
-export const DREAM_PROTECTED = ['opencode.json', 'opencode.jsonc', '.opencode'];
-
-/**
- * Whether a repo-relative path is or lies in one of `DREAM_PROTECTED`. Without regard to case: on macOS and Windows
- * `OpenCode.json` is the same file as `opencode.json`.
- */
-export function isProtectedPath(repoRelativePath: string): boolean {
-  return repoRelativePath
-    .toLowerCase()
-    .split(/[\\/]/)
-    .some((segment) => DREAM_PROTECTED.includes(segment));
-}
+export { DREAM_PROTECTED, isProtectedPath };
 
 /**
  * The global config folder as OpenCode 1.19.3 computes it on every platform (`xdg-basedir`): `$XDG_CONFIG_HOME`, or

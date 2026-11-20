@@ -11,7 +11,28 @@ export const DreamLimitSchema = z.discriminatedUnion('kind', [
 ]);
 export type DreamLimit = z.infer<typeof DreamLimitSchema>;
 
-/** Repo-relative, forward slashes, no `..` segment, not absolute, not empty. */
+/**
+ * OpenCode's own configuration: config files, and the folder that holds agents, plugins (code OpenCode runs) and more.
+ * A dream never writes these, at any depth: OpenCode refuses the edit, and later steps refuse them as allowed folders
+ * and revert them after a run.
+ */
+export const DREAM_PROTECTED = ['opencode.json', 'opencode.jsonc', '.opencode'];
+
+/**
+ * Whether a repo-relative path is or lies in one of `DREAM_PROTECTED`. Without regard to case: on macOS and Windows
+ * `OpenCode.json` is the same file as `opencode.json`.
+ */
+export function isProtectedPath(repoRelativePath: string): boolean {
+  return repoRelativePath
+    .toLowerCase()
+    .split(/[\\/]/)
+    .some((segment) => DREAM_PROTECTED.includes(segment));
+}
+
+/**
+ * A real repo-relative sub-path (a folder, or a single file such as `AGENTS.md`): forward slashes, not absolute, no
+ * `.`, `..` or empty segment (so not `.`, `./x`, `a/` or `a//b`), and not OpenCode's own configuration.
+ */
 const DreamFolderSchema = z
   .string()
   .min(1)
@@ -20,8 +41,9 @@ const DreamFolderSchema = z
       !f.startsWith('/') &&
       !f.includes('\\') &&
       !/^[A-Za-z]:/.test(f) &&
-      !f.split('/').includes('..'),
-    'a repo-relative folder with forward slashes and no ..',
+      f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..') &&
+      !isProtectedPath(f),
+    'a repo-relative sub-path with forward slashes, no . or .. or empty segment, and not OpenCode configuration',
   );
 
 export const DreamRepoSchema = z.object({

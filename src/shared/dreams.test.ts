@@ -43,6 +43,33 @@ describe('schema', () => {
     );
     expect(r.success).toBe(false);
   });
+  it.each([
+    '.',
+    './x',
+    'a/',
+    'a//b',
+    'a/.',
+    'a/./b',
+    'opencode.json',
+    'OpenCode.jsonc',
+    '.opencode',
+    '.apm/.OpenCode/plugin',
+    'src/opencode.json',
+  ])('rejects folder %j as not a real sub-path', (f) => {
+    const r = DreamingSettingsSchema.safeParse(
+      ready({ repos: { r1: { on: true, folders: [f] } } }),
+    );
+    expect(r.success).toBe(false);
+  });
+  it.each(['AGENTS.md', '.apm', '.apm/skills', 'a/b.c'])(
+    'accepts folder %j',
+    (f) => {
+      const r = DreamingSettingsSchema.safeParse(
+        ready({ repos: { r1: { on: true, folders: [f] } } }),
+      );
+      expect(r.success).toBe(true);
+    },
+  );
   it('accepts a valid setting and rejects a bad model', () => {
     expect(DreamingSettingsSchema.safeParse(ready()).success).toBe(true);
     expect(
