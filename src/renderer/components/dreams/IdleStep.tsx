@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Step 3: minutes without keyboard or mouse (1 to 120), with the fixed rules as text. */
 export function IdleStep({
@@ -10,7 +10,11 @@ export function IdleStep({
 }) {
   const [text, setText] = useState(String(minutes));
   const [problem, setProblem] = useState<string | null>(null);
-  useEffect(() => setText(String(minutes)), [minutes]);
+  const sent = useRef<number | null>(null);
+  useEffect(() => {
+    setText(String(minutes));
+    sent.current = null;
+  }, [minutes]);
   const commit = () => {
     const n = Number(text);
     if (!/^\d+$/.test(text.trim()) || n < 1 || n > 120) {
@@ -18,7 +22,9 @@ export function IdleStep({
       return;
     }
     setProblem(null);
-    if (n !== minutes) onMinutes(n);
+    if (n === minutes || sent.current === n) return;
+    sent.current = n;
+    onMinutes(n);
   };
   return (
     <>
@@ -30,7 +36,10 @@ export function IdleStep({
           aria-label="Minutes idle"
           inputMode="numeric"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            sent.current = null;
+            setText(e.target.value);
+          }}
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {

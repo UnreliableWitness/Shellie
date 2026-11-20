@@ -5,6 +5,7 @@ import {
   defaultDreaming,
   DreamingSettingsSchema,
   widens,
+  widenings,
   type DreamingSettings,
 } from './dreams';
 import { AppSettingsSchema } from './usage';
@@ -132,6 +133,77 @@ describe('widens', () => {
       widens(base, ready({ limit: { kind: 'tokens', perDay: 4e6 } })),
     ).toBe(false);
     expect(widens(base, ready({ idleMinutes: 30 }))).toBe(false);
+  });
+});
+
+describe('widenings', () => {
+  const base = ready();
+  const names = (id: string) => (id === 'r1' ? 'Portal' : 'Billing');
+  const cases: [string, DreamingSettings, string[]][] = [
+    [
+      'a repo added',
+      ready({
+        repos: {
+          ...base.repos,
+          r2: { on: true, folders: ['.apm', 'AGENTS.md'] },
+        },
+      }),
+      ['Adds repo Billing, which may change .apm, AGENTS.md'],
+    ],
+    [
+      'a repo switched on again',
+      ready({
+        repos: {
+          r1: base.repos.r1,
+          r2: { on: true, folders: ['x'] },
+        },
+      }),
+      ['Adds repo Billing, which may change x'],
+    ],
+    [
+      'folders added',
+      ready({ repos: { r1: { on: true, folders: ['src', 'lib', 'docs'] } } }),
+      ['Portal may now also change lib', 'Portal may now also change docs'],
+    ],
+    [
+      'limit raised',
+      ready({ limit: { kind: 'tokens', perDay: 6e6 } }),
+      [
+        'Raises the limit from up to 5 million tokens a day to up to 6 million tokens a day',
+      ],
+    ],
+    [
+      'limit removed',
+      ready({ limit: { kind: 'none' } }),
+      ['Removes the daily limit'],
+    ],
+    [
+      'unit changed',
+      ready({ limit: { kind: 'eur', perDay: 1 } }),
+      [
+        'Changes the limit from up to 5 million tokens a day to up to € 1.00 a day',
+      ],
+    ],
+    ['narrowing', ready({ limit: { kind: 'tokens', perDay: 4e6 } }), []],
+    ['unrelated', ready({ idleMinutes: 30 }), []],
+    ['repo off', ready({ repos: { r1: { on: false, folders: ['src'] } } }), []],
+  ];
+  it.each(cases)('%s', (_n, next, lines) => {
+    expect(widenings(base, next, names)).toEqual(lines);
+    expect(widens(base, next)).toBe(lines.length > 0);
+  });
+  it('names a repo by its id without a name function', () => {
+    expect(
+      widenings(
+        base,
+        ready({ repos: { r1: { on: true, folders: ['src', 'a'] } } }),
+      ),
+    ).toEqual(['r1 may now also change a']);
+  });
+  it('sets a limit that was not chosen', () => {
+    expect(widenings(ready({ limit: null }), base)).toEqual([
+      'Sets the limit to up to 5 million tokens a day',
+    ]);
   });
 });
 

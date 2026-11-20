@@ -31,6 +31,8 @@ export function LimitStep({
   const [euros, setEuros] = useState(eurosText(limit));
   const [want, setWant] = useState<Kind | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // What was committed last, so that Enter followed by leaving the field saves once.
+  const sent = useRef<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const limitJson = JSON.stringify(limit);
   // The fields show the limit in force: a committed, undone or externally changed limit rewrites them.
@@ -39,6 +41,7 @@ export function LimitStep({
     setEuros(eurosText(limit));
     setWant(null);
     setProblem(null);
+    sent.current = null;
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [limitJson]);
   useEffect(() => {
@@ -46,7 +49,14 @@ export function LimitStep({
   }, [want]);
 
   const kind = limit?.kind;
-  const enabled = (k: Kind) => kind === k || want === k;
+  const enabled = (k: Kind) => (want ? want === k : kind === k);
+  const cancel = (k: Kind | 'none') => {
+    if (kind !== k) return;
+    setWant(null);
+    setProblem(null);
+    setTokens(tokensText(limit));
+    setEuros(eurosText(limit));
+  };
   const unsaved = (k: Kind) => want === k && kind !== k;
 
   const commitTokens = () => {
@@ -60,6 +70,8 @@ export function LimitStep({
     }
     setProblem(null);
     setTokens(spacedNumber(n));
+    if (sent.current === `t${n}`) return;
+    sent.current = `t${n}`;
     if (limit?.kind !== 'tokens' || limit.perDay !== n)
       onLimit({ kind: 'tokens', perDay: n });
   };
@@ -71,6 +83,8 @@ export function LimitStep({
       return;
     }
     setProblem(null);
+    if (sent.current === `e${n}`) return;
+    sent.current = `e${n}`;
     if (limit?.kind !== 'eur' || limit.perDay !== n)
       onLimit({ kind: 'eur', perDay: n });
   };
@@ -90,6 +104,7 @@ export function LimitStep({
             name="dream-limit"
             checked={kind === 'tokens'}
             onChange={() => setWant('tokens')}
+            onClick={() => cancel('tokens')}
           />
           <span className="dream-limit-name">Tokens</span>
         </label>
@@ -100,7 +115,10 @@ export function LimitStep({
           inputMode="numeric"
           disabled={!enabled('tokens')}
           value={tokens}
-          onChange={(e) => setTokens(e.target.value)}
+          onChange={(e) => {
+            sent.current = null;
+            setTokens(e.target.value);
+          }}
           onBlur={commitTokens}
           onKeyDown={enter(commitTokens)}
         />
@@ -118,6 +136,7 @@ export function LimitStep({
             checked={kind === 'eur'}
             disabled={!euroLimitOffered}
             onChange={() => setWant('eur')}
+            onClick={() => cancel('eur')}
           />
           <span className="dream-limit-name">Euros</span>
         </label>
@@ -130,7 +149,10 @@ export function LimitStep({
               inputMode="decimal"
               disabled={!enabled('eur')}
               value={euros}
-              onChange={(e) => setEuros(e.target.value)}
+              onChange={(e) => {
+                sent.current = null;
+                setEuros(e.target.value);
+              }}
               onBlur={commitEuros}
               onKeyDown={enter(commitEuros)}
             />
@@ -153,6 +175,7 @@ export function LimitStep({
             name="dream-limit"
             checked={kind === 'none'}
             onChange={onNoLimit}
+            onClick={() => cancel('none')}
           />
           <span className="dream-limit-name">No limit</span>
         </label>

@@ -94,27 +94,6 @@ export function canSwitchOn(
   return null;
 }
 
-const limitWidens = (p: DreamLimit | null, n: DreamLimit | null): boolean => {
-  if (n === null) return false;
-  if (p === null || p.kind !== n.kind) return true;
-  if (n.kind === 'none') return false;
-  return n.perDay > (p as { perDay: number }).perDay;
-};
-
-/** True when `next` sends more text to the model or may spend or change more than `prev`. */
-export function widens(
-  prev: DreamingSettings,
-  next: DreamingSettings,
-): boolean {
-  for (const [id, repo] of Object.entries(next.repos)) {
-    if (!repo.on) continue;
-    const before = prev.repos[id];
-    if (!before?.on) return true;
-    if (repo.folders.some((f) => !before.folders.includes(f))) return true;
-  }
-  return limitWidens(prev.limit, next.limit);
-}
-
 const plural = (n: number, one: string, many: string): string =>
   `${n} ${n === 1 ? one : many}`;
 
@@ -128,6 +107,55 @@ const limitText = (l: DreamLimit | null): string => {
     l.perDay % 1e6 === 0 ? `${l.perDay / 1e6} million` : spaced(l.perDay);
   return `up to ${t} tokens a day`;
 };
+
+/**
+ * What `next` adds to `prev`, one line each: a repo switched on, a folder a dream may now also change, a limit that
+ * is raised, removed or changed to another unit. Empty when `next` sends and spends no more. `nameOf` names a repo
+ * (its id by default).
+ */
+export function widenings(
+  prev: DreamingSettings,
+  next: DreamingSettings,
+  nameOf: (repoId: string) => string = (id) => id,
+): string[] {
+  const lines: string[] = [];
+  for (const [id, repo] of Object.entries(next.repos)) {
+    if (!repo.on) continue;
+    const before = prev.repos[id];
+    if (!before?.on)
+      lines.push(
+        repo.folders.length > 0
+          ? `Adds repo ${nameOf(id)}, which may change ${repo.folders.join(', ')}`
+          : `Adds repo ${nameOf(id)}`,
+      );
+    else
+      for (const f of repo.folders)
+        if (!before.folders.includes(f))
+          lines.push(`${nameOf(id)} may now also change ${f}`);
+  }
+  const p = prev.limit;
+  const n = next.limit;
+  if (n !== null) {
+    if (p === null) lines.push(`Sets the limit to ${limitText(n)}`);
+    else if (p.kind !== n.kind)
+      lines.push(
+        n.kind === 'none'
+          ? 'Removes the daily limit'
+          : `Changes the limit from ${limitText(p)} to ${limitText(n)}`,
+      );
+    else if (n.kind !== 'none' && n.perDay > (p as { perDay: number }).perDay)
+      lines.push(`Raises the limit from ${limitText(p)} to ${limitText(n)}`);
+  }
+  return lines;
+}
+
+/** True when `next` sends more text to the model or may spend or change more than `prev`. */
+export function widens(
+  prev: DreamingSettings,
+  next: DreamingSettings,
+): boolean {
+  return widenings(prev, next).length > 0;
+}
 
 export function confirmSentence(
   d: DreamingSettings,

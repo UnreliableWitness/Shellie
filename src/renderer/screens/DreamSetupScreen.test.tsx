@@ -551,4 +551,140 @@ describe('DreamSetupScreen: steps', () => {
       await screen.findByText(/Dreams run on OpenCode/),
     ).toBeInTheDocument();
   });
+
+  it('clears the tick when a second folder is added to a held draft', async () => {
+    open(viewOf(ready({ enabled: true })));
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add folder for portal' }),
+    );
+    await userEvent.type(
+      screen.getByLabelText('Folder for portal'),
+      'X{Enter}',
+    );
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: /I have read this/ }),
+    );
+    expect(tick()).toBeChecked();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add folder for portal' }),
+    );
+    await userEvent.type(
+      screen.getByLabelText('Folder for portal'),
+      'Y{Enter}',
+    );
+    await waitFor(() => expect(tick()).not.toBeChecked());
+    expect(
+      screen.getByRole('button', { name: 'Confirm the change' }),
+    ).toBeDisabled();
+  });
+
+  it('lists what a held change adds, one line each', async () => {
+    open(viewOf(ready({ enabled: true })));
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: 'billing' }),
+    );
+    expect(
+      await within(panel()).findByText(
+        'Adds repo billing, which may change .apm',
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add folder for portal' }),
+    );
+    await userEvent.type(
+      screen.getByLabelText('Folder for portal'),
+      'AGENTS.md{Enter}',
+    );
+    expect(
+      await within(panel()).findByText('portal may now also change AGENTS.md'),
+    ).toBeInTheDocument();
+  });
+
+  it('says why a held change was dropped when a passing test switches dreaming off', async () => {
+    open(viewOf(ready({ enabled: true })));
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: 'billing' }),
+    );
+    await screen.findByRole('button', { name: 'Confirm the change' });
+    await userEvent.selectOptions(
+      screen.getByLabelText(/Model, from OpenCode/),
+      'opencode/big-pickle',
+    );
+    expect(
+      await screen.findByText(
+        'Your unconfirmed change was dropped: dreaming switched off for the new model.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Confirm the change' }),
+    ).toBeNull();
+  });
+
+  it('re-testing the saved model changes nothing: no warning, panel and held change stay', async () => {
+    let finish: (v: { ok: true }) => void = () => undefined;
+    open(viewOf(ready({ enabled: true })), {
+      'dream:test': () => new Promise((r) => (finish = r)),
+    });
+    render(<DreamSetupScreen />);
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: 'billing' }),
+    );
+    await screen.findByRole('button', { name: 'Confirm the change' });
+    await userEvent.click(screen.getByRole('button', { name: 'Test again' }));
+    expect(screen.queryByText(/Dreaming will switch off/)).toBeNull();
+    expect(within(panel()).queryByText(/Test the model first/)).toBeNull();
+    await act(async () => finish({ ok: true }));
+    expect(
+      screen.getByRole('button', { name: 'Confirm the change' }),
+    ).toBeInTheDocument();
+  });
+
+  it('enables only the field of the kind being edited, and the radio in force cancels', async () => {
+    open(viewOf(ready(), { euroLimitOffered: true }));
+    render(<DreamSetupScreen />);
+    const tokens = await screen.findByLabelText('Tokens a day');
+    const euros = screen.getByLabelText('Euros a day');
+    expect(tokens).toBeEnabled();
+    expect(euros).toBeDisabled();
+    await userEvent.click(screen.getByRole('radio', { name: 'Euros' }));
+    expect(euros).toBeEnabled();
+    expect(tokens).toBeDisabled();
+    await userEvent.click(screen.getByRole('radio', { name: 'Tokens' }));
+    expect(euros).toBeDisabled();
+    expect(tokens).toBeEnabled();
+    expect(screen.queryByText(/Not saved yet/)).toBeNull();
+  });
+
+  it('commits a number once when Enter is followed by leaving the field', async () => {
+    const a = open(viewOf(ready()), {
+      'dream:save': () => new Promise(() => undefined),
+    });
+    render(<DreamSetupScreen />);
+    const minutes = await screen.findByLabelText('Minutes idle');
+    await userEvent.clear(minutes);
+    await userEvent.type(minutes, '45{Enter}');
+    await userEvent.tab();
+    const tokens = screen.getByLabelText('Tokens a day');
+    await userEvent.clear(tokens);
+    await userEvent.type(tokens, '2 000{Enter}');
+    await userEvent.tab();
+    expect(callsOf(a.calls, 'dream:save')).toHaveLength(2);
+  });
+
+  it('makes steps 2 to 4 read only while a model test runs', async () => {
+    open(viewOf(ready()), {
+      'dream:test': () => new Promise(() => undefined),
+    });
+    render(<DreamSetupScreen />);
+    await userEvent.selectOptions(
+      await screen.findByLabelText(/Model, from OpenCode/),
+      'opencode/big-pickle',
+    );
+    expect(screen.getByLabelText('Tokens a day')).toBeDisabled();
+    expect(screen.getByLabelText('Minutes idle')).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'billing' })).toBeDisabled();
+  });
 });

@@ -4,6 +4,7 @@ import {
   confirmSentence,
   type DreamingSettings,
   type DreamView,
+  widenings,
   widens,
 } from '../../shared/dreams';
 import { errorMessage } from '../../shared/errors';
@@ -26,6 +27,8 @@ const WAITING_FOR: Record<
 
 const CHANGED_ELSEWHERE =
   'The settings changed elsewhere. Your unconfirmed change was dropped.';
+const DROPPED_FOR_MODEL =
+  'Your unconfirmed change was dropped: dreaming switched off for the new model.';
 
 /** The repos a dream would read, by name, for the sentence. */
 const repoNames = (view: DreamView, s: DreamingSettings): string[] =>
@@ -72,7 +75,7 @@ function Setup({ view }: { view: DreamView }) {
   savedRef.current = saved;
   // A widening change made while dreaming is on, waiting for the sentence and the tick.
   const [held, setHeld] = useState<DreamingSettings | null>(null);
-  const [droppedNote, setDroppedNote] = useState(false);
+  const [droppedNote, setDroppedNote] = useState<string | null>(null);
 
   // Settings that changed under us (not our own save, which `saved` already has) replace the saved ones and
   // drop a held draft that was based on the old state.
@@ -84,7 +87,7 @@ function Setup({ view }: { view: DreamView }) {
     if (JSON.stringify(savedRef.current) === viewJson) return;
     setSaved(view.settings);
     setHeld((h) => {
-      if (h) setDroppedNote(true);
+      if (h) setDroppedNote(CHANGED_ELSEWHERE);
       return null;
     });
   }, [viewJson, view.settings]);
@@ -98,15 +101,19 @@ function Setup({ view }: { view: DreamView }) {
   const [pending, setPending] = useState<PendingModel | null>(null);
   const [testing, setTesting] = useState(false);
   const [testedNote, setTestedNote] = useState<string | null>(null);
+  const [retestFailed, setRetestFailed] = useState<string | null>(null);
   const [confirmNoLimit, setConfirmNoLimit] = useState(false);
   const panelHeading = useRef<HTMLHeadingElement>(null);
 
+  const repoName = (id: string) =>
+    view.repos.find((r) => r.id === id)?.name ?? id;
   const names = repoNames(view, shown);
   const missing = canSwitchOn(shown);
   const sentence = missing === null ? confirmSentence(shown, names) : null;
   const isHeld = held !== null;
-  // The tick is for one sentence in one state: another sentence, or switching on or off, is read again.
-  useEffect(() => setTicked(false), [sentence, on, isHeld]);
+  // The tick is for one sentence in one state and one draft: any other is read again.
+  const heldJson = JSON.stringify(held);
+  useEffect(() => setTicked(false), [sentence, on, heldJson]);
   useEffect(() => {
     if (isHeld) panelHeading.current?.focus();
   }, [isHeld]);
@@ -123,7 +130,7 @@ function Setup({ view }: { view: DreamView }) {
 
   /** A change: saved at once unless dreaming is on and it widens, then it waits for the owner's tick. */
   const change = async (next: DreamingSettings) => {
-    setDroppedNote(false);
+    setDroppedNote(null);
     if (on && widens(saved, next)) {
       setError(null);
       setHeld(next);
@@ -158,24 +165,34 @@ function Setup({ view }: { view: DreamView }) {
     }
   };
 
-  /** Picking a model tests it at once; main saves it as chosen and tested only when the test passes. */
+  /**
+   * Picking a model tests it at once; main saves it as chosen and tested only when the test passes. Testing the
+   * saved model again changes nothing, so it does not gate the panel.
+   */
   const testModel = async (model: string) => {
-    setPending({ model, message: null });
+    const same = model === saved.model;
+    if (!same) setPending({ model, message: null });
     setTesting(true);
     setTestedNote(null);
+    setRetestFailed(null);
     setError(null);
     let message: string | null = null;
     try {
       const result = await api().invoke('dream:test', model);
       if (result.ok) {
-        // Main switched dreaming off when the model changed.
+        if (!same) {
+          // Main switched dreaming off, and a held draft was based on the old model.
+          setHeld((h) => {
+            if (h) setDroppedNote(DROPPED_FOR_MODEL);
+            return null;
+          });
+        }
         setSaved((s) => ({
           ...s,
           enabled: s.model === model ? s.enabled : false,
           model,
           testedModel: model,
         }));
-        setHeld(null);
         setPending(null);
         setTestedNote(`${model} answered.`);
       } else message = result.message;
@@ -183,7 +200,10 @@ function Setup({ view }: { view: DreamView }) {
       message = errorMessage(e);
     }
     setTesting(false);
-    if (message !== null) setPending({ model, message });
+    if (message !== null) {
+      if (same) setRetestFailed(message);
+      else setPending({ model, message });
+    }
   };
 
   const selected = pending?.model ?? saved.model;
@@ -266,6 +286,11 @@ function Setup({ view }: { view: DreamView }) {
                   Not tested: {pending.message}
                 </p>
               )}
+              {retestFailed !== null && (
+                <p role="alert" className="small text-red">
+                  Not tested: {retestFailed}
+                </p>
+              )}
               {testedNote && !pending && (
                 <p role="status" className="small text-green">
                   {testedNote} Shellie checked that no other model took part. It
@@ -281,7 +306,7 @@ function Setup({ view }: { view: DreamView }) {
               )}
             </Step>
 
-            <Step n={2} title="How much it may spend a day">
+            <Step n={2} title="How much it may spend a day" locked={testing}>
               <LimitStep
                 limit={shown.limit}
                 euroLimitOffered={view.euroLimitOffered}
@@ -302,7 +327,7 @@ function Setup({ view }: { view: DreamView }) {
               )}
             </Step>
 
-            <Step n={3} title="When it dreams">
+            <Step n={3} title="When it dreams" locked={testing}>
               <IdleStep
                 minutes={shown.idleMinutes}
                 onMinutes={(idleMinutes) =>
@@ -311,7 +336,11 @@ function Setup({ view }: { view: DreamView }) {
               />
             </Step>
 
-            <Step n={4} title="Which repos, and what a dream may change">
+            <Step
+              n={4}
+              title="Which repos, and what a dream may change"
+              locked={testing}
+            >
               {view.repos.length === 0 && (
                 <p className="muted">No repos yet. Add one first.</p>
               )}
@@ -347,7 +376,7 @@ function Setup({ view }: { view: DreamView }) {
                   ? 'Dreaming is on'
                   : 'What you are switching on'}
             </h2>
-            {droppedNote && <p role="status">{CHANGED_ELSEWHERE}</p>}
+            {droppedNote && <p role="status">{droppedNote}</p>}
             {pending ? (
               <p className="muted">
                 Test the model first. Nothing can be switched on or confirmed
@@ -361,6 +390,13 @@ function Setup({ view }: { view: DreamView }) {
                   <p className="muted">
                     Not ready to switch on yet. {WAITING_FOR[missing!]}
                   </p>
+                )}
+                {held && (
+                  <ul className="dream-adds" aria-label="What this change adds">
+                    {widenings(saved, held, repoName).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
                 )}
                 {(isHeld || !on) && (
                   <>
@@ -430,11 +466,14 @@ function Step({
   n,
   title,
   aside,
+  locked = false,
   children,
 }: {
   n: number;
   title: string;
   aside?: React.ReactNode;
+  /** Read only while something else runs. */
+  locked?: boolean;
   children: React.ReactNode;
 }) {
   const id = useId();
@@ -449,7 +488,9 @@ function Step({
         </h2>
         {aside && <span className="text-green dream-done">{aside}</span>}
       </div>
-      {children}
+      <fieldset className="dream-fieldset" disabled={locked}>
+        {children}
+      </fieldset>
     </section>
   );
 }
