@@ -175,7 +175,12 @@ export class LedgerService {
     stored: boolean,
   ) {
     const a = r.attribution;
-    if (a.level === 'brain' || isBrainRecord(asBudget(r, i), ctx)) return false;
+    if (
+      a.level === 'brain' ||
+      a.level === 'dream' ||
+      isBrainRecord(asBudget(r, i), ctx)
+    )
+      return false;
     const taskId =
       a.level === 'task'
         ? a.taskId
@@ -298,7 +303,8 @@ export class LedgerService {
       if (
         reattribute &&
         prev.attribution.level !== 'task' &&
-        prev.attribution.level !== 'brain'
+        prev.attribution.level !== 'brain' &&
+        prev.attribution.level !== 'dream'
       ) {
         const a = attribute(asBudget(prev, input), ctx);
         if (raises(prev.attribution, a)) rec = { ...rec, attribution: a };
@@ -384,6 +390,7 @@ export class LedgerService {
       task: 0,
       repo: 0,
       brain: 0,
+      dream: 0,
       none: 0,
     };
     for (const r of this.d.store.all()) {

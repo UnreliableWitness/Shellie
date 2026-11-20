@@ -609,6 +609,7 @@ describe('LedgerService', () => {
         'brain',
         'claudeCode',
         'copilotCli',
+        'dream',
         'none',
         'opencode',
         'repo',

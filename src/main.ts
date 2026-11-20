@@ -1015,6 +1015,8 @@ async function boot(): Promise<void> {
             project: b.project,
             path: b.path,
           })),
+          // Dream worktrees: their usage is a dream's, never a task's or a brain's.
+          path.join(userData, 'dreams'),
         ),
       isBillable: (taskId, sessionId) => usage.isBillable(taskId, sessionId),
       billableVersion: () => usage.billableVersion(),

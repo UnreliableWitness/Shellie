@@ -415,3 +415,77 @@ describe('brain attribution', () => {
     ).toBe(true);
   });
 });
+
+describe('dream records', () => {
+  const dreamsDir = '/data/dreams';
+  const ctx = (extra: Task[] = []) =>
+    attributionContext(
+      extra,
+      [repos[0]!, repo('r3', 'in-dreams', '/data/dreams/r1/d1/wt', 'c1')],
+      connections,
+      () => [],
+      [],
+      dreamsDir,
+    );
+  it('a record inside the dreams folder is a dream, with the repo name from the repo id', () => {
+    const r = rec({
+      tool: 'opencode',
+      cwd: '/data/dreams/r1/2026-11-20-1/wt/src',
+    });
+    expect(attribute(r, ctx())).toEqual({ level: 'dream', repo: 'web' });
+  });
+  it('wins over a repo rule that matches the same path, and over a task and a brain: id', () => {
+    const t = task({
+      id: 't1',
+      connectionId: 'c1',
+      worktreePath: '/data/dreams/r1/d1/wt',
+    });
+    const r = rec({
+      tool: 'opencode',
+      taskId: 't1',
+      cwd: '/data/dreams/r3/d1/wt',
+    });
+    expect(attribute(r, ctx([t]))).toEqual({
+      level: 'dream',
+      repo: 'in-dreams',
+    });
+    const onRepoPath = rec({ tool: 'opencode', cwd: '/data/dreams/r1/d1/wt' });
+    expect(attribute(onRepoPath, ctx())).toEqual({
+      level: 'dream',
+      repo: 'web',
+    });
+  });
+  it('an unknown repo id gives an empty repo; a sibling folder is not a dream', () => {
+    expect(
+      attribute(rec({ tool: 'opencode', cwd: '/data/dreams/zz/d/wt' }), ctx()),
+    ).toEqual({ level: 'dream', repo: '' });
+    expect(
+      attribute(
+        rec({ tool: 'opencode', cwd: '/data/dreams-old/r1/d/wt' }),
+        ctx(),
+      ),
+    ).toEqual({ level: 'none' });
+  });
+  it('a task record outside the dreams folder is unchanged', () => {
+    const t = task({ id: 't1', connectionId: 'c1' });
+    expect(
+      attribute(rec({ taskId: 't1', cwd: '/wt/t1' }), ctx([t])),
+    ).toMatchObject({ level: 'task', taskId: 't1' });
+  });
+  it('without a dreams folder nothing is a dream', () => {
+    const c = attributionContext([], repos, connections);
+    expect(
+      attribute(rec({ tool: 'opencode', cwd: '/data/dreams/r1/d/wt' }), c),
+    ).toEqual({ level: 'none' });
+  });
+  it('a dream record is frozen: it never moves to another level', () => {
+    const dream = { level: 'dream', repo: 'web' } as const;
+    expect(raises(dream, { level: 'none' })).toBe(false);
+    expect(
+      raises(
+        { level: 'repo', organization: null, project: null, repo: 'web' },
+        dream,
+      ),
+    ).toBe(true);
+  });
+});

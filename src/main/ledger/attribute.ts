@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { BudgetRecord } from '../../shared/budget';
 import { tokensOf } from '../../shared/budget';
 import type { Attribution, CostRecord } from '../../shared/ledger';
@@ -41,6 +42,10 @@ export type AttributionContext = {
   bySession: Map<string, TaskCtx>;
   repos: RepoCtx[];
   brains: Map<string, BrainCtx>;
+  /** Where dream worktrees live (`<dreamsDir>/<repoId>/<dreamId>/wt`); empty when unknown. */
+  dreamsDir: string;
+  /** Repo id → repo name, for the repo id in a dream worktree's path. */
+  dreamRepos: Map<string, string>;
 };
 
 const workItemNumber = (id: string | undefined): number | null => {
@@ -56,6 +61,8 @@ export function attributionContext(
   usageSessions: (taskId: string) => Iterable<string> = () => [],
   /** Brains (a folder per Azure DevOps project); their usage is attributed to the brain, never billable. */
   brains: BrainCtx[] = [],
+  /** The folder of dream worktrees; usage inside it is a dream's, whatever else its path matches. */
+  dreamsDir = '',
 ): AttributionContext {
   const repoById = new Map(repos.map((r) => [r.id, r]));
   const connById = new Map(connections.map((c) => [c.id, c]));
@@ -121,12 +128,20 @@ export function attributionContext(
   const bySession = new Map<string, TaskCtx>();
   for (const t of taskCtx) for (const s of t.sessions) bySession.set(s, t);
   return {
-    key: JSON.stringify([taskCtx, repoCtx, brains]),
+    key: JSON.stringify([
+      taskCtx,
+      repoCtx,
+      brains,
+      dreamsDir,
+      repos.map((r) => [r.id, r.name]),
+    ]),
     tasks: taskCtx,
     byId: new Map(taskCtx.map((t) => [t.id, t])),
     bySession,
     repos: repoCtx,
     brains: new Map(brains.map((b) => [b.id, b])),
+    dreamsDir,
+    dreamRepos: new Map(repos.map((r) => [r.id, r.name])),
   };
 }
 
@@ -206,11 +221,28 @@ const brainAttribution = (b: BrainCtx): Attribution => ({
   project: b.project,
 });
 
-/** A `brain:` task id, else task (see taskOf), else brain by folder, else repo by folder, else none. */
+/** Whether the record ran inside a dream worktree (its cwd is inside the dreams folder). */
+export function isDreamRecord(
+  r: BudgetRecord,
+  ctx: AttributionContext,
+): boolean {
+  return !!r.cwd && ctx.dreamsDir !== '' && isInside(ctx.dreamsDir, r.cwd);
+}
+
+/** The repo name from the repo id, the first folder below the dreams folder; '' when unknown. */
+function dreamRepo(cwd: string, ctx: AttributionContext): string {
+  const rel = path.relative(path.resolve(ctx.dreamsDir), path.resolve(cwd));
+  const id = rel.split(/[\\/]/)[0] ?? '';
+  return ctx.dreamRepos.get(id) ?? '';
+}
+
+/** A dream worktree, else a `brain:` task id, else task (see taskOf), else brain by folder, else repo by folder, else none. */
 export function attribute(
   r: BudgetRecord,
   ctx: AttributionContext,
 ): Attribution {
+  if (isDreamRecord(r, ctx))
+    return { level: 'dream', repo: dreamRepo(r.cwd!, ctx) };
   const byId = brainById(r, ctx);
   if (byId) return brainAttribution(byId);
   const task = taskOf(r, ctx);
@@ -234,9 +266,10 @@ export function attribute(
   return { level: 'none' };
 }
 
-/** Whether `next` may replace the stored attribution `prev`: only a higher level, or a repo that got its connection. Task and brain level are frozen. */
+/** Whether `next` may replace the stored attribution `prev`: only a higher level, or a repo that got its connection. Task, brain and dream level are frozen. */
 export function raises(prev: Attribution, next: Attribution): boolean {
-  if (prev.level === 'task' || prev.level === 'brain') return false;
+  if (prev.level === 'task' || prev.level === 'brain' || prev.level === 'dream')
+    return false;
   if (LEVEL_RANK[next.level] > LEVEL_RANK[prev.level]) return true;
   return (
     prev.level === 'repo' &&
