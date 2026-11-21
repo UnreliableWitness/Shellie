@@ -62,3 +62,28 @@ whose agent knew nothing about the dream.
   both failure phrases and the retry); a dream task carrying the briefing into `task.md`; the result screen's line,
   both primary actions, the secret prompt, a failure and the retry; the journal lines.
 - `npm test`, `npm run typecheck`, `npm run lint`.
+- **The dev app** (macOS, a scratch data folder, driven over the DevTools protocol; the test Azure DevOps project
+  as the project, a throwaway repo with a local bare `origin`, and two dream results written into the scratch
+  folder with real worktrees and commits):
+  - the result screen showed the explaining line, "Shellie cannot make a pull request here: origin is not an Azure
+    Repos URL. It pushes the branch instead.", and Discard dream, Change with an agent, Push branch;
+  - with one of two proposals dropped, Push branch put only the kept commit on `origin`, removed the local branch
+    and the dream's folder, showed the notice, returned to Dreams with the count gone, and the journal read
+    "2 proposals · 1 kept, branch dream/2026-11-21-1 pushed · 1 dropped";
+  - Change with an agent opened New task with the repo, branch and name; the task made from it (through the same
+    call as the form's Create, with no agent tab) had both commits and a `.shellie/task.md` with the Dream section:
+    what a dream is, both proposals with files, reason and the developer's quote.
+
+## Not verified, and known gaps
+
+- **No real pull request was made.** The Azure DevOps part (finding or creating the published pull request, its
+  title and text as Azure DevOps shows them, Open pull request in the journal) is covered by tests with a faked
+  client only. Making one needs a push to a real Azure Repos remote, which was not done without the owner's say.
+- No agent tab was started on a dream task, so whether Claude Code or OpenCode actually reads the Dream section
+  before answering was not seen. Copilot has no start context: it finds the section only if it reads the task file.
+- The secret prompt and the failure phrases were not seen in the app (tests only). Not run on Windows.
+- A result whose worktree is gone cannot be sent ("The dream could not be sent"); it can still be discarded.
+- Create pull request does not update the text of a pull request that already exists for the branch.
+- A dream task made from a record of before this change has no briefing.
+- The quotes in the briefing are session text kept in `state.json` with the task (they were already in
+  `dreams.json` while the dream was open).
