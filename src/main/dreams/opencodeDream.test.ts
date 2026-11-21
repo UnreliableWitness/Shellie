@@ -49,19 +49,25 @@ const decide = (rules: Rules, tool: string, target: string) => {
 
 describe('dreamArgs', () => {
   it('runs with json events, the dream title and the chosen model', () =>
-    expect(dreamArgs(MODEL, 'propose')).toEqual([
+    expect(dreamArgs(MODEL, 'propose', 'p-1')).toEqual([
       'run',
       '--format',
       'json',
       '--title',
-      'Shellie dream: propose',
+      'Shellie dream p-1: propose',
       '-m',
       MODEL,
     ]));
   it('refuses a model that is not a valid provider/model', () => {
-    expect(() => dreamArgs('glm-5.3', 'check')).toThrow();
-    expect(() => dreamArgs('a/b" & calc', 'test')).toThrow();
+    expect(() => dreamArgs('glm-5.3', 'check', 'p-1')).toThrow();
+    expect(() => dreamArgs('a/b" & calc', 'test', 'p-1')).toThrow();
   });
+  it.each(['', 'p 1', 'p1" & calc', 'a:b'])(
+    'refuses %j as a project id',
+    (project) => {
+      expect(() => dreamArgs(MODEL, 'test', project)).toThrow();
+    },
+  );
 });
 
 describe('dreamEnv', () => {

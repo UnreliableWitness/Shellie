@@ -5,14 +5,14 @@ import { useClock } from '../../hooks/useClock';
 import { useStore } from '../../store';
 import { minutesSince, navLine, stepLine } from './dreamWords';
 import { UsageBar } from './UsageBar';
-import { useDreams } from './useDreams';
+import { useDreamsState } from './useDreams';
 
 /**
  * The dream line at the foot of the navigation. A click opens Dreams; while a dream runs it opens a small panel
  * (Escape and a click outside close it, and focus returns to the line).
  */
 export function DreamNavStatus({ rail }: { rail: boolean }) {
-  const view = useDreams();
+  const { view, project } = useDreamsState();
   const go = useStore((s) => s.go);
   const running = view?.running ?? null;
   useClock(running ? 30_000 : 3_600_000);
@@ -89,7 +89,7 @@ export function DreamNavStatus({ rail }: { rail: boolean }) {
               type="button"
               className="btn"
               onClick={() => {
-                void api().invoke('dream:stop');
+                if (project) void api().invoke('dream:stop', project);
                 close(true);
               }}
             >

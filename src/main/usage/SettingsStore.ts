@@ -1,4 +1,8 @@
-import type { DreamingSettings } from '../../shared/dreams';
+import {
+  dreamingOf,
+  type DreamingAll,
+  type DreamingSettings,
+} from '../../shared/dreams';
 import {
   AppSettingsSchema,
   defaultSettings,
@@ -35,10 +39,23 @@ export class SettingsStore {
       return { ...fn(cur), dreaming };
     });
   }
-  /** The one way to change `dreaming`, from the block as it is when the write runs; every other setting stays. */
+  /** The one way to change `dreaming`, from the blocks as they are when the write runs; every other setting stays. */
   updateDreaming(
-    fn: (current: DreamingSettings) => DreamingSettings,
+    fn: (current: DreamingAll) => DreamingAll,
   ): Promise<AppSettings> {
     return this.store.update((cur) => ({ ...cur, dreaming: fn(cur.dreaming) }));
+  }
+  /** `updateDreaming` for one project's block (a project without one starts from the defaults). */
+  updateDreamingOf(
+    connectionId: string,
+    fn: (current: DreamingSettings) => DreamingSettings,
+  ): Promise<AppSettings> {
+    return this.updateDreaming((all) => ({
+      ...all,
+      projects: {
+        ...all.projects,
+        [connectionId]: fn(dreamingOf(all, connectionId)),
+      },
+    }));
   }
 }

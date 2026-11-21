@@ -1,4 +1,5 @@
 import type { DreamView } from '../../../shared/dreams';
+import type { Connection } from '../../../shared/types';
 import { useDreams } from '../../components/dreams/useDreams';
 import {
   SettingRow,
@@ -12,17 +13,24 @@ const stateLine = (v: DreamView): string => {
   return 'Dreaming is off';
 };
 
-/** Settings: what dreaming is set to, read only; the Dreams screen changes it. */
-export function DreamingSection() {
+/** Settings › Project: what the project's dreaming is set to, read only; its Dreams screen changes it. */
+export function DreamingSection({
+  connection,
+  title,
+}: {
+  connection: Connection;
+  title: string;
+}) {
   const go = useStore((s) => s.go);
-  const view = useDreams();
+  const setConnectionId = useStore((s) => s.setConnectionId);
+  const view = useDreams(connection.id);
   return (
-    <SettingsCategory id="dreaming" title="Dreaming">
+    <SettingsCategory id="project-dreaming" title={title}>
       <SettingRow
-        id="user-dreaming"
+        id="project-dreaming-state"
         category="Dreaming"
         title="Dreaming"
-        description="While you are away, Shellie reads what was said in a repo's agent sessions and proposes better skills and rules on a branch you review."
+        description="While you are away, Shellie reads what was said in the agent sessions of this project's repos and proposes better skills and rules on a branch you review."
         keywords={['dream', 'dreams', 'opencode', 'skills', 'rules']}
       >
         {view === null ? (
@@ -41,7 +49,11 @@ export function DreamingSection() {
               <button
                 type="button"
                 className="btn"
-                onClick={() => go({ kind: 'dreams' })}
+                onClick={() => {
+                  // Dreams shows the active project: this one.
+                  setConnectionId(connection.id);
+                  go({ kind: 'dreams' });
+                }}
               >
                 Open Dreams
               </button>

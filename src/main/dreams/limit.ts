@@ -4,6 +4,7 @@ import { OFFICIAL_RATES } from '../pricing/officialRates';
 import type { OpenCodeReader } from '../budget/openCode';
 import { priceRecord } from '../ledger/price';
 import { selectRate } from '../pricing/RateTable';
+import { dreamTitlePrefix } from './opencodeDream';
 
 /** The local calendar day of `now`: its key and [since, until) in epoch ms. */
 export function dayWindow(now: number): {
@@ -22,14 +23,19 @@ export function dayWindow(now: number): {
   };
 }
 
-/** What dreams used in the local day of `now`; the tokens are counted the way the ledger counts them. */
+/** What a project's dreams used in the local day of `now`; the tokens are counted the way the ledger counts them. */
 export function usageToday(
   reader: Pick<OpenCodeReader, 'dreamTokens'>,
   priceEur: (model: string, t: BudgetTokens) => number | null,
   now: number,
+  project: string,
 ): DreamUsage {
   const w = dayWindow(now);
-  const { tokens, byModel } = reader.dreamTokens(w.since, w.until);
+  const { tokens, byModel } = reader.dreamTokens(
+    w.since,
+    w.until,
+    dreamTitlePrefix(project),
+  );
   let eur: number | null = 0;
   for (const [model, t] of Object.entries(byModel)) {
     const p = priceEur(model, t);
@@ -58,29 +64,30 @@ export function hasPrice(model: string): boolean {
   return selectRate(OFFICIAL_RATES, modelOf(model), 0, false) !== null;
 }
 
-/** The limit as the runner and the scheduler use it. A limit not chosen yet (null) leaves no room. */
+/** Each project's limit as the runner and the scheduler use it. A limit not chosen yet (null) leaves no room. */
 export function limitChecks(deps: {
   reader: Pick<OpenCodeReader, 'dreamTokens'>;
   priceEur?: (model: string, t: BudgetTokens) => number | null;
-  limit: () => DreamLimit | null;
+  limit: (project: string) => DreamLimit | null;
   now: () => number;
 }) {
   const price = deps.priceEur ?? priceDreamEur;
-  const usageAt = (t: number) => usageToday(deps.reader, price, t);
+  const usageAt = (project: string, t: number) =>
+    usageToday(deps.reader, price, t, project);
   return {
-    usage: (): DreamUsage => usageAt(deps.now()),
-    /** For the scheduler: may a new dream start now? */
-    hasRoom(): boolean {
-      const limit = deps.limit();
-      return limit !== null && !overLimit(limit, usageAt(deps.now()));
+    usage: (project: string): DreamUsage => usageAt(project, deps.now()),
+    /** For the scheduler: may a new dream of the project start now? */
+    hasRoom(project: string): boolean {
+      const limit = deps.limit(project);
+      return limit !== null && !overLimit(limit, usageAt(project, deps.now()));
     },
     /** For the runner: measured in the day the dream started in, also after midnight. */
-    overLimitFor(startedAt: number): boolean {
-      const limit = deps.limit();
-      return limit === null || overLimit(limit, usageAt(startedAt));
+    overLimitFor(project: string, startedAt: number): boolean {
+      const limit = deps.limit(project);
+      return limit === null || overLimit(limit, usageAt(project, startedAt));
     },
     /** For `DreamRunnerDeps.dreamTokens`. */
-    tokens: (since: number, until: number): number =>
-      deps.reader.dreamTokens(since, until).tokens,
+    tokens: (project: string, since: number, until: number): number =>
+      deps.reader.dreamTokens(since, until, dreamTitlePrefix(project)).tokens,
   };
 }

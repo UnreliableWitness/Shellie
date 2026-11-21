@@ -133,6 +133,7 @@ const opts = (signal = new AbortController().signal) => ({
   model: MODEL,
   folders: ['.apm'],
   signal,
+  project: 'p1',
 });
 
 const dreamBranches = (cwd = repo): string[] =>
@@ -233,7 +234,7 @@ describe('DreamRunner', () => {
         '--format',
         'json',
         '--title',
-        'Shellie dream: propose',
+        'Shellie dream p1: propose',
         '-m',
         MODEL,
       ],
@@ -242,7 +243,7 @@ describe('DreamRunner', () => {
         '--format',
         'json',
         '--title',
-        'Shellie dream: check',
+        'Shellie dream p1: check',
         '-m',
         MODEL,
       ],

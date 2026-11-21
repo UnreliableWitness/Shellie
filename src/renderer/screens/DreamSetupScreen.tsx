@@ -12,6 +12,7 @@ import { api } from '../api';
 import { IdleStep } from '../components/dreams/IdleStep';
 import { LimitStep } from '../components/dreams/LimitStep';
 import { RepoRow } from '../components/dreams/RepoRow';
+import { ownRepos } from '../components/dreams/dreamWords';
 import { useDreamsState } from '../components/dreams/useDreams';
 import { DreamsLoading } from '../components/dreams/DreamsLoading';
 import { ConfirmBar, PageHeader } from '../components/ui';
@@ -39,7 +40,16 @@ const repoNames = (view: DreamView, s: DreamingSettings): string[] =>
 
 /** "Let Shellie dream": the four steps and the panel that says what is being switched on. */
 export function DreamSetupScreen() {
-  const { view, failed, retry } = useDreamsState();
+  const { view, failed, retry, project } = useDreamsState();
+  if (project === null)
+    return (
+      <DreamsLoading
+        title="Let Shellie dream"
+        message="Dreams belong to a project. Add a project first."
+        failed
+        retry={retry}
+      />
+    );
   if (view === null)
     return (
       <DreamsLoading
@@ -49,7 +59,8 @@ export function DreamSetupScreen() {
         retry={retry}
       />
     );
-  return <Setup view={view} />;
+  // A new project is a new setup: nothing typed for one carries over to another.
+  return <Setup key={project} view={view} project={project} />;
 }
 
 /** A model picked but not saved: it is being tested, or the test failed. */
@@ -59,7 +70,7 @@ type PendingModel = { model: string; message: string | null };
  * Every control shows `shown`: the saved settings, or the held draft while a widening change waits for its
  * confirmation. Local state is only what is being typed, the tick box and a running test.
  */
-function Setup({ view }: { view: DreamView }) {
+function Setup({ view, project }: { view: DreamView; project: string }) {
   const [saved, setSaved] = useState<DreamingSettings>(view.settings);
   const savedRef = useRef(saved);
   savedRef.current = saved;
@@ -140,7 +151,9 @@ function Setup({ view }: { view: DreamView }) {
       setHeld(next);
       return;
     }
-    const result = await run(() => api().invoke('dream:save', next, false));
+    const result = await run(() =>
+      api().invoke('dream:save', project, next, false),
+    );
     if (result) {
       setSaved(result);
       setHeld(null);
@@ -150,7 +163,9 @@ function Setup({ view }: { view: DreamView }) {
   const confirmChange = async () => {
     if (!held) return;
     setBusy(true);
-    const result = await run(() => api().invoke('dream:save', held, true));
+    const result = await run(() =>
+      api().invoke('dream:save', project, held, true),
+    );
     setBusy(false);
     if (result) {
       setSaved(result);
@@ -161,7 +176,9 @@ function Setup({ view }: { view: DreamView }) {
 
   const switchOn = async () => {
     setBusy(true);
-    const result = await run(() => api().invoke('dream:switchOn', true));
+    const result = await run(() =>
+      api().invoke('dream:switchOn', project, true),
+    );
     setBusy(false);
     if (result) {
       setSaved(result);
@@ -182,7 +199,7 @@ function Setup({ view }: { view: DreamView }) {
     setError(null);
     let message: string | null = null;
     try {
-      const result = await api().invoke('dream:test', model);
+      const result = await api().invoke('dream:test', project, model);
       if (result.ok) {
         if (!same) {
           // Main switched dreaming off, and a held draft was based on the old model.
@@ -349,10 +366,13 @@ function Setup({ view }: { view: DreamView }) {
               title="Which repos, and what a dream may change"
               locked={testing}
             >
-              {view.repos.length === 0 && (
-                <p className="muted">No repos yet. Add one first.</p>
+              {ownRepos(view).length === 0 && (
+                <p className="muted">
+                  No repos in this project yet. Add one, or link one to this
+                  project, first.
+                </p>
               )}
-              {view.repos.map((r) => (
+              {ownRepos(view).map((r) => (
                 <RepoRow
                   key={r.id}
                   repo={r}

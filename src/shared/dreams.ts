@@ -83,6 +83,93 @@ export const defaultDreaming = (): DreamingSettings => ({
   idleMinutes: 10,
 });
 
+/**
+ * Dreaming is set up per project: one block per connection id. `legacy` is the single block of before 2026-11-21,
+ * kept until the first start that knows the repos splits it over their projects (`splitLegacyDreaming`).
+ */
+export const DreamingAllSchema = z.preprocess(
+  (raw) => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
+      return raw;
+    if ('projects' in raw) return raw;
+    // The old shape: one block for the whole app. One that does not parse is dreaming off.
+    const old = DreamingSettingsSchema.safeParse(raw);
+    return { projects: {}, legacy: old.success ? old.data : null };
+  },
+  z.object({
+    projects: z.record(z.string(), DreamingSettingsSchema).default({}),
+    legacy: DreamingSettingsSchema.nullable().default(null),
+  }),
+);
+export type DreamingAll = {
+  projects: Record<string, DreamingSettings>;
+  legacy: DreamingSettings | null;
+};
+
+export const defaultDreamingAll = (): DreamingAll => ({
+  projects: {},
+  legacy: null,
+});
+
+/** The project's block; a project without one is off and not set up. */
+export const dreamingOf = (
+  all: DreamingAll,
+  connectionId: string,
+): DreamingSettings => all.projects[connectionId] ?? defaultDreaming();
+
+/**
+ * The old single block as one block per project: a copy for every connection that owns a repo the block names,
+ * holding that connection's repos only. A copy is on only when the old block was on and the copy can still be
+ * switched on by itself; a repo without a project, or one Shellie no longer knows, is dropped.
+ */
+export function splitLegacyDreaming(
+  legacy: DreamingSettings,
+  repos: { id: string; connectionId: string | null }[],
+): Record<string, DreamingSettings> {
+  const out: Record<string, DreamingSettings> = {};
+  for (const r of repos) {
+    const cfg = legacy.repos[r.id];
+    if (!cfg || r.connectionId === null) continue;
+    const block = (out[r.connectionId] ??= {
+      ...structuredClone(legacy),
+      enabled: false,
+      repos: {},
+    });
+    block.repos[r.id] = structuredClone(cfg);
+  }
+  for (const block of Object.values(out))
+    block.enabled = legacy.enabled && canSwitchOn(block) === null;
+  return out;
+}
+
+/**
+ * The blocks without what no longer belongs in them: a repo that is now another project's (or no project's), and,
+ * when `projects` names the connections that exist, the block of a project that is gone. A block left with nothing
+ * to dream about is off. A repo Shellie does not know is left (its removal clears it).
+ */
+export function pruneDreaming(
+  all: DreamingAll,
+  repos: { id: string; connectionId: string | null }[],
+  projects?: string[],
+): DreamingAll {
+  const home = new Map(repos.map((r) => [r.id, r.connectionId]));
+  const out: Record<string, DreamingSettings> = {};
+  for (const [project, block] of Object.entries(all.projects)) {
+    if (projects && !projects.includes(project)) continue;
+    const kept = Object.fromEntries(
+      Object.entries(block.repos).filter(
+        ([id]) => !home.has(id) || home.get(id) === project,
+      ),
+    );
+    const next = { ...block, repos: kept };
+    out[project] = {
+      ...next,
+      enabled: next.enabled && canSwitchOn(next) === null,
+    };
+  }
+  return { ...all, projects: out };
+}
+
 /** Null when dreaming may be switched on; else the first missing thing. */
 export function canSwitchOn(
   d: DreamingSettings,
@@ -348,6 +435,8 @@ export type DreamWait =
   | 'battery'
   | 'agents-busy'
   | 'running'
+  /** A dream of another project runs (one at a time on the machine); only the screens' status has it. */
+  | 'running-elsewhere'
   | 'limit'
   | 'nothing-ready';
 
@@ -359,7 +448,7 @@ export type DreamUsage = {
   eur: number | null;
 };
 
-/** Everything the Dreams screens show (`dream:get`). */
+/** Everything the Dreams screens show for one project (`dream:get`): its setup, its repos, its usage, its journal. */
 export type DreamView = {
   settings: DreamingSettings;
   /**
@@ -383,6 +472,11 @@ export type DreamView = {
   repos: {
     id: string;
     name: string;
+    /**
+     * A repo without a project that still has a result or an opened branch from before dreams were per project: it
+     * shows in every project until reviewed, and cannot be set up to dream.
+     */
+    orphan?: boolean;
     /** The folders a dream may change, prefilled for a repo that is not set up yet. */
     suggestedFolders: string[];
     /** Sessions waiting to be dreamt about, as far as the scheduler read them (0 when not read yet). */

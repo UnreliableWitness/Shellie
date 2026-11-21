@@ -84,6 +84,8 @@ export function waitLine(wait: DreamWait, model: string | null): string {
       return 'Waiting: an agent is working';
     case 'running':
       return 'A dream is already running';
+    case 'running-elsewhere':
+      return 'Another project is dreaming';
     case 'limit':
       return "Today's limit reached";
     case 'nothing-ready':
@@ -221,6 +223,10 @@ export function stepLine(
     ? `Reading ${sessions} session${sessions === 1 ? '' : 's'}`
     : 'Reading sessions';
 }
+
+/** The project's own repos: the ones that can be set up to dream (a repo without a project only shows what it left). */
+export const ownRepos = (view: DreamView): ViewRepo[] =>
+  view.repos.filter((r) => !r.orphan);
 
 /** The repos with a result waiting for review, as the navigation counts them. */
 export const openResults = (view: DreamView): ViewRepo[] =>

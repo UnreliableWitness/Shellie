@@ -13,6 +13,7 @@ import {
   viewOf,
   withResults,
 } from '../../test-helpers/dreamFixtures';
+import { activateProject } from '../../test-helpers/project';
 
 beforeEach(() => {
   useStore.setState({ screen: { kind: 'home' }, previous: null, notices: [] });
@@ -112,7 +113,10 @@ describe('DreamNavStatus', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Stop this dream' }),
     );
-    expect(calls.filter((c) => c.channel === 'dream:stop')).toHaveLength(1);
+    // Stop names the project whose dream it is.
+    expect(
+      calls.filter((c) => c.channel === 'dream:stop').map((c) => c.args),
+    ).toEqual([['p1']]);
     expect(screen.queryByText('Reading sessions')).toBeNull();
   });
 
@@ -147,4 +151,44 @@ describe('DreamNavStatus', () => {
     await userEvent.click(screen.getByRole('button', { name: 'elsewhere' }));
     expect(screen.queryByText('Reading sessions')).toBeNull();
   });
+});
+
+describe('dreams of another project', () => {
+  it('shows nothing of a dream that runs for another project: the plain line, no panel, no Stop', async () => {
+    installFakeApi({
+      'dream:get': () =>
+        viewOf({
+          settings: settings({ enabled: true }),
+          waiting: 'running-elsewhere',
+          running: null,
+        }),
+    });
+    render(<DreamNavStatus rail={false} />);
+    const line = await screen.findByRole('button', { name: /Dreams on/ });
+    expect(line).not.toHaveAttribute('aria-haspopup');
+    await userEvent.click(line);
+    expect(
+      screen.queryByRole('button', { name: 'Stop this dream' }),
+    ).toBeNull();
+    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
+  });
+
+  it('without a project there is no Dreams item and no status line', async () => {
+    const { calls } = installFakeApi();
+    useStore.setState({ connections: [], connectionId: null });
+    const { container } = render(
+      <>
+        <DreamsNavItem rail={false} />
+        <DreamNavStatus rail={false} />
+      </>,
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(container).toBeEmptyDOMElement();
+    expect(calls.filter((c) => c.channel === 'dream:get')).toHaveLength(0);
+  });
+});
+
+// Dreams belong to a project: every test here has one active.
+beforeEach(() => {
+  activateProject();
 });

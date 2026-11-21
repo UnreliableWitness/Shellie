@@ -4664,6 +4664,8 @@ export function createHandlers(s: Services): Handlers {
       dropTypes(id);
       connectionsChanged();
       reposChanged();
+      // The project's dream setup goes with it.
+      await dreams.projectsChanged();
       for (const brainId of archived) s.broadcast('brain:changed', { brainId });
       tel.event('connection.removed');
     },
@@ -4672,6 +4674,8 @@ export function createHandlers(s: Services): Handlers {
       if (connectionId !== null) s.connections.get(connectionId);
       const repo = await s.repos.setConnection(repoId, connectionId);
       reposChanged();
+      // A repo dreams for its own project only.
+      await dreams.projectsChanged();
       tel.event('repo.connectionLinked', { linked: connectionId !== null });
       return repo;
     },
