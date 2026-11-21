@@ -11,7 +11,7 @@ The owner found one dream setup and one Dreams list for every project confusing.
 
 - **Settings** (`src/shared/dreams.ts`, `src/shared/usage.ts`, `SettingsStore`). `dreaming` holds one block per
   connection id (`projects`), each with the fields the single block had. `SettingsStore.updateDreaming` is still the
-  only writer (`updateDreamingOf` writes one project's block through it). A project without a block is off.
+  only writer (the dream handlers and the scheduler write one project's block through it). A project without a block is off.
 - **The old setup** (`toProjects` in `startDreams.ts`, at the first start that knows the repos). The single block is
   kept as `legacy` when the file loads, then copied to every project that owns one of its repos, each copy with that
   project's repos only; a copy is on only when the old setup was on and the copy still has a repo that is on with a
@@ -38,7 +38,8 @@ The owner found one dream setup and one Dreams list for every project confusing.
   shows the picked project; its Open Dreams button makes that project the active one.
 - **Projects and repos that change**. Removing a project removes its block and notice; a repo linked to another
   project leaves its old block (`pruneDreaming`), which goes off when nothing is left, and is off in the new project
-  until it is set up there. A dream running for it stops.
+  until it is set up there. A dream running for it stops (found by the final review: the first version asked the
+  view of the project, which no longer named the dream once its repo had moved; it now asks the scheduler).
 - **A repo without a project** does not dream and is not offered in any setup. If it still has a result or an
   opened branch from before, that shows in every project's Dreams screen until reviewed.
 
@@ -79,6 +80,10 @@ The owner found one dream setup and one Dreams list for every project confusing.
 - Home lists tasks and pull requests of every project, but its "While you were away" band shows the active
   project's dreams only.
 - Not run on Windows.
+- The journal lines of a repo that was removed, or that has no project and nothing to review, show in no project
+  (the file keeps them).
+- A project switched off because another project's dream was answered by a wrong model gets the same notice text
+  as that project ("a call in a dream"), without a repo name.
 - A downgrade to a version from before this change reads the new `dreaming` shape as not valid: dreaming is off
   there and the setup must be made again.
 - Token usage of dreams from before this change no longer counts toward any limit (a matter of the day of the

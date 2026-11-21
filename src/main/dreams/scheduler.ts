@@ -315,6 +315,13 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     if (!repo || project === null) return false;
     const s = dreamingOf(all(), project);
     const cfg = s.repos[repoId];
+    // Checked again here: a switch-off may have landed while the check was reading sessions or asking for models.
+    if (
+      !s.enabled ||
+      offUnrecorded.has(project) ||
+      d.store.switchedOff(project)
+    )
+      return false;
     if (!cfg || s.model === null) return false;
     const model = s.model;
     const stop = new AbortController();
@@ -547,6 +554,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         offUnrecorded.delete(project);
       });
     },
+    /** The dream that runs now, with the project it was started for; null when none does. */
+    runningDream(): { repoId: string; project: string } | null {
+      return dream && { repoId: dream.repoId, project: dream.project };
+    },
     /** Stop: the running dream, when it is the project's. */
     stopDream(project: string): void {
       if (dream?.project === project) abort('stopped');
@@ -618,7 +629,8 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
               }
             : null,
         switchedOff: d.store.switchedOff(project),
-        running: running && own.has(running.repoId) ? running : null,
+        // The scheduler's own record: a dream stays the project's it started for, wherever its repo is linked now.
+        running: running && dream?.project === project ? running : null,
         newSessions: Object.fromEntries(
           fresh.map(([id, k]) => [id, k.sessions]),
         ),

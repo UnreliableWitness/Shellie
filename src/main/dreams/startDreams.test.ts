@@ -209,6 +209,10 @@ describe('toProjects', () => {
     await toProjects(s, noRecord, []);
     expect(s.all()).toEqual({ projects: {}, legacy: block() });
     expect(s.writes).not.toHaveBeenCalled();
+    // The old switch-off record waits with it.
+    const adopt = vi.fn(async () => undefined);
+    await toProjects(s, { adoptLegacySwitchedOff: adopt }, []);
+    expect(adopt).not.toHaveBeenCalled();
   });
 
   it('takes a repo out of the block of a project it no longer belongs to, and switches that block off when nothing is left', async () => {

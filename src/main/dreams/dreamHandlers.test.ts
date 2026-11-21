@@ -117,6 +117,7 @@ beforeEach(async () => {
     dreamNow: vi.fn<Scheduler['dreamNow']>(async () => ({ started: true })),
     stopDream: vi.fn(),
     stopDreamOf: vi.fn(async () => undefined),
+    runningDream: vi.fn(() => null),
     status: vi.fn(() => status),
     switchOn: vi.fn(async (project: string, save: () => Promise<void>) => {
       await save();
@@ -1825,10 +1826,10 @@ describe('dreams of several projects', () => {
 
   it('a repo moved to another project leaves its old block; a block left with nothing is off and its dream stops', async () => {
     await setDreaming(ready({ enabled: true }));
-    status = {
-      ...status,
-      running: { repoId: 'r1', project: P, startedAt: 1, step: 'reading' },
-    };
+    // The scheduler's own record of the dream: its project is the one it started for.
+    scheduler.runningDream.mockReturnValue({ repoId: 'r1', project: P });
+    // As the real status: the repo is no longer P's, so P's view names no running dream.
+    status = { ...status, running: null };
     deps.repos = () => [
       { id: 'r1', name: 'Portal', path: repoPath, connectionId: Q },
     ];
@@ -1862,5 +1863,24 @@ describe('dreams of several projects', () => {
   it('dream:stop stops the named project’s dream only', async () => {
     await api().handlers['dream:stop'](Q);
     expect(scheduler.stopDream).toHaveBeenCalledWith(Q);
+  });
+});
+
+describe('before the old setup is split over the projects', () => {
+  it('refuses to write a project\u2019s setup, so the copy of the old one is not lost', async () => {
+    await settings.updateDreaming(() => ({
+      projects: {},
+      legacy: ready({ enabled: true }),
+    }));
+    await expect(api().handlers['dream:switchOff'](P)).rejects.toThrow(
+      'Dreams are still starting',
+    );
+    await expect(
+      api().handlers['dream:save'](P, ready(), true),
+    ).rejects.toThrow('Dreams are still starting');
+    expect(settings.get().dreaming).toEqual({
+      projects: {},
+      legacy: ready({ enabled: true }),
+    });
   });
 });

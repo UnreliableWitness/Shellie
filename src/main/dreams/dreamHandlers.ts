@@ -125,7 +125,12 @@ export type DreamHandlerDeps = {
   /** Null until the scheduler started (the store is loaded then); only reads are answered before. */
   scheduler: () => Pick<
     DreamScheduler,
-    'dreamNow' | 'stopDream' | 'stopDreamOf' | 'status' | 'switchOn'
+    | 'dreamNow'
+    | 'stopDream'
+    | 'stopDreamOf'
+    | 'status'
+    | 'switchOn'
+    | 'runningDream'
   > | null;
   repos: () => Repo[];
   git: Pick<
@@ -218,6 +223,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     const seen: { before?: DreamingSettings } = {};
     const all = (
       await d.settings.updateDreaming((cur) => {
+        // The setup of before dreams were per project is still to be split over the projects (at the start): a
+        // block written now would win over this project's copy and lose it.
+        if (cur.legacy !== null) throw refuse('Dreams are still starting');
         seen.before = dreamingOf(cur, project);
         return {
           ...cur,
@@ -1012,19 +1020,20 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             return null;
           },
         );
-      if (after)
-        for (const [project, was] of Object.entries(before.projects)) {
-          const now = after.projects[project];
-          if (was.enabled && !now?.enabled)
+      if (after) {
+        for (const [project, was] of Object.entries(before.projects))
+          if (was.enabled && !after.projects[project]?.enabled)
             event('dream.switched_off', { by: 'narrowed' });
-          // A dream of a repo that left the block, or of a project that is gone or off, stops.
-          const running = s?.status(project).running ?? null;
-          if (
-            running &&
-            (!now?.enabled || now.repos[running.repoId]?.on !== true)
-          )
-            s?.stopDream(project);
-        }
+        // A dream of a repo that left its project's block, or of a project that is gone or off, stops. Asked of
+        // the scheduler's own record: the repo may be another project's by now.
+        const running = s?.runningDream() ?? null;
+        const block = running ? after.projects[running.project] : undefined;
+        if (
+          running &&
+          (!block?.enabled || block.repos[running.repoId]?.on !== true)
+        )
+          s?.stopDream(running.project);
+      }
       // The store is loaded once the scheduler started.
       if (s)
         for (const p of d.store.switchedOffProjects())

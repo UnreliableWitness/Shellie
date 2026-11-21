@@ -111,6 +111,8 @@ export async function toProjects(
         repos,
       ),
     );
+  // While the old setup waits, its switch-off record waits with it (it keeps every project off meanwhile).
+  if (waits) return;
   await store.adoptLegacySwitchedOff((record) => {
     const home = repos.find((r) => r.id === record.repoId)?.connectionId;
     if (home) return [home];

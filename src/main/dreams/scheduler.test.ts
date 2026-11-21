@@ -734,6 +734,35 @@ describe('several projects', () => {
     expect(fake.calls[0].signal.aborted).toBe(true);
   });
 
+  it('a dream stays its project\u2019s when its repo is linked to another project meanwhile', async () => {
+    setBlock(blockFor('r2'), Q);
+    let home: string = P;
+    start({ repos: () => [{ ...REPO, connectionId: home }, repoOf('r2', Q)] });
+    await scheduler!.dreamNow('r1');
+    home = Q;
+    expect(scheduler!.runningDream()).toEqual({ repoId: 'r1', project: P });
+    expect(scheduler!.status(P).running?.repoId).toBe('r1');
+    // The other project sees no dream of its own, and its Stop does nothing.
+    expect(scheduler!.status(Q)).toMatchObject({
+      running: null,
+      wait: 'running-elsewhere',
+    });
+    scheduler!.stopDream(Q);
+    expect(fake.calls[0].signal.aborted).toBe(false);
+  });
+
+  it('does not start a dream of a project that was switched off while the check was reading', async () => {
+    const reading = vi.fn(async () => {
+      // As `dream:switchOff` landing while the sessions are read.
+      setBlock({ ...block(), enabled: false });
+      return sessions;
+    });
+    start({ sessionsOf: reading });
+    await vi.advanceTimersByTimeAsync(DREAM_TICK_MS);
+    expect(reading).toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(0);
+  });
+
   it('the dream carries its project, for the title of its sessions', async () => {
     start();
     await scheduler!.dreamNow('r1');
