@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/** A task whose terminals were active within this long stays in Active. */
-export const RECENT_MS = 4 * 3_600_000;
-
 export type CiState = 'failing' | 'running' | 'passing' | 'none';
 export type ReviewState = 'changes-asked' | 'approved' | 'waiting' | 'none';
 
@@ -38,67 +35,13 @@ export const PulseSnapshotSchema = z.object({
 });
 export type PulseSnapshot = z.infer<typeof PulseSnapshotSchema>;
 
-/** The pulse:get result: the snapshot plus when each task's terminals were last active (epoch ms). */
-export type PulseView = PulseSnapshot & { lastActive: Record<string, number> };
-
-export type Lifecycle =
-  | 'needs-you'
-  | 'active'
-  | 'in-review'
-  | 'merged'
-  | 'parked';
-export const LIFECYCLE_ORDER: Lifecycle[] = [
-  'needs-you',
-  'active',
-  'in-review',
-  'merged',
-  'parked',
-];
-export const LIFECYCLE_LABEL: Record<Lifecycle, string> = {
-  'needs-you': 'Needs you',
-  active: 'Active',
-  'in-review': 'In review',
-  merged: 'Merged · close me',
-  parked: 'Parked',
-};
-
-export type ChipKind =
-  | 'ci-failing'
-  | 'conflict'
-  | 'changes-asked'
-  | 'comments'
-  | 'draft'
-  | 'approved'
-  | 'waiting'
-  | 'finish';
-export type Chip = {
-  kind: ChipKind;
-  text: string;
-  tone: 'red' | 'amber' | 'green' | 'muted';
-  workspaceId: string | null;
-};
-export type TaskLifecycle = {
-  group: Lifecycle;
-  chip: Chip | null;
-  story: string;
-  sortKey: number;
-};
-
-type Trouble =
-  | 'ci-failing'
-  | 'conflict'
-  | 'changes-asked'
-  | 'comments'
-  | 'agent';
+type Trouble = 'ci-failing' | 'conflict' | 'changes-asked' | 'comments';
 const SEVERITY: Trouble[] = [
   'ci-failing',
   'conflict',
   'changes-asked',
   'comments',
-  'agent',
 ];
-/** Larger than any epoch ms, so severity dominates the createdAt tie-break in a sort key. */
-const SEVERITY_STEP = 1e14;
 
 /** Least advanced first: none/abandoned, draft, published, completed. */
 function rank(p: PrPulse): number {
@@ -128,58 +71,14 @@ function ageText(ms: number): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-function troubleChip(kind: Trouble, p: PrPulse): Chip | null {
-  const base = { workspaceId: p.workspaceId };
-  switch (kind) {
-    case 'ci-failing':
-      return { kind, text: 'CI failing', tone: 'red', ...base };
-    case 'conflict':
-      return { kind, text: 'Conflict', tone: 'red', ...base };
-    case 'changes-asked':
-      return { kind, text: 'Changes asked', tone: 'amber', ...base };
-    case 'comments':
-      return {
-        kind,
-        text: p.unanswered === 1 ? '1 comment' : `${p.unanswered} comments`,
-        tone: 'amber',
-        ...base,
-      };
-    case 'agent':
-      return null;
-  }
+/** Merged: at least one live PR, and all live PRs completed (no PR or an abandoned one does not block). */
+function isMerged(pulses: PrPulse[]): boolean {
+  const withPr = pulses.filter((p) => p.pr && p.pr.status !== 'abandoned');
+  return withPr.length > 0 && withPr.every((p) => p.pr!.status === 'completed');
 }
 
-export function lifecycleOf(input: {
-  pulses: PrPulse[];
-  lastActiveAt: number | null;
-  agentBlocked: boolean;
-  now: number;
-}): TaskLifecycle {
-  const { pulses, lastActiveAt, agentBlocked, now } = input;
-  const withPr = pulses.filter((p) => p.pr && p.pr.status !== 'abandoned');
-
-  // Merged: at least one live PR, and all live PRs completed (no PR or an abandoned one does not block).
-  if (withPr.length > 0 && withPr.every((p) => p.pr!.status === 'completed')) {
-    const closed = Math.max(
-      ...withPr.map((p) => {
-        const t = p.pr!.closedAt ? Date.parse(p.pr!.closedAt) : 0;
-        return Number.isNaN(t) ? 0 : t;
-      }),
-    );
-    return {
-      group: 'merged',
-      chip: {
-        kind: 'finish',
-        text: 'Finish',
-        tone: 'green',
-        workspaceId: null,
-      },
-      story: 'PR merged',
-      sortKey: closed,
-    };
-  }
-
-  // Worst trouble across workspaces: by severity, then older PR first.
+/** Worst trouble across workspaces: by severity, then older PR first. */
+function worstTrouble(pulses: PrPulse[]): { kind: Trouble; p: PrPulse } | null {
   let worst: { kind: Trouble; p: PrPulse } | null = null;
   for (const p of pulses) {
     const kind = troubleOf(p);
@@ -192,73 +91,54 @@ export function lifecycleOf(input: {
       worst = { kind, p };
     }
   }
-  const trouble: Trouble | null =
-    worst?.kind ?? (agentBlocked ? 'agent' : null);
+  return worst;
+}
 
-  const least = pulses.length === 0 ? 0 : Math.min(...pulses.map(rank));
+/** The pulse a task's story is told about: the troubled one, else the longest-waiting published PR, else any active one. */
+function focusOf(
+  pulses: PrPulse[],
+  worst: PrPulse | undefined,
+): PrPulse | undefined {
   const published = pulses.filter((p) => rank(p) === 2);
   const oldest = [...published].sort((x, y) => createdMs(x) - createdMs(y))[0];
-  const focus =
-    worst?.p ??
+  return (
+    worst ??
     oldest ??
     pulses.find((p) => p.pr?.status === 'active') ??
-    pulses[0];
+    pulses[0]
+  );
+}
 
-  const story = storyOf(focus, worst ? worst.kind : null, agentBlocked, now);
+const MERGED_STORY = 'PR merged';
 
-  if (lastActiveAt !== null && now - lastActiveAt < RECENT_MS) {
-    return {
-      group: 'active',
-      chip: worst ? troubleChip(worst.kind, worst.p) : null,
-      story,
-      sortKey: -lastActiveAt,
-    };
-  }
-  if (trouble) {
-    return {
-      group: 'needs-you',
-      chip: worst ? troubleChip(worst.kind, worst.p) : null,
-      story,
-      sortKey:
-        SEVERITY.indexOf(trouble) * SEVERITY_STEP +
-        (worst ? createdMs(worst.p) : 0),
-    };
-  }
-  if (least === 2 && oldest) {
-    const approved = published.every((p) => p.review === 'approved');
-    const since = createdMs(oldest);
-    return {
-      group: 'in-review',
-      chip: approved
-        ? {
-            kind: 'approved',
-            text: 'Approved',
-            tone: 'green',
-            workspaceId: null,
-          }
-        : {
-            kind: 'waiting',
-            text: since > 0 ? ageText(now - since) : 'Waiting',
-            tone: 'muted',
-            workspaceId: null,
-          },
-      story,
-      sortKey: since,
-    };
-  }
-  const draft = least === 1 ? pulses.find((p) => rank(p) === 1) : undefined;
+export type TaskSignal = {
+  state: 'waits' | 'merged' | 'none';
+  /** One line for the tooltip; '' when there is nothing to say. */
+  story: string;
+  /** The workspace whose PR the wait is about; null for a blocked agent, merged and none. */
+  prWorkspaceId: string | null;
+};
+
+/** What a task's PRs and agents ask of the developer, for the one mark on its row. Time plays no part. */
+export function taskSignal(input: {
+  pulses: PrPulse[];
+  agentBlocked: boolean;
+  now: number;
+}): TaskSignal {
+  const { pulses, agentBlocked, now } = input;
+  // A blocked agent comes before merged: amber outranks the green check.
+  if (!agentBlocked && isMerged(pulses))
+    return { state: 'merged', story: MERGED_STORY, prWorkspaceId: null };
+  const worst = worstTrouble(pulses);
   return {
-    group: 'parked',
-    chip: draft
-      ? {
-          kind: 'draft',
-          text: 'Draft',
-          tone: 'muted',
-          workspaceId: draft.workspaceId,
-        }
-      : null,
-    story,
-    sortKey: lastActiveAt === null ? 0 : -lastActiveAt,
+    state: worst || agentBlocked ? 'waits' : 'none',
+    story: storyOf(
+      focusOf(pulses, worst?.p),
+      worst?.kind ?? null,
+      agentBlocked,
+      now,
+    ),
+    prWorkspaceId: worst?.p.workspaceId ?? null,
   };
 }
 

@@ -814,18 +814,14 @@ describe('handlers: finish with a pull request', () => {
     expect(taskClient).not.toHaveBeenCalled();
   });
 
-  it('pulse:get adds the latest active or agent interval end per task', async () => {
+  it('pulse:get returns the snapshot alone, with nothing about when a task was last active', async () => {
     const hx = await prHarness();
-    expect(await hx.h['pulse:get']()).toMatchObject({
+    await hx.services.time.addActive(hx.t.id, [1000, 2000]);
+    expect(await hx.h['pulse:get']()).toEqual({
       tasks: {},
       error: null,
       checkedAt: null,
-      lastActive: {},
     });
-    await hx.services.time.addActive(hx.t.id, [1000, 2000]);
-    await hx.services.time.addAgent(hx.t.id, 'claude-code', [3000, 5000]);
-    const view = await hx.h['pulse:get']();
-    expect(view.lastActive).toEqual({ [hx.t.id]: 5000 });
   });
 
   it('pulse:refresh finds the PR, links it on the workspace and broadcasts', async () => {

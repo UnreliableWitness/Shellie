@@ -128,7 +128,7 @@ import {
 import { type CostServerStatus, validServerUrl } from '../../shared/costServer';
 import { HomeService } from '../home/HomeService';
 import { TaskPulseService } from '../pulse/TaskPulseService';
-import type { PulseSnapshot, PulseView } from '../../shared/pulse';
+import type { PulseSnapshot } from '../../shared/pulse';
 import {
   ReadingService,
   type ReadingWorkItem,
@@ -3214,22 +3214,6 @@ export function createHandlers(s: Services): Handlers {
     patch: Parameters<typeof setWorkspace>[2],
   ) => mutateTask(taskId, (t) => setWorkspace(t, id, patch));
 
-  /** The latest end of the task's active and agent intervals; absent when it never ran. */
-  const lastActiveAt = (taskId: string): number | undefined => {
-    const ends = [
-      ...s.time.activeIntervals(taskId),
-      ...Object.values(s.time.agentIntervals(taskId)).flat(),
-    ].map((iv) => iv[1]);
-    return ends.length ? Math.max(...ends) : undefined;
-  };
-  const pulseView = (snapshot: PulseSnapshot): PulseView => {
-    const lastActive: Record<string, number> = {};
-    for (const t of s.store.state.tasks) {
-      const at = lastActiveAt(t.id);
-      if (at !== undefined) lastActive[t.id] = at;
-    }
-    return { ...snapshot, lastActive };
-  };
   const pulse =
     s.pulse ??
     new TaskPulseService({
@@ -5030,8 +5014,8 @@ export function createHandlers(s: Services): Handlers {
       return st;
     },
     'reading:get': () => reading.list(),
-    'pulse:get': async () => pulseView(await pulse.get()),
-    'pulse:refresh': async () => pulseView(await pulse.refresh()),
+    'pulse:get': () => pulse.get(),
+    'pulse:refresh': () => pulse.refresh(),
     'home:get': () => home.get(),
     'home:refresh': () => home.refresh(),
     'home:stats': async (period) =>

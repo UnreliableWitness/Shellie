@@ -1,18 +1,20 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { readingBrain, readingRead } from '../test-helpers/readingFixture';
-import {
-  type Lifecycle,
-  type PrPulse,
-  type PulseView,
-  type TaskLifecycle,
-} from '../../shared/pulse';
-import { groupTasks, recentAt, TaskNav } from './TaskNav';
+import { type PrPulse, type PulseSnapshot } from '../../shared/pulse';
+import { listTasks, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
   {
@@ -197,7 +199,7 @@ beforeEach(() => {
 });
 
 describe('attention', () => {
-  it('marks a task whose terminal waits on the developer', () => {
+  const withAgent = (reason: 'blocked' | 'done') => {
     installFakeApi();
     const withTerminal = {
       ...tasks[0],
@@ -207,7 +209,7 @@ describe('attention', () => {
       tasks: [withTerminal],
       attention: {
         c1: {
-          reason: 'blocked',
+          reason,
           kind: 'permission',
           message: 'approve Bash: ls',
           since: 1,
@@ -215,9 +217,20 @@ describe('attention', () => {
       },
     });
     render(<TaskNav />);
-    expect(
-      screen.getByLabelText('Needs permission: approve Bash: ls'),
-    ).toBeInTheDocument();
+  };
+
+  it('marks a task whose agent is blocked with what it asks, and the mark is not a button', () => {
+    withAgent('blocked');
+    const mark = screen.getByRole('img', {
+      name: 'Needs permission: approve Bash: ls',
+    });
+    expect(mark).toHaveClass('navmark', 'navmark-waits');
+  });
+
+  it('does not mark a task whose agent only finished its turn', () => {
+    withAgent('done');
+    expect(document.querySelector('.navmark')).toBeNull();
+    expect(document.querySelector('.attention-dot')).toBeNull();
   });
 });
 
@@ -348,80 +361,59 @@ describe('brains', () => {
   });
 });
 
-const lifeOf =
-  (by: Record<string, { group: Lifecycle; sortKey?: number }> = {}) =>
-  (t: TaskView): TaskLifecycle => ({
-    group: by[t.id]?.group ?? 'parked',
-    chip: null,
-    story: '',
-    sortKey: by[t.id]?.sortKey ?? 0,
-  });
 const ids = (list: TaskView[]) => list.map((t) => t.id);
 
-describe('groupTasks', () => {
-  it('groups open tasks by lifecycle in order, omits empty groups and collects done tasks', () => {
-    const ready = (id: string): TaskView => ({ ...tasks[0], id });
-    const g = groupTasks(
-      [...tasks, ready('p'), ready('q'), ready('r')],
+describe('listTasks', () => {
+  const at = (id: string, createdAt: string): TaskView => ({
+    ...tasks[0],
+    id,
+    createdAt,
+  });
+  const openIds = (list: TaskView[]) =>
+    ids(listTasks(list, repos, null, undefined).open);
+
+  it('lists open tasks newest first and collects done tasks apart', () => {
+    const l = listTasks(
+      [
+        at('old', '2026-11-01T08:00:00.000Z'),
+        at('new', '2026-11-20T08:00:00.000Z'),
+        at('mid', '2026-11-10T08:00:00.000Z'),
+        tasks[2],
+      ],
       repos,
       null,
       undefined,
-      lifeOf({
-        p: { group: 'parked' },
-        q: { group: 'in-review' },
-        r: { group: 'needs-you' },
-        a: { group: 'merged' },
-      }),
     );
-    expect(g.groups.map((x) => [x.group, ids(x.tasks)])).toEqual([
-      ['needs-you', ['r']],
-      ['active', ['b', 'd']],
-      ['in-review', ['q']],
-      ['merged', ['a']],
-      ['parked', ['p']],
-    ]);
-    expect(ids(g.done)).toEqual(['c']);
+    expect(ids(l.open)).toEqual(['new', 'mid', 'old']);
+    expect(ids(l.done)).toEqual(['c']);
   });
 
-  it('sorts a group by sortKey', () => {
-    const ready = (id: string): TaskView => ({ ...tasks[0], id });
-    const g = groupTasks(
-      [ready('x'), ready('y'), ready('z')],
-      repos,
-      null,
-      undefined,
-      lifeOf({
-        x: { group: 'parked', sortKey: 3 },
-        y: { group: 'parked', sortKey: 1 },
-        z: { group: 'parked', sortKey: 2 },
-      }),
-    );
-    expect(ids(g.groups[0].tasks)).toEqual(['y', 'z', 'x']);
-  });
-
-  it('puts setting-up, setup-failed and finishing tasks in Active whatever their lifecycle', () => {
-    const t = (id: string, status: TaskView['status']): TaskView => ({
-      ...tasks[0],
-      id,
-      status,
-    });
-    const g = groupTasks(
-      [t('x', 'setting-up'), t('y', 'setup-failed'), t('z', 'finishing')],
-      repos,
-      null,
-      undefined,
-      lifeOf({
-        x: { group: 'merged' },
-        y: { group: 'parked' },
-        z: { group: 'needs-you' },
-      }),
-    );
-    expect(g.groups.map((x) => [x.group, ids(x.tasks)])).toEqual([
-      ['active', ['x', 'y', 'z']],
+  it('orders tasks created at the same moment by id', () => {
+    const t = '2026-11-20T08:00:00.000Z';
+    expect(openIds([at('z', t), at('x', t), at('y', t)])).toEqual([
+      'x',
+      'y',
+      'z',
     ]);
   });
 
-  it('lets tasks without a repo join the groups like any other (#225)', () => {
+  it('keeps one order for unreadable dates, whatever order they arrive in', () => {
+    const list = [at('z', 'now'), at('x', 'now'), at('y', 'now')];
+    expect(openIds(list)).toEqual(['x', 'y', 'z']);
+    expect(openIds([...list].reverse())).toEqual(['x', 'y', 'z']);
+  });
+
+  it('does not order by status: a setting-up task keeps its place', () => {
+    expect(
+      openIds([
+        at('old', '2026-11-01T08:00:00.000Z'),
+        { ...at('busy', '2026-11-02T08:00:00.000Z'), status: 'setting-up' },
+        at('new', '2026-11-20T08:00:00.000Z'),
+      ]),
+    ).toEqual(['new', 'busy', 'old']);
+  });
+
+  it('lets tasks without a repo join the list like any other (#225)', () => {
     const scratch: TaskView = {
       ...tasks[0],
       id: 'n',
@@ -430,20 +422,15 @@ describe('groupTasks', () => {
       baseRef: '',
       connectionId: 'A',
     };
-    const g = groupTasks(
+    const l = listTasks(
       [scratch, { ...scratch, id: 'm', status: 'done' }],
       repos,
       null,
       undefined,
-      lifeOf(),
     );
-    expect(g.groups.map((x) => [x.group, ids(x.tasks)])).toEqual([
-      ['parked', ['n']],
-    ]);
-    expect(ids(g.done)).toEqual(['m']);
-    expect(
-      groupTasks([scratch], repos, 'B', ['A', 'B'], lifeOf()).groups,
-    ).toEqual([]);
+    expect(ids(l.open)).toEqual(['n']);
+    expect(ids(l.done)).toEqual(['m']);
+    expect(listTasks([scratch], repos, 'B', ['A', 'B']).open).toEqual([]);
   });
 
   it('keeps only the connection’s tasks and tasks without one (#219)', () => {
@@ -461,15 +448,11 @@ describe('groupTasks', () => {
       { ...tasks[1], id: 'n1', repoId: 'r3' },
       { ...tasks[2], id: 'n2', repoId: 'r3' },
     ];
-    const g = groupTasks(mixed, split, 'A', undefined, lifeOf());
-    expect(g.groups.flatMap((x) => ids(x.tasks)).sort()).toEqual([
-      'a1',
-      'a2',
-      'n1',
-    ]);
-    expect(ids(g.done)).toEqual(['a3', 'n2']);
-    const all = groupTasks(mixed, split, null, undefined, lifeOf());
-    expect(all.groups.flatMap((x) => x.tasks)).toHaveLength(4);
+    const l = listTasks(mixed, split, 'A', undefined);
+    expect(ids(l.open)).toEqual(['a1', 'a2', 'n1']);
+    expect(ids(l.done)).toEqual(['a3', 'n2']);
+    const all = listTasks(mixed, split, null, undefined);
+    expect(all.open).toHaveLength(4);
     expect(all.done).toHaveLength(3);
   });
 
@@ -481,11 +464,8 @@ describe('groupTasks', () => {
       repoId: 'r1',
       connectionId: 'B',
     };
-    const g = groupTasks([orphan], split, 'A', ['A'], lifeOf());
-    expect(g.groups.flatMap((x) => ids(x.tasks))).toEqual(['o1']);
-    expect(
-      groupTasks([orphan], split, 'A', ['A', 'B'], lifeOf()).groups,
-    ).toEqual([]);
+    expect(ids(listTasks([orphan], split, 'A', ['A']).open)).toEqual(['o1']);
+    expect(listTasks([orphan], split, 'A', ['A', 'B']).open).toEqual([]);
   });
 });
 
@@ -512,162 +492,17 @@ const pulseOf = (
   ...over,
 });
 const pulseView = (
-  over: Partial<PulseView> & { tasks: PulseView['tasks'] },
-): PulseView => ({
+  over: Partial<PulseSnapshot> & { tasks: PulseSnapshot['tasks'] },
+): PulseSnapshot => ({
   error: null,
   checkedAt: null,
-  lastActive: {},
   ...over,
 });
-const withPulse = (view: PulseView) =>
+const withPulse = (view: PulseSnapshot) =>
   installFakeApi({ 'pulse:get': () => view });
 
-describe('TaskNav lifecycle groups', () => {
-  const three = () => {
-    const mk = (id: string, title: string): TaskView => ({
-      ...tasks[0],
-      id,
-      workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
-    });
-    return [mk('t1', 'One'), mk('t2', 'Two'), mk('t3', 'Three')];
-  };
-
-  it('shows an amber Needs you header with its count and a red chip on the row', async () => {
-    const list = three();
-    useStore.setState({ tasks: list, selectedTaskId: null });
-    withPulse(
-      pulseView({
-        tasks: {
-          t1: [pulseOf('t1', { ci: 'failing', ciFailedName: 'PR build' })],
-          t2: [pulseOf('t2', { conflict: true })],
-          t3: [pulseOf('t3', { review: 'changes-asked' })],
-        },
-      }),
-    );
-    render(<TaskNav />);
-    const header = await screen.findByText('Needs you');
-    const head = header.closest('.nav-subhead')!;
-    expect(head).toHaveClass('nav-subhead-amber');
-    expect(head).toHaveTextContent('3');
-    const chip = screen.getByRole('button', { name: 'CI failing' });
-    expect(chip).toHaveClass('navchip', 'navchip-red');
-    expect(
-      screen.getByRole('button', { name: /One/ }).getAttribute('title'),
-    ).toMatch(/CI failing/);
-  });
-
-  it('opens the PR from the chip and tracks it, without opening the task', async () => {
-    const list = three();
-    useStore.setState({ tasks: list, selectedTaskId: null });
-    const { calls, tracked } = withPulse(
-      pulseView({
-        tasks: {
-          t1: [pulseOf('t1', { ci: 'failing' })],
-        },
-      }),
-    );
-    render(<TaskNav />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'CI failing' }),
-    );
-    expect(calls).toContainEqual({
-      channel: 'links:open',
-      args: ['https://dev.azure.com/o/p/_git/r/pullrequest/7'],
-    });
-    expect(tracked).toContainEqual({
-      type: 'event',
-      name: 'nav.chipClicked',
-      props: { kind: 'ci-failing' },
-    });
-    expect(useStore.getState().selectedTaskId).toBeNull();
-  });
-
-  it('gives a merged task a Finish button that opens its Finish page', async () => {
-    const list = three();
-    useStore.setState({ tasks: list, selectedTaskId: null });
-    withPulse(
-      pulseView({
-        tasks: {
-          t1: [
-            pulseOf('t1', {
-              pr: {
-                id: 7,
-                url: 'https://x/7',
-                status: 'completed',
-                isDraft: false,
-                createdAt: '2026-11-16T08:00:00.000Z',
-                closedAt: '2026-11-17T08:00:00.000Z',
-              },
-            }),
-          ],
-        },
-      }),
-    );
-    render(<TaskNav />);
-    await screen.findByText('Merged · close me');
-    await userEvent.click(screen.getByRole('button', { name: 'Finish' }));
-    expect(useStore.getState().screen).toEqual({
-      kind: 'finish',
-      taskId: 't1',
-    });
-  });
-
-  it('shows the repo name on a row only with more than one repo', async () => {
-    installFakeApi();
-    const one = tasks.filter((t) => t.repoId === 'r1' && t.status !== 'done');
-    useStore.setState({ tasks: one });
-    const { unmount } = render(<TaskNav />);
-    expect(screen.queryByText('webshop')).toBeNull();
-    unmount();
-    useStore.setState({
-      tasks: [...one, { ...tasks[0], id: 'e', repoId: 'r2' }],
-    });
-    render(<TaskNav />);
-    expect(screen.getAllByText('backoffice-api')).toHaveLength(1);
-    expect(screen.getAllByText('webshop').length).toBeGreaterThan(0);
-  });
-
-  it('shows no chips and only Active or Parked groups before any pulse', async () => {
-    useStore.setState({ selectedTaskId: null });
-    installFakeApi({ 'pulse:get': () => null as never });
-    render(<TaskNav />);
-    expect(await screen.findByText('Parked')).toBeInTheDocument();
-    expect(screen.queryByText('Needs you')).toBeNull();
-    expect(document.querySelector('.navchip')).toBeNull();
-  });
-
-  it('shows cost only in Active and the auth note in the footer', async () => {
-    const list = three();
-    useStore.setState({ tasks: list, selectedTaskId: null });
-    installFakeApi({
-      'pulse:get': () =>
-        pulseView({
-          error: 'auth',
-          tasks: { t1: [pulseOf('t1', { ci: 'failing' })] },
-          lastActive: { t2: Date.now() },
-        }),
-      'usage:costs': () => ({ t1: 1.5, t2: 2.5 }),
-    });
-    render(<TaskNav />);
-    expect(
-      await screen.findByText(
-        'PR status unavailable: check the Azure DevOps token',
-      ),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByText(`${String.fromCharCode(0x20ac)}2.50`),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(`${String.fromCharCode(0x20ac)}1.50`)).toBeNull();
-  });
-});
-
-describe('TaskNav collapsed rail (R3)', () => {
-  const mk = (id: string, title: string): TaskView => ({
-    ...tasks[0],
-    id,
-    workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
-  });
-  const merged = pulseOf('t5', {
+const mergedPulse = (workspaceId: string) =>
+  pulseOf(workspaceId, {
     pr: {
       id: 9,
       url: 'https://x/9',
@@ -677,12 +512,348 @@ describe('TaskNav collapsed rail (R3)', () => {
       closedAt: '2026-11-17T08:00:00.000Z',
     },
   });
-  const setup = async () => {
+const EUR = String.fromCharCode(0x20ac);
+const rowOf = (name: RegExp) =>
+  screen.getByRole('button', { name }).closest('.navrow') as HTMLElement;
+const settle = () =>
+  act(async () => {
+    await Promise.resolve();
+  });
+
+describe('TaskNav calm list', () => {
+  const mk = (id: string, title: string, createdAt = 'now'): TaskView => ({
+    ...tasks[0],
+    id,
+    createdAt,
+    workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
+  });
+  const three = () => [
+    mk('t1', 'One', '2026-11-01T08:00:00.000Z'),
+    mk('t2', 'Two', '2026-11-10T08:00:00.000Z'),
+    mk('t3', 'Three', '2026-11-20T08:00:00.000Z'),
+  ];
+  const titles = () =>
+    [...document.querySelectorAll('.navrow-title')].map((e) => e.textContent);
+
+  it('has no group headings, counts or chips, whatever the PRs say', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { ci: 'failing' })],
+          t2: [pulseOf('t2', { review: 'approved' })],
+          t3: [mergedPulse('t3')],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    await screen.findByRole('button', { name: /CI failing/ });
+    for (const heading of [
+      'Needs you',
+      'Active',
+      'In review',
+      'Merged · close me',
+      'Parked',
+    ])
+      expect(screen.queryByText(heading)).toBeNull();
+    expect(document.querySelector('.nav-subhead')).toBeNull();
+    expect(document.querySelector('.navchip')).toBeNull();
+    expect(document.querySelector('.is-muted')).toBeNull();
+  });
+
+  it('keeps every task in its place when a task is opened and when PR status changes', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    let view = pulseView({ tasks: {} });
+    const { emit } = installFakeApi({ 'pulse:get': () => view });
+    render(<TaskNav />);
+    await settle();
+    expect(titles()).toEqual(['Three', 'Two', 'One']);
+    await userEvent.click(screen.getByRole('button', { name: /One/ }));
+    expect(useStore.getState().selectedTaskId).toBe('t1');
+    expect(titles()).toEqual(['Three', 'Two', 'One']);
+    view = pulseView({
+      tasks: {
+        t2: [pulseOf('t2', { ci: 'failing' })],
+        t1: [mergedPulse('t1')],
+      },
+    });
+    act(() => emit('pulse:changed', view));
+    await screen.findByRole('button', { name: /CI failing/ });
+    expect(titles()).toEqual(['Three', 'Two', 'One']);
+  });
+
+  it('puts Finish and Discard inside the current row, on no line of their own', () => {
+    installFakeApi();
+    useStore.setState({
+      tasks: three(),
+      selectedTaskId: 't2',
+      screen: { kind: 'task' },
+    });
+    render(<TaskNav />);
+    expect(document.querySelector('.nav-task-action')).toBeNull();
+    const row = rowOf(/Two/);
+    expect(
+      within(row).getByRole('button', { name: 'Finish task' }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: 'Discard task' }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Finish task' })).toHaveLength(
+      1,
+    );
+  });
+
+  it('opens the PR from an amber mark and tracks it, without opening the task', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    const { calls, tracked } = withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { ci: 'failing', ciFailedName: 'PR build' })],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    const mark = await screen.findByRole('button', {
+      name: /CI failing: PR build/,
+    });
+    expect(mark).toHaveClass('navmark', 'navmark-waits');
+    expect(rowOf(/One/)).toContainElement(mark);
+    await userEvent.click(mark);
+    expect(calls).toContainEqual({
+      channel: 'links:open',
+      args: ['https://dev.azure.com/o/p/_git/r/pullrequest/7'],
+    });
+    expect(tracked).toContainEqual({
+      type: 'event',
+      name: 'nav.chipClicked',
+      props: { kind: 'waits' },
+    });
+    expect(useStore.getState().selectedTaskId).toBeNull();
+  });
+
+  it('uses one amber mark for a conflict, changes asked and comments alike', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { conflict: true })],
+          t2: [pulseOf('t2', { review: 'changes-asked' })],
+          t3: [pulseOf('t3', { unanswered: 2 })],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    await screen.findByRole('button', { name: /merge conflict/ });
+    expect(document.querySelectorAll('.navmark-waits')).toHaveLength(3);
+    expect(document.querySelectorAll('.navmark')).toHaveLength(3);
+  });
+
+  it('gives a merged task a green check that opens its Finish page', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    withPulse(pulseView({ tasks: { t1: [mergedPulse('t1')] } }));
+    render(<TaskNav />);
+    const check = await screen.findByRole('button', {
+      name: 'Merged: finish this task',
+    });
+    expect(check).toHaveClass('navmark-merged');
+    await userEvent.click(check);
+    expect(useStore.getState().screen).toEqual({
+      kind: 'finish',
+      taskId: 't1',
+    });
+  });
+
+  it('shows one Finish control on a current task that is merged', async () => {
+    useStore.setState({
+      tasks: three(),
+      selectedTaskId: 't1',
+      screen: { kind: 'task', taskId: 't1' } as never,
+    });
+    withPulse(pulseView({ tasks: { t1: [mergedPulse('t1')] } }));
+    render(<TaskNav />);
+    await settle();
+    expect(
+      within(rowOf(/One/)).getAllByRole('button', { name: /finish/i }),
+    ).toHaveLength(1);
+    expect(document.querySelector('.navmark-merged')).toBeNull();
+  });
+
+  it('keeps the amber mark beside Finish on the current task', async () => {
+    useStore.setState({
+      tasks: three(),
+      selectedTaskId: 't1',
+      screen: { kind: 'task', taskId: 't1' } as never,
+    });
+    withPulse(pulseView({ tasks: { t1: [pulseOf('t1', { ci: 'failing' })] } }));
+    render(<TaskNav />);
+    const mark = await screen.findByRole('button', { name: /CI failing/ });
+    const row = rowOf(/One/);
+    expect(row).toContainElement(mark);
+    expect(
+      within(row).getByRole('button', { name: 'Finish task' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a blocked agent on a merged task, also when it is the current one', async () => {
+    useStore.setState({
+      tasks: [
+        {
+          ...mk('t1', 'One'),
+          terminals: [{ id: 'c1', kind: 'claude', label: 'Claude Code' }],
+        } as unknown as TaskView,
+      ],
+      attention: { c1: { reason: 'blocked', kind: 'question', since: 1 } },
+      selectedTaskId: 't1',
+      screen: { kind: 'task', taskId: 't1' } as never,
+    });
+    withPulse(pulseView({ tasks: { t1: [mergedPulse('t1')] } }));
+    render(<TaskNav />);
+    await settle();
+    const row = rowOf(/One/);
+    expect(
+      within(row).getByRole('img', { name: 'Has a question' }),
+    ).toHaveClass('navmark-waits');
+    expect(
+      within(row).getByRole('button', { name: 'Finish task' }),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves a quiet task without any mark, in review or not', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    withPulse(
+      pulseView({
+        tasks: {
+          t1: [pulseOf('t1', { ci: 'failing' })],
+          t2: [pulseOf('t2', { review: 'approved' })],
+        },
+      }),
+    );
+    render(<TaskNav />);
+    await screen.findByRole('button', { name: /CI failing/ });
+    for (const name of [/Two/, /Three/]) {
+      expect(rowOf(name).querySelector('.navmark')).toBeNull();
+      expect(rowOf(name).querySelector('.dot')).toBeNull();
+    }
+  });
+
+  it('shows no marks before any pulse', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    installFakeApi({ 'pulse:get': () => null as never });
+    render(<TaskNav />);
+    await settle();
+    expect(titles()).toEqual(['Three', 'Two', 'One']);
+    expect(document.querySelector('.navmark')).toBeNull();
+  });
+
+  it('lets a setting-up task show its own dot, not a stale pulse', async () => {
+    useStore.setState({
+      tasks: [{ ...tasks[0], status: 'setting-up' }],
+      selectedTaskId: null,
+    });
+    withPulse(pulseView({ tasks: { a: [pulseOf('a', { ci: 'failing' })] } }));
+    render(<TaskNav />);
+    await settle();
+    expect(screen.getByRole('img', { name: 'Setting up' })).toHaveClass(
+      'navmark-busy',
+    );
+    expect(document.querySelector('.navmark-waits')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /Checkout/ }).getAttribute('title'),
+    ).not.toMatch(/CI failing/);
+  });
+
+  it('marks a failed setup and a missing worktree folder in red', () => {
+    installFakeApi();
+    useStore.setState({
+      tasks: [
+        { ...tasks[3] },
+        { ...tasks[0], id: 'gone', worktreeMissing: true },
+      ],
+      selectedTaskId: null,
+    });
+    render(<TaskNav />);
+    expect(screen.getByRole('img', { name: 'Setup failed' })).toHaveClass(
+      'navmark-broken',
+    );
+    expect(
+      screen.getByRole('img', { name: 'Worktree folder missing' }),
+    ).toHaveClass('navmark-broken');
+  });
+
+  it('shows Finishing as a dot on the current task, with no Finish button', () => {
+    installFakeApi();
+    useStore.setState({
+      tasks: [{ ...tasks[0], status: 'finishing' }],
+      selectedTaskId: 'a',
+      screen: { kind: 'finish', taskId: 'a' },
+    });
+    render(<TaskNav />);
+    expect(screen.getByRole('img', { name: 'Finishing' })).toHaveClass(
+      'navmark-busy',
+    );
+    expect(screen.queryByRole('button', { name: /Finish/ })).toBeNull();
+  });
+
+  it('keeps repo and cost in the tooltip, not on the row', async () => {
+    const w = (id: string) => ({ id, repoId: 'r2', dropped: false }) as never;
+    useStore.setState({
+      tasks: [
+        { ...mk('t1', 'One'), extraWorkspaces: [w('w1')] },
+        { ...mk('t2', 'Two'), extraWorkspaces: [w('w2'), w('w3')] },
+        mk('t3', 'Three'),
+      ],
+      selectedTaskId: null,
+    });
+    installFakeApi({
+      'pulse:get': () => pulseView({ tasks: {} }),
+      'usage:costs': () => ({ t1: 1.5 }),
+    });
+    render(<TaskNav />);
+    const title = (name: RegExp) =>
+      screen.getByRole('button', { name }).getAttribute('title');
+    await waitFor(() => expect(title(/One/)).toContain(`${EUR}1.50`));
+    expect(title(/One/)).toContain('webshop +1 repo');
+    expect(title(/Two/)).toBe('webshop +2 repos');
+    expect(title(/Three/)).toBe('webshop');
+    expect(screen.queryByText(`${EUR}1.50`)).toBeNull();
+    expect(screen.queryByText('webshop')).toBeNull();
+    expect(screen.queryByText('+1 repo')).toBeNull();
+  });
+
+  it('still shows the cost on a done task', async () => {
+    installFakeApi({ 'usage:costs': () => ({ c: 2.5 }) });
+    render(<TaskNav />);
+    await userEvent.click(screen.getByRole('button', { name: /Done \(1\)/ }));
+    expect(await screen.findByText(`${EUR}2.50`)).toBeInTheDocument();
+  });
+
+  it('keeps the auth note in the footer', async () => {
+    useStore.setState({ tasks: three(), selectedTaskId: null });
+    installFakeApi({
+      'pulse:get': () => pulseView({ error: 'auth', tasks: {} }),
+    });
+    render(<TaskNav />);
+    expect(
+      await screen.findByText(
+        'PR status unavailable: check the Azure DevOps token',
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('TaskNav collapsed rail', () => {
+  const mk = (id: string, title: string): TaskView => ({
+    ...tasks[0],
+    id,
+    workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
+  });
+  const setup = async (current: string | null = null) => {
     useStore.setState({
       tasks: ['t1', 't2', 't3', 't4', 't5', 't6'].map((id, i) =>
         mk(id, `Title${i + 1}`),
       ),
-      selectedTaskId: null,
+      selectedTaskId: current,
+      screen: { kind: 'task' },
       navCollapsed: true,
     });
     withPulse(
@@ -697,181 +868,88 @@ describe('TaskNav collapsed rail (R3)', () => {
               approvals: { have: 2, need: 2 },
             }),
           ],
-          t5: [merged],
+          t5: [mergedPulse('t5')],
         },
-        lastActive: { t6: Date.now() },
       }),
     );
     render(<TaskNav />);
-    await screen.findByLabelText('3 tasks need you');
+    await waitFor(() =>
+      expect(document.querySelector('.rail-dot-amber')).not.toBeNull(),
+    );
   };
+  const icon = (name: RegExp) => screen.getByRole('button', { name });
   afterEach(() => useStore.setState({ navCollapsed: false }));
 
-  it('shows an amber count pill above the Needs you icons', async () => {
+  it('has no count pill, separators, dimming or hollow Finish square', async () => {
     await setup();
-    const pill = screen.getByLabelText('3 tasks need you');
-    expect(pill).toHaveTextContent('3');
-    expect(pill).toHaveClass('rail-count');
-    const first = screen.getByRole('button', { name: /9t1 Title1/ });
-    expect(
-      pill.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    for (const gone of [
+      '.rail-count',
+      '.rail-sep',
+      '.is-dim',
+      '.rail-finish-hollow',
+    ])
+      expect(document.querySelector(gone)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Finish/ })).toBeNull();
   });
 
-  it('draws corner dots in the chip tone, none on a clean Active task', async () => {
+  it('draws an amber corner dot for anything that waits, a green check for merged, nothing on a quiet task', async () => {
     await setup();
-    const dot = (name: RegExp) =>
-      screen.getByRole('button', { name }).querySelector('.rail-dot');
-    expect(dot(/Title1/)).toHaveClass('rail-dot', 'rail-dot-red');
-    expect(dot(/Title4/)).toHaveClass('rail-dot-green');
-    expect(dot(/Title6/)).toBeNull();
+    for (const name of [/Title1/, /Title2/, /Title3/])
+      expect(icon(name).querySelector('.rail-dot')).toHaveClass(
+        'rail-dot-amber',
+      );
+    expect(icon(/Title5/).querySelector('.rail-check')).not.toBeNull();
+    for (const name of [/Title4/, /Title6/]) {
+      expect(icon(name).querySelector('.rail-dot')).toBeNull();
+      expect(icon(name).querySelector('.rail-check')).toBeNull();
+    }
   });
 
-  it('separates groups and dims In review icons', async () => {
+  it('keeps the icons in the list order', async () => {
     await setup();
     expect(
-      document.querySelectorAll('.rail-sep').length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole('button', { name: /Title4/ })).toHaveClass(
-      'is-dim',
+      [...document.querySelectorAll('.railrow[aria-label^="9t"]')].map((e) =>
+        e.getAttribute('aria-label'),
+      ),
+    ).toEqual([1, 2, 3, 4, 5, 6].map((n) => `9t${n} Title${n}`));
+  });
+
+  it('titles an icon with the id and title, plus what its mark means', async () => {
+    await setup();
+    expect(icon(/Title1/).getAttribute('title')).toMatch(
+      /^9t1 Title1 · CI failing: PR build/,
     );
-    expect(screen.getByRole('button', { name: /Title1/ })).not.toHaveClass(
-      'is-dim',
+    expect(icon(/Title5/).getAttribute('title')).toBe(
+      '9t5 Title5 · Merged: finish this task',
     );
+    expect(icon(/Title6/).getAttribute('title')).toBe('9t6 Title6');
   });
 
-  it('dims Parked icons too', async () => {
-    useStore.setState({ tasks: [mk('t1', 'Idle')], navCollapsed: true });
-    installFakeApi({ 'pulse:get': () => null as never });
-    render(<TaskNav />);
-    expect(screen.getByRole('button', { name: /Idle/ })).toHaveClass('is-dim');
-  });
-
-  it('renders a hollow Finish square for a Merged task that opens Finish', async () => {
-    await setup();
-    const fin = screen.getByRole('button', { name: /Finish 9t5/ });
-    expect(fin.querySelector('.rail-finish-hollow')).not.toBeNull();
-    await userEvent.click(fin);
-    expect(useStore.getState().screen).toEqual({
-      kind: 'finish',
-      taskId: 't5',
-    });
-  });
-
-  it('titles an icon with the id, title and story', async () => {
-    await setup();
-    expect(
-      screen.getByRole('button', { name: /Title1/ }).getAttribute('title'),
-    ).toMatch(/^9t1 Title1 · .*CI failing/);
-  });
-});
-
-describe('TaskNav lifecycle fixes', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    useStore.setState({ navCollapsed: false });
-  });
-
-  it('moves a task out of Active after 4 h while the window sits idle', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-    const t0 = Date.now();
-    useStore.setState({ tasks: [tasks[0]], selectedTaskId: null });
-    installFakeApi({
-      'pulse:get': () =>
-        pulseView({
-          tasks: {},
-          lastActive: { a: t0 - 3.9 * 3600_000 },
-        }),
-    });
-    render(<TaskNav />);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(screen.getByText('Active')).toBeInTheDocument();
-    await act(async () => {
-      vi.advanceTimersByTime(8 * 60_000);
-    });
-    expect(screen.queryByText('Active')).toBeNull();
-    expect(screen.getByText('Parked')).toBeInTheDocument();
-  });
-
-  it('shows no chip or story from a stale pulse on a setting-up task', async () => {
+  it('shows a setting-up task its own dot, not a stale pulse, and a failed setup in red', async () => {
     useStore.setState({
-      tasks: [{ ...tasks[0], status: 'setting-up' }],
-      selectedTaskId: null,
-    });
-    withPulse(pulseView({ tasks: { a: [pulseOf('a', { ci: 'failing' })] } }));
-    render(<TaskNav />);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(document.querySelector('.navchip')).toBeNull();
-    expect(
-      screen.getByRole('button', { name: /Checkout/ }).getAttribute('title'),
-    ).toBeNull();
-  });
-
-  it('shows no rail dot from a stale pulse on a setting-up task', async () => {
-    useStore.setState({
-      tasks: [{ ...tasks[0], status: 'setting-up' }],
+      tasks: [
+        { ...mk('t1', 'Busy'), status: 'setting-up' },
+        { ...mk('t2', 'Broken'), status: 'setup-failed' },
+      ],
       selectedTaskId: null,
       navCollapsed: true,
     });
-    withPulse(pulseView({ tasks: { a: [pulseOf('a', { ci: 'failing' })] } }));
+    withPulse(pulseView({ tasks: { t1: [pulseOf('t1', { ci: 'failing' })] } }));
     render(<TaskNav />);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(document.querySelector('.rail-dot-red')).toBeNull();
-  });
-});
-
-describe('TaskNav current merged task', () => {
-  const mergedView = () =>
-    withPulse(
-      pulseView({
-        tasks: {
-          a: [
-            pulseOf('a', {
-              pr: {
-                id: 9,
-                url: 'https://x/9',
-                status: 'completed',
-                isDraft: false,
-                createdAt: '2026-11-16T08:00:00.000Z',
-                closedAt: '2026-11-17T08:00:00.000Z',
-              },
-            }),
-          ],
-        },
-      }),
+    await settle();
+    expect(icon(/Busy/).querySelector('.rail-dot')).toHaveClass(
+      'rail-dot-accent',
     );
-  afterEach(() => useStore.setState({ navCollapsed: false }));
+    expect(icon(/Broken/).querySelector('.rail-dot')).toHaveClass(
+      'rail-dot-red',
+    );
+    expect(document.querySelector('.rail-dot-amber')).toBeNull();
+  });
 
-  it('shows one Finish control in the rail', async () => {
-    useStore.setState({
-      tasks: [tasks[0]],
-      selectedTaskId: 'a',
-      screen: { kind: 'task', taskId: 'a' } as never,
-      navCollapsed: true,
-    });
-    mergedView();
-    render(<TaskNav />);
-    await screen.findByLabelText('1 task needs you').catch(() => undefined);
-    await screen.findAllByRole('button', { name: /Finish/ });
+  it('shows one Finish and one Discard for a current task that is merged', async () => {
+    await setup('t5');
     expect(screen.getAllByRole('button', { name: /Finish/ })).toHaveLength(1);
-  });
-
-  it('shows one Finish control in the open list', async () => {
-    useStore.setState({
-      tasks: [tasks[0]],
-      selectedTaskId: 'a',
-      screen: { kind: 'task', taskId: 'a' } as never,
-    });
-    mergedView();
-    render(<TaskNav />);
-    await screen.findByText('Merged · close me');
-    expect(screen.getAllByRole('button', { name: /^Finish/ })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /Discard/ })).toHaveLength(1);
   });
 });
 
@@ -911,6 +989,29 @@ describe('TaskNav', () => {
       screen.getByText('unreliablewitness: token rejected'),
     ).toBeInTheDocument();
   });
+  it('shows no connection line in the footer while the connection is fine', () => {
+    installFakeApi();
+    useStore.setState({ connections: [conn('c1', 'Shellie')] });
+    const { unmount } = render(<TaskNav />);
+    expect(screen.queryByText('unreliablewitness: Shellie')).toBeNull();
+    expect(
+      document.querySelector('.leftnav-foot .nav-status > .dot'),
+    ).toBeNull();
+    unmount();
+    useStore.setState({ navCollapsed: true });
+    render(<TaskNav />);
+    expect(
+      document.querySelector('.leftnav-foot .nav-status > .dot'),
+    ).toBeNull();
+    useStore.setState({ navCollapsed: false });
+  });
+
+  it('says so in the footer when there is no connection', () => {
+    installFakeApi();
+    render(<TaskNav />);
+    expect(screen.getByText('Azure DevOps: not connected')).toBeInTheDocument();
+  });
+
   it('renders rows with id or name, state dots and selects on click', async () => {
     installFakeApi();
     render(<TaskNav />);
@@ -1021,7 +1122,8 @@ describe('TaskNav', () => {
     expect(
       screen.getByRole('button', { name: 'Project DXP, switch project' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('unreliablewitness: DXP')).toBeInTheDocument();
+    // The footer stays quiet while the connection is fine.
+    expect(screen.queryByText('unreliablewitness: DXP')).toBeNull();
   });
 
   it('shows only the switched-to project’s open and done tasks (#219)', async () => {
@@ -1148,21 +1250,6 @@ describe('TaskNav', () => {
     expect(useStore.getState().connectionId).toBe('c1');
   });
 
-  it('shows the billable EUR total per task', async () => {
-    installFakeApi({
-      'repos:list': () => repos,
-      'tasks:list': () => tasks,
-      'usage:costs': () => ({ a: 12.5 }),
-      'pulse:get': () =>
-        pulseView({ tasks: {}, lastActive: { a: Date.now() } }),
-    });
-    useStore.setState({ repos, tasks, selectedTaskId: 'a' });
-    render(<TaskNav />);
-    expect(
-      await screen.findByText(`${String.fromCharCode(0x20ac)}12.50`),
-    ).toBeInTheDocument();
-  });
-
   it('collapses to a rail of type icons and back, and remembers it', async () => {
     installFakeApi();
     render(<TaskNav />);
@@ -1216,34 +1303,24 @@ describe('TaskNav task actions (#95)', () => {
     expect(add).toHaveAttribute('aria-current', 'page');
   });
 
-  it('shows a primary Finish task under the current ready task only', async () => {
+  it('shows Finish task in the row of the current ready task only', async () => {
     useStore.setState({ selectedTaskId: 'a', screen: { kind: 'task' } });
     render(<TaskNav />);
     const finish = screen.getAllByRole('button', { name: 'Finish task' });
     expect(finish).toHaveLength(1);
-    expect(finish[0]).toHaveClass('btn-primary');
-    // Right after the task's own row.
-    const row = screen
-      .getByRole('button', { name: /48213/ })
-      .closest('.navrow')!;
-    expect(row.nextElementSibling).toContainElement(finish[0]);
+    expect(
+      screen.getByRole('button', { name: /48213/ }).closest('.navrow'),
+    ).toContainElement(finish[0]);
     await userEvent.click(finish[0]);
     expect(useStore.getState().screen).toEqual({ kind: 'finish', taskId: 'a' });
     // On the Finish page itself it steps aside.
     expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
   });
 
-  it('has no Finish away from a task, and a disabled Finishing… while it runs', () => {
+  it('has no Finish away from a task', () => {
     useStore.setState({ selectedTaskId: 'a', screen: { kind: 'sprint' } });
-    const { unmount } = render(<TaskNav />);
-    expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
-    unmount();
-    useStore.setState({
-      tasks: [{ ...tasks[0], status: 'finishing' }, ...tasks.slice(1)],
-      screen: { kind: 'finish', taskId: 'a' },
-    });
     render(<TaskNav />);
-    expect(screen.getByRole('button', { name: 'Finishing…' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
   });
 
   it('has a Discard task button next to Finish that asks on the task page (#124)', async () => {
@@ -1298,31 +1375,6 @@ describe('TaskNav task actions (#95)', () => {
   });
 });
 
-describe('TaskNav extra repos', () => {
-  it('shows +1 repo and +2 repos on a task with extras', () => {
-    installFakeApi();
-    const w = (id: string, dropped = false) =>
-      ({ id, repoId: 'r2', dropped }) as never;
-    useStore.setState({
-      repos,
-      connections: [],
-      selectedTaskId: 'a',
-      screen: { kind: 'task' },
-      tasks: [
-        { ...tasks[0], extraWorkspaces: [w('w1')] },
-        {
-          ...tasks[0],
-          id: 'z',
-          extraWorkspaces: [w('w2'), w('w3'), w('w4', true)],
-        },
-      ],
-    });
-    render(<TaskNav />);
-    expect(screen.getByText('+1 repo')).toBeInTheDocument();
-    expect(screen.getByText('+2 repos')).toBeInTheDocument();
-  });
-});
-
 describe('TaskNav width (#160)', () => {
   beforeEach(() => installFakeApi());
 
@@ -1369,91 +1421,5 @@ describe('TaskNav width (#160)', () => {
     render(<TaskNav />);
     expect(screen.queryByRole('separator')).toBeNull();
     expect(nav().style.width).toBe('');
-  });
-});
-
-describe('TaskNav review fixes', () => {
-  const mk = (id: string, title: string, over: Partial<TaskView> = {}) => ({
-    ...tasks[0],
-    id,
-    workItem: { ...tasks[0].workItem!, id: `9${id}`, title },
-    ...over,
-  });
-  afterEach(() => useStore.setState({ navCollapsed: false }));
-
-  it('matches the dimming selector on the real rail icon', async () => {
-    useStore.setState({
-      tasks: [mk('t1', 'Idle')],
-      navCollapsed: true,
-      selectedTaskId: null,
-    });
-    installFakeApi({ 'pulse:get': () => null as never });
-    render(<TaskNav />);
-    const row = screen.getByRole('button', { name: /Idle/ });
-    const icon = row.querySelector('.wit-icon, .navrow-blank')!;
-    expect(icon).not.toBeNull();
-    expect(
-      icon.matches(
-        '.railrow.is-dim > .wit-icon, .railrow.is-dim > .navrow-blank',
-      ),
-    ).toBe(true);
-  });
-
-  it('mutes In review and Parked rows, not Active ones', async () => {
-    useStore.setState({
-      tasks: [mk('t1', 'Idle'), mk('t2', 'Busy')],
-      selectedTaskId: null,
-      navCollapsed: false,
-    });
-    withPulse(pulseView({ tasks: {}, lastActive: { t2: Date.now() } }));
-    render(<TaskNav />);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    const rowOf = (n: RegExp) =>
-      screen.getByRole('button', { name: n }).closest('.navrow')!;
-    expect(rowOf(/Idle/)).toHaveClass('is-muted');
-    expect(rowOf(/Busy/)).not.toHaveClass('is-muted');
-  });
-
-  it('keeps a new task and the task on screen in Active without an interval', async () => {
-    useStore.setState({
-      tasks: [
-        mk('t1', 'Fresh', { createdAt: new Date().toISOString() }),
-        mk('t2', 'Open', { createdAt: '2020-01-01T00:00:00.000Z' }),
-        mk('t3', 'Old', { createdAt: '2020-01-01T00:00:00.000Z' }),
-      ],
-      selectedTaskId: 't2',
-      screen: { kind: 'task' },
-    } as never);
-    withPulse(pulseView({ tasks: {} }));
-    render(<TaskNav />);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    const group = (name: string) => screen.getByRole('group', { name });
-    expect(within(group('Active')).getByText('Fresh')).toBeInTheDocument();
-    expect(within(group('Active')).getByText('Open')).toBeInTheDocument();
-    expect(within(group('Parked')).getByText('Old')).toBeInTheDocument();
-  });
-
-  it('sorts setting-up tasks first in Active', () => {
-    const t = (id: string, status: TaskView['status']) =>
-      ({ ...tasks[0], id, status }) as TaskView;
-    const g = groupTasks(
-      [t('x', 'ready'), t('s1', 'setting-up'), t('s2', 'finishing')],
-      repos,
-      null,
-      undefined,
-      (task) =>
-        task.id === 'x'
-          ? { group: 'active', chip: null, story: '', sortKey: -5 }
-          : { group: 'active', chip: null, story: '', sortKey: -Infinity },
-    );
-    expect(g.groups[0].tasks.map((x) => x.id)).toEqual(['s1', 's2', 'x']);
-  });
-
-  it('recentAt ignores an invalid createdAt', () => {
-    expect(recentAt(mk('a', 'A', { createdAt: 'now' }), null, null)).toBeNull();
   });
 });
