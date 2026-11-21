@@ -7,13 +7,13 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { readingBrain, readingRead } from '../test-helpers/readingFixture';
-import { type PrPulse, type PulseView } from '../../shared/pulse';
+import { type PrPulse, type PulseSnapshot } from '../../shared/pulse';
 import { listTasks, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
@@ -492,14 +492,13 @@ const pulseOf = (
   ...over,
 });
 const pulseView = (
-  over: Partial<PulseView> & { tasks: PulseView['tasks'] },
-): PulseView => ({
+  over: Partial<PulseSnapshot> & { tasks: PulseSnapshot['tasks'] },
+): PulseSnapshot => ({
   error: null,
   checkedAt: null,
-  lastActive: {},
   ...over,
 });
-const withPulse = (view: PulseView) =>
+const withPulse = (view: PulseSnapshot) =>
   installFakeApi({ 'pulse:get': () => view });
 
 const mergedPulse = (workspaceId: string) =>
@@ -966,6 +965,29 @@ describe('TaskNav', () => {
       screen.getByText('unreliablewitness: token rejected'),
     ).toBeInTheDocument();
   });
+  it('shows no connection line in the footer while the connection is fine', () => {
+    installFakeApi();
+    useStore.setState({ connections: [conn('c1', 'Shellie')] });
+    const { unmount } = render(<TaskNav />);
+    expect(screen.queryByText('unreliablewitness: Shellie')).toBeNull();
+    expect(
+      document.querySelector('.leftnav-foot .nav-status > .dot'),
+    ).toBeNull();
+    unmount();
+    useStore.setState({ navCollapsed: true });
+    render(<TaskNav />);
+    expect(
+      document.querySelector('.leftnav-foot .nav-status > .dot'),
+    ).toBeNull();
+    useStore.setState({ navCollapsed: false });
+  });
+
+  it('says so in the footer when there is no connection', () => {
+    installFakeApi();
+    render(<TaskNav />);
+    expect(screen.getByText('Azure DevOps: not connected')).toBeInTheDocument();
+  });
+
   it('renders rows with id or name, state dots and selects on click', async () => {
     installFakeApi();
     render(<TaskNav />);
@@ -1065,7 +1087,8 @@ describe('TaskNav', () => {
     expect(
       screen.getByRole('button', { name: 'Project DXP, switch project' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('unreliablewitness: DXP')).toBeInTheDocument();
+    // The footer stays quiet while the connection is fine.
+    expect(screen.queryByText('unreliablewitness: DXP')).toBeNull();
   });
 
   it('shows only the switched-to project’s open and done tasks (#219)', async () => {

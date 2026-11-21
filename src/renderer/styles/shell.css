@@ -387,14 +387,6 @@ button.navmark:hover {
 .rail-finish:hover .rail-finish-mark {
   background: var(--accent-hover);
 }
-.nav-subhead {
-  padding: 6px 16px 2px;
-  color: var(--muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .nav-empty {
   padding: 4px 16px;
   color: var(--muted);
@@ -425,42 +417,6 @@ button.navmark:hover {
   text-align: left;
   font-size: inherit;
 }
-.nav-subhead-amber {
-  color: var(--warn);
-}
-.nav-subhead-count {
-  margin-left: 4px;
-  opacity: 0.8;
-}
-.navchip {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: none;
-  font-size: 10px;
-  line-height: 14px;
-}
-.navchip-red {
-  color: var(--red);
-  border-color: currentColor;
-}
-.navchip-amber {
-  color: var(--warn);
-  border-color: currentColor;
-}
-.navchip-green {
-  color: var(--green);
-  border-color: currentColor;
-}
-.navchip-muted {
-  color: var(--muted);
-}
-.navchip-finish {
-  background: var(--warn);
-  border-color: var(--warn);
-  color: var(--bg-chrome);
-}
 .nav-status-note {
   color: var(--warn);
   font-size: 12px;
@@ -490,10 +446,6 @@ button.navmark:hover {
   flex: none;
   color: var(--muted);
   font-size: 12px;
-}
-.navrow-repos {
-  flex: none;
-  white-space: nowrap;
 }
 /* A multi-repo task's one "3 repos" chip: overlapping color dots, then the count. */
 .ws-chip {
@@ -558,13 +510,6 @@ button.navmark:hover {
 .railrow[aria-current='true'] {
   background: var(--bg-selected);
 }
-.railrow.is-dim > .wit-icon,
-.railrow.is-dim > .navrow-blank {
-  opacity: 0.5;
-}
-.navrow.is-muted .navrow-title {
-  color: var(--muted);
-}
 .rail-dot {
   position: absolute;
   top: 6px;
@@ -592,33 +537,6 @@ button.navmark:hover {
   border-radius: 50%;
   background: var(--bg-chrome);
   color: var(--green);
-}
-.rail-count {
-  display: block;
-  width: fit-content;
-  margin: 4px auto 2px;
-  padding: 0 7px;
-  border-radius: 9px;
-  background: var(--warn);
-  color: var(--bg-chrome);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-}
-.rail-sep {
-  height: 1px;
-  margin: 4px 12px;
-  background: var(--line);
-}
-.rail-finish-hollow {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  border: 1.5px solid var(--warn);
-  color: var(--warn);
 }
 .leftnav-foot {
   flex: none;

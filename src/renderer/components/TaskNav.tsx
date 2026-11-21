@@ -26,7 +26,7 @@ import {
   useState,
 } from 'react';
 import {
-  type PulseView,
+  type PulseSnapshot,
   type TaskSignal,
   taskSignal,
 } from '../../shared/pulse';
@@ -114,7 +114,7 @@ function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
 
 /** What each open task's PRs and agents ask of the developer, read now. Null for a task with no PR story yet. */
 function useSignals(): {
-  pulse: PulseView | null;
+  pulse: PulseSnapshot | null;
   signal: (t: TaskView) => TaskSignal | null;
 } {
   const pulse = usePulse();
@@ -212,7 +212,7 @@ function Row({
   /** For the tooltip. */
   repos?: string;
   signal?: TaskSignal | null;
-  pulse?: PulseView | null;
+  pulse?: PulseSnapshot | null;
 }) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
@@ -640,13 +640,11 @@ export function TaskNav() {
   const toRead = new Set(
     nudges ? reading.filter(hasEvent).map((r) => r.brain.brainId) : [],
   );
+  // Quiet while the connection is fine: the line shows only when something is wrong.
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }
     : connection.status === 'ok'
-      ? {
-          color: 'var(--green)',
-          text: `${connection.name}: ${connection.project}`,
-        }
+      ? null
       : {
           color: 'var(--red)',
           text: `${connection.name}: ${statusText(connection, true).text}`,
@@ -752,10 +750,12 @@ export function TaskNav() {
           current={screen.kind === 'settings'}
           onClick={() => go({ kind: 'settings' })}
         />
-        <div className="nav-status" title={footer.text}>
-          <span className="dot" style={{ background: footer.color }} />
-          {!rail && <span className="nav-status-text">{footer.text}</span>}
-        </div>
+        {footer && (
+          <div className="nav-status" title={footer.text}>
+            <span className="dot" style={{ background: footer.color }} />
+            {!rail && <span className="nav-status-text">{footer.text}</span>}
+          </div>
+        )}
         <DreamNavStatus rail={rail} />
         {!rail && pulse?.error === 'auth' && (
           <div className="nav-status nav-status-note">
