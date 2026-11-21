@@ -207,6 +207,8 @@ describe('attention', () => {
     } as unknown as TaskView;
     useStore.setState({
       tasks: [withTerminal],
+      // Not the current task: there Finish and Discard take the mark's place.
+      selectedTaskId: null,
       attention: {
         c1: {
           reason,
@@ -678,7 +680,7 @@ describe('TaskNav calm list', () => {
     expect(document.querySelector('.navmark-merged')).toBeNull();
   });
 
-  it('keeps the amber mark beside Finish on the current task', async () => {
+  it("lets Finish and Discard take the amber mark's place on the current task, and keeps its story in the tooltip", async () => {
     useStore.setState({
       tasks: three(),
       selectedTaskId: 't1',
@@ -686,15 +688,20 @@ describe('TaskNav calm list', () => {
     });
     withPulse(pulseView({ tasks: { t1: [pulseOf('t1', { ci: 'failing' })] } }));
     render(<TaskNav />);
-    const mark = await screen.findByRole('button', { name: /CI failing/ });
     const row = rowOf(/One/);
-    expect(row).toContainElement(mark);
+    await waitFor(() =>
+      expect(within(row).getByRole('button', { name: /One/ })).toHaveAttribute(
+        'title',
+        expect.stringMatching(/CI failing/),
+      ),
+    );
+    expect(row.querySelector('.navmark')).toBeNull();
     expect(
       within(row).getByRole('button', { name: 'Finish task' }),
     ).toBeInTheDocument();
   });
 
-  it('shows a blocked agent on a merged task, also when it is the current one', async () => {
+  it('shows a blocked agent on a merged task', async () => {
     useStore.setState({
       tasks: [
         {
@@ -703,19 +710,14 @@ describe('TaskNav calm list', () => {
         } as unknown as TaskView,
       ],
       attention: { c1: { reason: 'blocked', kind: 'question', since: 1 } },
-      selectedTaskId: 't1',
-      screen: { kind: 'task', taskId: 't1' } as never,
+      selectedTaskId: null,
     });
     withPulse(pulseView({ tasks: { t1: [mergedPulse('t1')] } }));
     render(<TaskNav />);
     await settle();
-    const row = rowOf(/One/);
     expect(
-      within(row).getByRole('img', { name: 'Has a question' }),
+      within(rowOf(/One/)).getByRole('img', { name: 'Has a question' }),
     ).toHaveClass('navmark-waits');
-    expect(
-      within(row).getByRole('button', { name: 'Finish task' }),
-    ).toBeInTheDocument();
   });
 
   it('leaves a quiet task without any mark, in review or not', async () => {
