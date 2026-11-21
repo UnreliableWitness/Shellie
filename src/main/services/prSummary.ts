@@ -3,6 +3,7 @@ import { PR_JOB_TITLE, type PrSummaryModel } from '../../shared/prDraft';
 import { clip } from '../../shared/text';
 import type { Turn } from '../brain/sessionDigest';
 import type { Command } from '../platform/Platform';
+import { killTree } from './GitClient';
 
 /**
  * The "what changed and why" of a draft pull request (#111), written at Finish. This module is the headless writer
@@ -256,10 +257,14 @@ export class ExitError extends Error {
   }
 }
 
+/** After a timeout's kill, how long the run waits for its pipes to close before it rejects anyway. */
+export const KILL_WAIT_MS = 2000;
+
 /**
  * Runs a command with `input` on stdin and resolves to its stdout. A non-zero exit rejects with the last line of
  * stderr; exit 127 (the login shell found no such program) says the program is missing; past `timeoutMs` the
- * process is killed.
+ * process tree is killed and the run rejects, at most `KILL_WAIT_MS` later even when a process the kill missed keeps
+ * the pipes open (an npm shim's PowerShell on Windows, a child on macOS).
  */
 export function runWithInput(
   { command, args, env }: Command,
@@ -284,13 +289,36 @@ export function runWithInput(
     let err = '';
     let timedOut = false;
     let stopped = false;
+    let done = false;
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
+    const timedOutError = () =>
+      new Error(`timed out after ${Math.round(o.timeoutMs / 1000)} s`);
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill();
+      // The whole tree, as on Stop: the program's own children would keep the pipes open.
+      killTree(
+        child.pid,
+        () => child.kill(),
+        () => {
+          giveUp = setTimeout(() => {
+            if (done) return;
+            done = true;
+            o.signal?.removeEventListener('abort', onAbort);
+            child.stdout.destroy();
+            child.stderr.destroy();
+            reject(timedOutError());
+          }, KILL_WAIT_MS);
+        },
+      );
     }, o.timeoutMs);
     const onAbort = () => {
       stopped = true;
-      child.kill();
+      // The whole tree: on Windows an agent's helpers would outlive it and keep its worktree locked.
+      killTree(
+        child.pid,
+        () => child.kill(),
+        () => undefined,
+      );
     };
     o.signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (d: Buffer) => {
@@ -301,17 +329,20 @@ export function runWithInput(
     });
     child.on('error', (e) => {
       clearTimeout(timer);
+      clearTimeout(giveUp);
       o.signal?.removeEventListener('abort', onAbort);
+      if (done) return;
+      done = true;
       reject(e);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      clearTimeout(giveUp);
       o.signal?.removeEventListener('abort', onAbort);
+      if (done) return;
+      done = true;
       if (stopped) return reject(new Error('stopped'));
-      if (timedOut)
-        return reject(
-          new Error(`timed out after ${Math.round(o.timeoutMs / 1000)} s`),
-        );
+      if (timedOut) return reject(timedOutError());
       if (code === 0) return resolve(out);
       if (code === 127)
         return reject(

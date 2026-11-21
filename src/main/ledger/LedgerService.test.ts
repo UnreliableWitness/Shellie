@@ -79,6 +79,8 @@ function setup(
     now?: () => Date;
     /** Wire `billableVersion` to `state.billableVersion`, as main does. */
     versioned?: boolean;
+    /** The dreams folder, as main passes it. */
+    dreamsDir?: string;
   } = {},
 ) {
   const state = {
@@ -127,6 +129,7 @@ function setup(
         connections,
         (id) => state.usageSessions[id] ?? [],
         state.brains,
+        o.dreamsDir,
       ),
     isBillable: (taskId, sessionId) =>
       !state.notBillable.has(`${taskId}/${sessionId}`),
@@ -153,6 +156,37 @@ function setup(
 }
 
 describe('LedgerService', () => {
+  it('never sends a dream record: the setup test call and a dream under a symlinked user data folder', async () => {
+    const real = path.join(await fs.realpath(dir), 'real');
+    await fs.mkdir(path.join(real, 'dreams'), { recursive: true });
+    const link = path.join(dir, 'link');
+    await fs.symlink(real, link);
+    const s = setup({
+      openCode: [
+        [
+          rec({
+            id: 'oc:test',
+            tool: 'opencode',
+            cwd: path.join(real, 'dreams', '.test-x1', 'wt'),
+          }),
+          rec({
+            id: 'oc:dream',
+            tool: 'opencode',
+            cwd: path.join(real, 'dreams', 'r1', '2026-11-20-1', 'wt'),
+          }),
+        ],
+      ],
+      dreamsDir: path.join(link, 'dreams'),
+    });
+    await s.svc.pass();
+    expect(s.store.get('oc:test')!.attribution.level).toBe('dream');
+    expect(s.store.get('oc:dream')!.attribution).toEqual({
+      level: 'dream',
+      repo: 'web',
+    });
+    expect(s.store.dirty(10)).toEqual([]);
+    expect(s.store.dirtyCount()).toBe(0);
+  });
   it('counts a brain transcript record by cwd: brain level, not billable, not dirty', async () => {
     const s = setup({ claude: [[rec({ cwd: '/brains/shop/notes' })]] });
     s.state.brains.push({
@@ -609,6 +643,7 @@ describe('LedgerService', () => {
         'brain',
         'claudeCode',
         'copilotCli',
+        'dream',
         'none',
         'opencode',
         'repo',

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultBudgetSettings } from '../../shared/budget';
+import { defaultDreaming } from '../../shared/dreams';
 import { AppSettingsSchema, defaultSettings } from '../../shared/usage';
 import { SettingsStore } from './SettingsStore';
 
@@ -111,6 +112,7 @@ describe('SettingsStore', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
+      dreaming: defaultDreaming(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: null,
@@ -148,6 +150,7 @@ describe('SettingsStore', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
+      dreaming: defaultDreaming(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: null,
@@ -194,5 +197,100 @@ describe('SettingsStore', () => {
         claudeBudget: { ...defaultBudgetSettings(), monthStartDay: 29 },
       }),
     ).toThrow();
+  });
+  it('loads a bad dreaming block as dreaming off and keeps every other setting', async () => {
+    const f = file();
+    writeFileSync(
+      f,
+      JSON.stringify({
+        version: 1,
+        receiverPort: 4400,
+        showSplash: false,
+        // Hand-edited: a folder that is not a repo sub-path, and enabled as a string.
+        dreaming: {
+          enabled: 'yes',
+          repos: { r1: { on: true, folders: ['.'] } },
+        },
+      }),
+    );
+    const s = new SettingsStore(f);
+    expect(await s.load()).toEqual({ recovered: false });
+    expect(s.get().dreaming).toEqual(defaultDreaming());
+    expect(s.get().receiverPort).toBe(4400);
+    expect(s.get().showSplash).toBe(false);
+  });
+
+  it('update() changes the value as it is when the write runs, after queued saves', async () => {
+    const s = new SettingsStore(file());
+    await s.load();
+    const first = s.save({ ...s.get(), showSplash: false });
+    const second = s.update((cur) => ({ ...cur, receiverPort: 4500 }));
+    await Promise.all([first, second]);
+    expect(s.get().showSplash).toBe(false);
+    expect(s.get().receiverPort).toBe(4500);
+  });
+  describe('dreaming is written only through updateDreaming', () => {
+    const on = (s: SettingsStore) =>
+      s.updateDreaming((d) => ({ ...d, enabled: true, model: 'zai/glm-5' }));
+
+    it('updateDreaming switches dreaming on and off', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await on(s);
+      expect(s.get().dreaming).toMatchObject({
+        enabled: true,
+        model: 'zai/glm-5',
+      });
+      await s.updateDreaming((d) => ({ ...d, enabled: false }));
+      expect(s.get().dreaming.enabled).toBe(false);
+    });
+
+    it('save and update keep the stored dreaming block as it is when the write runs', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await s.save({
+        ...s.get(),
+        dreaming: { ...s.get().dreaming, enabled: true, idleMinutes: 99 },
+      });
+      await s.update((cur) => ({
+        ...cur,
+        dreaming: { ...cur.dreaming, enabled: true },
+      }));
+      expect(s.get().dreaming).toEqual(defaultDreaming());
+    });
+
+    it('update cannot get past the guard by changing the draft in place', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await s.update((cur) => {
+        cur.dreaming.enabled = true;
+        cur.dreaming.repos.r1 = { on: true, folders: ['.apm'] };
+        return cur;
+      });
+      expect(s.get().dreaming).toEqual(defaultDreaming());
+    });
+
+    it('a whole stale object saved after a switch-off leaves dreaming off', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      await on(s);
+      const stale = s.get();
+      // Queued together: the switch-off, then a writer that read the settings before it landed.
+      const off = s.updateDreaming((d) => ({ ...d, enabled: false }));
+      const late = s.save({ ...stale, showSplash: false });
+      await Promise.all([off, late]);
+      expect(s.get().dreaming.enabled).toBe(false);
+      expect(s.get().showSplash).toBe(false);
+    });
+
+    it('updateDreaming keeps every other setting as it is when the write runs', async () => {
+      const s = new SettingsStore(file());
+      await s.load();
+      const first = s.save({ ...s.get(), receiverPort: 4600 });
+      const second = on(s);
+      await Promise.all([first, second]);
+      expect(s.get().receiverPort).toBe(4600);
+      expect(s.get().dreaming.enabled).toBe(true);
+    });
   });
 });

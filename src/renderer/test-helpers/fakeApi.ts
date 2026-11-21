@@ -1,4 +1,6 @@
 import { StartSettingsSchema } from '../../shared/types';
+import { defaultDreaming } from '../../shared/dreams';
+import { viewOf } from './dreamFixtures';
 import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
 import type { Channels, Events, ShellieApi } from '../../shared/ipc';
@@ -220,6 +222,7 @@ const defaults: FakeHandlers = {
     sendTelemetry: true,
     editor: { default: null, repos: {} },
     secrets: { productionMinutes: 60 },
+    dreaming: defaultDreaming(),
     onboarding: {
       dismissedAt: null,
       agentsCheckedAt: '2026-10-22T09:00:00.000Z',
@@ -248,6 +251,27 @@ const defaults: FakeHandlers = {
     shell: { label: 'zsh' },
   }),
   'agents:opencodeModels': () => null,
+  'dream:get': () =>
+    viewOf({
+      settings: defaultDreaming(),
+      models: null,
+      usage: { day: '2026-11-20', tokens: 0, eur: 0 },
+      waiting: null,
+      repos: [],
+    }),
+  'dream:test': () => ({ ok: true }),
+  'dream:save': (next) => next,
+  'dream:switchOn': () => ({ ...defaultDreaming(), enabled: true }),
+  'dream:switchOff': () => defaultDreaming(),
+  'dream:now': () => ({ started: true }),
+  'dream:stop': () => undefined,
+  'dream:drop': () => undefined,
+  'dream:discard': () => undefined,
+  'dream:openAsTask': () => ({ branch: 'dream/2026-11-20-1' }),
+  'dream:leaveBranch': () => undefined,
+  'dream:folderExists': () => true,
+  'dream:diff': () => [],
+  'dream:file': () => ({ before: '', after: '' }),
   'editor:options': () => ({
     editors: [{ id: 'vscode', label: 'VS Code' }],
     chosen: 'vscode',

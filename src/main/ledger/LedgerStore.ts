@@ -23,6 +23,9 @@ const canonical = (v: unknown): string =>
 
 /** How long sent marks may wait in memory before `sent.json` is written. */
 const SENT_WRITE_MS = 5000;
+/** Brain and dream records stay on this machine: only task, repo and unattributed records are invoiced. */
+const isLocalOnly = (r: CostRecord | undefined): boolean =>
+  r?.attribution.level === 'brain' || r?.attribution.level === 'dream';
 
 const hashOf = (r: CostRecord): string =>
   createHash('sha1').update(canonical(r)).digest('hex');
@@ -148,9 +151,7 @@ export class LedgerStore {
   dirty(limit: number): CostRecord[] {
     return this.all()
       .filter(
-        (r) =>
-          r.attribution.level !== 'brain' &&
-          this.sent[r.id] !== this.hashes.get(r.id),
+        (r) => !isLocalOnly(r) && this.sent[r.id] !== this.hashes.get(r.id),
       )
       .sort((a, b) =>
         a.at < b.at
@@ -170,11 +171,7 @@ export class LedgerStore {
   dirtyCount(): number {
     let n = 0;
     for (const [id, h] of this.hashes)
-      if (
-        this.sent[id] !== h &&
-        this.byId.get(id)?.attribution.level !== 'brain'
-      )
-        n++;
+      if (this.sent[id] !== h && !isLocalOnly(this.byId.get(id))) n++;
     return n;
   }
 

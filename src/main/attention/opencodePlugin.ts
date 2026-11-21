@@ -85,11 +85,11 @@ const last = (rules: unknown, pattern: string, action: string) => {
 };
 
 /** A Windows absolute path (`C:\…`, `\\server\…`) is read with win32 rules on any platform, so tests can use one. */
-const pathFor = (p: string) =>
+export const pathFor = (p: string) =>
   /^([A-Za-z]:[\\/]|\\\\)/.test(p) ? path.win32 : path.posix;
 
 /** OpenCode globs take forward slashes: a backslash is an escape to it, not a separator. */
-const slashes = (p: string) => p.replace(/\\/g, '/');
+export const slashes = (p: string) => p.replace(/\\/g, '/');
 
 /**
  * `permission` with the brain folder readable from outside the project and not editable, after the developer's own

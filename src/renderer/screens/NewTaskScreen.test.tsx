@@ -730,6 +730,27 @@ describe('NewTaskScreen', () => {
       expect(options()).toEqual(['dxp-web', 'iml-hub', 'No repo']);
     });
 
+    it("keeps a dream's repo of another project, locked on it", async () => {
+      installFakeApi({ ...pickerApi, 'repos:config': () => config });
+      useStore.setState({
+        repos: [dxp, iml],
+        connections: conns,
+        connectionId: 'c2',
+      });
+      render(
+        <NewTaskScreen
+          initial={{
+            repoId: 'rA',
+            dream: { id: 'd1', branch: 'dream/d1', name: 'Dream 20 Nov' },
+          }}
+        />,
+      );
+      expect(screen.getByLabelText('Repo')).toHaveValue('rA');
+      expect(screen.getByLabelText('Repo')).toBeDisabled();
+      expect(options()).toEqual(['dxp-web', 'iml-hub']);
+      expect(screen.getByLabelText('Branch')).toHaveValue('dream/d1');
+    });
+
     it('makes a task without a repo when the project has none', async () => {
       const { calls } = installFakeApi({
         ...pickerApi,
@@ -768,5 +789,56 @@ describe('NewTaskScreen', () => {
       });
       expect(calls.some((c) => c.channel === 'repos:config')).toBe(false);
     });
+  });
+});
+
+describe('NewTaskScreen: from a dream', () => {
+  const dream = {
+    id: '2026-11-20-1',
+    branch: 'dream/2026-11-20-1',
+    name: 'Dream 20 Nov',
+  };
+
+  it('fills and locks the dream branch, names the task, needs no work item and sends fromDream', async () => {
+    const { calls } = installFakeApi({
+      'repos:config': () => config,
+      'tasks:create': () => ({ id: 't1' }) as never,
+    });
+    render(<NewTaskScreen initial={{ repoId: 'r1', dream }} />);
+    const branch = screen.getByLabelText('Branch');
+    expect(branch).toHaveValue('dream/2026-11-20-1');
+    expect(branch).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Repo')).toBeDisabled();
+    expect(screen.getByLabelText('Task name')).toHaveValue('Dream 20 Nov');
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.tagName === 'P' &&
+          el.textContent ===
+            'This task uses the branch dream/2026-11-20-1 that the dream left. If you leave now, Dreams keeps offering to make the task.',
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled(),
+    );
+    // A change to the name never changes the branch.
+    await userEvent.type(screen.getByLabelText('Task name'), ' rules');
+    expect(branch).toHaveValue('dream/2026-11-20-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await waitFor(() =>
+      expect(useStore.getState().screen).toEqual({
+        kind: 'setup',
+        taskId: 't1',
+      }),
+    );
+    expect(calls.find((c) => c.channel === 'tasks:create')?.args[0]).toEqual(
+      expect.objectContaining({
+        repoId: 'r1',
+        name: 'Dream 20 Nov rules',
+        workItem: null,
+        branch: 'dream/2026-11-20-1',
+        fromDream: '2026-11-20-1',
+      }),
+    );
   });
 });

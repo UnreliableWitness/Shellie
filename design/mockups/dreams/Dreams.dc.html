@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dreams: status, results, repos and journal</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#201f1e}
+a{color:#5ca9f2}a:hover{color:#8cc4f7}
+button{font:inherit}
+</style>
+</helmet>
+<div style="min-height: 1000px; display: flex; flex-direction: column; background: #201f1e; color: #e9e9e8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45">
+  <header style="height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #1b1a19; border-bottom: 1px solid #333231">
+    <a href="Main.dc.html" style="font-weight: 600; color: #e9e9e8; text-decoration: none">Shellie</a>
+    <span style="color: #a3a2a1" aria-hidden="true">›</span>
+    <span style="color: #a3a2a1">Dreams</span>
+  </header>
+  <div style="flex: 1; display: flex; flex-wrap: wrap">
+    <nav aria-label="Main" style="flex: 1 1 248px; max-width: 280px; min-width: 220px; box-sizing: border-box; background: #1b1a19; border-right: 1px solid #333231; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 8px 12px">
+        <span style="width: 28px; height: 28px; border-radius: 4px; background: #0078d4; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 600">N</span>
+        <span style="font-weight: 600">Northwind</span>
+      </div>
+      <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>
+        <span>Home</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="16" height="15" rx="1"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>
+        <span>Sprint</span>
+      </a>
+      <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; background: rgba(255,255,255,0.08); color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <span style="flex: 1">Dreams</span>
+        <span style="min-width: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #f2c94c; color: #201f1e; font-size: 12px; font-weight: 600; text-align: center" aria-label="2 dreams to review">2</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>
+        <span>Northwind brain</span>
+      </a>
+      <div style="padding: 16px 8px 4px; color: #a3a2a1; font-size: 12px; font-weight: 600">Tasks</div>
+      <div style="padding: 4px 8px; color: #a3a2a1; font-size: 12px">3 open</div>
+      <div style="flex: 1"></div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: #a3a2a1; font-size: 12px">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <span>Dreams on · zai/glm-5.3</span>
+      </div>
+    </nav>
+    <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 24px">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 600">Dreams</h1>
+        <span style="padding: 2px 10px; border-radius: 10px; background: rgba(108,203,95,0.14); color: #6ccb5f; font-size: 12px; font-weight: 600">On</span>
+        <span style="flex: 1"></span>
+        <a href="Setup.dc.html" style="display: inline-flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; color: #e9e9e8; text-decoration: none">Change setup</a>
+        <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">Switch off</button>
+      </div>
+
+      <section aria-label="Status" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: #333231; border: 1px solid #333231; border-radius: 4px; overflow: hidden">
+        <div style="background: #252423; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+          <span style="color: #a3a2a1; font-size: 12px">Model</span>
+          <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 15px">zai/glm-5.3</span>
+          <span style="color: #a3a2a1; font-size: 12px">through OpenCode · every call checked</span>
+        </div>
+        <div style="background: #252423; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+          <span style="color: #a3a2a1; font-size: 12px">Today</span>
+          <span style="font-size: 15px">1.2 of 5 million tokens</span>
+          <div role="img" aria-label="24 percent of today's limit used" style="height: 6px; border-radius: 3px; background: #3a3938; overflow: hidden"><div style="width: 24%; height: 6px; background: #5ca9f2"></div></div>
+        </div>
+        <div style="background: #252423; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+          <span style="color: #a3a2a1; font-size: 12px">Starts</span>
+          <span style="font-size: 15px">After 10 minutes idle</span>
+          <span style="color: #a3a2a1; font-size: 12px">on mains power · never while an agent works</span>
+        </div>
+        <div style="background: #252423; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+          <span style="color: #a3a2a1; font-size: 12px">Now</span>
+          <span style="font-size: 15px">Waiting until you are away</span>
+          <span style="color: #a3a2a1; font-size: 12px">next: billing, 4 new sessions</span>
+        </div>
+      </section>
+
+      <section aria-label="Waiting for you" style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">Waiting for you</h2>
+        <div style="background: #252423; border: 1px solid #333231; border-radius: 4px">
+          <sc-for list="{{waiting}}" as="w" hint-placeholder-count="2">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; border-bottom: 1px solid #333231">
+              <span style="font-weight: 600; width: 72px">{{w.repo}}</span>
+              <span style="flex: 1 1 280px; min-width: 0">{{w.lead}}</span>
+              <span style="color: #a3a2a1; font-size: 12px">{{w.meta}}</span>
+              <a href="Review.dc.html" style="display: inline-flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 2px; background: #0078d4; color: #ffffff; text-decoration: none; font-weight: 600">Review</a>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-label="Repos" style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">Repos</h2>
+        <div style="background: #252423; border: 1px solid #333231; border-radius: 4px">
+          <sc-for list="{{repos}}" as="r" hint-placeholder-count="3">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; border-bottom: 1px solid #333231">
+              <span style="font-weight: 600; width: 72px">{{r.name}}</span>
+              <span style="flex: 1 1 200px; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+                <span style="color: #a3a2a1; font-size: 12px">{{r.mayLabel}}</span>
+                <sc-for list="{{r.folders}}" as="f" hint-placeholder-count="1">
+                  <span style="padding: 1px 8px; border-radius: 2px; background: #3a3938; font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px">{{f}}</span>
+                </sc-for>
+              </span>
+              <span style="flex: 1 1 220px; color: #a3a2a1; font-size: 12px">{{r.state}}</span>
+              <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">{{r.action}}</button>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-label="Journal" style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: baseline; gap: 12px">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">Journal</h2>
+          <span style="color: #a3a2a1; font-size: 12px">This week: 6 dreams · 4.8 million tokens · all on zai/glm-5.3</span>
+        </div>
+        <div style="background: #252423; border: 1px solid #333231; border-radius: 4px; overflow-x: auto">
+          <sc-for list="{{journal}}" as="j" hint-placeholder-count="5">
+            <div style="display: flex; align-items: baseline; gap: 16px; padding: 9px 16px; border-bottom: 1px solid #333231; min-width: 640px">
+              <span style="width: 108px; color: #a3a2a1; font-size: 12px">{{j.when}}</span>
+              <span style="width: 64px; font-weight: 600">{{j.repo}}</span>
+              <span style="flex: 1">{{j.outcome}}</span>
+              <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a2a1">{{j.tokens}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+return {
+waiting: [
+{ repo: 'portal', lead: 'New rule: migrations are written by hand, never generated, and 1 more', meta: 'from 6 sessions · tonight 03:12' },
+{ repo: 'billing', lead: 'New skill: run the VAT test set before touching rounding code', meta: 'from 4 sessions · tonight 03:41' }
+],
+repos: [
+{ name: 'portal', mayLabel: 'may change', folders: ['.apm'], state: '3 new sessions wait until you have reviewed tonight’s dream', action: 'Dream now' },
+{ name: 'billing', mayLabel: 'may change', folders: ['.apm', 'AGENTS.md'], state: '2 new sessions wait until you have reviewed tonight’s dream', action: 'Dream now' },
+{ name: 'shop', mayLabel: 'may change', folders: ['.apm'], state: 'Nothing new since yesterday 22:40', action: 'Dream now' },
+{ name: 'intranet', mayLabel: 'not dreaming', folders: [], state: 'Its sessions are never read', action: 'Add' }
+],
+journal: [
+{ when: 'Today 03:41', repo: 'billing', outcome: '1 proposal, waiting for you', tokens: '410 000' },
+{ when: 'Today 03:12', repo: 'portal', outcome: '2 proposals, waiting for you · 1 more removed by its own check', tokens: '790 000' },
+{ when: 'Yesterday 22:40', repo: 'shop', outcome: 'Nothing to propose', tokens: '220 000' },
+{ when: 'Wed 13:05', repo: 'portal', outcome: '3 proposals · 2 kept, opened as task “Dream 18 Nov” · 1 dropped', tokens: '1 150 000' },
+{ when: 'Tue 12:48', repo: 'billing', outcome: 'Stopped: you pressed Stop', tokens: '90 000' },
+{ when: 'Mon 23:10', repo: 'shop', outcome: 'Failed: OpenCode stopped (timed out after 30 min)', tokens: '2 140 000' }
+]
+};
+}
+}
+</script>
+</body>
+</html>

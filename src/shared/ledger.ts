@@ -24,6 +24,11 @@ export type Attribution =
       organization: string;
       project: string;
     }
+  | {
+      /** Dreaming (an agent working on a hidden worktree on its own): never a task's, a brain's or a customer's cost, never sent. `repo` is '' for an unknown repo id. */
+      level: 'dream';
+      repo: string;
+    }
   | { level: 'none' };
 
 /** One AI request: tokens, list-price cost and who/what it belongs to. */
@@ -45,5 +50,11 @@ export type CostRecord = BudgetTokens & {
   shellieVersion: string;
 };
 
-/** Attribution only goes up: none, repo, task (a brain ranks with task). */
-export const LEVEL_RANK = { none: 0, repo: 1, task: 2, brain: 2 } as const;
+/** Attribution only goes up: none, repo, task (a brain and a dream rank with task). */
+export const LEVEL_RANK = {
+  none: 0,
+  repo: 1,
+  task: 2,
+  brain: 2,
+  dream: 2,
+} as const;

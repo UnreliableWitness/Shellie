@@ -244,7 +244,9 @@ export class CostSender {
     let failure: CostServerError | null = null;
     // Listed once per pass: each listing filters and sorts the whole ledger, so one per batch made a full
     // resend quadratic. A record that changes meanwhile stays dirty (its new hash differs) for the next pass.
-    const pending = this.d.ledger.dirty(Number.MAX_SAFE_INTEGER);
+    const pending = this.d.ledger
+      .dirty(Number.MAX_SAFE_INTEGER)
+      .filter((r) => r.attribution.level !== 'dream');
     let at = 0;
     try {
       for (;;) {

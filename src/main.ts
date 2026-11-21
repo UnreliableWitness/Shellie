@@ -51,6 +51,12 @@ import {
 import { onBrainGitIdle } from './main/brain/gitMutex';
 import { getInstallId } from './main/installId';
 import { startBrainScheduler } from './main/brain/scheduler';
+import { DreamStore } from './main/dreams/DreamStore';
+import type { DreamScheduler } from './main/dreams/scheduler';
+import { startDreams, taskAgentWorking } from './main/dreams/startDreams';
+import { createDreamHandlers } from './main/dreams/dreamHandlers';
+import { limitChecks } from './main/dreams/limit';
+import { opencodeModelList } from './main/dreams/models';
 import {
   commitJobOutput,
   OUTSIDE_EDIT_MESSAGE,
@@ -118,6 +124,8 @@ import {
   createGitAuth,
 } from './main/services/gitAuth';
 import { loadEffectiveConfig } from './main/services/effectiveConfig';
+import { claudeSessionFile } from './main/services/claudeSessions';
+import { opencodeModels, runProbe } from './main/services/agentDetector';
 import { RETRY_EVERY_MS as CLEANUP_RETRY_EVERY_MS } from './main/services/worktreeCleanup';
 import { RepoRegistry } from './main/services/RepoRegistry';
 import { taskWorkspaces } from './shared/workspaces';
@@ -339,6 +347,10 @@ let stopBudget: () => void = () => {};
 let stopLedger: () => void = () => {};
 /** Stops the brains' scheduler and job queue (on quit). */
 let stopBrains: () => void = () => {};
+/** The dream scheduler, once started; null before (or when it could not start). */
+let dreams: DreamScheduler | null = null;
+/** Set on quit: the running dream's bounded wait (at most 3 s); the next launch's sweep removes what is left. */
+let dreamsQuit: Promise<void> | null = null;
 /** When the pulse last refreshed (set where the handlers are made). */
 let pulseLastRefreshAt: () => number | null = () => null;
 /** The phone reader's push: asked for whenever a brain changes, stopped on quit. */
@@ -607,6 +619,9 @@ async function boot(): Promise<void> {
   try {
     reporter.step('Loading tasks');
     const store = new TaskStore(path.join(userData, 'state.json'));
+    /** Every dream's worktree, data and hooks: the runner makes them here and the ledger knows them by it. */
+    const dreamsDir = path.join(userData, 'dreams');
+    const dreamStore = new DreamStore(userData);
     /** Secrets at rest (tokens, the cost server key) go through Electron's safeStorage. */
     const secretCrypto = safeCrypto(safeStorage);
     const connections = new ConnectionStore(
@@ -638,7 +653,14 @@ async function boot(): Promise<void> {
     );
     if (migrated)
       await settings
-        .save(migrated)
+        .update(
+          (cur) =>
+            migrateOnboarding(
+              cur,
+              store.state.repos.length,
+              new Date().toISOString(),
+            ) ?? cur,
+        )
         .catch((err) => console.error('Onboarding migration failed', err));
     // Once: the global write-time flag moves onto every project, and repo copies of a project's start options go.
     await applyProjectScopeMigration({
@@ -651,7 +673,7 @@ async function boot(): Promise<void> {
     const seen = seenAtBoot(settings.get(), app.getVersion());
     if (seen)
       await settings
-        .save({ ...settings.get(), whatsNewSeen: seen })
+        .update((cur) => ({ ...cur, whatsNewSeen: seen }))
         .catch((err) => console.error('Saving whatsNewSeen failed', err));
     const recovered = await recoverInterruptedTasks(store);
     // Fetch and push to Azure Repos sign in with the connection's token, not a credential helper that may not start.
@@ -1015,6 +1037,8 @@ async function boot(): Promise<void> {
             project: b.project,
             path: b.path,
           })),
+          // Dream worktrees: their usage is a dream's, never a task's or a brain's.
+          dreamsDir,
         ),
       isBillable: (taskId, sessionId) => usage.isBillable(taskId, sessionId),
       billableVersion: () => usage.billableVersion(),
@@ -1230,7 +1254,37 @@ async function boot(): Promise<void> {
         exception: (...a) => telemetry.exception(...a),
       },
     });
+    // OpenCode's model list for dreams, one for the scheduler and `dream:get` (which never asks), fed also by
+    // `agents:opencodeModels`: `opencode models` runs at most every 10 minutes, a failed ask kept as long.
+    // The day's dream limit, one for `dream:get`, the scheduler and the runner.
+    const dreamLimit = limitChecks({
+      reader: openCodeSessions,
+      limit: () => settings.get().dreaming.limit,
+      now: Date.now,
+    });
+    const dreamModels = opencodeModelList({
+      ask: () => opencodeModels(platform, runProbe),
+      now: Date.now,
+    });
+    // Dreams' IPC: reads answer at once; changes to the dream store wait for the scheduler (the store loads with it).
+    const dreamApi = createDreamHandlers({
+      settings,
+      store: dreamStore,
+      scheduler: () => dreams,
+      repos: () => repos.list(),
+      git,
+      platform,
+      run: (cmd, o) => ptyHost.run(cmd, o),
+      sessionModels: (id) => openCodeSessions.sessionModels(id),
+      models: dreamModels,
+      usage: dreamLimit.usage,
+      dreamsDir,
+      broadcast: () => broadcast('dream:changed', {}),
+      event: (name, props) => telemetry.event(name, props),
+    });
     const handlers = createHandlers({
+      dreams: dreamApi,
+      opencodeModelsRead: (m) => dreamModels.seen(m),
       pulseReady: (f) => {
         pulseLastRefreshAt = f;
       },
@@ -1443,8 +1497,10 @@ async function boot(): Promise<void> {
         return env;
       },
       broadcast: (event, payload) => {
-        if (event === 'tasks:changed')
+        if (event === 'tasks:changed') {
           attention.retain(new Set(terminals.ids()));
+          dreams?.materialChanged();
+        }
         broadcast(event, payload);
       },
     });
@@ -1484,6 +1540,13 @@ async function boot(): Promise<void> {
     terminals.on('exit', (id) => retheme.exit(id));
     terminals.on('data', (id) => tabActivity.output(id));
     terminals.on('exit', (id) => tabActivity.exit(id));
+    // An agent tab's turn began or ended: its task's repo may have new material for a dream.
+    tabActivity.onState((id) => {
+      const t = store.state.tasks.find((x) =>
+        x.terminals.some((term) => term.id === id),
+      );
+      if (t?.repoId) dreams?.materialChanged(t.repoId);
+    });
     nativeTheme.on('updated', () => retheme.tick());
     const retick = setInterval(() => retheme.tick(), 1000);
     const timeTick = setInterval(() => {
@@ -1498,6 +1561,7 @@ async function boot(): Promise<void> {
     const timeFlush = setInterval(() => tracker.flush(), 60_000);
     powerMonitor.on('lock-screen', () => tracker.suspend());
     powerMonitor.on('suspend', () => tracker.suspend());
+    powerMonitor.on('suspend', () => dreams?.suspend());
     powerMonitor.on('unlock-screen', () => tracker.resume());
     powerMonitor.on('resume', () => tracker.resume());
     stopTime = () => {
@@ -1568,6 +1632,44 @@ async function boot(): Promise<void> {
           return !!b && isAutomatic(b, installIdHere);
         },
       });
+      // After the brain scheduler; a dream scheduler that cannot start never stops the launch.
+      startDreams({
+        store: dreamStore,
+        settings,
+        git,
+        platform,
+        run: (cmd, o) => ptyHost.run(cmd, o),
+        reader: openCodeSessions,
+        limit: dreamLimit,
+        dreamsDir,
+        tasks: () => store.state.tasks,
+        repos: () => repos.list(),
+        sessionFile: (id) => claudeSessionFile(id),
+        configBase: async (p) =>
+          (
+            await loadEffectiveConfig(
+              p,
+              { repos: () => repos.list(), tasks: () => store.state.tasks },
+              { lenient: true },
+            )
+          ).base,
+        // Shared with `dream:get`; asked only once the cheap checks pass.
+        models: dreamModels,
+        idleSeconds: () => powerMonitor.getSystemIdleTime(),
+        onBattery: () => powerMonitor.isOnBatteryPower(),
+        agentWorking: () =>
+          taskAgentWorking(
+            store.state.tasks,
+            (id) => tabActivity.view(id)?.state ?? null,
+          ),
+        broadcast: () => broadcast('dream:changed', {}),
+        event: (name, props) => telemetry.event(name, props),
+      }).then(
+        (s) => {
+          dreams = s;
+        },
+        (err) => console.error('[dreams] the scheduler did not start', err),
+      );
       void settleHooks
         .resume()
         .catch((err) => console.error('[brain] settles to resume', err));
@@ -1764,6 +1866,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  // A running dream is stopped as on suspend; will-quit waits for it, at most 3 s.
+  dreamsQuit ??= dreams?.quit(3000) ?? null;
+  dreams?.stop();
   stopTime();
   docsWatcher.stopAll();
   gitDirWatcher.stopAll();
@@ -1782,7 +1887,8 @@ let quitHeld = false;
 app.on('will-quit', (e) => {
   // Hold the quit for the last time writes and one best-effort telemetry send (at most 2 s), then exit.
   const sendTelemetry = telemetry !== NoopTelemetry;
-  if (quitHeld || (!sendTelemetry && timeWrites.size === 0)) return;
+  if (quitHeld || (!sendTelemetry && timeWrites.size === 0 && !dreamsQuit))
+    return;
   quitHeld = true;
   e.preventDefault();
   if (sendTelemetry) health?.report();
@@ -1794,7 +1900,8 @@ app.on('will-quit', (e) => {
     Promise.allSettled([
       ...timeWrites,
       ...(sendTelemetry ? [telemetry.flush()] : []),
+      ...(dreamsQuit ? [dreamsQuit] : []),
     ]),
-    sleep(2000),
+    sleep(dreamsQuit ? 3000 : 2000),
   ]).finally(() => app.exit(0));
 });

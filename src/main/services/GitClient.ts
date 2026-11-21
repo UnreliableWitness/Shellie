@@ -91,6 +91,10 @@ const LOCK_FILES = [
 ];
 
 /** `origin/main` -> origin and main when `origin` is one of `remotes`; null for anything else. */
+/** `name=value` git settings as the `-c` flags that go before the command. */
+export const configFlags = (config: string[]): string[] =>
+  config.flatMap((c) => ['-c', c]);
+
 export function splitRemoteRef(
   ref: string,
   remotes: string[],
@@ -413,12 +417,19 @@ export class GitClient {
 
   async worktreeAdd(
     cwd: string,
-    o: { branch: string; path: string; baseRef: string },
+    o: {
+      branch: string;
+      path: string;
+      baseRef: string;
+      /** Extra `name=value` settings for this call only (a dream turns the repo's hooks off). */
+      config?: string[];
+    },
   ): Promise<string> {
     try {
       await this.runWorktreeStep(
         cwd,
         [
+          ...configFlags(o.config ?? []),
           '-c',
           'core.longpaths=true',
           'worktree',
@@ -438,7 +449,11 @@ export class GitClient {
       throw e;
     }
     return (
-      await this.runWorktreeStep(o.path, ['rev-parse', 'HEAD'], 'git rev-parse')
+      await this.runWorktreeStep(
+        o.path,
+        [...configFlags(o.config ?? []), 'rev-parse', 'HEAD'],
+        'git rev-parse',
+      )
     ).trim();
   }
 
@@ -769,13 +784,17 @@ export class GitClient {
     worktree: string,
     ref: string,
     paths: string[],
+    /** Extra `name=value` settings for every git call (a dream turns the repo's hooks off). */
+    config: string[] = [],
   ): Promise<void> {
+    const c = configFlags(config);
     const root = await fs.realpath(worktree);
     const targets = await Promise.all(
       paths.map(async (rel) => ({ rel, abs: await containedPath(root, rel) })),
     );
     for (const { rel, abs } of targets) {
       const inRef = await this.run(worktree, [
+        ...c,
         'cat-file',
         '-e',
         `${ref}:${rel}`,
@@ -784,6 +803,7 @@ export class GitClient {
         .catch(() => false);
       if (inRef) {
         await this.run(worktree, [
+          ...c,
           '--literal-pathspecs',
           'restore',
           `--source=${ref}`,
@@ -797,6 +817,7 @@ export class GitClient {
       const st = await fs.lstat(abs).catch(() => null);
       if (st?.isDirectory()) throw new Error(`${rel} is a folder`);
       await this.run(worktree, [
+        ...c,
         '--literal-pathspecs',
         'rm',
         '-f',

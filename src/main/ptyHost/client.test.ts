@@ -211,4 +211,47 @@ describe('PtyHostClient.run', () => {
     hosts[0].crash();
     await expect(out).rejects.toThrow(/host stopped/);
   });
+
+  it('cancels the run in the host when its signal aborts, and rejects with what the host answers', async () => {
+    const { client, hosts } = fakeHosts();
+    const stop = new AbortController();
+    const out = client.run(
+      { command: 'opencode', args: [] },
+      { cwd: '/', input: '', timeoutMs: 1000, signal: stop.signal },
+    );
+    const [run] = hosts[0].posted;
+    expect(run).not.toHaveProperty('signal');
+    stop.abort();
+    expect(hosts[0].posted[1]).toEqual({ t: 'cancelRun', n: run.n });
+    hosts[0].answer({ t: 'runError', n: run.n, message: 'stopped' });
+    await expect(out).rejects.toThrow('stopped');
+    // Once settled, a later abort sends nothing.
+    stop.abort();
+    expect(hosts[0].posted).toHaveLength(2);
+  });
+
+  it('never starts a run whose signal was aborted already, and sends no cancel for a finished run', async () => {
+    const { client, hosts } = fakeHosts();
+    const cmd = { command: 'opencode', args: [] };
+    await expect(
+      client.run(cmd, {
+        cwd: '/',
+        input: '',
+        timeoutMs: 1000,
+        signal: AbortSignal.abort(),
+      }),
+    ).rejects.toThrow('stopped');
+    expect(hosts).toHaveLength(0);
+    const stop = new AbortController();
+    const done = client.run(cmd, {
+      cwd: '/',
+      input: '',
+      timeoutMs: 1000,
+      signal: stop.signal,
+    });
+    hosts[0].answer({ t: 'ran', n: 2, stdout: 'ok' });
+    expect(await done).toBe('ok');
+    stop.abort();
+    expect(hosts[0].posted.map((m) => m.t)).toEqual(['run']);
+  });
 });

@@ -4,8 +4,11 @@ import { CostSender } from './CostSender';
 import { CostServerError } from './client';
 
 const conn = { url: 'https://cost.example', email: 'a@b.c', key: 'k' };
-const rec = (id: string, at = '2026-10-01T00:00:00Z') =>
-  ({ id, at }) as CostRecord;
+const rec = (
+  id: string,
+  at = '2026-10-01T00:00:00Z',
+  attribution: CostRecord['attribution'] = { level: 'none' },
+) => ({ id, at, attribution }) as CostRecord;
 const budgets = { claude: null, copilot: null };
 
 /** What cost-server.json keeps between launches. */
@@ -81,6 +84,22 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('CostSender', () => {
+  it('never sends a dream record, even when the ledger lists it as dirty', async () => {
+    const t = make(['cc:1']);
+    const dream = rec('oc:dream', '2026-10-01T00:00:05Z', {
+      level: 'dream',
+      repo: 'web',
+    });
+    t.ledger.dirty.mockImplementation((limit: number) =>
+      [rec('cc:1'), dream].slice(0, limit),
+    );
+    t.sender.start();
+    await vi.advanceTimersByTimeAsync(30_000);
+    const ids = t.send.mock.calls.flatMap((c) => c[1].map((r) => r.id));
+    expect(ids).toEqual(['cc:1']);
+    t.sender.stop();
+  });
+
   it('sends dirty records in batches of 500, oldest first', async () => {
     const t = make(Array.from({ length: 1200 }, (_, i) => `cc:${i}`));
     t.sender.start();

@@ -41,7 +41,10 @@ export function migrateStartSettings(
 }
 
 type ApplyDeps = {
-  settings: { get(): AppSettings; save(s: AppSettings): Promise<unknown> };
+  settings: {
+    get(): AppSettings;
+    update(fn: (current: AppSettings) => AppSettings): Promise<unknown>;
+  };
   connections: {
     list(): Connection[];
     patch(id: string, patch: ConnectionPatch): Promise<unknown>;
@@ -74,7 +77,12 @@ export async function applyProjectScopeMigration(
           log(`Project scope migration: patching ${p.id} failed`, err);
         }
       }
-      if (!failed) await settings.save(wt.settings);
+      // From the settings as they are when the write runs: only the legacy key goes.
+      if (!failed)
+        await settings.update((cur) => {
+          const { writeTimeToAdo: _, ...rest } = cur;
+          return rest;
+        });
     }
   } catch (err) {
     log('Project scope migration (write time) failed', err);

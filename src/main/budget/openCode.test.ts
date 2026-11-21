@@ -438,6 +438,31 @@ describe('OpenCodeReader.sessionTexts', () => {
       new OpenCodeReader('/nope/opencode.db').sessionTexts(['/w']),
     ).toEqual([]);
   });
+
+  it('sessionTurns gives the same turns with when each was said (epoch ms, a joined turn its last message)', () => {
+    const { file, session, say, close } = makeDb();
+    session('ses_a', '/w', 100);
+    say('ses_a', 'user', 1_763_600_000_000, ['Fix the bug']);
+    say('ses_a', 'assistant', 1_763_600_001_000, ['Looking.']);
+    say('ses_a', 'assistant', 1_763_600_002_000, ['Fixed.']);
+    const r = new OpenCodeReader(file);
+    expect(r.sessionTurns(['/w'])).toEqual([
+      [
+        { who: 'Developer', text: 'Fix the bug', at: 1_763_600_000_000 },
+        { who: 'Agent', text: 'Looking.\nFixed.', at: 1_763_600_002_000 },
+      ],
+    ]);
+    expect(r.sessionTexts(['/w'])).toEqual([
+      [
+        { who: 'Developer', text: 'Fix the bug' },
+        { who: 'Agent', text: 'Looking.\nFixed.' },
+      ],
+    ]);
+    close();
+    expect(
+      new OpenCodeReader('/nope/opencode.db').sessionTurns(['/w']),
+    ).toEqual([]);
+  });
 });
 
 describe('OpenCodeReader session reads for the PR draft', () => {
@@ -625,5 +650,189 @@ describe('OpenCodeReader session reads for the PR draft', () => {
     expect(new OpenCodeReader(file).sessionTexts(['/w'])).toEqual([
       [{ who: 'Developer', text: 'Mine' }],
     ]);
+  });
+});
+
+describe('OpenCodeReader dream reads', () => {
+  const makeDb = (withParent = true) => {
+    const file = path.join(
+      mkdtempSync(path.join(os.tmpdir(), 'oc-dream-')),
+      'opencode.db',
+    );
+    const db = new DatabaseSync(file);
+    db.exec(
+      `CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, ${withParent ? 'parent_id text, ' : ''}slug text NOT NULL, directory text NOT NULL, title text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)`,
+    );
+    db.exec(
+      'CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+    );
+    db.exec(
+      'CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)',
+    );
+    const session = (
+      id: string,
+      title: string,
+      o: { parent?: string; created?: number } = {},
+    ) =>
+      db
+        .prepare(
+          `INSERT INTO session VALUES (?, ?, ${withParent ? '?, ' : ''}?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          'p',
+          ...(withParent ? [o.parent ?? null] : []),
+          id,
+          '/w',
+          title,
+          '1',
+          o.created ?? 100,
+          o.created ?? 100,
+        );
+    let n = 0;
+    /** One message as OpenCode stores it: the model of an assistant message is `providerID` and `modelID` in `data`. */
+    const message = (
+      sessionId: string,
+      t: number,
+      o: {
+        role?: string;
+        provider?: string;
+        model?: string;
+        output?: number;
+        completed?: number | null;
+      } = {},
+    ) => {
+      const data = JSON.parse(
+        msg({
+          role: o.role,
+          provider: o.provider,
+          model: o.model,
+          output: o.output,
+          completed: o.completed,
+        }),
+      );
+      data.time = {
+        created: t,
+        completed: o.completed === undefined ? t + 5 : o.completed,
+      };
+      if (o.role === 'user') {
+        delete data.modelID;
+        delete data.providerID;
+        data.model = { providerID: 'zai', modelID: 'glm-5.3' };
+      }
+      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(
+        `msg_${++n}`,
+        sessionId,
+        t,
+        t,
+        JSON.stringify(data),
+      );
+    };
+    return { file, session, message, close: () => db.close() };
+  };
+
+  it('sessionModels names every model that answered in the session and its child sessions, once each', () => {
+    const { file, session, message, close } = makeDb();
+    session('ses_d', 'Shellie dream: propose');
+    session('ses_c', 'Look around (@general subagent)', { parent: 'ses_d' });
+    session('ses_gc', 'Deeper', { parent: 'ses_c' });
+    session('ses_other', 'New session');
+    message('ses_d', 100, { role: 'user' });
+    message('ses_d', 110, { provider: 'zai', model: 'glm-5.3' });
+    message('ses_d', 120, {
+      provider: 'zai',
+      model: 'glm-5.3',
+      completed: null,
+    });
+    message('ses_c', 130, { provider: 'opencode', model: 'big-pickle' });
+    message('ses_gc', 140, {
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+    });
+    message('ses_other', 150, { provider: 'openai', model: 'gpt-5' });
+    close();
+    const r = new OpenCodeReader(file);
+    expect(r.sessionModels('ses_d')).toEqual([
+      'zai/glm-5.3',
+      'opencode/big-pickle',
+      'anthropic/claude-haiku-4-5',
+    ]);
+    expect(r.sessionModels('ses_none')).toEqual([]);
+    expect(
+      new OpenCodeReader('/nope/opencode.db').sessionModels('ses_d'),
+    ).toEqual([]);
+  });
+
+  it('sessionModels reads a database without parent_id as flat sessions', () => {
+    const { file, session, message, close } = makeDb(false);
+    session('ses_d', 'Shellie dream: test');
+    message('ses_d', 110, { provider: 'zai', model: 'glm-5.3' });
+    close();
+    expect(new OpenCodeReader(file).sessionModels('ses_d')).toEqual([
+      'zai/glm-5.3',
+    ]);
+  });
+
+  it('dreamTokens counts the finished messages of dream sessions (and their children) inside the window', () => {
+    const { file, session, message, close } = makeDb();
+    session('ses_d1', 'Shellie dream: propose');
+    session('ses_d2', 'Shellie dream: check');
+    session('ses_dc', 'Child', { parent: 'ses_d2' });
+    session('ses_task', 'Fix the bug');
+    session('ses_job', 'Shellie brain job: capture');
+    // Each assistant message: 3 input, 7 cache read, 12018 cache write, `output` output.
+    message('ses_d1', 1000, { provider: 'zai', model: 'glm-5.3', output: 10 });
+    message('ses_d1', 1500, { role: 'user' });
+    message('ses_d2', 1999, { provider: 'zai', model: 'glm-5.3', output: 20 });
+    message('ses_dc', 1200, { provider: 'zai', model: 'glm-5.3', output: 30 });
+    message('ses_d2', 1300, {
+      provider: 'zai',
+      model: 'glm-5.3',
+      completed: null,
+    });
+    message('ses_d1', 999, { provider: 'zai', model: 'glm-5.3', output: 1000 });
+    message('ses_d1', 2000, {
+      provider: 'zai',
+      model: 'glm-5.3',
+      output: 1000,
+    });
+    message('ses_task', 1100, {
+      provider: 'zai',
+      model: 'glm-5.3',
+      output: 1000,
+    });
+    message('ses_job', 1100, {
+      provider: 'zai',
+      model: 'glm-5.3',
+      output: 1000,
+    });
+    close();
+    const each = 3 + 7 + 12018;
+    expect(new OpenCodeReader(file).dreamTokens(1000, 2000)).toEqual({
+      tokens: 3 * each + 10 + 20 + 30,
+      byModel: {
+        'zai/glm-5.3': {
+          inputTokens: 9,
+          outputTokens: 60,
+          cacheReadTokens: 21,
+          cacheWrite5mTokens: 3 * 12018,
+          cacheWrite1hTokens: 0,
+        },
+      },
+    });
+    expect(new OpenCodeReader('/nope/opencode.db').dreamTokens(0, 1)).toEqual({
+      tokens: 0,
+      byModel: {},
+    });
+  });
+
+  it('sessionTexts and latestSession leave dream sessions out', () => {
+    const { file, session, close } = makeDb();
+    session('ses_task', 'Fix the bug', { created: 100 });
+    session('ses_dream', 'Shellie dream: propose', { created: 200 });
+    close();
+    const r = new OpenCodeReader(file);
+    expect(r.sessionTexts(['/w'])).toHaveLength(1);
+    expect(r.latestSession(['/w'])?.id).toBe('ses_task');
   });
 });

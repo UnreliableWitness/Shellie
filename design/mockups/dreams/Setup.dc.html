@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Switching on dreaming: model, limit, timing and repos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#201f1e}
+a{color:#5ca9f2}a:hover{color:#8cc4f7}
+button,input,select{font:inherit}
+</style>
+</helmet>
+<div style="min-height: 1000px; display: flex; flex-direction: column; background: #201f1e; color: #e9e9e8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45">
+  <header style="height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #1b1a19; border-bottom: 1px solid #333231">
+    <a href="Main.dc.html" style="font-weight: 600; color: #e9e9e8; text-decoration: none">Shellie</a>
+    <span style="color: #a3a2a1" aria-hidden="true">›</span>
+    <a href="Dreams.dc.html" style="color: #a3a2a1; text-decoration: none">Dreams</a>
+    <span style="color: #a3a2a1" aria-hidden="true">›</span>
+    <span style="color: #a3a2a1">Set up</span>
+  </header>
+
+  <div style="box-sizing: border-box; width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 6px; max-width: 72ch">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 600">Let Shellie dream</h1>
+      <p style="margin: 0; color: #a3a2a1">While you are away, Shellie reads what was said in a repo’s agent sessions and proposes better skills and rules for it, on a branch you review. Nothing dreams until you switch it on here.</p>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px">
+      <div style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+
+        <section aria-label="Step 1, model" style="background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; align-items: baseline; gap: 10px">
+            <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; color: #a3a2a1">1</span>
+            <h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">The model that dreams</h2>
+            <span style="color: #6ccb5f; font-size: 12px; font-weight: 600">Tested</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px">
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <span style="color: #a3a2a1; font-size: 12px">Agent</span>
+              <span style="min-height: 32px; display: flex; align-items: center">OpenCode</span>
+            </div>
+            <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 4px">
+              <label for="dream-model" style="color: #a3a2a1; font-size: 12px">Model, from OpenCode’s own list</label>
+              <select id="dream-model" style="min-height: 32px; padding: 0 8px; border-radius: 2px; border: 1px solid #4a4948; background: #201f1e; color: #e9e9e8; font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace">
+                <option>zai/glm-5.3</option>
+                <option>opencode/big-pickle</option>
+                <option>github-copilot/gpt-5</option>
+              </select>
+            </div>
+            <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">Test again</button>
+          </div>
+          <p style="margin: 0; color: #a3a2a1; font-size: 12px"><span style="color: #6ccb5f">zai/glm-5.3 answered.</span> Shellie checked that no other model took part. It checks again after every dream, and switches dreaming off if another model ever answers.</p>
+        </section>
+
+        <section aria-label="Step 2, limit" style="background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; align-items: baseline; gap: 10px">
+            <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; color: #a3a2a1">2</span>
+            <h2 style="margin: 0; font-size: 16px; font-weight: 600">How much it may spend a day</h2>
+          </div>
+          <div role="radiogroup" aria-label="Daily limit" style="display: flex; flex-direction: column; gap: 4px">
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 44px">
+              <input type="radio" name="limit" checked>
+              <span style="width: 120px">Tokens</span>
+              <input type="text" aria-label="Tokens a day" value="5 000 000" style="width: 120px; min-height: 32px; padding: 0 8px; box-sizing: border-box; border-radius: 2px; border: 1px solid #4a4948; background: #201f1e; color: #e9e9e8; font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; text-align: right">
+              <span style="color: #a3a2a1; font-size: 12px">a day · a running dream is stopped when it is reached</span>
+            </label>
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 44px; color: #8f8e8d">
+              <input type="radio" name="limit" disabled>
+              <span style="width: 120px">Euros</span>
+              <span style="font-size: 12px">Not available: Shellie has no price for zai/glm-5.3</span>
+            </label>
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 44px">
+              <input type="radio" name="limit">
+              <span style="width: 120px">No limit</span>
+              <span style="color: #a3a2a1; font-size: 12px">For a licence without a ceiling. Shellie asks you to confirm this separately.</span>
+            </label>
+          </div>
+        </section>
+
+        <section aria-label="Step 3, timing" style="background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: baseline; gap: 10px">
+            <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; color: #a3a2a1">3</span>
+            <h2 style="margin: 0; font-size: 16px; font-weight: 600">When it dreams</h2>
+          </div>
+          <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 44px">
+            <span>After</span>
+            <input type="text" aria-label="Minutes idle" value="10" style="width: 56px; min-height: 32px; padding: 0 8px; box-sizing: border-box; border-radius: 2px; border: 1px solid #4a4948; background: #201f1e; color: #e9e9e8; text-align: right">
+            <span>minutes without keyboard or mouse, by day or by night</span>
+          </label>
+          <p style="margin: 0; color: #a3a2a1; font-size: 12px">Only on mains power, one dream at a time, and never while one of your task agents is working. A dream that is running when you come back finishes on its own.</p>
+        </section>
+
+        <section aria-label="Step 4, repos" style="background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: baseline; gap: 10px">
+            <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; color: #a3a2a1">4</span>
+            <h2 style="margin: 0; font-size: 16px; font-weight: 600">Which repos, and what a dream may change</h2>
+          </div>
+          <sc-for list="{{repos}}" as="r" hint-placeholder-count="4">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 44px; border-top: 1px solid #333231; padding-top: 6px">
+              <label style="display: flex; align-items: center; gap: 10px; width: 140px; min-height: 32px">
+                <input type="checkbox" checked="{{r.on}}" disabled="{{r.blocked}}">
+                <span style="font-weight: 600">{{r.name}}</span>
+              </label>
+              <span style="flex: 1 1 260px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px">
+                <sc-for list="{{r.folders}}" as="f" hint-placeholder-count="1">
+                  <span style="padding: 2px 8px; border-radius: 2px; background: #3a3938; font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px">{{f}}</span>
+                </sc-for>
+                <span style="color: #a3a2a1; font-size: 12px">{{r.note}}</span>
+              </span>
+              <button type="button" style="min-height: 32px; padding: 0 10px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">{{r.action}}</button>
+            </div>
+          </sc-for>
+          <p style="margin: 4px 0 0; color: #a3a2a1; font-size: 12px">A dream works on its own branch in its own folder. It never touches your checkout, never pushes, and anything it changes outside these folders is removed.</p>
+        </section>
+      </div>
+
+      <aside aria-label="What you are switching on" style="flex: 1 1 300px; max-width: 380px; box-sizing: border-box; background: #252423; border: 1px solid #4a4948; border-radius: 4px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px">
+        <h2 style="margin: 0; font-size: 12px; font-weight: 600; color: #a3a2a1">What you are switching on</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 1.5">Dreams run on OpenCode with <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 14px">zai/glm-5.3</span>, when this machine is idle, for <strong>2 repos</strong> (portal, billing), up to <strong>5 million tokens</strong> a day.</p>
+        <p style="margin: 0; color: #a3a2a1">What was said in those repos’ agent sessions is sent to that model.</p>
+        <label style="display: flex; align-items: flex-start; gap: 10px; min-height: 44px">
+          <input type="checkbox" checked style="margin-top: 3px">
+          <span>I have read this and want dreaming on.</span>
+        </label>
+        <button type="button" style="min-height: 40px; padding: 0 16px; border-radius: 2px; border: 0; background: #0078d4; color: #ffffff; font-weight: 600">Switch on dreaming</button>
+        <p style="margin: 0; color: #a3a2a1; font-size: 12px">Later, adding a repo, adding a folder or raising the limit shows this sentence again. An update of Shellie never switches dreaming on.</p>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+return {
+repos: [
+{ name: 'portal', on: true, blocked: false, folders: ['.apm'], note: '', action: 'Add folder' },
+{ name: 'billing', on: true, blocked: false, folders: ['.apm', 'AGENTS.md'], note: '', action: 'Add folder' },
+{ name: 'shop', on: false, blocked: false, folders: ['.apm'], note: 'found in the repo', action: 'Add folder' },
+{ name: 'intranet', on: false, blocked: true, folders: [], note: 'No agent packages found. Choose a folder before it can dream.', action: 'Choose folder' }
+]
+};
+}
+}
+</script>
+</body>
+</html>

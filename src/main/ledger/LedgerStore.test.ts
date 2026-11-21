@@ -99,6 +99,18 @@ describe('LedgerStore', () => {
     expect(s.dirtyCount()).toBe(1);
   });
 
+  it('never lists dream records as dirty', async () => {
+    const s = new LedgerStore(dir);
+    await s.load();
+    const dream = rec('oc:d', {
+      attribution: { level: 'dream', repo: 'web' },
+      billable: false,
+    });
+    await s.upsert([dream, rec('cc:a')]);
+    expect(s.dirty(500).map((r) => r.id)).toEqual(['cc:a']);
+    expect(s.dirtyCount()).toBe(1);
+  });
+
   it('keeps sent state across reloads', async () => {
     const s = new LedgerStore(dir);
     await s.load();

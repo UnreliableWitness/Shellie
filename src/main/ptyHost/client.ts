@@ -103,14 +103,33 @@ export class PtyHostClient implements PtyHost {
     return { proc, started: startedPromise };
   }
 
-  /** runWithInput, run by the host: same result, same errors (ExitError for a non-zero exit, `code` kept). */
+  /**
+   * runWithInput, run by the host: same result, same errors (ExitError for a non-zero exit, `code` kept). `signal`
+   * stops it as runWithInput's does: the host kills the process tree and the run rejects with `stopped`.
+   */
   run(
     { command, args, env }: Command,
     o: Parameters<typeof runWithInput>[1],
   ): Promise<string> {
     const n = this.next++;
+    const { signal } = o;
     return new Promise<string>((resolve, reject) => {
-      this.runs.set(n, { resolve, reject });
+      if (signal?.aborted) return reject(new Error('stopped'));
+      const onAbort = () => {
+        if (this.runs.has(n)) this.channel?.post({ t: 'cancelRun', n });
+      };
+      const settled = () => signal?.removeEventListener('abort', onAbort);
+      this.runs.set(n, {
+        resolve: (stdout) => {
+          settled();
+          resolve(stdout);
+        },
+        reject: (e) => {
+          settled();
+          reject(e);
+        },
+      });
+      signal?.addEventListener('abort', onAbort, { once: true });
       this.host().post({
         t: 'run',
         n,
