@@ -161,6 +161,19 @@ function Dreams({ view, project }: { view: DreamView; project: string }) {
                     {nameOf(e.repoId, e.repoName)}
                   </strong>
                   <span className="grow dream-clamp">{journalLine(e)}</span>
+                  {e.closed?.pr && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() =>
+                        void api()
+                          .invoke('links:open', e.closed!.pr!.url)
+                          .catch(() => undefined)
+                      }
+                    >
+                      Open pull request
+                    </button>
+                  )}
                   <span className="muted mono small">
                     {spacedNumber(e.tokens)}
                   </span>

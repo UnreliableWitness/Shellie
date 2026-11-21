@@ -225,7 +225,10 @@ export function renderTaskMd(
           'This file is written by Shellie and excluded from git. Put notes for the task here.',
           '',
         ];
-  const base = lines.join('\n');
+  // A task made from a dream: what the dream proposed, for the agent that is asked to change it.
+  const base = task.dreamBriefing
+    ? `${lines.join('\n')}\n${task.dreamBriefing}`
+    : lines.join('\n');
   return details
     ? `${base}\n${workItemSection(details, task.workItem?.url ?? null)}`
     : base;
@@ -263,6 +266,7 @@ export function shellieRunInstruction(names: string[]): string {
 export function claudeContext(
   task: Pick<Task, 'workItem' | 'name' | 'branch' | 'slug'> & {
     repoId?: string | null;
+    dreamBriefing?: string;
   },
   runNames?: string[],
   brain?: { name: string; path: string },
@@ -274,7 +278,11 @@ export function claudeContext(
   // A task without a repo has no branch to put a worktree on.
   if (task.repoId === null)
     return `This folder is a Shellie task for ${taskTitle(task)}, without a repo. The details are in .shellie/task.md. Do not start on the task by yourself: wait for the user's instructions.${brainText}`;
-  const base = `This folder is a Shellie task for ${taskTitle(task)}. The details are in .shellie/task.md. Do not start on the task by yourself: wait for the user's instructions. ${otherReposInstruction(task)}${brainText}`;
+  // The dream's own text stays in the file: this only says it is there (quotes from sessions never go in a prompt).
+  const dreamText = task.dreamBriefing
+    ? ' This task was made from a Shellie dream: its branch already holds proposed changes to the skills and rules of this repo, described under Dream in .shellie/task.md. Read that section first, so you know what the user means by the proposals.'
+    : '';
+  const base = `This folder is a Shellie task for ${taskTitle(task)}. The details are in .shellie/task.md. Do not start on the task by yourself: wait for the user's instructions.${dreamText} ${otherReposInstruction(task)}${brainText}`;
   return runNames && runNames.length > 0
     ? `${base} ${shellieRunInstruction(runNames)}`
     : base;

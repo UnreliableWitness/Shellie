@@ -269,7 +269,14 @@ import {
 } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { withTimeout } from '../async';
-import { noDreams, type DreamApi } from '../dreams/dreamHandlers';
+import { dreamPrDescription, dreamPrTitle } from '../../shared/dreams';
+import {
+  dreamRefusal,
+  noDreams,
+  type DreamApi,
+  type DreamSent,
+  type DreamToSend,
+} from '../dreams/dreamHandlers';
 import { throttleByKey } from './throttleByKey';
 
 export type Services = {
@@ -1105,6 +1112,86 @@ export function createHandlers(s: Services): Handlers {
         availability.target.repo,
       ]);
     return { connection, remotes, availability };
+  };
+
+  /**
+   * Sends a dream's branch (`dream:pr`): the secret check a task's push gets, the push, and a published pull request
+   * to the repo's PR target, or only the push where Shellie can make none. Every failure is a fixed phrase: git's and
+   * Azure DevOps' own errors may name branches, repos and paths.
+   */
+  const sendDream = async (
+    repoId: string,
+    ready: DreamToSend,
+    pushAnyway: boolean,
+  ): Promise<DreamSent> => {
+    if (!pushAnyway) {
+      const matcher = LeakMatcher.from(s.secrets.allValues([repoId]));
+      if (!matcher.empty) {
+        let leak: Environment | null;
+        try {
+          leak = await branchLeaks(ready.worktreePath, ready.baseSha, matcher);
+        } catch {
+          // Never with the error: git's output could hold the lines it was reading.
+          throw dreamRefusal(`${LEAK_UNCHECKED}; not pushed`);
+        }
+        if (leak !== null) {
+          tel.event('secrets.leakDetected', {
+            where: 'push',
+            environment: leak,
+          });
+          throw dreamRefusal(`${LEAK_IN_BRANCH}; not pushed`);
+        }
+      }
+    }
+    try {
+      await s.git.push(ready.worktreePath, 'origin', ready.branch);
+    } catch (e) {
+      console.error('[dreams] the dream branch was not pushed', e);
+      throw dreamRefusal('Could not push the branch');
+    }
+    const { connection, remotes, availability } = await prTargetOf(repoId);
+    if (!availability.available || !availability.target || !connection)
+      return { as: 'pushed' };
+    try {
+      const { project, repo: repoName } = availability.target;
+      const client = s.trackers.tracker(connection.id);
+      const repositoryId = await client.repositoryId(project, repoName);
+      const raw =
+        (await client.findActivePullRequest(
+          project,
+          repositoryId,
+          ready.branch,
+        )) ??
+        (await client.createPullRequest(project, repositoryId, {
+          source: ready.branch,
+          // The repo's PR target, as a dream branches from it.
+          target: targetBranch(
+            (await s.loadConfig(ready.repoPath, { lenient: true })).base,
+            remotes,
+          ),
+          title: dreamPrTitle(ready.kept.map((p) => p.title)),
+          description: dreamPrDescription(ready.kept),
+          workItemId: null,
+          // The owner reviewed the proposals in Shellie, and a dream has no Finish page to publish from.
+          isDraft: false,
+        }));
+      tel.event('pr.created');
+      return {
+        as: 'pr',
+        pr: {
+          id: raw.pullRequestId,
+          url: prWebUrl(
+            connection.organizationUrl,
+            project,
+            repoName,
+            raw.pullRequestId,
+          ),
+        },
+      };
+    } catch (e) {
+      console.error('[dreams] the pull request was not created', e);
+      throw dreamRefusal('Could not create the pull request');
+    }
   };
 
   /**
@@ -3609,6 +3696,21 @@ export function createHandlers(s: Services): Handlers {
   return {
     ...brainHandlers,
     ...dreams.handlers,
+    'dream:prTarget': async (repoId) => {
+      const { availability } = await prTargetOf(repoId);
+      return {
+        available: availability.available,
+        reason: availability.reason,
+      };
+    },
+    'dream:pr': async (repoId, pushAnyway) => {
+      const sent = await dreams.publish(repoId, (ready) =>
+        sendDream(repoId, ready, pushAnyway === true),
+      );
+      return sent.as === 'pr'
+        ? { kind: 'pr', id: sent.pr.id, url: sent.pr.url }
+        : { kind: 'pushed', branch: sent.branch };
+    },
     ...createReaderHandlers(s.reader),
     ...createDocsHandlers({
       taskById,
@@ -3822,8 +3924,14 @@ export function createHandlers(s: Services): Handlers {
           environment === 'production' ? productionUntil() : null,
       });
       if (!fromDream) return registerTask(task, keys);
+      // The agents of a dream's task are told what the dream proposed (the Dream section of `.shellie/task.md`).
+      const briefing = dreams.taskLink.briefing(input.fromDream!, repo.id);
       const created = await registerTask(
-        { ...task, existingBranch: true },
+        {
+          ...task,
+          existingBranch: true,
+          ...(briefing ? { dreamBriefing: briefing } : {}),
+        },
         keys,
       );
       await dreams.taskLink

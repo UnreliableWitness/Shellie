@@ -11,6 +11,7 @@ import type { TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { emptyState, result, viewOf } from '../test-helpers/dreamFixtures';
 import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
+import { LEAK_IN_BRANCH } from '../../shared/secrets';
 import { DreamScreen } from './DreamScreen';
 import { activateProject } from '../test-helpers/project';
 
@@ -213,7 +214,7 @@ describe('DreamScreen', () => {
     expect(screen.getByText('dream/2026-11-20-1')).toBeInTheDocument();
     expect(screen.getByText('2 of 2 kept')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Open 2 as a task' }),
+      screen.getByRole('button', { name: 'Change with an agent' }),
     ).toBeEnabled();
   });
 
@@ -377,7 +378,7 @@ describe('DreamScreen', () => {
     expect(callsOf(calls, 'dream:drop')).toEqual([['r1', 'p1', true]]);
     expect(await screen.findByText('1 of 2 kept')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Open 1 as a task' }),
+      screen.getByRole('button', { name: 'Change with an agent' }),
     ).toBeEnabled();
     expect(rowButton('Migrations')).toHaveTextContent('Dropped');
     const undo = within(list()).getByRole('button', { name: /^Undo/ });
@@ -442,7 +443,7 @@ describe('DreamScreen', () => {
     fakeMain(r);
     render(<DreamScreen repoId="r1" />);
     expect(
-      await screen.findByRole('button', { name: 'Open 0 as a task' }),
+      await screen.findByRole('button', { name: 'Change with an agent' }),
     ).toBeDisabled();
     expect(screen.getByText('0 of 2 kept')).toBeInTheDocument();
   });
@@ -451,7 +452,7 @@ describe('DreamScreen', () => {
     const { calls } = fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Open 2 as a task' }),
+      await screen.findByRole('button', { name: 'Change with an agent' }),
     );
     await waitFor(() =>
       expect(useStore.getState().screen).toEqual({
@@ -482,7 +483,7 @@ describe('DreamScreen', () => {
     fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Open 2 as a task' }),
+      await screen.findByRole('button', { name: 'Change with an agent' }),
     );
     await waitFor(() =>
       expect(useStore.getState().screen).toMatchObject({
@@ -500,7 +501,7 @@ describe('DreamScreen', () => {
     });
     render(<DreamScreen repoId="r1" />);
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Open 2 as a task' }),
+      await screen.findByRole('button', { name: 'Change with an agent' }),
     );
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The dream could not be opened as a task',
@@ -683,6 +684,124 @@ describe('DreamScreen', () => {
     expect(
       await screen.findByRole('list', { name: 'Proposals' }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('DreamScreen: what to do with a dream', () => {
+  const notices = () => useStore.getState().notices.map((n) => n.message);
+  const prCalls = (calls: { channel: string; args: unknown[] }[]) =>
+    callsOf(calls, 'dream:pr');
+
+  it('says what a dream is and what to do, and creates the pull request', async () => {
+    const { calls } = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    expect(
+      await screen.findByText(
+        /Shellie proposes these changes to this repo’s skills and rules, from your past sessions\. Drop what you don’t want, then create a pull request\./,
+      ),
+    ).toBeInTheDocument();
+    const create = await screen.findByRole('button', {
+      name: 'Create pull request',
+    });
+    await waitFor(() => expect(create).toBeEnabled());
+    expect(create).toHaveClass('btn-primary');
+    await userEvent.click(create);
+    await waitFor(() =>
+      expect(useStore.getState().screen).toEqual({ kind: 'dreams' }),
+    );
+    expect(prCalls(calls)).toEqual([['r1', false]]);
+    expect(notices()).toContain('Pull request !7 created from the dream');
+  });
+
+  it('offers Push branch, with the reason, where Shellie can make no pull request', async () => {
+    const { calls } = fakeMain(twoProposals(), {
+      'dream:prTarget': () => ({
+        available: false,
+        reason: 'origin is not an Azure Repos URL',
+      }),
+      'dream:pr': () => ({ kind: 'pushed', branch: 'dream/2026-11-20-1' }),
+    });
+    render(<DreamScreen repoId="r1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Push branch' }),
+    );
+    expect(
+      screen.getByText(
+        'Shellie cannot make a pull request here: origin is not an Azure Repos URL. It pushes the branch instead.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Create pull request' }),
+    ).toBeNull();
+    await waitFor(() =>
+      expect(notices()).toContain('Branch dream/2026-11-20-1 pushed'),
+    );
+    expect(prCalls(calls)).toEqual([['r1', false]]);
+  });
+
+  it('asks before pushing a stored secret, and pushes only after Push anyway', async () => {
+    let anyway = false;
+    const { calls } = fakeMain(twoProposals(), {
+      'dream:pr': (_repoId, pushAnyway) => {
+        if (!pushAnyway) throw new Error(`${LEAK_IN_BRANCH}; not pushed`);
+        anyway = true;
+        return { kind: 'pr', id: 7, url: 'https://example.invalid/pr/7' };
+      },
+    });
+    render(<DreamScreen repoId="r1" />);
+    const create = await screen.findByRole('button', {
+      name: 'Create pull request',
+    });
+    await waitFor(() => expect(create).toBeEnabled());
+    await userEvent.click(create);
+    expect(
+      await screen.findByText(`${LEAK_IN_BRANCH}. Push anyway?`),
+    ).toBeInTheDocument();
+    expect(useStore.getState().screen).toEqual({ kind: 'dream', repoId: 'r1' });
+    expect(anyway).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Push anyway' }));
+    await waitFor(() =>
+      expect(useStore.getState().screen).toEqual({ kind: 'dreams' }),
+    );
+    expect(prCalls(calls)).toEqual([
+      ['r1', false],
+      ['r1', true],
+    ]);
+  });
+
+  it('shows a failed pull request in its phrase, stays, and can be pressed again', async () => {
+    let fail = true;
+    fakeMain(twoProposals(), {
+      'dream:pr': () => {
+        if (fail) throw new Error('Could not create the pull request');
+        return { kind: 'pr', id: 7, url: 'https://example.invalid/pr/7' };
+      },
+    });
+    render(<DreamScreen repoId="r1" />);
+    const create = await screen.findByRole('button', {
+      name: 'Create pull request',
+    });
+    await waitFor(() => expect(create).toBeEnabled());
+    await userEvent.click(create);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not create the pull request',
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dream', repoId: 'r1' });
+    fail = false;
+    await userEvent.click(create);
+    await waitFor(() =>
+      expect(useStore.getState().screen).toEqual({ kind: 'dreams' }),
+    );
+  });
+
+  it('disables Create pull request when every proposal is dropped', async () => {
+    fakeMain(twoProposals({ proposals: [proposal('p1', { dropped: true })] }));
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('button', { name: 'Discard dream' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(
+      screen.getByRole('button', { name: 'Create pull request' }),
+    ).toBeDisabled();
   });
 });
 

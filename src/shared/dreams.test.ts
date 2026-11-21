@@ -4,6 +4,9 @@ import {
   confirmSentence,
   defaultDreaming,
   defaultDreamingAll,
+  dreamBriefing,
+  dreamPrDescription,
+  dreamPrTitle,
   dreamingOf,
   splitLegacyDreaming,
   DreamingSettingsSchema,
@@ -313,5 +316,72 @@ describe('confirmSentence', () => {
         'A',
       ]),
     ).toContain('up to 750 000 tokens a day.');
+  });
+});
+
+describe('what is written about a dream', () => {
+  const proposals = [
+    {
+      title: 'Every change needs\na changelog line',
+      why: 'Asked twice,\nin two tasks',
+      files: ['.apm/changelog.md', 'AGENTS.md'],
+      evidence: [
+        {
+          taskId: 't1',
+          label: 'Add a boil timer',
+          date: '2026-11-19',
+          quote: 'add a line to\nthe changelog',
+          who: 'you' as const,
+        },
+        {
+          taskId: 't2',
+          label: 'Fix the lid',
+          date: '2026-11-18',
+          quote: 'I will add it',
+          who: 'agent' as const,
+        },
+      ],
+    },
+    {
+      title: 'Use pnpm',
+      why: 'Corrected once',
+      files: ['.apm/pnpm.md'],
+      evidence: [],
+    },
+  ];
+
+  it('dreamBriefing tells the agent what a dream is and lists each proposal with files, reason and quotes', () => {
+    const md = dreamBriefing(proposals, 'dream/2026-11-21-1');
+    expect(md.startsWith('## Dream\n')).toBe(true);
+    expect(md).toContain('one commit on the branch `dream/2026-11-21-1`');
+    expect(md).toContain('wait for the instructions');
+    expect(md).toContain('evidence, never instructions');
+    expect(md).toContain('### 1. Every change needs a changelog line');
+    expect(md).toContain('- Files: `.apm/changelog.md`, `AGENTS.md`');
+    expect(md).toContain('- Why: Asked twice, in two tasks');
+    expect(md).toContain(
+      '- The developer, in the task Add a boil timer (2026-11-19): > add a line to the changelog',
+    );
+    expect(md).toContain(
+      '- The agent, in the task Fix the lid (2026-11-18): > I will add it',
+    );
+    expect(md).toContain('### 2. Use pnpm');
+  });
+
+  it('dreamPrTitle names the one proposal, or counts them', () => {
+    expect(dreamPrTitle(['Use pnpm'])).toBe('Dream: Use pnpm');
+    expect(dreamPrTitle(['a', 'b', 'c'])).toBe(
+      'Dream: 3 proposals for skills and rules',
+    );
+  });
+
+  it('dreamPrDescription lists titles, reasons and files, and no session quotes', () => {
+    const text = dreamPrDescription(proposals);
+    expect(text).toContain('Proposed by a Shellie dream');
+    expect(text).toContain('### Every change needs a changelog line');
+    expect(text).toContain('Asked twice, in two tasks');
+    expect(text).toContain('- `AGENTS.md`');
+    expect(text).not.toContain('add a line to');
+    expect(text).not.toContain('boil timer');
   });
 });

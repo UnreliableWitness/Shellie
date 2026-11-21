@@ -943,6 +943,24 @@ export type Channels = {
    */
   'dream:openAsTask': { args: [repoId: string]; result: { branch: string } };
   /**
+   * Create pull request: pushes the open result's branch with the kept proposals and opens a published pull request
+   * to the repo's PR target, or only pushes where Shellie can make none (`dream:prTarget`); then the dream closes.
+   * A stored secret in what would be pushed refuses the push (the message holds `LEAK_IN_BRANCH` or
+   * `LEAK_UNCHECKED`) unless `pushAnyway`. The other failures are "Could not push the branch" and "Could not create
+   * the pull request"; after the second, a new call only creates the pull request.
+   */
+  'dream:pr': {
+    args: [repoId: string, pushAnyway?: boolean];
+    result:
+      | { kind: 'pr'; id: number; url: string }
+      | { kind: 'pushed'; branch: string };
+  };
+  /** Whether Shellie can make a pull request for the repo, and why not (a line for the screen). */
+  'dream:prTarget': {
+    args: [repoId: string];
+    result: { available: boolean; reason: string | null };
+  };
+  /**
    * Forgets a result opened as a task whose task was never made: Shellie no longer offers to make it. The branch stays
    * in the repo.
    */

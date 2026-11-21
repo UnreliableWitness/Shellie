@@ -142,6 +142,15 @@ export function journalLine(e: DreamJournalEntry): string {
   switch (e.outcome) {
     case 'proposed': {
       if (e.closed?.as === 'discarded') return `${n} · discarded`;
+      if (e.closed?.as === 'pr' || e.closed?.as === 'pushed') {
+        const how =
+          e.closed.as === 'pr' && e.closed.pr
+            ? `pull request !${e.closed.pr.id} created`
+            : `branch ${e.closed.branch ?? ''} pushed`.replace('  ', ' ');
+        const dropped =
+          e.closed.dropped > 0 ? ` · ${e.closed.dropped} dropped` : '';
+        return `${n} · ${e.closed.kept} kept, ${how}${dropped}`;
+      }
       if (e.closed) {
         const task = e.closed.taskName
           ? `opened as task “${e.closed.taskName}”`
