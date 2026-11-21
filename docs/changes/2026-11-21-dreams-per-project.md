@@ -59,10 +59,25 @@ The owner found one dream setup and one Dreams list for every project confusing.
   with two and three projects (order, own idle minutes and limit, wrong model, Stop), the move at start, every
   changed IPC call with two projects, and the screens with a project, with another one, and with none.
 - `npm test`, `npm run typecheck`, `npm run lint`.
+- **The dev app** (macOS, a scratch data folder, driven over the DevTools protocol), with two projects and one
+  throwaway repo in each. The test Azure DevOps organization has one project, so the second project was a copy of
+  the first's stored connection under another name, written into the scratch folder; its repo list calls fail,
+  which the check did not need. Seen:
+  - a settings file with the old single setup (on, both repos and one unknown repo) became one block per project
+    at the start, each on with its own repo only, the unknown repo dropped, and the old block gone;
+  - with a stored result for the first project's repo: that project showed "Dreams 1", the Home band with the
+    proposal, the result under Waiting for you and its journal line; the second project showed no count, no band,
+    "Nothing waits for you" and "No dreams yet";
+  - Switch off in the second project left the first on (the screens and the settings file);
+  - Settings › Project shows the Dreaming section; Settings › User no longer does.
 
 ## Not verified, and known gaps
 
-- See the end of this file's pull request description for what was seen in the running app.
+- Not seen in the running app: a dream actually running (so "Another project is dreaming", usage counted per
+  project from OpenCode's database, and a wrong model stopping several projects are covered by tests only), the
+  setup screen being used, a repo linked to another project, and removing a project.
+- Home lists tasks and pull requests of every project, but its "While you were away" band shows the active
+  project's dreams only.
 - Not run on Windows.
 - A downgrade to a version from before this change reads the new `dreaming` shape as not valid: dreaming is off
   there and the setup must be made again.
