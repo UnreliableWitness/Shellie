@@ -10,6 +10,7 @@ import {
 import { useStore } from '../store';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { DreamSetupScreen } from './DreamSetupScreen';
+import { activateProject, PROJECT_ID } from '../test-helpers/project';
 
 const MODEL = 'zai/glm-5.3';
 
@@ -79,10 +80,24 @@ const open = (
     ...extra,
   });
 
+/** The calls of a channel. A call about a project's setup must name the active project; what follows it is returned. */
+const OF_PROJECT = [
+  'dream:save',
+  'dream:test',
+  'dream:switchOn',
+  'dream:switchOff',
+];
 const callsOf = (
   calls: { channel: string; args: unknown[] }[],
   channel: string,
-) => calls.filter((c) => c.channel === channel).map((c) => c.args);
+) =>
+  calls
+    .filter((c) => c.channel === channel)
+    .map((c) => {
+      if (!OF_PROJECT.includes(channel)) return c.args;
+      expect(c.args[0]).toBe(PROJECT_ID);
+      return c.args.slice(1);
+    });
 
 const tick = () => screen.getByRole('checkbox', { name: /I have read this/ });
 const switchOn = () =>
@@ -760,4 +775,9 @@ describe('DreamSetupScreen: steps', () => {
     expect(screen.getByLabelText('Minutes idle')).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'billing' })).toBeDisabled();
   });
+});
+
+// Dreams belong to a project: every test here has one active.
+beforeEach(() => {
+  activateProject();
 });

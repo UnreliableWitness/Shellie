@@ -1,10 +1,12 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import type { DreamView } from '../../../shared/dreams';
 import { viewOf } from '../../test-helpers/dreamFixtures';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { useDreamsState } from './useDreams';
+import { activateProject, projectOf } from '../../test-helpers/project';
+import { useStore } from '../../store';
 
 function Probe({ name }: { name: string }) {
   const { view, failed, retry } = useDreamsState();
@@ -101,4 +103,74 @@ describe('useDreamsState', () => {
     await screen.findByText('tokens 7');
     expect(getCalls(calls)).toBe(2);
   });
+});
+
+describe('useDreamsState and projects', () => {
+  const byProject = () =>
+    installFakeApi({
+      'dream:get': (project) => withTokens(project === 'p1' ? 1 : 2),
+    });
+  const projectsAsked = (calls: { channel: string; args: unknown[] }[]) =>
+    calls.filter((c) => c.channel === 'dream:get').map((c) => c.args[0]);
+
+  it('reads the dreams of the active project, and of the new one when it changes', async () => {
+    const { calls } = byProject();
+    render(<Probe name="a" />);
+    await waitFor(() =>
+      expect(screen.getByTestId('a')).toHaveTextContent('tokens 1'),
+    );
+    act(() => {
+      useStore.setState((s) => ({
+        connections: [...s.connections, projectOf('p2')],
+        connectionId: 'p2',
+      }));
+    });
+    // Nothing of the other project stays on screen while the new one loads.
+    expect(screen.getByTestId('a')).not.toHaveTextContent('tokens 1');
+    await waitFor(() =>
+      expect(screen.getByTestId('a')).toHaveTextContent('tokens 2'),
+    );
+    expect(projectsAsked(calls)).toEqual(['p1', 'p2']);
+  });
+
+  it('reads nothing and shows nothing without a project', async () => {
+    const { calls, emit } = byProject();
+    act(() => {
+      useStore.setState({ connections: [], connectionId: null });
+    });
+    render(<Probe name="a" />);
+    act(() => emit('dream:changed', {}));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.getByTestId('a')).toHaveTextContent('loading');
+    expect(projectsAsked(calls)).toEqual([]);
+  });
+
+  it('a change refetches each project that is on screen, once', async () => {
+    const { calls, emit } = byProject();
+    function Of({ project }: { project: string }) {
+      const { view } = useDreamsState(project);
+      return (
+        <span data-testid={project}>{view?.usage.tokens ?? 'loading'}</span>
+      );
+    }
+    render(
+      <>
+        <Of project="p1" />
+        <Of project="p2" />
+        <Probe name="a" />
+      </>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('p2')).toHaveTextContent('2'),
+    );
+    expect(screen.getByTestId('p1')).toHaveTextContent('1');
+    act(() => emit('dream:changed', {}));
+    await waitFor(() => expect(projectsAsked(calls)).toHaveLength(4));
+    expect(projectsAsked(calls).sort()).toEqual(['p1', 'p1', 'p2', 'p2']);
+  });
+});
+
+// Dreams belong to a project: every test here has one active.
+beforeEach(() => {
+  activateProject();
 });

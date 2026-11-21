@@ -1784,6 +1784,7 @@ describe('dreams of several projects', () => {
   });
 
   it('dream:test tests for its project: the title carries it and only its block gets the model', async () => {
+    answered = [OTHER];
     await api().handlers['dream:test'](Q, OTHER);
     expect(
       (run.mock.calls[0][0] as { args: string[] }).args.join(' '),

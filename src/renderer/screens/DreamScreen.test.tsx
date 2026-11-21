@@ -12,6 +12,7 @@ import { useStore } from '../store';
 import { emptyState, result, viewOf } from '../test-helpers/dreamFixtures';
 import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
 import { DreamScreen } from './DreamScreen';
+import { activateProject } from '../test-helpers/project';
 
 // Monaco does not run in jsdom: the full diff is a stand-in that shows what it was given.
 vi.mock('../components/review/DiffView', () => ({
@@ -683,4 +684,9 @@ describe('DreamScreen', () => {
       await screen.findByRole('list', { name: 'Proposals' }),
     ).toBeInTheDocument();
   });
+});
+
+// Dreams belong to a project: every test here has one active.
+beforeEach(() => {
+  activateProject();
 });

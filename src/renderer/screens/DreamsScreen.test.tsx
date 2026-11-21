@@ -14,6 +14,7 @@ import { useStore } from '../store';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { AwayBand } from '../components/dreams/AwayBand';
 import { DreamsScreen } from './DreamsScreen';
+import { activateProject, PROJECT_ID } from '../test-helpers/project';
 
 beforeEach(() => {
   useStore.setState({
@@ -28,10 +29,24 @@ const open = (
   extra: Parameters<typeof installFakeApi>[0] = {},
 ) => installFakeApi({ 'dream:get': () => view, ...extra });
 
+/** The calls of a channel. A call about a project's setup must name the active project; what follows it is returned. */
+const OF_PROJECT = [
+  'dream:save',
+  'dream:test',
+  'dream:switchOn',
+  'dream:switchOff',
+];
 const callsOf = (
   calls: { channel: string; args: unknown[] }[],
   channel: string,
-) => calls.filter((c) => c.channel === channel).map((c) => c.args);
+) =>
+  calls
+    .filter((c) => c.channel === channel)
+    .map((c) => {
+      if (!OF_PROJECT.includes(channel)) return c.args;
+      expect(c.args[0]).toBe(PROJECT_ID);
+      return c.args.slice(1);
+    });
 
 describe('DreamsScreen: off', () => {
   const off = () =>
@@ -363,4 +378,22 @@ describe('DreamsScreen: on', () => {
       await screen.findByRole('region', { name: 'Status' }),
     ).toBeInTheDocument();
   });
+});
+
+describe('DreamsScreen: a repo without a project', () => {
+  it('shows what it left to review, but not among the repos that can dream', async () => {
+    const v = withResults();
+    v.repos[0] = { ...v.repos[0], orphan: true };
+    installFakeApi({ 'dream:get': () => v });
+    render(<DreamsScreen />);
+    const repos = await screen.findByRole('region', { name: 'Repos' });
+    expect(within(repos).queryByText(v.repos[0].name)).toBeNull();
+    expect(within(repos).getByText(v.repos[1].name)).toBeInTheDocument();
+    expect(screen.getAllByText(v.repos[0].name).length).toBeGreaterThan(0);
+  });
+});
+
+// Dreams belong to a project: every test here has one active.
+beforeEach(() => {
+  activateProject();
 });

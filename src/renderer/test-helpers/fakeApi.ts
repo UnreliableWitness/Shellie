@@ -1,5 +1,5 @@
 import { StartSettingsSchema } from '../../shared/types';
-import { defaultDreaming } from '../../shared/dreams';
+import { defaultDreaming, defaultDreamingAll } from '../../shared/dreams';
 import { viewOf } from './dreamFixtures';
 import type { TaskTime } from '../../shared/time';
 import type { TaskUsage } from '../../shared/usage';
@@ -220,7 +220,7 @@ const defaults: FakeHandlers = {
     sendTelemetry: true,
     editor: { default: null, repos: {} },
     secrets: { productionMinutes: 60 },
-    dreaming: defaultDreaming(),
+    dreaming: defaultDreamingAll(),
     onboarding: {
       dismissedAt: null,
       agentsCheckedAt: '2026-10-22T09:00:00.000Z',
@@ -258,7 +258,7 @@ const defaults: FakeHandlers = {
       repos: [],
     }),
   'dream:test': () => ({ ok: true }),
-  'dream:save': (next) => next,
+  'dream:save': (_project, next) => next,
   'dream:switchOn': () => ({ ...defaultDreaming(), enabled: true }),
   'dream:switchOff': () => defaultDreaming(),
   'dream:now': () => ({ started: true }),

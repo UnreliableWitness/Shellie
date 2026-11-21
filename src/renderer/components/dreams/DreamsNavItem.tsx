@@ -2,7 +2,7 @@ import { WeatherMoon20Regular } from '@fluentui/react-icons';
 import { plural } from '../../format';
 import { useStore } from '../../store';
 import { waitingCount } from './dreamWords';
-import { useDreams } from './useDreams';
+import { useDreamsState } from './useDreams';
 
 /**
  * The Dreams item in the navigation, with the number of dream results waiting for review (a result opened as a task
@@ -11,10 +11,12 @@ import { useDreams } from './useDreams';
 export function DreamsNavItem({ rail }: { rail: boolean }) {
   const kind = useStore((s) => s.screen.kind);
   const go = useStore((s) => s.go);
-  const view = useDreams();
+  const { view, project } = useDreamsState();
   const count = view ? waitingCount(view) : 0;
   const waiting = `${plural(count, 'dream')} to review`;
   const named = count > 0 ? `Dreams, ${waiting}` : 'Dreams';
+  // Dreams belong to a project: without one there is nothing to open.
+  if (project === null) return null;
   return (
     <button
       type="button"

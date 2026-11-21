@@ -108,6 +108,7 @@ describe('nowLine and waitLine', () => {
     ['limit', "Today's limit reached"],
     ['model-missing', `${MODEL} is not available in OpenCode`],
     ['nothing-ready', 'Nothing new to dream about'],
+    ['running-elsewhere', 'Another project is dreaming'],
   ] as const)('%s', (waiting, line) => {
     expect(nowLine(viewOf({ waiting }), NOW)).toBe(line);
     expect(waitLine(waiting, MODEL)).toBe(line);

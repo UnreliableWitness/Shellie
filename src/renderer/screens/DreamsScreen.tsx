@@ -8,6 +8,7 @@ import {
   nowLine,
   openedResults,
   openResults,
+  ownRepos,
   repoStateLine,
   waitLine,
   whenWords,
@@ -25,7 +26,16 @@ const NOTE_MS = 10_000;
 
 /** Dreams: what dreaming does, what waits for review, the repos and the journal. */
 export function DreamsScreen() {
-  const { view, failed, retry } = useDreamsState();
+  const { view, failed, retry, project } = useDreamsState();
+  if (project === null)
+    return (
+      <DreamsLoading
+        title="Dreams"
+        message="Dreams belong to a project. Add a project first."
+        failed
+        retry={retry}
+      />
+    );
   if (view === null)
     return (
       <DreamsLoading
@@ -35,10 +45,10 @@ export function DreamsScreen() {
         retry={retry}
       />
     );
-  return <Dreams view={view} />;
+  return <Dreams view={view} project={project} />;
 }
 
-function Dreams({ view }: { view: DreamView }) {
+function Dreams({ view, project }: { view: DreamView; project: string }) {
   const go = useStore((s) => s.go);
   const on = view.settings.enabled;
   const [confirmOff, setConfirmOff] = useState(false);
@@ -52,7 +62,7 @@ function Dreams({ view }: { view: DreamView }) {
   const switchOff = async () => {
     setConfirmOff(false);
     try {
-      await api().invoke('dream:switchOff');
+      await api().invoke('dream:switchOff', project);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -359,7 +369,7 @@ function Repos({ view, now }: { view: DreamView; now: number }) {
     <section aria-label="Repos" className="dream-section">
       <h2>Repos</h2>
       <div className="dream-list">
-        {view.repos.map((r) => {
+        {ownRepos(view).map((r) => {
           const rec = view.settings.repos[r.id];
           const isOn = rec?.on === true;
           return (

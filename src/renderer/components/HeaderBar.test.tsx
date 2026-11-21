@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { emptyState, result, viewOf } from '../test-helpers/dreamFixtures';
 import { HeaderBar } from './HeaderBar';
+import { activateProject } from '../test-helpers/project';
 
 const task: TaskView = {
   id: 'a',
@@ -425,6 +426,8 @@ describe('HeaderBar on a dream', () => {
       connections: [],
       connectionId: null,
     });
+    // A dream is a project's: its crumb reads the active project's dreams.
+    activateProject();
     render(<HeaderBar />);
     const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
     const here = await within(crumbs).findByText('portal, 20 Nov');

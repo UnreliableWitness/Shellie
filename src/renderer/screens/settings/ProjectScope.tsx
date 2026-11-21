@@ -4,6 +4,7 @@ import { ConnectionCategory } from './project/ConnectionCategory';
 import { DangerCategory } from './project/DangerCategory';
 import { TimeCategory } from './project/TimeCategory';
 import { WorkItemsCategory } from './project/WorkItemsCategory';
+import { DreamingSection } from './DreamingSection';
 import type { SettingsCategoryInfo } from './UserScope';
 
 /** The Project scope's categories, in tree order. */
@@ -12,6 +13,7 @@ export const PROJECT_CATEGORIES: SettingsCategoryInfo[] = [
   { id: 'project-workitems', title: 'Work items on start' },
   { id: 'project-time', title: 'Time' },
   { id: 'project-brains', title: 'Brains' },
+  { id: 'project-dreaming', title: 'Dreaming' },
   { id: 'project-danger', title: 'Danger zone' },
 ];
 
@@ -42,6 +44,10 @@ export function ProjectScope({
         connection={connection}
         active={active}
         title={title('project-brains')}
+      />
+      <DreamingSection
+        connection={connection}
+        title={title('project-dreaming')}
       />
       <DangerCategory connection={connection} title={title('project-danger')} />
     </>

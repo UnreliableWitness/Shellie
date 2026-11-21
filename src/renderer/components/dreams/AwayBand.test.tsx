@@ -13,6 +13,7 @@ import {
   viewOf,
   withResults,
 } from '../../test-helpers/dreamFixtures';
+import { activateProject } from '../../test-helpers/project';
 
 beforeEach(() => {
   localStorage.clear();
@@ -174,4 +175,9 @@ describe('AwayBand', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(container.innerHTML).toBe('');
   });
+});
+
+// Dreams belong to a project: every test here has one active.
+beforeEach(() => {
+  activateProject();
 });

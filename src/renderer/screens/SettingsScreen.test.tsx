@@ -1,5 +1,5 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
-import { defaultDreaming } from '../../shared/dreams';
+import { defaultDreamingAll } from '../../shared/dreams';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../shared/usage';
@@ -487,7 +487,7 @@ describe('SettingsScreen', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
-      dreaming: defaultDreaming(),
+      dreaming: defaultDreamingAll(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: '2026-10-22T09:00:00.000Z',
@@ -547,7 +547,7 @@ describe('SettingsScreen', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
-      dreaming: defaultDreaming(),
+      dreaming: defaultDreamingAll(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: '2026-10-22T09:00:00.000Z',
@@ -587,7 +587,7 @@ describe('SettingsScreen', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
-      dreaming: defaultDreaming(),
+      dreaming: defaultDreamingAll(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: '2026-10-22T09:00:00.000Z',
@@ -648,7 +648,7 @@ describe('SettingsScreen', () => {
       sendTelemetry: true,
       editor: { default: null, repos: {} },
       secrets: { productionMinutes: 60 },
-      dreaming: defaultDreaming(),
+      dreaming: defaultDreamingAll(),
       onboarding: {
         dismissedAt: null,
         agentsCheckedAt: '2026-10-22T09:00:00.000Z',
