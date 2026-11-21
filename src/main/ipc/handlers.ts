@@ -3640,6 +3640,15 @@ export function createHandlers(s: Services): Handlers {
       task: taskById,
       settings: () => s.settings.get(),
       connectionOf: (task) => taskConnectionId(task, s.repos.list()),
+      projectOf: (task) => {
+        const repos = s.repos.list();
+        const id = taskConnectionId(task, repos);
+        return (
+          s.connections.list().find((c) => c.id === id)?.project ??
+          repos.find((r) => r.id === task.repoId)?.name ??
+          null
+        );
+      },
       tracker: s.tracker,
     }),
     'repos:list': async () => s.repos.list(),

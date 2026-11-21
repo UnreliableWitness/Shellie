@@ -1055,6 +1055,17 @@ describe('TaskNav', () => {
     expect(done).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('has a Week item that opens the week overview', async () => {
+    installFakeApi();
+    render(<TaskNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(useStore.getState().screen).toEqual({ kind: 'week' });
+    expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
   it('has the Sprint hub and Settings items', async () => {
     installFakeApi();
     render(<TaskNav />);

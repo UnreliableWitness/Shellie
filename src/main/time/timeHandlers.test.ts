@@ -88,6 +88,7 @@ async function setup(tasks: Task[]) {
     },
     settings: defaultSettings,
     connectionOf: (t) => repoConnection[t.repoId!] ?? null,
+    projectOf: (t) => ({ r1: 'Alpha', r2: 'Beta' })[t.repoId!] ?? null,
     tracker: { setTask: (id) => focused.push(id) },
     now: () => NOW,
   });
@@ -198,5 +199,53 @@ describe('time handlers', () => {
     const r = await h['time:sprint']('c1');
     expect(r['12'].spentSeconds).toBe(3900);
     expect(r['12'].booked).toBe(true);
+  });
+
+  it('time:week gives every task with time in the week, across projects, per local day', async () => {
+    // NOW is Friday 16 October 2026; the week runs from Monday the 12th.
+    const day = (d: number, h: number) => new Date(2026, 9, d, h).getTime();
+    const created = new Date(day(1, 0)).toISOString();
+    const a = task({ id: 'a', createdAt: created });
+    const b = task({
+      id: 'b',
+      repoId: 'r2',
+      workItem: null,
+      name: 'Spike',
+      createdAt: created,
+    });
+    const idle = task({ id: 'idle', createdAt: created });
+    const { h, time } = await setup([a, b, idle]);
+    await time.addActive('a', [day(12, 9), day(12, 11)]);
+    await time.addAgent('a', 'claude-code', [day(13, 9), day(13, 10)]);
+    await time.addActive('b', [day(13, 14), day(13, 14) + 1_800_000]);
+    // Last week's time is left out.
+    await time.addActive('idle', [day(9, 9), day(9, 12)]);
+    const r = await h['time:week']('2026-10-12');
+    expect(r.weekStart).toBe('2026-10-12');
+    expect(r.rows).toEqual([
+      {
+        taskId: 'a',
+        title: 'Twelve',
+        project: 'Alpha',
+        workItem: { id: '12', title: 'Twelve' },
+        perDay: [7200, 3600, 0, 0, 0, 0, 0],
+        totalSeconds: 10_800,
+      },
+      {
+        taskId: 'b',
+        title: 'Spike',
+        project: 'Beta',
+        workItem: null,
+        perDay: [0, 1800, 0, 0, 0, 0, 0],
+        totalSeconds: 1800,
+      },
+    ]);
+    expect(r.dayTotals).toEqual([7200, 5400, 0, 0, 0, 0, 0]);
+    expect(r.totalSeconds).toBe(12_600);
+  });
+
+  it('time:week rejects a week start that is not a date', async () => {
+    const { h } = await setup([]);
+    await expect(h['time:week']('next week')).rejects.toThrow();
   });
 });

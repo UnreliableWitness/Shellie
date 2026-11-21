@@ -104,6 +104,8 @@ export type Screen =
   /** One repo's dream result, for review. */
   | { kind: 'dream'; repoId: string }
   | { kind: 'sprint' }
+  /** Every task's time in one week, across projects (for timesheets). */
+  | { kind: 'week' }
   /** The active project's overview page. */
   | { kind: 'project' }
   /** A brain: the local knowledge folder of one Azure DevOps project. */

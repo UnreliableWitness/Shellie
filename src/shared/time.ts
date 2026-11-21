@@ -76,6 +76,25 @@ export type LocalItemTime = {
   baselineHours: number | null;
 };
 
+/** One task's realistic time in a week (Week page), Monday first. */
+export type WeekRow = {
+  taskId: string;
+  title: string;
+  /** The Azure DevOps project of the task, else its repo's name; null for neither. */
+  project: string | null;
+  workItem: { id: string; title: string } | null;
+  perDay: number[];
+  totalSeconds: number;
+};
+
+/** Every task with time in a week, across all projects (Week page). */
+export type WeekTime = {
+  weekStart: string;
+  rows: WeekRow[];
+  dayTotals: number[];
+  totalSeconds: number;
+};
+
 /** Sorted, overlapping or touching intervals joined, empty or negative ones dropped. */
 export function mergeIntervals(list: Interval[]): Interval[] {
   const sorted = list.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);

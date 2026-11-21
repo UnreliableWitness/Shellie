@@ -15,6 +15,7 @@ import {
 } from '../../shared/time';
 import type { Task } from '../../shared/types';
 import { JsonFileStore } from '../usage/JsonFileStore';
+import { secondsPerDay } from './weekTime';
 
 const IntervalSchema = z.tuple([z.number(), z.number()]);
 const ToolSchema = z.enum(['claude-code', 'copilot-cli', 'opencode']);
@@ -120,6 +121,18 @@ export class TimeStore extends EventEmitter<{ changed: [taskId: string] }> {
     return Object.fromEntries(
       AGENT_TOOLS.map((t) => [t, (a[t] ?? []).map(([s, e]) => [s, e])]),
     ) as Record<AgentTool, Interval[]>;
+  }
+
+  /** Realistic seconds per day between `bounds` (see `weekBounds`). */
+  weekSeconds(task: Task, bounds: number[], now: number): number[] {
+    const agent = this.agentIntervals(task.id);
+    return secondsPerDay(
+      task,
+      this.activeIntervals(task.id),
+      AGENT_TOOLS.map((t) => agent[t]),
+      bounds,
+      now,
+    );
   }
 
   summarize(
