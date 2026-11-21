@@ -73,15 +73,20 @@ whose agent knew nothing about the dream.
   - Change with an agent opened New task with the repo, branch and name; the task made from it (through the same
     call as the form's Create, with no agent tab) had both commits and a `.shellie/task.md` with the Dream section:
     what a dream is, both proposals with files, reason and the developer's quote.
+- **A real pull request**, with the owner's say, against the test Azure DevOps project (`unreliablewitness/Shellie`,
+  repo `Shellie`, cloned into the scratch folder, a dream result with two proposals written by hand): Create pull
+  request pushed `dream/2026-11-21-1` and made pull request !7. Read back from Azure DevOps: active, not a draft,
+  target `main`, title "Dream: 2 proposals for skills and rules", the description with both proposals' titles,
+  reasons and files, and the two commits. In the app: the notice, Dreams with the journal line "2 proposals · 2
+  kept, pull request !7 created" and Open pull request; the local branch and the dream's folder were gone. The pull
+  request and its branch were left in the test project.
 
 ## Not verified, and known gaps
 
-- **No real pull request was made.** The Azure DevOps part (finding or creating the published pull request, its
-  title and text as Azure DevOps shows them, Open pull request in the journal) is covered by tests with a faked
-  client only. Making one needs a push to a real Azure Repos remote, which was not done without the owner's say.
 - No agent tab was started on a dream task, so whether Claude Code or OpenCode actually reads the Dream section
   before answering was not seen. Copilot has no start context: it finds the section only if it reads the task file.
-- The secret prompt and the failure phrases were not seen in the app (tests only). Not run on Windows.
+- The secret prompt, the failure phrases and linking a pull request that already exists were not seen in the app
+  (tests only). Open pull request in the journal was seen but not pressed. Not run on Windows.
 - A result whose worktree is gone cannot be sent ("The dream could not be sent"); it can still be discarded.
 - Create pull request does not update the text of a pull request that already exists for the branch.
 - A dream task made from a record of before this change has no briefing.
