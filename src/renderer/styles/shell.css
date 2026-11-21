@@ -312,23 +312,52 @@ button.projecttile:hover {
 .nav-new[aria-current='page'] {
   background: var(--bg-selected);
 }
-/* The current task's Finish, right under its row, lined up with the title. */
-.nav-task-action {
-  display: flex;
-  gap: 4px;
-  padding: 4px 12px 8px 40px;
+/* Finish and Discard inside the current task's row: quiet icons, so the row keeps its height. */
+.navrow-actions {
+  display: inline-flex;
+  flex: none;
+}
+.navrow-actions .ibtn {
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+.navrow-actions .navrow-finish:hover {
+  color: var(--text);
+}
+/* The one mark a task row may carry: a quiet dot or check at its right edge. */
+.navmark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+}
+button.navmark:hover {
   background: var(--bg-selected);
 }
-.btn.nav-finish {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
+.navmark-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
-/* Discard task: a quiet icon beside Finish, in the danger tone only on hover. */
-.ibtn.nav-discard {
-  width: 28px;
-  height: 28px;
-  color: var(--muted);
+.navmark-broken {
+  color: var(--red);
+}
+.navmark-busy {
+  color: var(--accent);
+}
+.navmark-waits {
+  color: var(--warn);
+}
+.navmark-merged {
+  color: var(--green);
 }
 .railrow.rail-discard {
   background: var(--bg-selected);
@@ -551,8 +580,18 @@ button.projecttile:hover {
 .rail-dot-amber {
   background: var(--warn);
 }
-.rail-dot-green {
-  background: var(--green);
+.rail-dot-accent {
+  background: var(--accent);
+}
+/* A merged task in the rail: a small green check in the icon's corner. */
+.rail-check {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  display: inline-flex;
+  border-radius: 50%;
+  background: var(--bg-chrome);
+  color: var(--green);
 }
 .rail-count {
   display: block;
