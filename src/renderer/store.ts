@@ -97,6 +97,12 @@ export type Screen =
   | { kind: 'agents'; from: 'settings' | 'get-started' }
   /** The brain step as a page (from Get started). */
   | { kind: 'brain-new'; from: 'get-started' }
+  /** Dreams: what dreaming did and what it waits for. */
+  | { kind: 'dreams' }
+  /** "Let Shellie dream": setting up and switching on. */
+  | { kind: 'dream-setup' }
+  /** One repo's dream result, for review. */
+  | { kind: 'dream'; repoId: string }
   | { kind: 'sprint' }
   /** Every task's time in one week, across projects (for timesheets). */
   | { kind: 'week' }
@@ -119,6 +125,8 @@ export type Screen =
       workItem?: WorkItemRef;
       repoId?: string;
       connectionId?: string;
+      /** Opened as a task from a dream of `repoId`. */
+      dream?: NewTaskDream;
     }
   | { kind: 'setup'; taskId: string }
   | { kind: 'finish'; taskId: string }
@@ -144,6 +152,9 @@ export type Screen =
     }
   | { kind: 'secrets'; repoId?: string }
   | { kind: 'secrets-import'; repoId: string };
+
+/** A dream's branch to make a task on (`dream:openAsTask`), the dream's id for `fromDream`, and the task's name. */
+export type NewTaskDream = { id: string; branch: string; name: string };
 
 /** A file dropped on a brain, waiting for its type and note before it goes in. */
 export type BrainPendingFile = {
@@ -278,6 +289,7 @@ const TRANSIENT = new Set<Screen['kind']>([
   'connect',
   'agents',
   'brain-new',
+  'dream-setup',
 ]);
 
 export const useStore = create<Store>((set, get) => ({

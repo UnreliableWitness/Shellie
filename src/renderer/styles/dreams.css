@@ -1,0 +1,642 @@
+/* Dreams: the setup screen. */
+.dream-setup {
+  max-width: 1180px;
+}
+.dream-intro {
+  max-width: 72ch;
+}
+.dream-setup-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.dream-steps {
+  flex: 999 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dream-step {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dream-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.dream-step-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.dream-done {
+  font-size: 12px;
+  font-weight: 600;
+}
+.dream-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.dream-model-row .grow {
+  flex: 1 1 260px;
+}
+.dream-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dream-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dream-limit-row,
+.dream-idle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.dream-limit-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dream-limit-name {
+  width: 100px;
+}
+.dream-off {
+  color: var(--disabled);
+}
+.dream-number {
+  width: 120px;
+  text-align: right;
+}
+.dream-minutes {
+  width: 56px;
+  text-align: right;
+}
+.dream-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.dream-repo-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 160px;
+  font-weight: 600;
+}
+.dream-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dream-chips .chip-code {
+  padding: 2px 8px;
+}
+.dream-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dream-repo-problem {
+  flex-basis: 100%;
+  margin: 0;
+}
+.dream-panel {
+  flex: 1 1 300px;
+  max-width: 380px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--line-strong);
+}
+.dream-panel h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.dream-panel h2:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.dream-sentence {
+  font-size: 16px;
+  line-height: 24px;
+}
+.dream-tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+}
+.dream-tick input {
+  margin-top: 3px;
+}
+.dream-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dream-adds {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Dreams: the screen, the Home band, the navigation. */
+.dreams {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.dream-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dream-section h2,
+.dream-invite h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.dream-invite {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dream-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.dream-cell {
+  background: var(--bg-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.dream-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-selected);
+  overflow: hidden;
+}
+.dream-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--link);
+}
+.dream-list {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.dream-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.dream-row:last-child {
+  border-bottom: 0;
+}
+.dream-row .grow {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.dream-name {
+  width: 84px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dream-when {
+  width: 108px;
+  flex: none;
+}
+.dream-when::first-letter {
+  text-transform: uppercase;
+}
+.dream-folders {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.dream-folder {
+  padding: 1px 8px;
+  border-radius: 2px;
+  background: var(--bg-selected);
+  font-size: 12px;
+}
+.dream-state {
+  flex: 1 1 220px;
+}
+/* Text that comes from a dream: plain text, at most two lines. */
+.dream-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.dream-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-card);
+}
+.dream-notice strong {
+  color: var(--warn);
+}
+.home-bands > .dream-notice {
+  margin: 0;
+}
+.dream-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+.dream-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-page);
+}
+.dream-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dream-card-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dream-card-list li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.dream-card-list .dream-clamp {
+  min-width: 0;
+}
+.navitem-count {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--amber);
+  color: var(--bg-page);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.is-rail .navitem-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+}
+.nav-dream-wrap {
+  position: relative;
+}
+.nav-dream {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.nav-dream:hover {
+  background: var(--bg-hover);
+}
+.nav-dream.is-active {
+  color: var(--link);
+}
+.nav-dream.is-warn {
+  color: var(--warn);
+}
+/* `.menu.` so these win over the generic `.menu` rule, whatever order the style sheets load in. */
+.menu.dream-pop {
+  top: auto;
+  bottom: 100%;
+  padding: 14px 16px;
+  gap: 10px;
+  font-size: 13px;
+}
+.is-rail .menu.dream-pop {
+  left: 100%;
+  right: auto;
+  bottom: 0;
+  width: 280px;
+}
+.dream-pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dream-pop-head .grow {
+  flex: 1;
+}
+
+/* Dreams: reviewing a dream result. */
+.dream-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 0 32px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.dream-review-meta > * {
+  overflow-wrap: anywhere;
+}
+.dream-review-note {
+  margin: 8px 32px 0;
+  overflow-wrap: anywhere;
+}
+.dream-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.dream-review-list {
+  flex: 1 1 300px;
+  max-width: 360px;
+  min-width: 260px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: stretch;
+}
+.dream-proposals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dream-proposal {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.dream-proposal-pick {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.dream-proposal-pick:hover {
+  background: var(--bg-hover);
+}
+.dream-proposal-pick[aria-current='true'] {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
+}
+.dream-proposal-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.dream-proposal-title {
+  font-weight: 600;
+}
+.dream-proposal-dropped {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.dream-proposal .btn-sm {
+  margin-top: 10px;
+}
+.dream-review-list > p {
+  margin: 0 8px;
+}
+.dream-detail {
+  flex: 999 1 560px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 20px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.dream-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+}
+.dream-detail-claim {
+  flex: 1 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.dream-detail-claim h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.dream-detail-why {
+  margin: 0;
+  max-width: 68ch;
+  white-space: pre-wrap;
+}
+.dream-detail-part {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dream-detail-part h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dream-quotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.dream-quote {
+  margin: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow-wrap: anywhere;
+}
+.dream-quote blockquote {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.dream-quote figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.dream-files {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dream-file {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.dream-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.dream-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dream-file-note {
+  margin: 0;
+  padding: 8px 14px;
+}
+.dream-diff {
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.dream-hunk + .dream-hunk {
+  border-top: 1px dashed var(--line-strong);
+}
+.dream-line {
+  display: flex;
+  gap: 8px;
+  padding: 1px 14px;
+  min-width: max-content;
+}
+.dream-line.is-head {
+  color: var(--muted);
+}
+.dream-line.is-note {
+  color: var(--muted);
+  font-style: italic;
+}
+.dream-line.is-add {
+  background: var(--green-bg);
+}
+.dream-line.is-del {
+  background: var(--red-bg);
+}
+.dream-line-no {
+  width: 28px;
+  flex: none;
+  text-align: right;
+  color: var(--muted);
+}
+.dream-line-sign {
+  width: 12px;
+  flex: none;
+}
+.dream-line.is-add .dream-line-sign {
+  color: var(--green);
+}
+.dream-line.is-del .dream-line-sign {
+  color: var(--red);
+}
+.dream-line-text {
+  white-space: pre;
+}
+/* A flex column: the diff viewer's host (`.review-diff`) takes its height with `flex: 1`. */
+.dream-fulldiff {
+  display: flex;
+  flex-direction: column;
+  height: 60vh;
+  min-height: 320px;
+}

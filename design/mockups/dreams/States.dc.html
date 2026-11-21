@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The dream status line in the navigation, in each state</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#201f1e}
+a{color:#5ca9f2}a:hover{color:#8cc4f7}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 1100px; height: 520px; box-sizing: border-box; padding: 28px 32px; background: #201f1e; color: #e9e9e8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; gap: 20px">
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+    <sc-for list="{{states}}" as="s" hint-placeholder-count="4">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="color: #a3a2a1; font-size: 12px">{{s.when}}</span>
+        <div style="background: #1b1a19; border: 1px solid #333231; border-radius: 4px; padding: 10px 10px; display: flex; flex-direction: column; gap: 6px; min-height: 96px; box-sizing: border-box">
+          <div style="display: flex; align-items: center; gap: 8px; color: #a3a2a1; font-size: 12px">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #6ccb5f"></span>
+            <span>Azure DevOps up to date</span>
+          </div>
+          <div style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px">
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="{{s.iconStyle}}"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span style="{{s.lineStyle}}">{{s.line}}</span>
+              <span style="color: #a3a2a1; font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace">{{s.model}}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; flex: 1">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="color: #a3a2a1; font-size: 12px">Clicking the line while a dream runs</span>
+      <div style="background: #252423; border: 1px solid #4a4948; border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 6px 14px rgba(0,0,0,0.4)">
+        <div style="display: flex; align-items: baseline; gap: 8px">
+          <span style="font-weight: 600; flex: 1">Dreaming about billing</span>
+          <span style="color: #a3a2a1; font-size: 12px">4 min</span>
+        </div>
+        <div style="color: #a3a2a1; font-size: 12px; display: flex; flex-direction: column; gap: 2px">
+          <span>Reading 4 sessions, then checking its own proposals</span>
+          <span><span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace">zai/glm-5.3</span> · 1.4 of 5 million tokens today</span>
+        </div>
+        <div role="img" aria-label="28 percent of today's limit used" style="height: 6px; border-radius: 3px; background: #3a3938; overflow: hidden"><div style="width: 28%; height: 6px; background: #5ca9f2"></div></div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">Stop this dream</button>
+          <a href="Dreams.dc.html" style="display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px">Open Dreams</a>
+        </div>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="color: #a3a2a1; font-size: 12px">When another model answered: the notice on Home and on Dreams</span>
+      <div role="alert" style="background: rgba(247,185,85,0.12); border: 1px solid #8a6a2f; border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font-weight: 600; color: #f7b955">Dreaming switched itself off</span>
+        <span>A call in tonight’s dream for portal was answered by <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px">github-copilot/gpt-5</span> instead of <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px">zai/glm-5.3</span>. The dream was thrown away and nothing was changed.</span>
+        <div style="display: flex; gap: 8px">
+          <a href="Setup.dc.html" style="display: inline-flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #8a6a2f; color: #e9e9e8; text-decoration: none">Test the model again</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":520}}'>
+class Component extends DCLogic {
+renderVals() {
+const quiet = 'color: #a3a2a1; margin-top: 2px; flex: none';
+return {
+states: [
+{ when: 'Off', line: 'Dreams off', model: '', lineStyle: 'color: #a3a2a1', iconStyle: quiet },
+{ when: 'On, you are working', line: 'Dreams on', model: 'zai/glm-5.3', lineStyle: 'color: #a3a2a1', iconStyle: quiet },
+{ when: 'Dreaming', line: 'Dreaming about billing', model: 'zai/glm-5.3 · 4 min', lineStyle: 'color: #e9e9e8; font-weight: 600', iconStyle: 'color: #5ca9f2; margin-top: 2px; flex: none' },
+{ when: 'On, no limit chosen', line: 'Dreams on · no limit', model: 'zai/glm-5.3', lineStyle: 'color: #f7b955', iconStyle: 'color: #f7b955; margin-top: 2px; flex: none' }
+]
+};
+}
+}
+</script>
+</body>
+</html>

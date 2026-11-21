@@ -13,6 +13,8 @@ import { useGitSummary } from '../hooks/useGitSummary';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { activeConnection, type Screen, useStore } from '../store';
 import { track } from '../telemetry';
+import { shortDate } from './dreams/dreamWords';
+import { useDreams } from './dreams/useDreams';
 import { TaskTypeIcon } from './TaskTypeIcon';
 import { IconButton, MindMark } from './ui';
 
@@ -34,6 +36,8 @@ const PAGE_LABEL: Partial<Record<Screen['kind'], string>> = {
   'get-started': 'Get started',
   agents: 'Agents',
   'brain-new': 'Brain',
+  dreams: 'Dreams',
+  'dream-setup': 'Set up dreaming',
   'add-repo': 'Add repository',
   secrets: 'Secrets',
   'secrets-import': 'Secrets',
@@ -194,6 +198,17 @@ function Crumb({
   );
 }
 
+/** The crumb of one repo's dream result: the repo and the day it was dreamt. */
+function DreamCrumb({ repoId }: { repoId: string }) {
+  const repo = useDreams()?.repos.find((r) => r.id === repoId);
+  const at = repo?.state.result?.at;
+  return (
+    <Crumb current onClick={() => undefined}>
+      {repo && at ? `${repo.name}, ${shortDate(at)}` : 'Dream'}
+    </Crumb>
+  );
+}
+
 /** The 40 px header: logo and breadcrumb on the left, Settings on the right; New task lives in the nav (#95). */
 export function HeaderBar() {
   const screen = useStore((s) => s.screen);
@@ -251,6 +266,14 @@ export function HeaderBar() {
           {ENVIRONMENT_LABEL[task.environment]}
         </span>
       </button>,
+    );
+  // A dream result sits under Dreams: `Dreams › portal, 20 Nov`.
+  if (screen.kind === 'dream')
+    crumbs.push(
+      <Crumb key="dreams" onClick={() => go({ kind: 'dreams' })}>
+        Dreams
+      </Crumb>,
+      <DreamCrumb key="dream" repoId={screen.repoId} />,
     );
   const page = PAGE_LABEL[screen.kind] ?? null;
   if (page)

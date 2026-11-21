@@ -10,6 +10,7 @@ import { TimeSection } from '../../components/TimeSection';
 import { AboutCategory } from './AboutCategory';
 import { AppearanceCategory } from './AppearanceCategory';
 import { BrainHomeSection } from './BrainHomeSection';
+import { DreamingSection } from './DreamingSection';
 import { SecretsCategory } from './SecretsCategory';
 
 export type SettingsCategoryInfo = { id: string; title: string };
@@ -25,6 +26,7 @@ export const USER_CATEGORIES: SettingsCategoryInfo[] = [
   { id: 'budgets', title: 'Budgets' },
   { id: 'cost-server', title: 'Cost server' },
   { id: 'brain-home', title: 'Brain home' },
+  { id: 'dreaming', title: 'Dreaming' },
   { id: 'phone', title: 'Phone' },
   { id: 'appearance', title: 'Appearance' },
   { id: 'about', title: 'About' },
@@ -40,6 +42,7 @@ const SECTIONS: Record<string, () => ReactNode> = {
   budgets: () => <BudgetSection />,
   'cost-server': () => <CostServerSection />,
   'brain-home': () => <BrainHomeSection />,
+  dreaming: () => <DreamingSection />,
   phone: () => <PhoneSection />,
   appearance: () => <AppearanceCategory />,
   about: () => <AboutCategory />,

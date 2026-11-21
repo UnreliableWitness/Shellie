@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { GitSummary, TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
+import { emptyState, result, viewOf } from '../test-helpers/dreamFixtures';
 import { HeaderBar } from './HeaderBar';
 
 const task: TaskView = {
@@ -408,5 +409,29 @@ describe('HeaderBar workspaces', () => {
     expect(within(card).getByText('feature/api-side')).toBeInTheDocument();
     expect(within(card).getByText('/api.wt')).toBeInTheDocument();
     expect(within(card).queryByText(task.worktreePath)).toBeNull();
+  });
+});
+
+describe('HeaderBar on a dream', () => {
+  it('reads Dreams › <repo>, <date>, with Dreams as a link', async () => {
+    const v = viewOf();
+    v.repos[0].state = emptyState({
+      result: result('a', 'r1', ['A rule'], { at: '2026-11-20T03:12:00' }),
+    });
+    installFakeApi({ 'dream:get': () => v });
+    useStore.setState({
+      screen: { kind: 'dream', repoId: 'r1' },
+      tasks: [],
+      connections: [],
+      connectionId: null,
+    });
+    render(<HeaderBar />);
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    const here = await within(crumbs).findByText('portal, 20 Nov');
+    expect(here.closest('[aria-current="page"]')).not.toBeNull();
+    await userEvent.click(
+      within(crumbs).getByRole('button', { name: 'Dreams' }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
   });
 });

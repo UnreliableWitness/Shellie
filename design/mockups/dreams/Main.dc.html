@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home, the morning after a dream</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#201f1e}
+a{color:#5ca9f2}a:hover{color:#8cc4f7}
+button{font:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-direction: column; background: #201f1e; color: #e9e9e8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45">
+  <header style="height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #1b1a19; border-bottom: 1px solid #333231">
+    <span style="font-weight: 600">Shellie</span>
+    <span style="color: #a3a2a1" aria-hidden="true">›</span>
+    <span style="color: #a3a2a1">Home</span>
+  </header>
+  <div style="flex: 1; display: flex; flex-wrap: wrap">
+    <nav aria-label="Main" style="flex: 1 1 248px; max-width: 280px; min-width: 220px; box-sizing: border-box; background: #1b1a19; border-right: 1px solid #333231; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 8px 12px">
+        <span style="width: 28px; height: 28px; border-radius: 4px; background: #0078d4; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 600">N</span>
+        <span style="font-weight: 600">Northwind</span>
+      </div>
+      <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; background: rgba(255,255,255,0.08); color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>
+        <span>Home</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="16" height="15" rx="1"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>
+        <span>Sprint</span>
+      </a>
+      <a href="Dreams.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <span style="flex: 1">Dreams</span>
+        <span style="min-width: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #f2c94c; color: #201f1e; font-size: 12px; font-weight: 600; text-align: center" aria-label="2 dreams to review">2</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>
+        <span>Northwind brain</span>
+      </a>
+      <div style="display: flex; align-items: center; padding: 16px 8px 4px; color: #a3a2a1; font-size: 12px; font-weight: 600">
+        <span style="flex: 1">Tasks</span>
+        <button type="button" aria-label="New task" style="width: 24px; height: 24px; border: 0; border-radius: 2px; background: transparent; color: #e9e9e8; font-size: 16px; line-height: 1">+</button>
+      </div>
+      <div style="padding: 4px 8px; color: #f2c94c; font-size: 12px">Needs you 1</div>
+      <a href="#" style="display: flex; gap: 8px; padding: 6px 8px; color: #e9e9e8; text-decoration: none">
+        <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a2a1">812</span>
+        <span style="flex: 1; min-width: 0">Rounding in invoice totals</span>
+      </a>
+      <div style="padding: 8px 8px 4px; color: #a3a2a1; font-size: 12px">Active 2</div>
+      <sc-for list="{{active}}" as="t" hint-placeholder-count="2">
+        <a href="#" style="display: flex; gap: 8px; padding: 6px 8px; color: #e9e9e8; text-decoration: none">
+          <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a2a1">{{t.id}}</span>
+          <span style="flex: 1; min-width: 0">{{t.title}}</span>
+          <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a2a1">{{t.cost}}</span>
+        </a>
+      </sc-for>
+      <div style="flex: 1"></div>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; color: #e9e9e8; text-decoration: none">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+        <span>Settings</span>
+      </a>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: #a3a2a1; font-size: 12px">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #6ccb5f"></span>
+        <span>Azure DevOps up to date</span>
+      </div>
+      <a href="States.dc.html" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: #a3a2a1; font-size: 12px; text-decoration: none">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <span>Dreams on · zai/glm-5.3</span>
+      </a>
+    </nav>
+    <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 20px">
+      <section aria-label="While you were away" style="background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">While you were away</h2>
+          <span style="color: #a3a2a1; font-size: 12px">Dreamt on <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace">zai/glm-5.3</span> · 1.2 of 5 million tokens today</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px">
+          <sc-for list="{{dreams}}" as="d" hint-placeholder-count="2">
+            <article style="border: 1px solid #333231; border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: #201f1e">
+              <div style="display: flex; align-items: baseline; gap: 8px">
+                <span style="font-weight: 600">{{d.repo}}</span>
+                <span style="color: #a3a2a1; font-size: 12px; flex: 1">{{d.meta}}</span>
+              </div>
+              <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px">
+                <sc-for list="{{d.proposals}}" as="p" hint-placeholder-count="2">
+                  <li style="display: flex; gap: 8px">
+                    <span style="color: #a3a2a1; font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; padding-top: 2px">{{p.n}}</span>
+                    <span>{{p.title}}</span>
+                  </li>
+                </sc-for>
+              </ul>
+              <div style="display: flex; gap: 8px; margin-top: 2px">
+                <a href="Review.dc.html" style="display: inline-flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 2px; background: #0078d4; color: #ffffff; text-decoration: none; font-weight: 600">Review</a>
+                <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">Not now</button>
+              </div>
+            </article>
+          </sc-for>
+        </div>
+        <p style="margin: 0; color: #a3a2a1; font-size: 12px">A dream for shop found nothing to propose (yesterday 22:40). <a href="Dreams.dc.html">All dreams</a></p>
+      </section>
+      <section aria-label="My tasks" style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">My tasks</h2>
+        <div style="background: #252423; border: 1px solid #333231; border-radius: 4px">
+          <sc-for list="{{tasks}}" as="t" hint-placeholder-count="3">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 16px; border-bottom: 1px solid #333231">
+              <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a2a1; width: 32px">{{t.id}}</span>
+              <span style="flex: 1 1 240px">{{t.title}}</span>
+              <span style="color: #a3a2a1; font-size: 12px">{{t.state}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+      <section aria-label="Reading" style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">Reading</h2>
+        <div style="background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 6px 12px">
+          <span style="flex: 1 1 240px">How Northwind closes a month</span>
+          <span style="color: #a3a2a1; font-size: 12px">12 min · for this sprint's work</span>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {
+active: [
+{ id: '831', title: 'Export statements to CSV', cost: '€ 1.20' },
+{ id: '845', title: 'Slow search on customers', cost: '€ 0.40' }
+],
+dreams: [
+{ repo: 'portal', meta: '2 proposals · from 6 sessions · tonight 03:12', proposals: [
+{ n: '1', title: 'New rule: migrations are written by hand, never generated' },
+{ n: '2', title: 'Skill "release-notes": description rewritten so agents pick it up' }
+] },
+{ repo: 'billing', meta: '1 proposal · from 4 sessions · tonight 03:41', proposals: [
+{ n: '1', title: 'New skill: run the VAT test set before touching rounding code' }
+] }
+],
+tasks: [
+{ id: '812', title: 'Rounding in invoice totals', state: 'Needs you · agent is waiting' },
+{ id: '831', title: 'Export statements to CSV', state: 'Active' },
+{ id: '845', title: 'Slow search on customers', state: 'Active' }
+]
+};
+}
+}
+</script>
+</body>
+</html>

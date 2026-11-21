@@ -27,6 +27,13 @@ import type {
 } from './brainShare';
 import type { ColorScheme } from './theme';
 import type {
+  DreamFileDiff,
+  DreamFileTexts,
+  DreamingSettings,
+  DreamView,
+  DreamWait,
+} from './dreams';
+import type {
   DiscoverResult,
   Environment,
   EnvironmentInfo,
@@ -894,6 +901,71 @@ export type Channels = {
     result: void;
   };
   'brain:openFolder': { args: [brainId: string]; result: void };
+  /** Dreams: settings, state, what the scheduler knows, every repo's record and the journal. */
+  'dream:get': { args: []; result: DreamView };
+  /** One small call with the model, as a dream makes it; on success the model is saved as chosen and tested. */
+  'dream:test': {
+    args: [model: string];
+    result: { ok: true } | { ok: false; message: string };
+  };
+  /**
+   * Saves the limit, repos, folders and idle minutes (never `enabled`, `model` or `testedModel`). While dreaming is
+   * on, a change that widens it needs `acknowledged`.
+   */
+  'dream:save': {
+    args: [next: DreamingSettings, acknowledged: boolean];
+    result: DreamingSettings;
+  };
+  /** The only way dreaming is switched on: with every step done and the owner's tick. */
+  'dream:switchOn': {
+    args: [acknowledged: boolean];
+    result: DreamingSettings;
+  };
+  'dream:switchOff': { args: []; result: DreamingSettings };
+  /** Dream now: starts at once unless a rule says to wait. */
+  'dream:now': {
+    args: [repoId: string];
+    result: { started: true } | { wait: DreamWait };
+  };
+  'dream:stop': { args: []; result: void };
+  /** Drops a proposal of the open result, or takes it back (`dropped: false`). */
+  'dream:drop': {
+    args: [repoId: string, proposalId: string, dropped: boolean];
+    result: void;
+  };
+  /** Removes the open result's worktree, branch and data; every proposal is remembered as rejected. */
+  'dream:discard': { args: [repoId: string]; result: void };
+  /**
+   * The open result's branch with the kept proposals only, its worktree removed; `tasks:create` with `fromDream`
+   * then makes a task on it.
+   */
+  'dream:openAsTask': { args: [repoId: string]; result: { branch: string } };
+  /**
+   * Forgets a result opened as a task whose task was never made: Shellie no longer offers to make it. The branch stays
+   * in the repo.
+   */
+  'dream:leaveBranch': { args: [repoId: string]; result: void };
+  /**
+   * Whether a folder or file a dream may change exists, with that exact spelling, in the repo's HEAD tree (git paths
+   * are case-sensitive). The setup warns once when it does not; a dream may still create it.
+   */
+  'dream:folderExists': {
+    args: [repoId: string, folder: string];
+    result: boolean;
+  };
+  /**
+   * The files a proposal of the open result changes, each with git's own hunks against the commit's parent, bounded
+   * (`DreamFileDiff`); read from the repo's git objects, so also once the dream worktree is gone.
+   */
+  'dream:diff': {
+    args: [repoId: string, proposalId: string];
+    result: DreamFileDiff[];
+  };
+  /** Both texts of one file the proposal's commit changes (exactly as git lists it), for the full diff. */
+  'dream:file': {
+    args: [repoId: string, proposalId: string, path: string];
+    result: DreamFileTexts;
+  };
 };
 
 /** Push events from main to the renderer. */
@@ -948,6 +1020,8 @@ export type Events = {
   'brain:changed': { brainId: string };
   /** A `shellie://join?…` link was opened (macOS open-url, Windows argv); the renderer shows the join screen. */
   'brain:openJoin': { link: string };
+  /** A dream started or ended, or what dreams remember or wait for changed; the renderer fetches `dream:get` again. */
+  'dream:changed': Record<string, never>;
 };
 
 /** `version` is null when the release name holds none. */

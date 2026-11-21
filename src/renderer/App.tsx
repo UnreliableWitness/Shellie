@@ -9,6 +9,9 @@ import { useTimeFocus } from './hooks/useTimeFocus';
 import { useShortcuts } from './hooks/useShortcuts';
 import { AddRepoScreen } from './screens/AddRepoScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
+import { DreamScreen } from './screens/DreamScreen';
+import { DreamsScreen } from './screens/DreamsScreen';
+import { DreamSetupScreen } from './screens/DreamSetupScreen';
 import { BrainNewScreen } from './screens/BrainNewScreen';
 import { BrainJoinScreen } from './screens/BrainJoinScreen';
 import { BrainScreen } from './screens/BrainScreen';
@@ -40,6 +43,12 @@ function Page() {
       return <GetStartedScreen />;
     case 'agents':
       return <AgentsScreen />;
+    case 'dreams':
+      return <DreamsScreen />;
+    case 'dream':
+      return <DreamScreen key={screen.repoId} repoId={screen.repoId} />;
+    case 'dream-setup':
+      return <DreamSetupScreen />;
     case 'sprint':
       return <SprintScreen />;
     case 'week':
@@ -68,7 +77,7 @@ function Page() {
     case 'new-task':
       return (
         <NewTaskScreen
-          key={`${screen.connectionId ?? ''}:${screen.repoId ?? ''}:${screen.workItem?.id ?? ''}`}
+          key={`${screen.connectionId ?? ''}:${screen.repoId ?? ''}:${screen.workItem?.id ?? ''}:${screen.dream?.id ?? ''}`}
           initial={screen}
         />
       );

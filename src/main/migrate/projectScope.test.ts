@@ -4,7 +4,7 @@ import {
   type Connection,
   type Repo,
 } from '../../shared/types';
-import { defaultSettings } from '../../shared/usage';
+import { defaultSettings, type AppSettings } from '../../shared/usage';
 import {
   applyProjectScopeMigration,
   migrateStartSettings,
@@ -86,7 +86,7 @@ describe('applyProjectScopeMigration', () => {
       get() {
         return this.current;
       },
-      save: vi.fn(async () => {}),
+      update: vi.fn(async () => {}),
     };
     const patch = vi.fn(async (id: string) => {
       if (id === 'a') throw new Error('disk full');
@@ -108,14 +108,21 @@ describe('applyProjectScopeMigration', () => {
     });
     expect(patch).toHaveBeenCalledTimes(2);
     expect(patch).toHaveBeenCalledWith('b', { writeTimeToAdo: true });
-    expect(settings.save).not.toHaveBeenCalled();
+    expect(settings.update).not.toHaveBeenCalled();
     expect(state.repos[0].workItemOnStart).toBeUndefined();
     expect(log).toHaveBeenCalledTimes(1);
   });
   it('saves the settings without the legacy key when every patch succeeds', async () => {
+    let saved: AppSettings | null = null;
     const settings = {
       get: () => ({ ...defaultSettings(), writeTimeToAdo: true }),
-      save: vi.fn(async () => {}),
+      update: vi.fn(async (fn: (cur: AppSettings) => AppSettings) => {
+        saved = fn({
+          ...defaultSettings(),
+          writeTimeToAdo: true,
+          showSplash: false,
+        });
+      }),
     };
     await applyProjectScopeMigration({
       settings,
@@ -123,6 +130,9 @@ describe('applyProjectScopeMigration', () => {
       store: { state: { repos: [] }, update: async () => {} },
       log: vi.fn(),
     });
-    expect(settings.save).toHaveBeenCalledTimes(1);
+    expect(settings.update).toHaveBeenCalledTimes(1);
+    // From the settings as they are when the write runs, without the legacy key.
+    expect(saved).toMatchObject({ showSplash: false });
+    expect(saved!).not.toHaveProperty('writeTimeToAdo');
   });
 });

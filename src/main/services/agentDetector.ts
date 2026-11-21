@@ -5,6 +5,7 @@ import {
   type AgentProbe,
   type AgentsDetected,
 } from '../../shared/agents';
+import { isOpencodeModel } from '../../shared/brain';
 import type { Command, Platform } from '../platform/Platform';
 
 export type ProbeRunner = (
@@ -88,4 +89,25 @@ export async function detectAgents(
     ) as AgentsDetected['agents'],
     shell: { label: platform.shellLabel },
   };
+}
+
+/** `opencode models`: its `provider/model` lines; null when it failed, listed none or is not there. Never cached. */
+export async function opencodeModels(
+  platform: Pick<Platform, 'opencodeCommand'>,
+  probe: ProbeRunner,
+): Promise<string[] | null> {
+  try {
+    const { code, stdout } = await probe(
+      platform.opencodeCommand(undefined, ['models']),
+      15_000,
+    );
+    if (code !== 0) return null;
+    const models = stdout
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(isOpencodeModel);
+    return models.length > 0 ? models : null;
+  } catch {
+    return null;
+  }
 }

@@ -140,6 +140,7 @@ import { GitDirWatcher } from '../review/GitDirWatcher';
 import { type AgentsDetected, apmTargetsOfList } from '../../shared/agents';
 import {
   detectAgents,
+  opencodeModels,
   runProbe,
   type ProbeRunner,
 } from '../services/agentDetector';
@@ -245,8 +246,11 @@ import { sessionDigest, type Turn } from '../brain/sessionDigest';
 import {
   lastAgentTurnAt as lastClaudeTurnAt,
   readClaudeTurns,
-  type TurnAt,
 } from '../sessions/claudeTranscript';
+import {
+  claudeSessionTurns as claudeTaskTurns,
+  opencodeSessionTurns as opencodeTaskTurns,
+} from '../sessions/taskSessions';
 import { askTab } from '../prDraft/askTab';
 import { pickTab, tabVerdict, type TabCandidate } from '../prDraft/pickTab';
 import {
@@ -256,23 +260,23 @@ import {
 } from '../prDraft/PrDrafts';
 import { opencodeResultWithSession } from '../brain/opencodeResult';
 import type { TabActivity } from '../attention/TabActivity';
-import {
-  prRequestLine,
-  prRequestText,
-  withoutPrRequests,
-} from '../prDraft/protocol';
+import { prRequestLine, prRequestText } from '../prDraft/protocol';
 import { addSource } from '../brain/sources';
 import {
-  isOpencodeModel,
   type Brain,
   type BrainJobKind,
   type RefreshResult,
 } from '../../shared/brain';
 import { OFFICIAL_USD_TO_EUR } from '../../shared/usage';
 import { withTimeout } from '../async';
+import { noDreams, type DreamApi } from '../dreams/dreamHandlers';
 import { throttleByKey } from './throttleByKey';
 
 export type Services = {
+  /** The `dream:*` handlers and what `tasks:create` asks about a task from a dream (main); absent in most tests. */
+  dreams?: DreamApi;
+  /** Each list `agents:opencodeModels` read (null when it could not): main shares it with dreams' model list. */
+  opencodeModelsRead?: (models: string[] | null) => void;
   /** The brain's own Claude terminal (main); absent in most tests. */
   brainTerminals?: ReturnType<typeof createBrainTerminals>;
   /**
@@ -513,6 +517,32 @@ class LeakError extends Error {
   }
 }
 
+/** Base branch names that identify no one; scrubbing them would also blank words like `main` in stack traces. */
+const COMMON_BASES = new Set(['main', 'master', 'develop', 'dev', 'trunk']);
+
+/** Why Finish opens no PR when the task's base branch is gone from origin. */
+const targetGone = (target: string) =>
+  `target branch ${target} no longer exists on origin; pick another base branch`;
+
+/** Azure DevOps's 400 for a PR whose source or target branch it cannot find. */
+const isBranchGone = (e: unknown): e is AdoError =>
+  e instanceof AdoError &&
+  e.status === 400 &&
+  /branch no longer exists/i.test(e.message);
+
+/** The `pr.failed` properties: the error's kind, and for Azure DevOps its HTTP status and TF code. */
+function prFailedProps(e: unknown): Record<string, string | number> {
+  if (!(e instanceof AdoError)) return { kind: 'git' };
+  // A rewritten message keeps Azure DevOps's own error as its cause.
+  const raw = e.cause instanceof Error ? e.cause.message : e.message;
+  const code = /\bTF\d+\b/.exec(raw)?.[0];
+  return {
+    kind: e.kind,
+    ...(e.status !== undefined ? { status: e.status } : {}),
+    ...(code ? { code } : {}),
+  };
+}
+
 /** Keys (repo:branch, repo:worktree) of tasks being created right now, across handler bundles. */
 const creating = new Set<string>();
 
@@ -542,6 +572,7 @@ export async function pruneDanglingConnectionLinks(
 
 export function createHandlers(s: Services): Handlers {
   const tel = s.telemetry ?? NoopTelemetry;
+  const dreams = s.dreams ?? noDreams();
   let agentsCache: AgentsDetected | null = null;
   /** The `opencode models` list, shared while it runs; dropped again when it gave none, so the next call retries. */
   let opencodeModelsRun: Promise<string[] | null> | null = null;
@@ -796,12 +827,12 @@ export function createHandlers(s: Services): Handlers {
       connections: s.connections.list().length,
     });
     // A tracker after all: the earlier No-tracker choice no longer holds.
-    const current = s.settings.get();
-    if (current.onboarding.tracker === 'none')
-      await s.settings.save({
-        ...current,
-        onboarding: { ...current.onboarding, tracker: null },
-      });
+    if (s.settings.get().onboarding.tracker === 'none')
+      await s.settings.update((cur) =>
+        cur.onboarding.tracker === 'none'
+          ? { ...cur, onboarding: { ...cur.onboarding, tracker: null } }
+          : cur,
+      );
     return verified;
   };
 
@@ -2013,44 +2044,13 @@ export function createHandlers(s: Services): Handlers {
       : undefined;
   };
 
-  /**
-   * What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an
-   * OpenCode tab, and none when OpenCode's database cannot be read (logged, so the Claude lessons still go in).
-   */
-  const opencodeSessionTurns = (task: Task) => {
-    const tabs = [...task.closedTerminals, ...task.terminals];
-    if (!s.opencodeSessionTexts || !tabs.some((t) => t.kind === 'opencode'))
-      return [];
-    const dirs = [
-      ...new Set(
-        taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
-      ),
-    ];
-    try {
-      return s
-        .opencodeSessionTexts(dirs, Date.parse(task.createdAt) || 0)
-        .map((turns) => withoutPrRequests(turns));
-    } catch (e) {
-      console.error('[brain] OpenCode sessions not read for lessons', e);
-      return [];
-    }
-  };
-
-  /** The turns of the task's Claude Code sessions (open and closed tabs), each session's in order; unsaved ones are skipped. */
-  const claudeSessionTurns = async (task: Task): Promise<TurnAt[][]> => {
-    const ids = [...task.closedTerminals, ...task.terminals]
-      .filter((t) => t.kind === 'claude' && t.sessionId)
-      .map((t) => t.sessionId!);
-    const out: TurnAt[][] = [];
-    for (const id of new Set(ids)) {
-      const file = sessionFile(id);
-      if (!file) continue;
-      const { turns } = await readClaudeTurns(file);
-      // Shellie's own PR-description requests and their answers are never part of what was said.
-      if (turns.length > 0) out.push(withoutPrRequests(turns));
-    }
-    return out;
-  };
+  const opencodeSessionTurns = (task: Task) =>
+    opencodeTaskTurns(
+      task,
+      s.opencodeSessionTexts,
+      '[brain] OpenCode sessions not read for lessons',
+    );
+  const claudeSessionTurns = (task: Task) => claudeTaskTurns(task, sessionFile);
 
   /**
    * Adds `text` to the brain as a source called `name` (written to a temp file first: the source takes the file's
@@ -2234,7 +2234,11 @@ export function createHandlers(s: Services): Handlers {
           taskConnectionId(task, [repo]) &&
           (startSettings.moveToInProgress || startSettings.assignToMe),
         ),
-      ...(task.reopen ? { restore: { from: task.reopen.from } } : {}),
+      ...(task.reopen
+        ? { restore: { from: task.reopen.from } }
+        : task.existingBranch
+          ? { restore: { from: null } }
+          : {}),
       ...(reopening
         ? {
             // Only workspaces Reopen marked are made again; the home's mark is absent when dropped or kept.
@@ -2616,7 +2620,7 @@ export function createHandlers(s: Services): Handlers {
       scan: scanProject,
       prefs: () => s.settings.get().editor,
       savePrefs: async (editor) => {
-        await s.settings.save({ ...s.settings.get(), editor });
+        await s.settings.update((cur) => ({ ...cur, editor }));
       },
       launch: s.launch,
       event: (n, p) => tel.event(n, p),
@@ -3119,9 +3123,15 @@ export function createHandlers(s: Services): Handlers {
       repositoryId,
       w.branch,
     );
-    const raw =
-      existing ??
-      (await client.createPullRequest(project, repositoryId, {
+    // baseRef is stored when the task starts; the branch may have been deleted or renamed on origin since.
+    const onRemote = (branch: string) =>
+      s.git.remoteBranchExists(w.worktreePath, 'origin', branch);
+    // The errors below name it; a base like release/customer-x must not leave the machine.
+    if (!COMMON_BASES.has(c.target)) s.rememberSensitive?.([c.target]);
+    if (!existing && (await onRemote(c.target)) === false)
+      throw new Error(targetGone(c.target));
+    const create = () =>
+      client.createPullRequest(project, repositoryId, {
         source: w.branch,
         target: c.target,
         title: prTitle(task),
@@ -3135,6 +3145,27 @@ export function createHandlers(s: Services): Handlers {
         }),
         workItemId:
           task.workItem && c.linksWorkItem ? Number(task.workItem.id) : null,
+      });
+    const raw =
+      existing ??
+      (await create().catch(async (e: unknown) => {
+        if (!isBranchGone(e)) throw e;
+        const [source, target] = await Promise.all([
+          onRemote(w.branch),
+          onRemote(c.target),
+        ]);
+        const named = new AdoError(
+          e.kind,
+          e.path,
+          target === false
+            ? targetGone(c.target)
+            : source === false
+              ? `source branch ${w.branch} no longer exists on origin; push it again`
+              : `Azure DevOps says source branch ${w.branch} or target branch ${c.target} no longer exists (${e.message})`,
+          e.status,
+        );
+        named.cause = e;
+        throw named;
       }));
     tel.event(existing ? 'pr.linked' : 'pr.created');
     return {
@@ -3511,10 +3542,7 @@ export function createHandlers(s: Services): Handlers {
             } catch (e) {
               const message = errorMessage(e);
               if (e instanceof LeakError) result.leak = e.kind;
-              else
-                tel.event('pr.failed', {
-                  kind: e instanceof AdoError ? e.kind : 'git',
-                });
+              else tel.event('pr.failed', prFailedProps(e));
               if (e instanceof GitAuthError) result.auth = e.hint;
               fail(
                 message,
@@ -3596,6 +3624,7 @@ export function createHandlers(s: Services): Handlers {
 
   return {
     ...brainHandlers,
+    ...dreams.handlers,
     ...createReaderHandlers(s.reader),
     ...createDocsHandlers({
       taskById,
@@ -3675,9 +3704,20 @@ export function createHandlers(s: Services): Handlers {
       return repo;
     },
     'repos:remove': async (id) => {
+      const repo = s.repos.find(id);
       await s.repos.remove(id);
       reposChanged();
       tel.event('repo.removed');
+      // Its dreams go with it: a running dream, an open result, its dream settings and state. Never fails the removal.
+      if (repo)
+        await dreams
+          .repoRemoved(repo)
+          .catch((e: unknown) =>
+            console.error(
+              '[dreams] a removed repo’s dreams were not cleared',
+              e,
+            ),
+          );
     },
     'repos:refresh': async (id) => {
       const repo = await s.repos.refresh(id);
@@ -3698,25 +3738,11 @@ export function createHandlers(s: Services): Handlers {
     },
     'agents:opencodeModels': () => {
       if (opencodeModelsRun) return opencodeModelsRun;
-      const run = (async () => {
-        try {
-          const { code, stdout } = await (s.runProbe ?? runProbe)(
-            s.platform.opencodeCommand(undefined, ['models']),
-            15_000,
-          );
-          if (code !== 0) return null;
-          const models = stdout
-            .split(/\r?\n/)
-            .map((l) => l.trim())
-            .filter(isOpencodeModel);
-          return models.length > 0 ? models : null;
-        } catch {
-          return null;
-        }
-      })();
+      const run = opencodeModels(s.platform, s.runProbe ?? runProbe);
       opencodeModelsRun = run;
       void run.then((models) => {
         if (!models && opencodeModelsRun === run) opencodeModelsRun = null;
+        s.opencodeModelsRead?.(models);
       });
       return run;
     },
@@ -3760,7 +3786,11 @@ export function createHandlers(s: Services): Handlers {
       const branch = input.branch.trim();
       if (!(await s.git.validBranchName(repo.path, branch)))
         throw new Error(`"${branch}" is not a valid branch name`);
-      if (await s.git.branchExists(repo.path, branch))
+      // A dream's branch exists by design, but only the one `dream:openAsTask` just returned for that dream.
+      const fromDream =
+        input.fromDream !== undefined &&
+        dreams.taskLink.opened(input.fromDream, repo.id, branch);
+      if (!fromDream && (await s.git.branchExists(repo.path, branch)))
         throw new Error(`Branch ${branch} already exists in ${repo.name}`);
       assertTaskNamed(input);
       const slug = taskSlug(input.workItem, input.name);
@@ -3802,23 +3832,37 @@ export function createHandlers(s: Services): Handlers {
       } catch {
         // The summary is for display; a config that cannot be read now shows up in setup itself.
       }
-      return registerTask(
-        newTask(input, {
-          repoId: repo.id,
-          slug,
-          branch,
-          worktreePath,
-          baseRef: input.baseRef,
-          copy: input.copy,
-          commands: input.commands,
-          summary,
-          connectionId: repo.connectionId,
-          environment,
-          environmentUntil:
-            environment === 'production' ? productionUntil() : null,
-        }),
+      const task = newTask(input, {
+        repoId: repo.id,
+        slug,
+        branch,
+        worktreePath,
+        baseRef: input.baseRef,
+        copy: input.copy,
+        commands: input.commands,
+        summary,
+        connectionId: repo.connectionId,
+        environment,
+        environmentUntil:
+          environment === 'production' ? productionUntil() : null,
+      });
+      if (!fromDream) return registerTask(task, keys);
+      const created = await registerTask(
+        { ...task, existingBranch: true },
         keys,
       );
+      await dreams.taskLink
+        .taskCreated(
+          input.fromDream!,
+          repo.id,
+          created.workItem
+            ? `${created.workItem.id} ${created.workItem.title}`
+            : created.name,
+        )
+        .catch((e: unknown) =>
+          console.error('[dreams] the journal could not name the task', e),
+        );
+      return created;
     },
     'tasks:setupState': async (taskId) => setupStates.get(taskId) ?? null,
     'tasks:retrySetup': async (taskId) => {
@@ -3880,7 +3924,11 @@ export function createHandlers(s: Services): Handlers {
         if (await pathExists(task.worktreePath))
           await s.git.worktreeRemove(repo.path, task.worktreePath, true);
         await s.git.worktreePrune(repo.path);
-        if (await s.git.branchExists(repo.path, task.branch))
+        // A branch the task did not make (a dream's kept proposals) is never deleted here.
+        if (
+          !task.existingBranch &&
+          (await s.git.branchExists(repo.path, task.branch))
+        )
           await s.git.deleteBranch(repo.path, task.branch);
         setupStates.delete(taskId);
         await s.store.update((st) => {
@@ -4077,9 +4125,7 @@ export function createHandlers(s: Services): Handlers {
           } catch (e) {
             await patchTask(taskId, { status: 'ready' });
             if (!(e instanceof LeakError))
-              tel.event('pr.failed', {
-                kind: e instanceof AdoError ? e.kind : 'git',
-              });
+              tel.event('pr.failed', prFailedProps(e));
             throw new Error(`Pull request not created: ${errorMessage(e)}`);
           }
           summary = pr.summary;
@@ -5035,6 +5081,7 @@ export function createHandlers(s: Services): Handlers {
     'settings:get': async () => s.settings.get(),
     'settings:save': async (next) => {
       const before = s.settings.get();
+      // `dreaming` stays as stored (SettingsStore): only `dream:*` change it.
       const saved = await s.settings.save(next);
       const changed = changedKeys(before, saved);
       if (saved.theme !== before.theme) s.applyTheme?.(saved.theme);

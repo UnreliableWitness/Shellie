@@ -24,6 +24,8 @@ export function createPtyHost(
   run: typeof runWithInput = runWithInput,
 ): (m: ToHost) => void {
   const procs = new Map<number, IPty>();
+  /** The runs not settled yet, to cancel. */
+  const runs = new Map<number, AbortController>();
   const spawn = (m: Extract<ToHost, { t: 'spawn' }>) => {
     let proc: IPty;
     try {
@@ -73,26 +75,40 @@ export function createPtyHost(
           // Already gone; its exit is on the way.
         }
         return;
-      case 'run':
+      case 'cancelRun':
+        runs.get(m.n)?.abort();
+        return;
+      case 'run': {
+        const stop = new AbortController();
+        runs.set(m.n, stop);
         run(
           { command: m.command, args: m.args },
-          { cwd: m.cwd, input: m.input, timeoutMs: m.timeoutMs, env: m.env },
-        ).then(
-          (stdout) => post({ t: 'ran', n: m.n, stdout }),
-          (e: unknown) => {
-            const code = (e as NodeJS.ErrnoException).code;
-            post({
-              t: 'runError',
-              n: m.n,
-              message: message(e),
-              ...(typeof code === 'string' ? { code } : {}),
-              ...(e instanceof ExitError
-                ? { exit: { exitCode: e.exitCode, stdout: e.stdout } }
-                : {}),
-            });
+          {
+            cwd: m.cwd,
+            input: m.input,
+            timeoutMs: m.timeoutMs,
+            env: m.env,
+            signal: stop.signal,
           },
-        );
+        )
+          .finally(() => runs.delete(m.n))
+          .then(
+            (stdout) => post({ t: 'ran', n: m.n, stdout }),
+            (e: unknown) => {
+              const code = (e as NodeJS.ErrnoException).code;
+              post({
+                t: 'runError',
+                n: m.n,
+                message: message(e),
+                ...(typeof code === 'string' ? { code } : {}),
+                ...(e instanceof ExitError
+                  ? { exit: { exitCode: e.exitCode, stdout: e.stdout } }
+                  : {}),
+              });
+            },
+          );
         return;
+      }
     }
   };
 }

@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import type { AppSettings } from '../../shared/usage';
+import { defaultDreaming } from '../../shared/dreams';
 import { BudgetSection } from './BudgetSection';
 
 const alertsOn = { at80: true, forecastOver: true, at100: true };
@@ -26,6 +27,7 @@ const base: AppSettings = {
   sendTelemetry: true,
   editor: { default: null, repos: {} },
   secrets: { productionMinutes: 60 },
+  dreaming: defaultDreaming(),
   onboarding: {
     dismissedAt: null,
     agentsCheckedAt: null,

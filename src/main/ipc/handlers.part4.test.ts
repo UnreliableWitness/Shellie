@@ -647,6 +647,58 @@ describe('handlers: finish with a pull request', () => {
     expect(existsSync(hx.t.worktreePath)).toBe(true);
   });
 
+  it('names a target branch gone from origin before asking Azure DevOps (#342)', async () => {
+    const hx = await prHarness();
+    commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
+    git(hx.bare, 'update-ref', '-d', 'refs/heads/main');
+    await expect(hx.h['tasks:finish'](hx.t.id, finishWithPr)).rejects.toThrow(
+      'Pull request not created: target branch main no longer exists on origin; pick another base branch',
+    );
+    expect(hx.create).not.toHaveBeenCalled();
+    expect(hx.store.state.tasks[0].status).toBe('ready');
+    expect(existsSync(hx.t.worktreePath)).toBe(true);
+  });
+
+  it('names the missing branch when Azure DevOps rejects the PR for it, with status and code (#342)', async () => {
+    const tel = telemetryEvents();
+    const hx = await prHarness(undefined, undefined, {
+      telemetry: tel.telemetry,
+    });
+    commitFile(hx.t.worktreePath, 'feature.txt', 'a\n', 'Add the feature');
+    hx.create.mockImplementation(async () => {
+      // The branch went away between the check and the POST.
+      git(hx.bare, 'update-ref', '-d', 'refs/heads/main');
+      throw new AdoError(
+        'http',
+        '_apis/git/repositories/repo-1/pullrequests',
+        'Azure DevOps returned 400: TF401398: The pull request cannot be activated because the source and/or the target branch no longer exists, or the requested refs are not branches',
+        400,
+      );
+    });
+    await expect(hx.h['tasks:finish'](hx.t.id, finishWithPr)).rejects.toThrow(
+      'Pull request not created: target branch main no longer exists on origin; pick another base branch',
+    );
+    expect(hx.store.state.tasks[0].status).toBe('ready');
+    expect(tel.named('pr.failed')).toEqual([
+      ['pr.failed', { kind: 'http', status: 400, code: 'TF401398' }, undefined],
+    ]);
+  });
+
+  it('names both branches when Azure DevOps says one is gone and origin has both (#342)', async () => {
+    const hx = await prHarness();
+    hx.create.mockRejectedValue(
+      new AdoError(
+        'http',
+        '_apis/git',
+        'Azure DevOps returned 400: TF401398: The pull request cannot be activated because the source and/or the target branch no longer exists',
+        400,
+      ),
+    );
+    await expect(hx.h['tasks:finish'](hx.t.id, finishWithPr)).rejects.toThrow(
+      `Pull request not created: Azure DevOps says source branch ${hx.t.branch} or target branch main no longer exists`,
+    );
+  });
+
   it('refuses a PR when pull requests are unavailable, and cleans up nothing', async () => {
     const hx = await prHarness('https://github.com/contoso/R.git');
     const push = vi.spyOn(hx.services.git, 'push');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Platform } from '../platform/Platform';
-import { detectAgents, runProbe } from './agentDetector';
+import { detectAgents, opencodeModels, runProbe } from './agentDetector';
 
 const platform = {
   shellLabel: 'zsh',
@@ -135,5 +135,41 @@ describe('runProbe', () => {
     await expect(
       runProbe({ command: '/no/such/binary-shellie', args: [] }, 1000),
     ).rejects.toThrow();
+  });
+});
+
+describe('opencodeModels', () => {
+  const oc = {
+    opencodeCommand: (_cwd: unknown, args: string[]) => ({
+      command: 'opencode',
+      args,
+    }),
+  } as unknown as Platform;
+
+  it('lists the provider/model lines of `opencode models`', async () => {
+    let asked: unknown;
+    const list = await opencodeModels(oc, async (cmd, ms) => {
+      asked = { cmd, ms };
+      return { code: 0, stdout: 'zai/glm-5\r\nnot a model\nanthropic/x\n' };
+    });
+    expect(list).toEqual(['zai/glm-5', 'anthropic/x']);
+    expect(asked).toEqual({
+      cmd: { command: 'opencode', args: ['models'] },
+      ms: 15_000,
+    });
+  });
+
+  it('is null for a failed run, an empty list or a missing program', async () => {
+    expect(
+      await opencodeModels(oc, async () => ({ code: 1, stdout: 'a/b' })),
+    ).toBeNull();
+    expect(
+      await opencodeModels(oc, async () => ({ code: 0, stdout: '\n' })),
+    ).toBeNull();
+    expect(
+      await opencodeModels(oc, async () => {
+        throw new Error('ENOENT');
+      }),
+    ).toBeNull();
   });
 });

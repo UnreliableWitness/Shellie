@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reviewing a dream: proposals, evidence and changes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#201f1e}
+a{color:#5ca9f2}a:hover{color:#8cc4f7}
+button{font:inherit}
+</style>
+</helmet>
+<div style="min-height: 1000px; display: flex; flex-direction: column; background: #201f1e; color: #e9e9e8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45">
+  <header style="height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #1b1a19; border-bottom: 1px solid #333231">
+    <a href="Main.dc.html" style="font-weight: 600; color: #e9e9e8; text-decoration: none">Shellie</a>
+    <span style="color: #a3a2a1" aria-hidden="true">›</span>
+    <a href="Dreams.dc.html" style="color: #a3a2a1; text-decoration: none">Dreams</a>
+    <span style="color: #a3a2a1" aria-hidden="true">›</span>
+    <span style="color: #a3a2a1">portal, 20 Nov</span>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 16px 24px; border-bottom: 1px solid #333231">
+    <div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+      <h1 style="margin: 0; font-size: 20px; font-weight: 600">What portal’s sessions taught</h1>
+      <div style="color: #a3a2a1; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 14px">
+        <span>Dreamt tonight 03:12 from 6 sessions</span>
+        <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace">zai/glm-5.3</span>
+        <span>790 000 tokens</span>
+        <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace">dream/2026-11-20-1</span>
+      </div>
+    </div>
+    <span style="color: #a3a2a1; font-size: 12px">2 of 3 kept</span>
+    <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">Discard dream</button>
+    <button type="button" style="min-height: 32px; padding: 0 16px; border-radius: 2px; border: 0; background: #0078d4; color: #ffffff; font-weight: 600">Open 2 as a task</button>
+  </div>
+
+  <div style="flex: 1; display: flex; flex-wrap: wrap">
+    <nav aria-label="Proposals" style="flex: 1 1 300px; max-width: 360px; min-width: 260px; box-sizing: border-box; border-right: 1px solid #333231; padding: 12px; display: flex; flex-direction: column; gap: 6px">
+      <sc-for list="{{proposals}}" as="p" hint-placeholder-count="3">
+        <button type="button" onClick="{{p.pick}}" aria-pressed="{{p.selected}}" style="{{p.style}}">
+          <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a2a1; padding-top: 2px">{{p.n}}</span>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+            <span style="{{p.titleStyle}}">{{p.title}}</span>
+            <span style="color: #a3a2a1; font-size: 12px">{{p.meta}}</span>
+          </span>
+        </button>
+      </sc-for>
+      <p style="margin: 12px 8px 0; color: #a3a2a1; font-size: 12px">One more idea did not survive the dream’s own check: its evidence was a single session. It is remembered in case it comes up again.</p>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 20px 28px 32px; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px">
+        <div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+          <span style="color: #a3a2a1; font-size: 12px">New rule</span>
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600">Migrations are written by hand, never generated</h2>
+          <p style="margin: 0; max-width: 68ch">In three tasks the agent generated a migration with the ORM’s generator and was told to throw it away and write it by hand. Nothing in the repo’s rules says so, so every new session makes the same mistake.</p>
+        </div>
+        <button type="button" style="min-height: 32px; padding: 0 14px; border-radius: 2px; border: 1px solid #4a4948; background: transparent; color: #e9e9e8">Drop this proposal</button>
+      </div>
+
+      <section aria-label="Evidence" style="display: flex; flex-direction: column; gap: 8px">
+        <h3 style="margin: 0; font-size: 14px; font-weight: 600">Where it comes from</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px">
+          <sc-for list="{{evidence}}" as="e" hint-placeholder-count="3">
+            <figure style="margin: 0; background: #252423; border: 1px solid #333231; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+              <blockquote style="margin: 0; font-family: 'Sitka Text', 'Iowan Old Style', Georgia, Cambria, serif; font-size: 15px; line-height: 1.5">{{e.quote}}</blockquote>
+              <figcaption style="color: #a3a2a1; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 8px">
+                <span>You, in</span>
+                <a href="#">{{e.task}}</a>
+                <span>{{e.when}}</span>
+              </figcaption>
+            </figure>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-label="Changes" style="display: flex; flex-direction: column; gap: 8px">
+        <h3 style="margin: 0; font-size: 14px; font-weight: 600">What it changes</h3>
+        <div style="background: #252423; border: 1px solid #333231; border-radius: 4px; overflow: hidden">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 14px; border-bottom: 1px solid #333231">
+            <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; flex: 1; min-width: 0">.apm/instructions/database.instructions.md</span>
+            <span style="font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12px; color: #6ccb5f">+7</span>
+            <a href="#" style="font-size: 12px">Open in Changes</a>
+          </div>
+          <div style="overflow-x: auto">
+            <sc-for list="{{diff}}" as="l" hint-placeholder-count="9">
+              <div style="{{l.style}}"><span style="width: 28px; flex: none; color: #a3a2a1; text-align: right">{{l.no}}</span><span style="width: 12px; flex: none">{{l.sign}}</span><span style="white-space: pre">{{l.text}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+const picked = (this.state && this.state.picked) || '1';
+const row = 'display: flex; gap: 10px; width: 100%; text-align: left; padding: 10px 10px; border-radius: 2px; border: 1px solid transparent; color: #e9e9e8; min-height: 44px; ';
+const proposals = [
+{ n: '1', title: 'Migrations are written by hand, never generated', meta: 'New rule · seen in 3 tasks', dropped: false },
+{ n: '2', title: 'Skill “release-notes”: description rewritten so agents pick it up', meta: 'Changed skill · never used in 4 tasks that needed it', dropped: false },
+{ n: '3', title: 'Agent “db-reviewer” for schema changes', meta: 'Dropped · Undo', dropped: true }
+].map((p) => ({
+...p,
+selected: p.n === picked,
+pick: () => this.setState({ picked: p.n }),
+style: row + (p.n === picked ? 'background: rgba(255,255,255,0.08); border-color: #4a4948' : 'background: transparent'),
+titleStyle: p.dropped ? 'text-decoration: line-through; color: #a3a2a1' : 'font-weight: 600'
+}));
+const base = 'display: flex; gap: 8px; padding: 1px 14px; font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.7; min-width: 560px; ';
+const add = base + 'background: rgba(108,203,95,0.12)';
+const lines = [
+[' ', '## Schema changes'],
+[' ', ''],
+[' ', '- Every schema change gets its own migration file.'],
+['+', '- Write migrations by hand. Never run the ORM’s migration generator:'],
+['+', '  its output renames columns by drop and add, which loses data here.'],
+['+', '- Start from the newest file in `db/migrations/` and keep its style:'],
+['+', '  one change per file, an explicit `down`, no data changes mixed in.'],
+['+', '- If a generated migration is already in the working tree, delete it'],
+['+', '  and say so before writing the hand-made one.'],
+['+', ''],
+[' ', '- Run `npm run db:check` before you call a migration done.']
+];
+return {
+proposals,
+evidence: [
+{ quote: '“No, we never use the generator here. Throw that file away and write the migration by hand.”', task: '812 Rounding in invoice totals', when: '14 Nov' },
+{ quote: '“Again a generated migration. By hand please, look at the last one in db/migrations.”', task: '820 Archive old statements', when: '17 Nov' },
+{ quote: '“This drops and re-adds the column, we lose the data. Hand-written, one change per file.”', task: '831 Export statements to CSV', when: '19 Nov' }
+],
+diff: lines.map((l, i) => ({ no: String(i + 12), sign: l[0], text: l[1], style: l[0] === '+' ? add : base }))
+};
+}
+}
+</script>
+</body>
+</html>
