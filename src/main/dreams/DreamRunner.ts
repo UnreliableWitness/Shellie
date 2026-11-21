@@ -115,8 +115,17 @@ export type DreamRunnerDeps = {
 };
 
 type DreamRepoArg = { id: string; path: string; name: string };
+/** `project` is the connection id of the repo's project: the dream's sessions carry it in their title. */
+type DreamOptions = {
+  model: string;
+  folders: string[];
+  signal: AbortSignal;
+  project: string;
+};
 type Running = {
   repoId: string;
+  /** The connection id of the project the dream is for. */
+  project: string;
   startedAt: number;
   step: 'reading' | 'checking';
 };
@@ -132,6 +141,7 @@ class Ended extends Error {
 /** What one dream holds while it runs. */
 type Dream = {
   repo: DreamRepoArg;
+  project: string;
   model: string;
   folders: string[];
   material: Material;
@@ -167,15 +177,17 @@ export class DreamRunner {
   }
 
   /** Runs one dream for the repo. Never throws; cleans up on every outcome but 'proposed'. */
-  async dream(
-    repo: DreamRepoArg,
-    o: { model: string; folders: string[]; signal: AbortSignal },
-  ): Promise<DreamOutcome> {
+  async dream(repo: DreamRepoArg, o: DreamOptions): Promise<DreamOutcome> {
     // One at a time: a second call is refused, not a dream; it touches nothing.
     if (this.current)
       return { outcome: 'failed', reason: 'A dream is already running' };
     const startedAt = this.deps.now();
-    this.current = { repoId: repo.id, startedAt, step: 'reading' };
+    this.current = {
+      repoId: repo.id,
+      project: o.project,
+      startedAt,
+      step: 'reading',
+    };
     try {
       return await this.dreamOnce(repo, o, startedAt);
     } finally {
@@ -185,12 +197,13 @@ export class DreamRunner {
 
   private async dreamOnce(
     repo: DreamRepoArg,
-    o: { model: string; folders: string[]; signal: AbortSignal },
+    o: DreamOptions,
     startedAt: number,
   ): Promise<DreamOutcome> {
     const d = this.deps;
     const m: Dream = {
       repo,
+      project: o.project,
       model: o.model,
       folders: o.folders,
       material: { tasks: [], marks: {} },
@@ -466,7 +479,10 @@ export class DreamRunner {
     prompt: string,
   ): Promise<void> {
     const d = this.deps;
-    const cmd = d.platform.opencodeCommand(undefined, dreamArgs(m.model, what));
+    const cmd = d.platform.opencodeCommand(
+      undefined,
+      dreamArgs(m.model, what, m.project),
+    );
     // Applied last: spawning spreads process.env, then the env given, then the command's own.
     const env = dreamEnv(cmd.env ?? {}, {
       model: m.model,

@@ -899,33 +899,37 @@ export type Channels = {
     result: void;
   };
   'brain:openFolder': { args: [brainId: string]; result: void };
-  /** Dreams: settings, state, what the scheduler knows, every repo's record and the journal. */
-  'dream:get': { args: []; result: DreamView };
+  /**
+   * Dreams of one project (`connectionId`): its settings, what the scheduler knows of it, its repos' records and
+   * their journal. Every call about a setup takes the project; the ones about one repo's result take the repo.
+   */
+  'dream:get': { args: [connectionId: string]; result: DreamView };
   /** One small call with the model, as a dream makes it; on success the model is saved as chosen and tested. */
   'dream:test': {
-    args: [model: string];
+    args: [connectionId: string, model: string];
     result: { ok: true } | { ok: false; message: string };
   };
   /**
    * Saves the limit, repos, folders and idle minutes (never `enabled`, `model` or `testedModel`). While dreaming is
-   * on, a change that widens it needs `acknowledged`.
+   * on, a change that widens it needs `acknowledged`. A repo of another project is refused.
    */
   'dream:save': {
-    args: [next: DreamingSettings, acknowledged: boolean];
+    args: [connectionId: string, next: DreamingSettings, acknowledged: boolean];
     result: DreamingSettings;
   };
-  /** The only way dreaming is switched on: with every step done and the owner's tick. */
+  /** The only way a project's dreaming is switched on: with every step done and the owner's tick. */
   'dream:switchOn': {
-    args: [acknowledged: boolean];
+    args: [connectionId: string, acknowledged: boolean];
     result: DreamingSettings;
   };
-  'dream:switchOff': { args: []; result: DreamingSettings };
-  /** Dream now: starts at once unless a rule says to wait. */
+  'dream:switchOff': { args: [connectionId: string]; result: DreamingSettings };
+  /** Dream now, for the repo's project: starts at once unless a rule says to wait. */
   'dream:now': {
     args: [repoId: string];
     result: { started: true } | { wait: DreamWait };
   };
-  'dream:stop': { args: []; result: void };
+  /** Stops the running dream when it is the project's. */
+  'dream:stop': { args: [connectionId: string]; result: void };
   /** Drops a proposal of the open result, or takes it back (`dropped: false`). */
   'dream:drop': {
     args: [repoId: string, proposalId: string, dropped: boolean];

@@ -9,7 +9,11 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DreamResult, DreamingSettings } from '../../shared/dreams';
+import type {
+  DreamResult,
+  DreamingAll,
+  DreamingSettings,
+} from '../../shared/dreams';
 import { AppSettingsSchema, type AppSettings } from '../../shared/usage';
 import { GitClient } from '../services/GitClient';
 import { cleanupTempRepos, git, makeRepo } from '../test-helpers/gitRepo';
@@ -25,7 +29,14 @@ import {
 
 const MODEL = 'zai/glm-5';
 const NOW = new Date(2026, 10, 20, 12, 0, 0).getTime();
-const REPO = { id: 'r1', name: 'Portal', path: '/nowhere/portal' };
+/** The one project most tests are about. */
+const P = 'p1';
+const REPO = {
+  id: 'r1',
+  name: 'Portal',
+  path: '/nowhere/portal',
+  connectionId: P as string | null,
+};
 
 const task = (id: string, at = NOW - 60_000): TaskSessions => ({
   taskId: id,
@@ -49,14 +60,25 @@ const dreaming = (over: Partial<DreamingSettings> = {}): DreamingSettings => ({
 /** A runner whose dream waits until `finish`, or ends as interrupted when its signal aborts. */
 function fakeRunner() {
   const calls: { repoId: string; signal: AbortSignal; model: string }[] = [];
+  const projects: string[] = [];
   let settle: ((o: DreamOutcome) => void) | null = null;
-  let current: { repoId: string; startedAt: number; step: 'reading' } | null =
-    null;
+  let current: {
+    repoId: string;
+    project: string;
+    startedAt: number;
+    step: 'reading';
+  } | null = null;
   const runner: DreamSchedulerDeps['runner'] = {
     running: () => current,
     dream: (repo, o) => {
       calls.push({ repoId: repo.id, signal: o.signal, model: o.model });
-      current = { repoId: repo.id, startedAt: Date.now(), step: 'reading' };
+      projects.push(o.project);
+      current = {
+        repoId: repo.id,
+        project: o.project,
+        startedAt: Date.now(),
+        step: 'reading',
+      };
       return new Promise<DreamOutcome>((resolve) => {
         settle = (out) => {
           current = null;
@@ -75,6 +97,7 @@ function fakeRunner() {
   return {
     runner,
     calls,
+    projects,
     finish: (o: DreamOutcome) => settle?.(o),
   };
 }
@@ -91,6 +114,17 @@ let ask: ReturnType<typeof vi.fn<() => Promise<string[] | null>>>;
 const listOf = (a: () => Promise<string[] | null>) =>
   opencodeModelList({ ask: a, now: () => Date.now() });
 let scheduler: ReturnType<typeof startDreamScheduler> | null;
+/** The block of project `P`, as the tests of one project read and write it. */
+const block = (): DreamingSettings => app.dreaming.projects[P];
+const setBlock = (b: DreamingSettings, project = P) => {
+  app = {
+    ...app,
+    dreaming: {
+      ...app.dreaming,
+      projects: { ...app.dreaming.projects, [project]: b },
+    },
+  };
+};
 
 beforeEach(async () => {
   vi.useFakeTimers({ now: NOW });
@@ -100,7 +134,7 @@ beforeEach(async () => {
   app = AppSettingsSchema.parse({
     version: 1,
     receiverPort: 4318,
-    dreaming: dreaming(),
+    dreaming: { projects: { [P]: dreaming() } },
   });
   idle = 3600;
   sessions = [task('t1')];
@@ -109,12 +143,10 @@ beforeEach(async () => {
   deps = {
     settings: {
       get: () => app,
-      updateDreaming: vi.fn(
-        async (fn: (d: DreamingSettings) => DreamingSettings) => {
-          app = { ...app, dreaming: fn(app.dreaming) };
-          return app;
-        },
-      ),
+      updateDreaming: vi.fn(async (fn: (d: DreamingAll) => DreamingAll) => {
+        app = { ...app, dreaming: fn(app.dreaming) };
+        return app;
+      }),
     },
     store,
     runner: fake.runner,
@@ -156,23 +188,23 @@ describe('the dream scheduler', () => {
     await tick();
     await tick();
     expect(fake.calls).toHaveLength(1);
-    expect(scheduler!.status().wait).toBeNull();
+    expect(scheduler!.status(P).wait).toBeNull();
     fake.finish({ outcome: 'nothing' });
     await tick();
     expect(fake.calls).toHaveLength(2);
   });
 
   it('keeps the wait, and reads no sessions while a cheaper check fails', async () => {
-    app = { ...app, dreaming: dreaming({ enabled: false }) };
+    setBlock(dreaming({ enabled: false }));
     start();
     await tick();
-    expect(scheduler!.status().wait).toBe('off');
+    expect(scheduler!.status(P).wait).toBe('off');
     expect(ask).not.toHaveBeenCalled();
-    app = { ...app, dreaming: dreaming() };
+    setBlock(dreaming());
     idle = 30;
     await tick();
     expect(fake.calls).toHaveLength(0);
-    expect(scheduler!.status()).toMatchObject({
+    expect(scheduler!.status(P)).toMatchObject({
       wait: 'active',
       next: null,
       switchedOff: null,
@@ -184,7 +216,7 @@ describe('the dream scheduler', () => {
     sessions = [];
     start();
     await tick();
-    expect(scheduler!.status().wait).toBe('nothing-ready');
+    expect(scheduler!.status(P).wait).toBe('nothing-ready');
     expect(deps.sessionsOf).toHaveBeenCalledTimes(1);
     // Idle all night with nothing new: not read again every few minutes.
     await vi.advanceTimersByTimeAsync(58 * DREAM_TICK_MS);
@@ -221,11 +253,11 @@ describe('the dream scheduler', () => {
     start();
     for (let i = 0; i < 15; i++) await tick();
     expect(ask).not.toHaveBeenCalled();
-    expect(scheduler!.status().wait).toBe('active');
+    expect(scheduler!.status(P).wait).toBe('active');
     idle = 3600;
     await tick();
     expect(ask).toHaveBeenCalledTimes(1);
-    expect(scheduler!.status().wait).toBe('nothing-ready');
+    expect(scheduler!.status(P).wait).toBe('nothing-ready');
   });
 
   it('nor while an agent works, on battery, or while a dream runs', async () => {
@@ -233,11 +265,11 @@ describe('the dream scheduler', () => {
     let battery = false;
     start({ agentWorking: () => busy, onBattery: () => battery });
     await tick();
-    expect(scheduler!.status().wait).toBe('agents-busy');
+    expect(scheduler!.status(P).wait).toBe('agents-busy');
     busy = false;
     battery = true;
     await tick();
-    expect(scheduler!.status().wait).toBe('battery');
+    expect(scheduler!.status(P).wait).toBe('battery');
     expect(ask).not.toHaveBeenCalled();
   });
 
@@ -247,7 +279,7 @@ describe('the dream scheduler', () => {
     idle = 30;
     start({ models: list });
     await tick();
-    expect(scheduler!.status().wait).toBe('model-missing');
+    expect(scheduler!.status(P).wait).toBe('model-missing');
   });
 
   it('caches a failed ask for 10 minutes', async () => {
@@ -256,7 +288,7 @@ describe('the dream scheduler', () => {
     start();
     for (let i = 0; i < 10; i++) await tick();
     expect(ask).toHaveBeenCalledTimes(1);
-    expect(scheduler!.status().wait).toBe('model-missing');
+    expect(scheduler!.status(P).wait).toBe('model-missing');
     await tick();
     expect(ask).toHaveBeenCalledTimes(2);
   });
@@ -266,9 +298,9 @@ describe('the dream scheduler', () => {
     const lists: (string[] | null)[] = [[MODEL], ['other/model']];
     start({ models: listOf(async () => lists.shift() ?? null) });
     await tick();
-    expect(scheduler!.status().wait).toBe('nothing-ready');
+    expect(scheduler!.status(P).wait).toBe('nothing-ready');
     await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
-    expect(scheduler!.status().wait).toBe('model-missing');
+    expect(scheduler!.status(P).wait).toBe('model-missing');
   });
 
   it('keeps the last good list for one more interval after a failed refresh, then knows none', async () => {
@@ -277,11 +309,11 @@ describe('the dream scheduler', () => {
     start({ models: listOf(async () => lists.shift() ?? null) });
     await tick();
     await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
-    expect(scheduler!.status().wait).toBe('nothing-ready');
+    expect(scheduler!.status(P).wait).toBe('nothing-ready');
     await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
-    expect(scheduler!.status().wait).toBe('model-missing');
+    expect(scheduler!.status(P).wait).toBe('model-missing');
     await vi.advanceTimersByTimeAsync(10 * DREAM_TICK_MS);
-    expect(scheduler!.status().wait).toBe('nothing-ready');
+    expect(scheduler!.status(P).wait).toBe('nothing-ready');
   });
 
   it('gives up on a hung `opencode models` after 30 s, so Dream now still answers', async () => {
@@ -299,32 +331,31 @@ describe('the dream scheduler', () => {
   it('says what dreams next from the material it read, and checks the limit before reading', async () => {
     start({ limit: { hasRoom: () => false } });
     await tick();
-    expect(scheduler!.status()).toMatchObject({
+    expect(scheduler!.status(P)).toMatchObject({
       wait: 'limit',
       next: null,
       switchedOff: null,
     });
     expect(deps.sessionsOf).not.toHaveBeenCalled();
     scheduler!.stop();
-    const r2 = { id: 'r2', name: 'Api', path: '/nowhere/api' };
-    app = {
-      ...app,
-      dreaming: dreaming({
+    const r2 = { id: 'r2', name: 'Api', path: '/nowhere/api', connectionId: P };
+    setBlock(
+      dreaming({
         repos: {
           r1: { on: true, folders: ['.apm'] },
           r2: { on: true, folders: ['.apm'] },
         },
       }),
-    };
+    );
     sessions = [task('t1'), task('t2')];
     start({ repos: () => [REPO, r2] });
     await tick();
     expect(fake.calls.map((c) => c.repoId)).toEqual(['r1']);
-    expect(scheduler!.status().next).toEqual({ repoId: 'r2', newSessions: 2 });
+    expect(scheduler!.status(P).next).toEqual({ repoId: 'r2', newSessions: 2 });
     fake.finish({ outcome: 'nothing' });
     await vi.advanceTimersByTimeAsync(0);
     // What the dream changed is read again before anything is said.
-    expect(scheduler!.status().next).toBeNull();
+    expect(scheduler!.status(P).next).toBeNull();
   });
 
   it('suspend() stops the running dream as suspend, stopDream() as stopped', async () => {
@@ -335,11 +366,11 @@ describe('the dream scheduler', () => {
     await vi.advanceTimersByTimeAsync(0);
     await tick();
     expect(fake.calls).toHaveLength(2);
-    scheduler!.stopDream();
+    scheduler!.stopDream(P);
     expect(fake.calls[1].signal.reason).toBe('stopped');
     // Nothing running: both are no-ops.
     await vi.advanceTimersByTimeAsync(0);
-    expect(() => scheduler!.stopDream()).not.toThrow();
+    expect(() => scheduler!.stopDream(P)).not.toThrow();
     expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
   });
 
@@ -378,53 +409,51 @@ describe('the dream scheduler', () => {
       repoId: REPO.id,
     };
     await vi.waitFor(() =>
-      expect(scheduler!.status().switchedOff).toEqual(off),
+      expect(scheduler!.status(P).switchedOff).toEqual(off),
     );
-    expect(app.dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     // The passed test no longer counts: switching on again needs a new one.
-    expect(app.dreaming.testedModel).toBeNull();
-    expect(app.dreaming.model).toBe(MODEL);
-    expect(store.switchedOff()).toEqual(off);
+    expect(block().testedModel).toBeNull();
+    expect(block().model).toBe(MODEL);
+    expect(store.switchedOff(P)).toEqual(off);
     expect(deps.broadcast).toHaveBeenCalled();
     await tick();
     expect(fake.calls).toHaveLength(1);
-    expect(scheduler!.status().wait).toBe('off');
+    expect(scheduler!.status(P).wait).toBe('off');
   });
 
   it('a stored switch-off wins across a restart: no dream, the save retried each check, cleared only by switchOn()', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
     // As the last run left it: recorded, but `enabled: false` never saved.
-    await store.setSwitchedOff(off);
+    await store.setSwitchedOff(P, off);
     let failures = 2;
-    const save = vi.fn(
-      async (fn: (d: DreamingSettings) => DreamingSettings) => {
-        if (failures-- > 0) throw new Error('disk full');
-        app = { ...app, dreaming: fn(app.dreaming) };
-        return app;
-      },
-    );
+    const save = vi.fn(async (fn: (d: DreamingAll) => DreamingAll) => {
+      if (failures-- > 0) throw new Error('disk full');
+      app = { ...app, dreaming: fn(app.dreaming) };
+      return app;
+    });
     start({ settings: { get: () => app, updateDreaming: save } });
     expect(await scheduler!.dreamNow(REPO.id)).toEqual({ wait: 'off' });
     await tick();
     expect(save).toHaveBeenCalledTimes(2);
-    expect(app.dreaming.enabled).toBe(true);
+    expect(block().enabled).toBe(true);
     await tick();
     expect(save).toHaveBeenCalledTimes(3);
-    expect(app.dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     // The retried write clears the passed test too.
-    expect(app.dreaming.testedModel).toBeNull();
+    expect(block().testedModel).toBeNull();
     await tick();
     expect(save).toHaveBeenCalledTimes(3);
     expect(fake.calls).toHaveLength(0);
-    expect(store.switchedOff()).toEqual(off);
+    expect(store.switchedOff(P)).toEqual(off);
     // Even with dreaming on again, only switchOn() lets a dream start.
-    app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+    setBlock({ ...block(), enabled: true });
     await tick();
     expect(fake.calls).toHaveLength(0);
-    expect(store.switchedOff()).toEqual(off);
-    await scheduler!.switchOn(async () => {
-      app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+    expect(store.switchedOff(P)).toEqual(off);
+    await scheduler!.switchOn(P, async () => {
+      setBlock({ ...block(), enabled: true });
     });
     await tick();
     expect(fake.calls).toHaveLength(1);
@@ -435,133 +464,131 @@ describe('the dream scheduler', () => {
     idle = 0;
     start();
     await tick();
-    expect(scheduler!.status().wait).toBe('active');
+    expect(scheduler!.status(P).wait).toBe('active');
     expect(deps.broadcast).toHaveBeenCalledTimes(1);
     await tick();
     expect(deps.broadcast).toHaveBeenCalledTimes(1);
     deps.limit.hasRoom = () => false;
     idle = 3600;
     await tick();
-    expect(scheduler!.status().wait).toBe('limit');
+    expect(scheduler!.status(P).wait).toBe('limit');
     expect(deps.broadcast).toHaveBeenCalledTimes(2);
   });
 
   it('switchOn() forgets the wait of a check made while dreaming was off', async () => {
-    app = { ...app, dreaming: dreaming({ enabled: false }) };
+    setBlock(dreaming({ enabled: false }));
     start();
     await tick();
-    expect(scheduler!.status().wait).toBe('off');
-    await scheduler!.switchOn(async () => {
-      app = { ...app, dreaming: dreaming() };
+    expect(scheduler!.status(P).wait).toBe('off');
+    await scheduler!.switchOn(P, async () => {
+      setBlock(dreaming());
     });
     // Until the next check: no reason to wait is known, rather than "Dreams are off".
-    expect(scheduler!.status().wait).toBeNull();
+    expect(scheduler!.status(P).wait).toBeNull();
   });
 
   it('switchOn() ends a switch-off at once', async () => {
     start();
     await tick();
     fake.finish({ outcome: 'wrong-model', answered: ['a/b'] });
-    await vi.waitFor(() => expect(store.switchedOff()).not.toBeNull());
-    await scheduler!.switchOn(async () => undefined);
-    expect(store.switchedOff()).toBeNull();
-    expect(scheduler!.status().switchedOff).toBeNull();
+    await vi.waitFor(() => expect(store.switchedOff(P)).not.toBeNull());
+    await scheduler!.switchOn(P, async () => undefined);
+    expect(store.switchedOff(P)).toBeNull();
+    expect(scheduler!.status(P).switchedOff).toBeNull();
   });
 
   it('after a wrong model, a failed save is retried each check and nothing starts meanwhile, Dream now included', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     let failures = 2;
-    const save = vi.fn(
-      async (fn: (d: DreamingSettings) => DreamingSettings) => {
-        if (failures-- > 0) throw new Error('disk full');
-        app = { ...app, dreaming: fn(app.dreaming) };
-        return app;
-      },
-    );
+    const save = vi.fn(async (fn: (d: DreamingAll) => DreamingAll) => {
+      if (failures-- > 0) throw new Error('disk full');
+      app = { ...app, dreaming: fn(app.dreaming) };
+      return app;
+    });
     start({ settings: { get: () => app, updateDreaming: save } });
     await tick();
     fake.finish({ outcome: 'wrong-model', answered: ['a/b'] });
-    await vi.waitFor(() => expect(store.switchedOff()).not.toBeNull());
+    await vi.waitFor(() => expect(store.switchedOff(P)).not.toBeNull());
     expect(error).toHaveBeenCalledWith(
       '[dreams] could not switch dreaming off',
       expect.anything(),
     );
-    expect(app.dreaming.enabled).toBe(true);
+    expect(block().enabled).toBe(true);
     expect(await scheduler!.dreamNow(REPO.id)).toEqual({ wait: 'off' });
     expect(fake.calls).toHaveLength(1);
     await tick();
-    expect(app.dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     expect(save).toHaveBeenCalledTimes(3);
-    expect(store.switchedOff()).not.toBeNull();
+    expect(store.switchedOff(P)).not.toBeNull();
     expect(fake.calls).toHaveLength(1);
     error.mockRestore();
   });
 
   it('switchOn() saves, then clears the switch-off, in one step: no check runs its retry in between', async () => {
     const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
-    await store.setSwitchedOff(off);
-    app = { ...app, dreaming: { ...app.dreaming, enabled: false } };
+    await store.setSwitchedOff(P, off);
+    setBlock({ ...block(), enabled: false });
     start();
     let release!: () => void;
     const saved = new Promise<void>((r) => (release = r));
-    const on = scheduler!.switchOn(async () => {
+    const on = scheduler!.switchOn(P, async () => {
       // Cleared only once the save went through.
-      expect(store.switchedOff()).toEqual(off);
+      expect(store.switchedOff(P)).toEqual(off);
       // A check falls due while the save is still writing.
       await tick();
       expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
       await saved;
-      app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+      setBlock({ ...block(), enabled: true });
     });
     await vi.advanceTimersByTimeAsync(0);
     release();
     await on;
     expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
     await tick();
-    expect(app.dreaming.enabled).toBe(true);
+    expect(block().enabled).toBe(true);
     expect(fake.calls).toHaveLength(1);
   });
 
   it('switchOn() keeps the switch-off record when its save throws', async () => {
     const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
-    await store.setSwitchedOff(off);
+    await store.setSwitchedOff(P, off);
     start();
     await expect(
-      scheduler!.switchOn(async () => {
+      scheduler!.switchOn(P, async () => {
         throw new Error('disk full');
       }),
     ).rejects.toThrow('disk full');
-    expect(store.switchedOff()).toEqual(off);
+    expect(store.switchedOff(P)).toEqual(off);
     await tick();
     expect(fake.calls).toHaveLength(0);
   });
 
   it('switchOn() that saved but could not clear the record leaves the switch-off in force', async () => {
     const off = { answered: 'a/b', chosen: MODEL, repoId: REPO.id };
-    await store.setSwitchedOff(off);
+    await store.setSwitchedOff(P, off);
     start();
     vi.spyOn(store, 'setSwitchedOff').mockRejectedValueOnce(
       new Error('disk full'),
     );
     await expect(
-      scheduler!.switchOn(async () => {
-        app = { ...app, dreaming: { ...app.dreaming, enabled: true } };
+      scheduler!.switchOn(P, async () => {
+        setBlock({ ...block(), enabled: true });
       }),
     ).rejects.toThrow('disk full');
     await tick();
-    expect(app.dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     expect(fake.calls).toHaveLength(0);
   });
 
   it('status() names the running dream and the sessions it knows per repo', async () => {
     start();
-    expect(scheduler!.status().running).toBeNull();
-    expect(scheduler!.status().newSessions).toEqual({});
+    expect(scheduler!.status(P).running).toBeNull();
+    expect(scheduler!.status(P).newSessions).toEqual({});
     expect(await scheduler!.dreamNow(REPO.id)).toEqual({ started: true });
-    expect(scheduler!.status().running).toEqual(
+    expect(scheduler!.status(P).running).toEqual(
       expect.objectContaining({ repoId: REPO.id, step: 'reading' }),
     );
-    expect(scheduler!.status().newSessions).toEqual({ [REPO.id]: 1 });
+    expect(scheduler!.status(P).newSessions).toEqual({ [REPO.id]: 1 });
   });
 
   it('a failed or interrupted outcome changes no setting', async () => {
@@ -573,7 +600,7 @@ describe('the dream scheduler', () => {
     fake.finish({ outcome: 'interrupted', why: 'limit' });
     await vi.advanceTimersByTimeAsync(0);
     expect(deps.settings.updateDreaming).not.toHaveBeenCalled();
-    expect(app.dreaming.enabled).toBe(true);
+    expect(block().enabled).toBe(true);
   });
 
   it('Dream now starts while active, and says why it cannot', async () => {
@@ -588,7 +615,129 @@ describe('the dream scheduler', () => {
       wait: 'nothing-ready',
     });
     // A refused Dream now leaves the scheduler's own wait as it was.
-    expect(scheduler!.status().wait).toBeNull();
+    expect(scheduler!.status(P).wait).toBeNull();
+  });
+});
+
+describe('several projects', () => {
+  const Q = 'p2';
+  const R = 'p3';
+  const repoOf = (id: string, project: string | null) => ({
+    id,
+    name: id,
+    path: `/nowhere/${id}`,
+    connectionId: project,
+  });
+  const blockFor = (repoId: string, over: Partial<DreamingSettings> = {}) =>
+    dreaming({ repos: { [repoId]: { on: true, folders: ['.apm'] } }, ...over });
+  it('one dream at a time: the project that dreamt longest ago goes first, the other waits', async () => {
+    setBlock(blockFor('r2'), Q);
+    // Project P dreamt a moment ago; Q never did.
+    await store.succeeded('r1', 'nothing');
+    start({ repos: () => [REPO, repoOf('r2', Q)] });
+    await vi.advanceTimersByTimeAsync(DREAM_TICK_MS);
+    expect(fake.calls).toHaveLength(1);
+    const first = fake.calls[0].repoId;
+    expect(first).toBe('r2');
+    const [mine, other] = [Q, P];
+    expect(scheduler!.status(mine).wait).toBeNull();
+    expect(scheduler!.status(mine).running?.repoId).toBe(first);
+    // The other project sees only that a dream runs elsewhere.
+    expect(scheduler!.status(other)).toMatchObject({
+      wait: 'running-elsewhere',
+      running: null,
+    });
+  });
+
+  it('each project waits for its own idle minutes and its own limit', async () => {
+    setBlock(blockFor('r1', { idleMinutes: 120 }));
+    setBlock(blockFor('r2', { idleMinutes: 10 }), Q);
+    setBlock(blockFor('r3'), R);
+    idle = 3600;
+    start({
+      repos: () => [REPO, repoOf('r2', Q), repoOf('r3', R)],
+      limit: { hasRoom: (project) => project !== R },
+    });
+    await vi.advanceTimersByTimeAsync(DREAM_TICK_MS);
+    expect(fake.calls.map((c) => c.repoId)).toEqual(['r2']);
+    fake.finish({ outcome: 'nothing' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(scheduler!.status(P).wait).toBe('active');
+    expect(scheduler!.status(R).wait).toBe('limit');
+  });
+
+  it('a repo dreams for its own project only: one moved away, or without a project, never starts', async () => {
+    setBlock(
+      dreaming({
+        repos: {
+          r2: { on: true, folders: ['.apm'] },
+          loose: { on: true, folders: ['.apm'] },
+        },
+      }),
+    );
+    start({ repos: () => [repoOf('r2', Q), repoOf('loose', null)] });
+    await vi.advanceTimersByTimeAsync(DREAM_TICK_MS);
+    expect(fake.calls).toHaveLength(0);
+    expect(scheduler!.status(P).wait).toBe('nothing-ready');
+    expect(await scheduler!.dreamNow('loose')).toEqual({
+      wait: 'nothing-ready',
+    });
+  });
+
+  it('another model answering switches off every project on that model, each with its own record, and no other', async () => {
+    setBlock(blockFor('r2'), Q);
+    setBlock(
+      blockFor('r3', { model: 'zai/other', testedModel: 'zai/other' }),
+      R,
+    );
+    ask = vi.fn(async () => [MODEL, 'zai/other']);
+    // Only project P is ready to dream.
+    sessions = [task('t1')];
+    start({
+      repos: () => [REPO, repoOf('r2', Q), repoOf('r3', R)],
+      sessionsOf: vi.fn(async (repoId: string) =>
+        repoId === 'r1' ? sessions : [],
+      ),
+    });
+    await vi.advanceTimersByTimeAsync(DREAM_TICK_MS);
+    expect(fake.calls.map((c) => c.repoId)).toEqual(['r1']);
+    fake.finish({ outcome: 'wrong-model', answered: ['x/y'] });
+    const off = { answered: 'x/y', chosen: MODEL, repoId: 'r1' };
+    await vi.waitFor(() => expect(store.switchedOff(Q)).toEqual(off));
+    expect(store.switchedOff(P)).toEqual(off);
+    expect(store.switchedOff(R)).toBeNull();
+    await vi.waitFor(() =>
+      expect(app.dreaming.projects[Q].enabled).toBe(false),
+    );
+    expect(app.dreaming.projects[P]).toMatchObject({
+      enabled: false,
+      testedModel: null,
+    });
+    expect(app.dreaming.projects[Q].testedModel).toBeNull();
+    expect(app.dreaming.projects[R]).toMatchObject({
+      enabled: true,
+      testedModel: 'zai/other',
+    });
+    // Switching one project on again leaves the other off.
+    await scheduler!.switchOn(P, async () => undefined);
+    expect(store.switchedOff(P)).toBeNull();
+    expect(store.switchedOff(Q)).toEqual(off);
+  });
+
+  it('Stop stops only the project\u2019s own dream', async () => {
+    setBlock(blockFor('r2'), Q);
+    start({ repos: () => [REPO, repoOf('r2', Q)] });
+    expect(await scheduler!.dreamNow('r1')).toEqual({ started: true });
+    scheduler!.stopDream(Q);
+    expect(fake.calls[0].signal.aborted).toBe(false);
+    scheduler!.stopDream(P);
+    expect(fake.calls[0].signal.aborted).toBe(true);
+  });
+
+  it('the dream carries its project, for the title of its sessions', async () => {
+    start();
+    await scheduler!.dreamNow('r1');
+    expect(fake.projects).toEqual([P]);
   });
 });
 

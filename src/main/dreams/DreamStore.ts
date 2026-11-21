@@ -26,8 +26,16 @@ const FileSchema = z.object({
   repos: z.record(z.string(), DreamRepoStateSchema),
   /** Newest first. */
   journal: z.array(DreamJournalEntrySchema),
-  /** Why dreaming switched itself off (a call answered by another model); null once switched on again. */
+  /**
+   * The one record of before dreams were per project; moved to `switchedOffBy` at the first start that knows the
+   * repos (`adoptLegacySwitchedOff`), null from then on.
+   */
   switchedOff: DreamSwitchedOffSchema.nullable().default(null),
+  /**
+   * By connection id: why the project's dreaming switched itself off (a call answered by another model); gone once
+   * the project is switched on again.
+   */
+  switchedOffBy: z.record(z.string(), DreamSwitchedOffSchema).default({}),
 });
 type DreamFile = z.infer<typeof FileSchema>;
 
@@ -36,6 +44,7 @@ const emptyFile = (): DreamFile => ({
   repos: {},
   journal: [],
   switchedOff: null,
+  switchedOffBy: {},
 });
 const emptyRepo = (): DreamRepoState => ({
   covered: {},
@@ -91,13 +100,39 @@ export class DreamStore {
     return structuredClone(this.store.value.journal);
   }
 
-  switchedOff(): DreamSwitchedOff | null {
-    return structuredClone(this.store.value.switchedOff);
+  /** The project's switch-off record. The old record counts for every project until it is adopted. */
+  switchedOff(project: string): DreamSwitchedOff | null {
+    const f = this.store.value;
+    return structuredClone(f.switchedOffBy[project] ?? f.switchedOff);
   }
 
-  setSwitchedOff(value: DreamSwitchedOff | null): Promise<void> {
+  /** The projects that switched themselves off. */
+  switchedOffProjects(): string[] {
+    return Object.keys(this.store.value.switchedOffBy);
+  }
+
+  setSwitchedOff(
+    project: string,
+    value: DreamSwitchedOff | null,
+  ): Promise<void> {
     return this.write((f) => {
-      f.switchedOff = value;
+      if (value === null) delete f.switchedOffBy[project];
+      else f.switchedOffBy[project] = value;
+    });
+  }
+
+  /**
+   * Moves the old single record to the projects it belongs to (`projectsOf` names them; a project with a record of
+   * its own keeps that) and clears it, in one write. Nothing is written without an old record.
+   */
+  adoptLegacySwitchedOff(
+    projectsOf: (record: DreamSwitchedOff) => string[],
+  ): Promise<void> {
+    const old = this.store.value.switchedOff;
+    if (old === null) return Promise.resolve();
+    return this.write((f) => {
+      for (const p of projectsOf(old)) f.switchedOffBy[p] ??= old;
+      f.switchedOff = null;
     });
   }
 

@@ -826,6 +826,35 @@ describe('OpenCodeReader dream reads', () => {
     });
   });
 
+  it('dreamTokens with a project\u2019s title prefix counts that project\u2019s dream sessions only', () => {
+    const { file, session, message, close } = makeDb();
+    session('ses_a', 'Shellie dream p1: propose');
+    session('ses_ac', 'Child', { parent: 'ses_a' });
+    session('ses_b', 'Shellie dream p2: propose');
+    // Of before dreams were per project: no project's.
+    session('ses_old', 'Shellie dream: propose');
+    // A prefix is matched as it is written, never as a pattern.
+    session('ses_like', 'Shellie dream pX: propose');
+    for (const [id, output] of [
+      ['ses_a', 10],
+      ['ses_ac', 20],
+      ['ses_b', 300],
+      ['ses_old', 4000],
+      ['ses_like', 50000],
+    ] as const)
+      message(id, 1000, { provider: 'zai', model: 'glm-5.3', output });
+    close();
+    const each = 3 + 7 + 12018;
+    const r = new OpenCodeReader(file);
+    expect(r.dreamTokens(0, 2000, 'Shellie dream p1:').tokens).toBe(
+      2 * each + 30,
+    );
+    expect(r.dreamTokens(0, 2000, 'Shellie dream p2:').tokens).toBe(each + 300);
+    expect(r.dreamTokens(0, 2000, 'Shellie dream p_:').tokens).toBe(0);
+    expect(r.dreamTokens(0, 2000, 'Shellie dream p%').tokens).toBe(0);
+    expect(r.dreamTokens(0, 2000).tokens).toBe(5 * each + 54330);
+  });
+
   it('sessionTexts and latestSession leave dream sessions out', () => {
     const { file, session, close } = makeDb();
     session('ses_task', 'Fix the bug', { created: 100 });

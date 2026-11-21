@@ -299,12 +299,38 @@ describe('DreamStore', () => {
       JSON.stringify({ version: 1, repos: {}, journal: [] }),
     );
     const { s } = await make(() => T0, dir);
-    expect(s.switchedOff()).toBeNull();
+    expect(s.switchedOff('p1')).toBeNull();
     const off = { answered: 'a/b', chosen: 'zai/glm-5', repoId: 'r' };
-    await s.setSwitchedOff(off);
+    await s.setSwitchedOff('p1', off);
     const { s: s2 } = await make(() => T0, dir);
-    expect(s2.switchedOff()).toEqual(off);
-    await s2.setSwitchedOff(null);
-    expect(s2.switchedOff()).toBeNull();
+    expect(s2.switchedOff('p1')).toEqual(off);
+    // One project's record is no other project's.
+    expect(s2.switchedOff('p2')).toBeNull();
+    expect(s2.switchedOffProjects()).toEqual(['p1']);
+    await s2.setSwitchedOff('p1', null);
+    expect(s2.switchedOff('p1')).toBeNull();
+  });
+
+  it('moves the record of before dreams were per project to the projects it belongs to, once', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dreams-'));
+    const old = { answered: 'a/b', chosen: 'zai/glm-5', repoId: 'r' };
+    writeFileSync(
+      path.join(dir, 'dreams.json'),
+      JSON.stringify({ version: 1, repos: {}, journal: [], switchedOff: old }),
+    );
+    const { s } = await make(() => T0, dir);
+    // Until it is moved it keeps every project off.
+    expect(s.switchedOff('p9')).toEqual(old);
+    const own = { answered: 'x/y', chosen: 'zai/glm-5', repoId: 'q' };
+    await s.setSwitchedOff('p2', own);
+    const asked = vi.fn(() => ['p1', 'p2']);
+    await s.adoptLegacySwitchedOff(asked);
+    expect(asked).toHaveBeenCalledWith(old);
+    const { s: s2 } = await make(() => T0, dir);
+    expect(s2.switchedOff('p1')).toEqual(old);
+    expect(s2.switchedOff('p2')).toEqual(own);
+    expect(s2.switchedOff('p9')).toBeNull();
+    await s2.adoptLegacySwitchedOff(asked);
+    expect(asked).toHaveBeenCalledTimes(1);
   });
 });

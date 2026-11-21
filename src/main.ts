@@ -56,6 +56,7 @@ import type { DreamScheduler } from './main/dreams/scheduler';
 import { startDreams, taskAgentWorking } from './main/dreams/startDreams';
 import { createDreamHandlers } from './main/dreams/dreamHandlers';
 import { limitChecks } from './main/dreams/limit';
+import { dreamingOf } from './shared/dreams';
 import { opencodeModelList } from './main/dreams/models';
 import {
   commitJobOutput,
@@ -1259,7 +1260,7 @@ async function boot(): Promise<void> {
     // The day's dream limit, one for `dream:get`, the scheduler and the runner.
     const dreamLimit = limitChecks({
       reader: openCodeSessions,
-      limit: () => settings.get().dreaming.limit,
+      limit: (project) => dreamingOf(settings.get().dreaming, project).limit,
       now: Date.now,
     });
     const dreamModels = opencodeModelList({
@@ -1272,6 +1273,7 @@ async function boot(): Promise<void> {
       store: dreamStore,
       scheduler: () => dreams,
       repos: () => repos.list(),
+      projects: () => connections.list().map((c) => c.id),
       git,
       platform,
       run: (cmd, o) => ptyHost.run(cmd, o),

@@ -4,7 +4,7 @@ import { defaultEditorPrefs, EditorPrefsSchema } from './editors';
 import { defaultTerminals, DefaultTerminalsSchema } from './terminals';
 import { PR_SUMMARY_MODELS } from './prDraft';
 import { THEMES } from './theme';
-import { defaultDreaming, DreamingSettingsSchema } from './dreams';
+import { defaultDreamingAll, DreamingAllSchema } from './dreams';
 import { WorkHoursSchema } from './time';
 
 export type UsageTool = 'claude-code' | 'copilot-cli' | 'opencode';
@@ -130,8 +130,8 @@ export const AppSettingsSchema = z.object({
    * old shape) loads as dreaming off, and the rest of the file still loads. Writers validate it first
    * (`dream:save`), since a bad block written here would also become dreaming off without an error.
    */
-  dreaming: DreamingSettingsSchema.default(defaultDreaming()).catch(() =>
-    defaultDreaming(),
+  dreaming: DreamingAllSchema.default(defaultDreamingAll()).catch(() =>
+    defaultDreamingAll(),
   ),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;

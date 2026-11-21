@@ -7,7 +7,11 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { DreamingSettings, DreamSwitchedOff } from '../../shared/dreams';
+import {
+  dreamingOf,
+  type DreamingAll,
+  type DreamSwitchedOff,
+} from '../../shared/dreams';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
 import { isInside } from '../paths';
@@ -34,15 +38,19 @@ const TEST_LEFT_MS = 5 * 60_000;
 /** The branch name a dream gets (`DreamRunner`): `dream/<YYYY-MM-DD>-<n>`. */
 const DREAM_BRANCH = /^dream\/\d{4}-\d{2}-\d{2}-\d+$/;
 
-type Repo = { id: string; name: string; path: string };
+/** `connectionId` is the repo's project; a repo without one does not dream. */
+type Repo = {
+  id: string;
+  name: string;
+  path: string;
+  connectionId: string | null;
+};
 
 export type DreamSchedulerDeps = {
   /** Reads `dreaming`; writes only `enabled: false` and `testedModel: null`, after a call answered by another model. */
   settings: {
     get(): AppSettings;
-    updateDreaming(
-      fn: (current: DreamingSettings) => DreamingSettings,
-    ): Promise<unknown>;
+    updateDreaming(fn: (current: DreamingAll) => DreamingAll): Promise<unknown>;
   };
   store: DreamStore;
   runner: Pick<DreamRunner, 'dream' | 'running'>;
@@ -54,7 +62,8 @@ export type DreamSchedulerDeps = {
   agentWorking: () => boolean;
   repos: () => Repo[];
   sessionsOf: (repoId: string) => Promise<TaskSessions[]>;
-  limit: { hasRoom(): boolean };
+  /** Whether the project (its connection id) has room under its own daily limit. */
+  limit: { hasRoom(project: string): boolean };
   /** Sends `dream:changed`. */
   broadcast: () => void;
   now: () => number;
@@ -69,8 +78,9 @@ export type DreamSchedulerDeps = {
   tick?: number;
 };
 
+/** What one project's screens show. Nothing of another project's dreams is in it but that one runs. */
 export type DreamStatus = {
-  /** Why no dream starts; null while one runs or before the first check. */
+  /** Why no dream of the project starts; null while one of its own runs or before the first check. */
   wait: Wait | null;
   /** The repo that dreams next as far as its material is known, with its count of sessions to read. */
   next: { repoId: string; newSessions: number } | null;
@@ -90,15 +100,17 @@ type Known = {
 
 export function startDreamScheduler(d: DreamSchedulerDeps) {
   let stopped = false;
-  let wait: Wait | null = null;
+  /** Why no dream starts, per project (connection id), as of the last check. */
+  const waits = new Map<string, Wait>();
   let dream: {
     repoId: string;
+    project: string;
     stop: AbortController;
     done: Promise<void>;
   } | null = null;
   const material = new Map<string, Known>();
-  /** A wrong-model switch-off the dream store could not record: it holds for this session in its place. */
-  let offUnrecorded = false;
+  /** The projects whose wrong-model switch-off the dream store could not record: it holds for this session. */
+  const offUnrecorded = new Set<string>();
   // Decisions, Dream now and the sweep run one after another, never side by side.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -108,9 +120,9 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   };
   const unsubscribe = d.store.onChange(() => material.clear());
 
-  const hasRoom = (): boolean => {
+  const hasRoom = (project: string): boolean => {
     try {
-      return d.limit.hasRoom();
+      return d.limit.hasRoom(project);
     } catch {
       // A usage that cannot be read leaves no room.
       return false;
@@ -154,17 +166,22 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     newestMaterialAt: k.newestMaterialAt,
   });
 
-  /** The facts, cheapest first; a repo's sessions only once nothing else stands in the way. */
-  const decide = async (manual?: {
-    repoId: string;
-  }): Promise<{ repoId: string } | { wait: Wait }> => {
+  const all = (): DreamingAll => d.settings.get().dreaming;
+  const projectOf = (repoId: string): string | null =>
+    d.repos().find((r) => r.id === repoId)?.connectionId ?? null;
+
+  /** One project's facts, cheapest first; a repo's sessions only once nothing else stands in the way. */
+  const decideFor = async (
+    project: string,
+    manual?: { repoId: string },
+  ): Promise<{ repoId: string } | { wait: Wait }> => {
     // A stored switch-off always wins, also across a restart: nothing starts (Dream now included), and settings
     // that still say on are saved off again on every check. Only `switchOn` ends it.
-    if (offUnrecorded || d.store.switchedOff()) {
-      if (d.settings.get().dreaming.enabled) await switchOff();
+    if (offUnrecorded.has(project) || d.store.switchedOff(project)) {
+      if (dreamingOf(all(), project).enabled) await switchOff([project]);
       return { wait: 'off' };
     }
-    const s = d.settings.get().dreaming;
+    const s = dreamingOf(all(), project);
     // The list as known, without asking: a known list without the model says so first (the order of `nextDream`);
     // an unknown one is asked for only once the cheap checks pass, so OpenCode is not started while the owner works.
     const listedNow = d.models.known();
@@ -185,11 +202,13 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     base.models = await d.models.get();
     const listed = nextDream(base, manual);
     if ('wait' in listed && listed.wait !== 'nothing-ready') return listed;
-    base.overLimit = !hasRoom();
+    base.overLimit = !hasRoom(project);
     if (base.overLimit) return { wait: 'limit' };
+    // Only the project's own repos: one moved to another project no longer dreams for this one.
     const candidates = d.repos().filter((r) => {
       const cfg = s.repos[r.id];
       return (
+        r.connectionId === project &&
         cfg?.on &&
         cfg.folders.length > 0 &&
         (!manual || r.id === manual.repoId) &&
@@ -201,8 +220,19 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     return nextDream(base, manual);
   };
 
+  /** When the project last dreamt (any of its repos); never is the oldest. */
+  const lastDreamOf = (project: string): number =>
+    d
+      .repos()
+      .filter((r) => r.connectionId === project)
+      .reduce((latest, r) => {
+        const at = d.store.repo(r.id).lastDreamAt;
+        return at === null ? latest : Math.max(latest, Date.parse(at) || 0);
+      }, -Infinity);
+
   const finished = async (
     repoId: string,
+    project: string,
     model: string,
     startedAt: number,
     out: Awaited<ReturnType<DreamRunner['dream']>>,
@@ -216,22 +246,37 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     sendSafely(d.event, 'dream.run', runProps(out, entry, d.now() - startedAt));
     if (out.outcome !== 'wrong-model') return;
     sendSafely(d.event, 'dream.switched_off', { by: 'wrong-model' });
+    // The fault is the model's: every project that dreams on it stops, each with its own record.
+    const affected = [
+      ...new Set([
+        project,
+        ...Object.entries(all().projects)
+          .filter(([, block]) => block.model === model)
+          .map(([id]) => id),
+      ]),
+    ];
     // Recorded first: the record keeps dreaming off even when the settings cannot be saved (retried each check).
-    const recorded = await d.store
-      .setSwitchedOff({
-        answered: out.answered.join(', '),
-        chosen: model,
-        repoId,
-      })
-      .then(
-        () => true,
-        (e: unknown) => {
-          console.error('[dreams] the switch-off could not be recorded', e);
-          return false;
-        },
-      );
-    if (!recorded) offUnrecorded = true;
-    if (!(await switchOff()) && !recorded)
+    let unrecorded = false;
+    for (const p of affected) {
+      const recorded = await d.store
+        .setSwitchedOff(p, {
+          answered: out.answered.join(', '),
+          chosen: model,
+          repoId,
+        })
+        .then(
+          () => true,
+          (e: unknown) => {
+            console.error('[dreams] the switch-off could not be recorded', e);
+            return false;
+          },
+        );
+      if (!recorded) {
+        offUnrecorded.add(p);
+        unrecorded = true;
+      }
+    }
+    if (!(await switchOff(affected)) && unrecorded)
       // A known gap: neither file could be written, so after a restart dreaming would be on again.
       console.error(
         '[dreams] the switch-off could be neither recorded nor saved; it holds until Shellie quits',
@@ -239,17 +284,24 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
   };
 
   /**
-   * After another model answered: saves `enabled: false` and forgets the model's passed test, in one write, so
-   * switching on again needs a new test. False (logged) when it could not; the next check tries again.
+   * After another model answered: saves `enabled: false` and forgets the model's passed test for each of the
+   * projects, in one write, so switching on again needs a new test. False (logged) when it could not; the next
+   * check tries again.
    */
-  const switchOff = async (): Promise<boolean> => {
+  const switchOff = async (projects: string[]): Promise<boolean> => {
     try {
       // From the settings as they are when the write runs, never a snapshot taken before.
-      await d.settings.updateDreaming((cur) => ({
-        ...cur,
-        enabled: false,
-        testedModel: null,
-      }));
+      await d.settings.updateDreaming((cur) => {
+        const next = { ...cur, projects: { ...cur.projects } };
+        for (const p of projects)
+          if (next.projects[p])
+            next.projects[p] = {
+              ...next.projects[p],
+              enabled: false,
+              testedModel: null,
+            };
+        return next;
+      });
       return true;
     } catch (e) {
       console.error('[dreams] could not switch dreaming off', e);
@@ -259,15 +311,22 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
 
   const start = (repoId: string): boolean => {
     const repo = d.repos().find((r) => r.id === repoId);
-    const s = d.settings.get().dreaming;
+    const project = repo?.connectionId ?? null;
+    if (!repo || project === null) return false;
+    const s = dreamingOf(all(), project);
     const cfg = s.repos[repoId];
-    if (!repo || !cfg || s.model === null) return false;
+    if (!cfg || s.model === null) return false;
     const model = s.model;
     const stop = new AbortController();
     const startedAt = d.now();
     const done = d.runner
-      .dream(repo, { model, folders: cfg.folders, signal: stop.signal })
-      .then((out) => finished(repoId, model, startedAt, out))
+      .dream(repo, {
+        model,
+        folders: cfg.folders,
+        signal: stop.signal,
+        project,
+      })
+      .then((out) => finished(repoId, project, model, startedAt, out))
       .catch((e: unknown) =>
         console.error('[dreams] the dream did not settle', e),
       )
@@ -276,20 +335,48 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         material.clear();
         d.broadcast();
       });
-    dream = { repoId, stop, done };
-    wait = null;
+    dream = { repoId, project, stop, done };
+    waits.delete(project);
     d.broadcast();
     return true;
   };
 
+  /** Every project with a setup, and every one that switched itself off (its settings may still say on). */
+  const projects = (): string[] => [
+    ...new Set([
+      ...Object.keys(all().projects),
+      ...d.store.switchedOffProjects(),
+      ...offUnrecorded,
+    ]),
+  ];
+
   const tick = async () => {
     if (stopped) return;
-    const before = wait;
-    const r = await decide();
-    if ('wait' in r) wait = r.wait;
-    else if (!start(r.repoId)) wait = 'nothing-ready';
+    const before = new Map(waits);
+    const now = projects();
+    for (const p of waits.keys()) if (!now.includes(p)) waits.delete(p);
+    const ready: { project: string; repoId: string }[] = [];
+    for (const p of now) {
+      const r = await decideFor(p);
+      if ('wait' in r) waits.set(p, r.wait);
+      else ready.push({ project: p, repoId: r.repoId });
+    }
+    // One dream at a time: the project that dreamt longest ago goes, the others wait for the next check.
+    ready.sort(
+      (a, b) =>
+        lastDreamOf(a.project) - lastDreamOf(b.project) ||
+        (a.project < b.project ? -1 : 1),
+    );
+    let started = false;
+    for (const r of ready) {
+      if (!started && start(r.repoId)) started = true;
+      else waits.set(r.project, started ? 'running' : 'nothing-ready');
+    }
     // The screens show why no dream starts: a new reason is news (`start` sends its own).
-    if (wait !== null && wait !== before) d.broadcast();
+    const changed =
+      waits.size !== before.size ||
+      [...waits].some(([p, w]) => before.get(p) !== w);
+    if (changed && !started) d.broadcast();
   };
 
   // ── sweep ──
@@ -432,10 +519,13 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       clearInterval(timer);
       unsubscribe();
     },
-    /** Dream now: skips the idle, power and busy checks and the back-off only. */
+    /** Dream now, for the repo's project: skips the idle, power and busy checks and the back-off only. */
     dreamNow(repoId: string): Promise<{ wait: Wait } | { started: true }> {
       return serial(async () => {
-        const r = await decide({ repoId });
+        const project = projectOf(repoId);
+        // A repo Shellie does not know, or one without a project: nothing of it can dream.
+        if (project === null) return { wait: 'nothing-ready' as const };
+        const r = await decideFor(project, { repoId });
         if ('wait' in r) return r;
         return start(r.repoId)
           ? { started: true as const }
@@ -443,22 +533,23 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       });
     },
     /**
-     * The only way a switch-off ends: the owner switches dreaming on (`dream:switchOn`). `save` writes `enabled: true`,
-     * then the switch-off record is cleared, both in the serial chain, so no check runs in between. A save that throws
-     * keeps the record; a record that cannot be cleared keeps the switch-off in force (the next check saves off
-     * again). The caller broadcasts.
+     * The only way a project's switch-off ends: the owner switches its dreaming on (`dream:switchOn`). `save` writes
+     * `enabled: true`, then the switch-off record is cleared, both in the serial chain, so no check runs in between.
+     * A save that throws keeps the record; a record that cannot be cleared keeps the switch-off in force (the next
+     * check saves off again). The caller broadcasts.
      */
-    switchOn(save: () => Promise<void>): Promise<void> {
+    switchOn(project: string, save: () => Promise<void>): Promise<void> {
       return serial(async () => {
         await save();
         // The last check's wait (`off`) no longer holds; the next check says why a dream waits.
-        wait = null;
-        await d.store.setSwitchedOff(null);
-        offUnrecorded = false;
+        waits.delete(project);
+        await d.store.setSwitchedOff(project, null);
+        offUnrecorded.delete(project);
       });
     },
-    stopDream(): void {
-      abort('stopped');
+    /** Stop: the running dream, when it is the project's. */
+    stopDream(project: string): void {
+      if (dream?.project === project) abort('stopped');
     },
     /**
      * Stops the dream running for `repoId` (its repo was removed), as Stop does; resolves once it ended, at most after
@@ -488,10 +579,16 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       if (repoId === undefined) material.clear();
       else material.delete(repoId);
     },
-    status(): DreamStatus {
-      const s = d.settings.get().dreaming;
+    status(project: string): DreamStatus {
+      const s = dreamingOf(all(), project);
+      const own = new Set(
+        d
+          .repos()
+          .filter((r) => r.connectionId === project)
+          .map((r) => r.id),
+      );
       const fresh = [...material.entries()].filter(
-        ([id, k]) => id !== dream?.repoId && d.now() - k.at < MATERIAL_MS,
+        ([id, k]) => own.has(id) && d.now() - k.at < MATERIAL_MS,
       );
       const pick = nextDream({
         settings: s,
@@ -502,10 +599,17 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         running: false,
         overLimit: false,
         now: d.now(),
-        repos: fresh.map(([id, k]) => repoEntry(id, k)),
+        repos: fresh
+          .filter(([id]) => id !== dream?.repoId)
+          .map(([id, k]) => repoEntry(id, k)),
       });
+      const running = d.runner.running();
       return {
-        wait: dream ? null : wait,
+        wait: dream
+          ? dream.project === project
+            ? null
+            : 'running-elsewhere'
+          : (waits.get(project) ?? null),
         next:
           'repoId' in pick
             ? {
@@ -513,12 +617,10 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
                 newSessions: material.get(pick.repoId)!.sessions,
               }
             : null,
-        switchedOff: d.store.switchedOff(),
-        running: d.runner.running(),
+        switchedOff: d.store.switchedOff(project),
+        running: running && own.has(running.repoId) ? running : null,
         newSessions: Object.fromEntries(
-          [...material.entries()]
-            .filter(([, k]) => d.now() - k.at < MATERIAL_MS)
-            .map(([id, k]) => [id, k.sessions]),
+          fresh.map(([id, k]) => [id, k.sessions]),
         ),
       };
     },

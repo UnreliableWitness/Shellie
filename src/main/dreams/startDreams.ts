@@ -4,6 +4,11 @@
  */
 
 import type { AttentionState } from '../../shared/attention';
+import {
+  dreamingOf,
+  pruneDreaming,
+  splitLegacyDreaming,
+} from '../../shared/dreams';
 import type { Repo, Task } from '../../shared/types';
 import type { OpenCodeReader } from '../budget/openCode';
 import type { TurnAt } from '../sessions/claudeTranscript';
@@ -75,6 +80,46 @@ export async function dreamSessionsOf(
   return out;
 }
 
+/**
+ * Dreams of before 2026-11-21 had one setup for the whole app: it becomes one per project, once, here, where the
+ * repos (and so their projects) are known. No project is switched on that had no repo switched on. Then the old
+ * switch-off record goes to the project of its repo (to every project on its model when it names none), and repos
+ * that are no longer their block's project's leave it.
+ */
+export async function toProjects(
+  settings: Pick<DreamSchedulerDeps['settings'], 'get' | 'updateDreaming'>,
+  store: Pick<DreamStore, 'adoptLegacySwitchedOff'>,
+  repos: { id: string; connectionId: string | null }[],
+): Promise<void> {
+  const legacy = settings.get().dreaming.legacy;
+  // With no repo known (a repo list that did not load) the old setup is kept for the next start, not lost.
+  const waits =
+    legacy !== null &&
+    repos.length === 0 &&
+    Object.keys(legacy.repos).length > 0;
+  if (!waits)
+    await settings.updateDreaming((cur) =>
+      pruneDreaming(
+        {
+          projects: {
+            ...(cur.legacy ? splitLegacyDreaming(cur.legacy, repos) : {}),
+            // A project set up since wins over the copy.
+            ...cur.projects,
+          },
+          legacy: null,
+        },
+        repos,
+      ),
+    );
+  await store.adoptLegacySwitchedOff((record) => {
+    const home = repos.find((r) => r.id === record.repoId)?.connectionId;
+    if (home) return [home];
+    return Object.entries(settings.get().dreaming.projects)
+      .filter(([, block]) => block.model === record.chosen)
+      .map(([id]) => id);
+  });
+}
+
 export async function startDreams(
   d: Pick<
     DreamSchedulerDeps,
@@ -100,6 +145,9 @@ export async function startDreams(
     },
 ) {
   await d.store.load();
+  await toProjects(d.settings, d.store, d.repos()).catch((e: unknown) =>
+    console.error('[dreams] the dream settings were not moved to projects', e),
+  );
   const now = Date.now;
   const checks = d.limit;
   const sessionsOf = (repoId: string) =>
@@ -115,7 +163,8 @@ export async function startDreams(
     dreamsDir: d.dreamsDir,
     sessionsOf,
     sessionModels: (id) => d.reader.sessionModels(id),
-    dreamTokens: checks.tokens,
+    dreamTokens: (since, until) =>
+      checks.tokens(runner.running()?.project ?? '', since, until),
     // The PR target, as a task's pull request resolves it from its base.
     baseBranch: async (repo) =>
       targetBranch(
@@ -123,9 +172,14 @@ export async function startDreams(
         await d.git.remotes(repo.path).catch(() => []),
       ),
     now,
-    overLimit: () => checks.overLimitFor(runner.running()?.startedAt ?? now()),
+    overLimit: () => {
+      const r = runner.running();
+      return checks.overLimitFor(r?.project ?? '', r?.startedAt ?? now());
+    },
     folders: (repoId) => {
-      const r = d.settings.get().dreaming.repos[repoId];
+      const project = d.repos().find((x) => x.id === repoId)?.connectionId;
+      if (!project) return [];
+      const r = dreamingOf(d.settings.get().dreaming, project).repos[repoId];
       return r?.on ? r.folders : [];
     },
   });
@@ -133,7 +187,13 @@ export async function startDreams(
     ...d,
     store: d.store,
     runner,
-    repos: () => d.repos().map(({ id, name, path }) => ({ id, name, path })),
+    repos: () =>
+      d.repos().map(({ id, name, path, connectionId }) => ({
+        id,
+        name,
+        path,
+        connectionId,
+      })),
     sessionsOf,
     limit: checks,
     now,

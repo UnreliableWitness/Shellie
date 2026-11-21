@@ -16,17 +16,31 @@ const checkedModel = (model: string): string => {
   return model;
 };
 
+/**
+ * The title of a dream session of a project (its connection id): by it the session is told apart from normal work,
+ * and its tokens are counted toward that project's daily limit (`OpenCodeReader.dreamTokens`).
+ */
+export const dreamTitlePrefix = (project: string): string =>
+  `${DREAM_JOB_TITLE} ${project}:`;
+
+/** The title goes on a command line: only an id of letters, digits, `-` and `_` (a UUID) is passed on. */
+const checkedProject = (project: string): string => {
+  if (!/^[\w-]+$/.test(project)) throw new Error('Not a project id');
+  return project;
+};
+
 /** `opencode run` for a dream: json events, the dream title (so the session is told apart and no title is generated), the model. */
 export function dreamArgs(
   model: string,
   what: 'propose' | 'check' | 'test',
+  project: string,
 ): string[] {
   return [
     'run',
     '--format',
     'json',
     '--title',
-    `${DREAM_JOB_TITLE}: ${what}`,
+    `${dreamTitlePrefix(checkedProject(project))} ${what}`,
     '-m',
     checkedModel(model),
   ];

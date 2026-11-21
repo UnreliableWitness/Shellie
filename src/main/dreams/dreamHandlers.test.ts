@@ -19,12 +19,13 @@ import {
   vi,
   type Mock,
 } from 'vitest';
-import type {
-  DreamFileDiff,
-  DreamingSettings,
-  DreamJournalEntry,
-  DreamProposal,
-  DreamResult,
+import {
+  dreamingOf,
+  type DreamFileDiff,
+  type DreamingSettings,
+  type DreamJournalEntry,
+  type DreamProposal,
+  type DreamResult,
 } from '../../shared/dreams';
 import { GitClient } from '../services/GitClient';
 import { ExitError } from '../services/prSummary';
@@ -78,7 +79,12 @@ const ready = (over: Partial<DreamingSettings> = {}): DreamingSettings => ({
   ...over,
 });
 
-const setDreaming = (d: DreamingSettings) => settings.updateDreaming(() => d);
+/** The project the tests are about; `p2` exists beside it. */
+const P = 'p1';
+const block = (project = P): DreamingSettings =>
+  dreamingOf(settings.get().dreaming, project);
+const setDreaming = (d: DreamingSettings, project = P) =>
+  settings.updateDreamingOf(project, () => d);
 
 const entry = (dreamId: string, at: string): DreamJournalEntry => ({
   dreamId,
@@ -112,9 +118,9 @@ beforeEach(async () => {
     stopDream: vi.fn(),
     stopDreamOf: vi.fn(async () => undefined),
     status: vi.fn(() => status),
-    switchOn: vi.fn(async (save: () => Promise<void>) => {
+    switchOn: vi.fn(async (project: string, save: () => Promise<void>) => {
       await save();
-      await store.setSwitchedOff(null);
+      await store.setSwitchedOff(project, null);
     }),
   };
   started = true;
@@ -128,7 +134,10 @@ beforeEach(async () => {
     settings,
     store,
     scheduler: () => (started ? scheduler : null),
-    repos: () => [{ id: 'r1', name: 'Portal', path: repoPath }],
+    repos: () => [
+      { id: 'r1', name: 'Portal', path: repoPath, connectionId: P },
+    ],
+    projects: () => [P, 'p2'],
     git: new GitClient(),
     platform: testPlatform(),
     run: run as unknown as DreamHandlerDeps['run'],
@@ -215,7 +224,7 @@ describe('dream:get', () => {
     await store.log(entry('2026-11-20-1', '2026-11-20T03:00:00.000Z'));
     // What the scheduler or another screen already read.
     await deps.models.get();
-    const view = await api().handlers['dream:get']();
+    const view = await api().handlers['dream:get'](P);
     expect(view.journal.map((e) => e.dreamId)).toEqual([
       '2026-11-20-1',
       '2026-11-19-1',
@@ -234,7 +243,7 @@ describe('dream:get', () => {
       usage: { tokens: 42 },
       models: [MODEL, OTHER],
       euroLimitOffered: false,
-      settings: settings.get().dreaming,
+      settings: block(),
     });
   });
 
@@ -242,14 +251,14 @@ describe('dream:get', () => {
     askModels.mockResolvedValue(null);
     const h = api().handlers;
     for (let i = 0; i < 4; i++)
-      expect((await h['dream:get']()).models).toBeNull();
+      expect((await h['dream:get'](P)).models).toBeNull();
     expect(askModels).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
 
   it('answers before the scheduler started: dreaming as stored, no wait, no sessions known', async () => {
     started = false;
-    const view = await api().handlers['dream:get']();
+    const view = await api().handlers['dream:get'](P);
     expect(view.waiting).toBeNull();
     expect(view.next).toBeNull();
     expect(view.repos[0]).toMatchObject({
@@ -267,52 +276,52 @@ describe('dream:switchOn', () => {
     ['repos', { repos: { r1: { on: false, folders: ['.apm'] } } }],
   ] as const)('refuses while %s is missing', async (reason, over) => {
     await setDreaming(ready(over as Partial<DreamingSettings>));
-    await expect(api().handlers['dream:switchOn'](true)).rejects.toThrow(
+    await expect(api().handlers['dream:switchOn'](P, true)).rejects.toThrow(
       `Dreaming cannot be switched on yet: ${reason}`,
     );
-    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     expect(changed()).toBe(0);
   });
 
   it('switches on with all four and the tick, through the scheduler, clearing a switch-off', async () => {
     await setDreaming(ready());
-    await store.setSwitchedOff({
+    await store.setSwitchedOff(P, {
       answered: 'a/b',
       chosen: MODEL,
       repoId: 'r1',
     });
-    const saved = await api().handlers['dream:switchOn'](true);
+    const saved = await api().handlers['dream:switchOn'](P, true);
     expect(saved.enabled).toBe(true);
-    expect(settings.get().dreaming.enabled).toBe(true);
+    expect(block().enabled).toBe(true);
     expect(scheduler.switchOn).toHaveBeenCalledOnce();
-    expect(store.switchedOff()).toBeNull();
+    expect(store.switchedOff(P)).toBeNull();
     expect(changed()).toBe(1);
   });
 
   it('never switches on without the tick', async () => {
     await setDreaming(ready());
-    await expect(api().handlers['dream:switchOn'](false)).rejects.toThrow(
+    await expect(api().handlers['dream:switchOn'](P, false)).rejects.toThrow(
       'Tick the box first',
     );
     await setDreaming(ready({ model: null }));
-    await expect(api().handlers['dream:switchOn'](false)).rejects.toThrow();
-    expect(settings.get().dreaming.enabled).toBe(false);
+    await expect(api().handlers['dream:switchOn'](P, false)).rejects.toThrow();
+    expect(block().enabled).toBe(false);
     expect(scheduler.switchOn).not.toHaveBeenCalled();
   });
 
   it('refuses before the scheduler started', async () => {
     await setDreaming(ready());
     started = false;
-    await expect(api().handlers['dream:switchOn'](true)).rejects.toThrow(
+    await expect(api().handlers['dream:switchOn'](P, true)).rejects.toThrow(
       'Dreams are still starting',
     );
-    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
   });
 
   it('switchOff saves off and stops a running dream', async () => {
     await setDreaming(ready({ enabled: true }));
-    expect((await api().handlers['dream:switchOff']()).enabled).toBe(false);
-    expect(settings.get().dreaming.enabled).toBe(false);
+    expect((await api().handlers['dream:switchOff'](P)).enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     expect(scheduler.stopDream).toHaveBeenCalled();
     expect(changed()).toBe(1);
   });
@@ -330,30 +339,28 @@ describe('dream:save', () => {
       ...ready({ enabled: true }),
       limit: { kind: 'tokens' as const, perDay: 10 },
     };
-    expect((await api().handlers['dream:save'](next, false)).limit).toEqual(
+    expect((await api().handlers['dream:save'](P, next, false)).limit).toEqual(
       next.limit,
     );
-    expect(settings.get().dreaming.enabled).toBe(true);
+    expect(block().enabled).toBe(true);
     expect(changed()).toBe(1);
   });
 
   it('refuses a widening change while on without the tick, and applies it with the tick', async () => {
     await setDreaming(ready({ enabled: true }));
     const next = wider(ready({ enabled: true }));
-    await expect(api().handlers['dream:save'](next, false)).rejects.toThrow(
+    await expect(api().handlers['dream:save'](P, next, false)).rejects.toThrow(
       'Confirm the change first',
     );
-    expect(settings.get().dreaming.repos.r1.folders).toEqual(['.apm']);
-    await api().handlers['dream:save'](next, true);
-    expect(settings.get().dreaming.repos.r1.folders).toEqual([
-      '.apm',
-      'AGENTS.md',
-    ]);
+    expect(block().repos.r1.folders).toEqual(['.apm']);
+    await api().handlers['dream:save'](P, next, true);
+    expect(block().repos.r1.folders).toEqual(['.apm', 'AGENTS.md']);
   });
 
   it('a narrowing change that leaves nothing to dream switches dreaming off in the same write', async () => {
     await setDreaming(ready({ enabled: true }));
     const saved = await api().handlers['dream:save'](
+      P,
       {
         ...ready({ enabled: true }),
         repos: { r1: { on: false, folders: ['.apm'] } },
@@ -361,7 +368,7 @@ describe('dream:save', () => {
       false,
     );
     expect(saved.enabled).toBe(false);
-    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(block().enabled).toBe(false);
     expect(changed()).toBe(1);
   });
 
@@ -376,22 +383,24 @@ describe('dream:save', () => {
       }),
     );
     deps.repos = () => [
-      { id: 'r1', name: 'Portal', path: repoPath },
-      { id: 'r2', name: 'Billing', path: repoPath },
+      { id: 'r1', name: 'Portal', path: repoPath, connectionId: P },
+      { id: 'r2', name: 'Billing', path: repoPath, connectionId: P },
     ];
     status = {
       ...status,
-      running: { repoId: 'r1', startedAt: 1, step: 'reading' },
+      running: { repoId: 'r1', project: P, startedAt: 1, step: 'reading' },
     };
     const h = api().handlers;
     await h['dream:save'](
-      { ...settings.get().dreaming, limit: { kind: 'tokens', perDay: 10 } },
+      P,
+      { ...block(), limit: { kind: 'tokens', perDay: 10 } },
       false,
     );
     expect(scheduler.stopDream).not.toHaveBeenCalled();
     const saved = await h['dream:save'](
+      P,
       {
-        ...settings.get().dreaming,
+        ...block(),
         repos: {
           r1: { on: false, folders: ['.apm'] },
           r2: { on: true, folders: ['.apm'] },
@@ -406,6 +415,7 @@ describe('dream:save', () => {
   it('a narrowing change that switches dreaming off stops a running dream', async () => {
     await setDreaming(ready({ enabled: true }));
     await api().handlers['dream:save'](
+      P,
       {
         ...ready({ enabled: true }),
         repos: { r1: { on: false, folders: ['.apm'] } },
@@ -421,23 +431,21 @@ describe('dream:save', () => {
     vi.spyOn(settings, 'updateDreaming').mockRejectedValueOnce(
       new Error(`ENOSPC: no space left, write '${dir}/settings.json'`),
     );
-    await expect(api().handlers['dream:switchOff']()).rejects.toThrow(
+    await expect(api().handlers['dream:switchOff'](P)).rejects.toThrow(
       /^The dream settings could not be saved$/,
     );
   });
 
   it('applies a widening change while off without the tick', async () => {
     await setDreaming(ready());
-    await api().handlers['dream:save'](wider(ready()), false);
-    expect(settings.get().dreaming.repos.r1.folders).toEqual([
-      '.apm',
-      'AGENTS.md',
-    ]);
+    await api().handlers['dream:save'](P, wider(ready()), false);
+    expect(block().repos.r1.folders).toEqual(['.apm', 'AGENTS.md']);
   });
 
   it('never takes enabled, model or testedModel, and drops repos Shellie does not know', async () => {
     await setDreaming(ready());
     const saved = await api().handlers['dream:save'](
+      P,
       {
         ...ready(),
         enabled: true,
@@ -456,7 +464,7 @@ describe('dream:save', () => {
       testedModel: MODEL,
     });
     expect(Object.keys(saved.repos)).toEqual(['r1']);
-    expect(settings.get().dreaming).toEqual(saved);
+    expect(block()).toEqual(saved);
   });
 
   it.each(['.', '/etc', 'a/../b', '.opencode/agent'])(
@@ -465,6 +473,7 @@ describe('dream:save', () => {
       await setDreaming(ready());
       await expect(
         api().handlers['dream:save'](
+          P,
           { ...ready(), repos: { r1: { on: true, folders: [folder] } } },
           true,
         ),
@@ -488,7 +497,7 @@ describe('dream:test', () => {
       );
       return `${JSON.stringify({ sessionID: 'ses_1' })}\n`;
     });
-    expect(await api().handlers['dream:test'](MODEL)).toEqual({ ok: true });
+    expect(await api().handlers['dream:test'](P, MODEL)).toEqual({ ok: true });
     expect(run).toHaveBeenCalledOnce();
     const [cmd, o] = run.mock.calls[0] as [
       { args: string[] },
@@ -502,7 +511,8 @@ describe('dream:test', () => {
     const cwdHeld = o.cwd;
     expect(inFolder).toEqual([]);
     expect(cmd.args).toEqual(
-      deps.platform.opencodeCommand(undefined, dreamArgs(MODEL, 'test')).args,
+      deps.platform.opencodeCommand(undefined, dreamArgs(MODEL, 'test', P))
+        .args,
     );
     expect(o.env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1');
     expect(JSON.parse(o.env.OPENCODE_CONFIG_CONTENT).small_model).toBe(MODEL);
@@ -512,7 +522,7 @@ describe('dream:test', () => {
     // Under the dreams folder, so the ledger knows its usage as a dream's and never sends it.
     expect(under).toMatch(/^\.test-[^/\\]+[/\\]wt$/);
     expect(existsSync(path.dirname(cwdHeld!))).toBe(false);
-    expect(settings.get().dreaming).toMatchObject({
+    expect(block()).toMatchObject({
       model: MODEL,
       testedModel: MODEL,
     });
@@ -523,21 +533,21 @@ describe('dream:test', () => {
     await setDreaming(ready({ enabled: true }));
     status = {
       ...status,
-      running: { repoId: 'r1', startedAt: 1, step: 'reading' },
+      running: { repoId: 'r1', project: P, startedAt: 1, step: 'reading' },
     };
     const events: [string, unknown][] = [];
     deps.event = (name, props) => events.push([name, props]);
     answered = [MODEL, 'anthropic/claude-x'];
-    expect(await api().handlers['dream:test'](MODEL)).toEqual({
+    expect(await api().handlers['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: 'Another model answered',
     });
-    expect(settings.get().dreaming).toMatchObject({
+    expect(block()).toMatchObject({
       enabled: false,
       model: MODEL,
       testedModel: null,
     });
-    expect(store.switchedOff()).toEqual({
+    expect(store.switchedOff(P)).toEqual({
       answered: 'anthropic/claude-x',
       chosen: MODEL,
       repoId: '',
@@ -572,12 +582,12 @@ describe('dream:test', () => {
       const events: [string, unknown][] = [];
       deps.event = (name, props) => events.push([name, props]);
       fail();
-      expect((await api().handlers['dream:test'](MODEL)).ok).toBe(false);
-      expect(settings.get().dreaming).toMatchObject({
+      expect((await api().handlers['dream:test'](P, MODEL)).ok).toBe(false);
+      expect(block()).toMatchObject({
         enabled: false,
         testedModel: null,
       });
-      expect(store.switchedOff()).toBeNull();
+      expect(store.switchedOff(P)).toBeNull();
       expect(scheduler.stopDream).toHaveBeenCalled();
       expect(events).toContainEqual([
         'dream.switched_off',
@@ -589,15 +599,15 @@ describe('dream:test', () => {
   it('a failed test of a model that is not the saved one changes nothing', async () => {
     await setDreaming(ready({ enabled: true }));
     answered = [OTHER, 'anthropic/claude-x'];
-    expect(await api().handlers['dream:test'](OTHER)).toMatchObject({
+    expect(await api().handlers['dream:test'](P, OTHER)).toMatchObject({
       ok: false,
     });
-    expect(settings.get().dreaming).toMatchObject({
+    expect(block()).toMatchObject({
       enabled: true,
       model: MODEL,
       testedModel: MODEL,
     });
-    expect(store.switchedOff()).toBeNull();
+    expect(store.switchedOff(P)).toBeNull();
     expect(scheduler.stopDream).not.toHaveBeenCalled();
     expect(changed()).toBe(0);
   });
@@ -605,20 +615,20 @@ describe('dream:test', () => {
   it('a passed test of a new model switches dreaming off and stops a dream still running on the old one', async () => {
     await setDreaming(ready({ enabled: true }));
     answered = [OTHER];
-    expect(await api().handlers['dream:test'](OTHER)).toEqual({ ok: true });
-    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(await api().handlers['dream:test'](P, OTHER)).toEqual({ ok: true });
+    expect(block().enabled).toBe(false);
     expect(scheduler.stopDream).toHaveBeenCalled();
   });
 
   it('testing a new model while on switches dreaming off', async () => {
     await setDreaming(ready({ enabled: true }));
-    expect(await api().handlers['dream:test'](OTHER)).toEqual({
+    expect(await api().handlers['dream:test'](P, OTHER)).toEqual({
       ok: false,
       message: 'Another model answered',
     });
     answered = [OTHER];
-    expect(await api().handlers['dream:test'](OTHER)).toEqual({ ok: true });
-    expect(settings.get().dreaming).toMatchObject({
+    expect(await api().handlers['dream:test'](P, OTHER)).toEqual({ ok: true });
+    expect(block()).toMatchObject({
       enabled: false,
       model: OTHER,
       testedModel: OTHER,
@@ -627,12 +637,12 @@ describe('dream:test', () => {
 
   it('testing the same model again while on keeps dreaming on', async () => {
     await setDreaming(ready({ enabled: true }));
-    expect(await api().handlers['dream:test'](MODEL)).toEqual({ ok: true });
-    expect(settings.get().dreaming.enabled).toBe(true);
+    expect(await api().handlers['dream:test'](P, MODEL)).toEqual({ ok: true });
+    expect(block().enabled).toBe(true);
   });
 
   it('refuses a model not in OpenCode’s list before any call', async () => {
-    expect(await api().handlers['dream:test']('zai/unknown')).toEqual({
+    expect(await api().handlers['dream:test'](P, 'zai/unknown')).toEqual({
       ok: false,
       message: 'zai/unknown is not available in OpenCode',
     });
@@ -644,24 +654,24 @@ describe('dream:test', () => {
     run.mockRejectedValueOnce(
       Object.assign(new Error('spawn opencode ENOENT'), { code: 'ENOENT' }),
     );
-    expect(await h['dream:test'](MODEL)).toEqual({
+    expect(await h['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: 'OpenCode was not found',
     });
     run.mockRejectedValueOnce(new Error('opencode timed out after 120 s'));
-    expect(await h['dream:test'](MODEL)).toEqual({
+    expect(await h['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: 'The test timed out',
     });
     run.mockRejectedValueOnce(
       new ExitError('secret session text', 1, 'secret'),
     );
-    expect(await h['dream:test'](MODEL)).toEqual({
+    expect(await h['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: `${MODEL} did not answer`,
     });
     run.mockResolvedValueOnce('no events at all');
-    expect(await h['dream:test'](MODEL)).toEqual({
+    expect(await h['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: `${MODEL} did not answer`,
     });
@@ -671,7 +681,7 @@ describe('dream:test', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     writeFileSync(path.join(dir, 'not-a-folder'), '');
     deps.dreamsDir = path.join(dir, 'not-a-folder', 'dreams');
-    expect(await api().handlers['dream:test'](MODEL)).toEqual({
+    expect(await api().handlers['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: 'The test could not be run',
     });
@@ -682,9 +692,9 @@ describe('dream:test', () => {
     let finish!: (s: string) => void;
     run.mockImplementationOnce(() => new Promise<string>((r) => (finish = r)));
     const h = api().handlers;
-    const first = h['dream:test'](MODEL);
+    const first = h['dream:test'](P, MODEL);
     await vi.waitFor(() => expect(run).toHaveBeenCalled());
-    expect(await h['dream:test'](MODEL)).toEqual({
+    expect(await h['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: 'A test is already running',
     });
@@ -698,7 +708,7 @@ describe('dream:now and dream:stop', () => {
     scheduler.dreamNow.mockResolvedValueOnce({ wait: 'limit' });
     expect(await api().handlers['dream:now']('r1')).toEqual({ wait: 'limit' });
     expect(await api().handlers['dream:now']('r1')).toEqual({ started: true });
-    await api().handlers['dream:stop']();
+    await api().handlers['dream:stop'](P);
     expect(scheduler.stopDream).toHaveBeenCalled();
   });
 });
@@ -1160,7 +1170,7 @@ describe('a repo that goes away', () => {
     await setDreaming(ready({ enabled: true }));
     status = {
       ...status,
-      running: { repoId: 'r1', startedAt: 1, step: 'reading' },
+      running: { repoId: 'r1', project: P, startedAt: 1, step: 'reading' },
     };
     await store.setOpened('r1', {
       dreamId: '2026-11-19-1',
@@ -1172,7 +1182,7 @@ describe('a repo that goes away', () => {
     git(repoPath, 'branch', 'dream/2026-11-19-1');
     const events: [string, unknown][] = [];
     deps.event = (name, props) => events.push([name, props]);
-    const repo = { id: 'r1', name: 'Portal', path: repoPath };
+    const repo = { id: 'r1', name: 'Portal', path: repoPath, connectionId: P };
     // As Shellie has it once `repos:remove` ran.
     deps.repos = () => [];
     await api().repoRemoved(repo);
@@ -1193,8 +1203,8 @@ describe('a repo that goes away', () => {
       dreamId: r.id,
       closed: { as: 'discarded', kept: 0, dropped: 3 },
     });
-    expect(settings.get().dreaming.repos).toEqual({});
-    expect(settings.get().dreaming.enabled).toBe(false);
+    expect(block().repos).toEqual({});
+    expect(block().enabled).toBe(false);
     expect(events).toContainEqual(['dream.switched_off', { by: 'narrowed' }]);
     expect(events).toContainEqual([
       'dream.result',
@@ -1213,10 +1223,17 @@ describe('a repo that goes away', () => {
         },
       }),
     );
-    deps.repos = () => [{ id: 'r2', name: 'Billing', path: repoPath }];
-    await api().repoRemoved({ id: 'r1', name: 'Portal', path: repoPath });
-    expect(settings.get().dreaming.enabled).toBe(true);
-    expect(Object.keys(settings.get().dreaming.repos)).toEqual(['r2']);
+    deps.repos = () => [
+      { id: 'r2', name: 'Billing', path: repoPath, connectionId: P },
+    ];
+    await api().repoRemoved({
+      id: 'r1',
+      name: 'Portal',
+      path: repoPath,
+      connectionId: P,
+    });
+    expect(block().enabled).toBe(true);
+    expect(Object.keys(block().repos)).toEqual(['r2']);
   });
 
   it('a repo folder deleted on disk: Discard removes the dream folder and closes the result', async () => {
@@ -1602,7 +1619,7 @@ describe('telemetry', () => {
 
   it('dream.enabled carries the limit kind and the repo count when switched on', async () => {
     await setDreaming(ready());
-    await api().handlers['dream:switchOn'](true);
+    await api().handlers['dream:switchOn'](P, true);
     expect(events()).toEqual([
       ['dream.enabled', { limit: 'tokens', repos: 1 }],
     ]);
@@ -1611,10 +1628,11 @@ describe('telemetry', () => {
 
   it('dream.switched_off says the owner switched off, or a narrowing did; nothing when it was off', async () => {
     await setDreaming(ready({ enabled: true }));
-    await api().handlers['dream:switchOff']();
-    await api().handlers['dream:switchOff']();
+    await api().handlers['dream:switchOff'](P);
+    await api().handlers['dream:switchOff'](P);
     await setDreaming(ready({ enabled: true }));
     await api().handlers['dream:save'](
+      P,
       {
         ...ready({ enabled: true }),
         repos: { r1: { on: false, folders: ['.apm'] } },
@@ -1630,9 +1648,9 @@ describe('telemetry', () => {
 
   it('dream.test carries whether the test passed, never the model or the message', async () => {
     await setDreaming(ready({ testedModel: null }));
-    await api().handlers['dream:test'](MODEL);
+    await api().handlers['dream:test'](P, MODEL);
     answered = [OTHER];
-    await api().handlers['dream:test'](MODEL);
+    await api().handlers['dream:test'](P, MODEL);
     expect(events()).toEqual([
       ['dream.test', { ok: true }],
       ['dream.test', { ok: false }],
@@ -1656,5 +1674,192 @@ describe('telemetry', () => {
     expect(events()).toEqual([
       ['dream.result', { kept: 0, dropped: 3, outcome: 'discarded' }],
     ]);
+  });
+});
+
+describe('dreams of several projects', () => {
+  const Q = 'p2';
+  const repoQ = () => ({
+    id: 'r2',
+    name: 'Api',
+    path: repoPath,
+    connectionId: Q as string | null,
+  });
+  const loose = () => ({
+    id: 'loose',
+    name: 'Loose',
+    path: repoPath,
+    connectionId: null,
+  });
+  const withRepos = (...more: ReturnType<typeof repoQ>[]) => {
+    deps.repos = () => [
+      { id: 'r1', name: 'Portal', path: repoPath, connectionId: P },
+      ...more,
+    ];
+  };
+  const forQ = (over: Partial<DreamingSettings> = {}) =>
+    ready({ repos: { r2: { on: true, folders: ['.apm'] } }, ...over });
+
+  it('dream:get shows the project’s own setup, repos and journal lines only', async () => {
+    withRepos(repoQ());
+    await setDreaming(ready());
+    await setDreaming(forQ({ idleMinutes: 30 }), Q);
+    await store.log(entry('d1', '2026-11-20T03:00:00.000Z'));
+    await store.log({
+      ...entry('d2', '2026-11-20T04:00:00.000Z'),
+      repoId: 'r2',
+    });
+    const mine = await api().handlers['dream:get'](P);
+    expect(mine.settings).toEqual(ready());
+    expect(mine.repos.map((r) => r.id)).toEqual(['r1']);
+    expect(mine.journal.map((e) => e.dreamId)).toEqual(['d1']);
+    const theirs = await api().handlers['dream:get'](Q);
+    expect(theirs.settings.idleMinutes).toBe(30);
+    expect(theirs.repos.map((r) => r.id)).toEqual(['r2']);
+    expect(theirs.journal.map((e) => e.dreamId)).toEqual(['d2']);
+    expect(scheduler.status).toHaveBeenLastCalledWith(Q);
+  });
+
+  it('dream:get refuses a project that does not exist', async () => {
+    await expect(api().handlers['dream:get']('nope')).rejects.toThrow(
+      'This project is not known',
+    );
+    await expect(api().handlers['dream:switchOff']('nope')).rejects.toThrow();
+    expect(settings.get().dreaming.projects).toEqual({});
+  });
+
+  it('a repo without a project shows in every project only while it has something to review', async () => {
+    withRepos(loose());
+    expect(
+      (await api().handlers['dream:get'](P)).repos.map((r) => r.id),
+    ).toEqual(['r1']);
+    await store.setOpened('loose', {
+      dreamId: DREAM_ID,
+      branch: BRANCH,
+      at: '2026-11-20T03:00:00.000Z',
+      kept: 1,
+      titles: ['Rule 1'],
+    });
+    for (const project of [P, Q]) {
+      const view = await api().handlers['dream:get'](project);
+      expect(view.repos.find((r) => r.id === 'loose')).toMatchObject({
+        orphan: true,
+      });
+    }
+  });
+
+  it('dream:save refuses a repo of another project or of none, and changes nothing', async () => {
+    withRepos(repoQ(), loose());
+    await setDreaming(ready());
+    for (const id of ['r2', 'loose'])
+      await expect(
+        api().handlers['dream:save'](
+          P,
+          ready({
+            repos: {
+              r1: { on: true, folders: ['.apm'] },
+              [id]: { on: true, folders: ['.apm'] },
+            },
+          }),
+          true,
+        ),
+      ).rejects.toThrow('A repo of another project cannot dream here');
+    expect(block()).toEqual(ready());
+    expect(settings.get().dreaming.projects[Q]).toBeUndefined();
+  });
+
+  it('switching one project on or off leaves the other as it is', async () => {
+    withRepos(repoQ());
+    await setDreaming(ready());
+    await setDreaming(forQ(), Q);
+    await api().handlers['dream:switchOn'](Q, true);
+    expect(scheduler.switchOn).toHaveBeenCalledWith(Q, expect.any(Function));
+    expect(block(Q).enabled).toBe(true);
+    expect(block().enabled).toBe(false);
+    await api().handlers['dream:switchOn'](P, true);
+    await api().handlers['dream:switchOff'](Q);
+    expect(scheduler.stopDream).toHaveBeenLastCalledWith(Q);
+    expect(block(Q).enabled).toBe(false);
+    expect(block().enabled).toBe(true);
+  });
+
+  it('dream:test tests for its project: the title carries it and only its block gets the model', async () => {
+    await api().handlers['dream:test'](Q, OTHER);
+    expect(
+      (run.mock.calls[0][0] as { args: string[] }).args.join(' '),
+    ).toContain(`Shellie dream ${Q}: test`);
+    expect(block(Q)).toMatchObject({ model: OTHER, testedModel: OTHER });
+    expect(settings.get().dreaming.projects[P]).toBeUndefined();
+  });
+
+  it('another model answering a re-test switches off every project on that model, and no other', async () => {
+    withRepos(repoQ(), { ...repoQ(), id: 'r3', connectionId: 'p3' });
+    deps.projects = () => [P, Q, 'p3'];
+    await setDreaming(ready({ enabled: true }));
+    await setDreaming(forQ({ enabled: true }), Q);
+    await setDreaming(
+      ready({
+        enabled: true,
+        model: OTHER,
+        testedModel: OTHER,
+        repos: { r3: { on: true, folders: ['.apm'] } },
+      }),
+      'p3',
+    );
+    answered = ['x/y'];
+    expect(await api().handlers['dream:test'](P, MODEL)).toEqual({
+      ok: false,
+      message: 'Another model answered',
+    });
+    for (const project of [P, Q]) {
+      expect(block(project)).toMatchObject({
+        enabled: false,
+        testedModel: null,
+      });
+      expect(store.switchedOff(project)).toMatchObject({ chosen: MODEL });
+    }
+    expect(block('p3')).toMatchObject({ enabled: true, testedModel: OTHER });
+    expect(store.switchedOff('p3')).toBeNull();
+  });
+
+  it('a repo moved to another project leaves its old block; a block left with nothing is off and its dream stops', async () => {
+    await setDreaming(ready({ enabled: true }));
+    status = {
+      ...status,
+      running: { repoId: 'r1', project: P, startedAt: 1, step: 'reading' },
+    };
+    deps.repos = () => [
+      { id: 'r1', name: 'Portal', path: repoPath, connectionId: Q },
+    ];
+    await api().projectsChanged();
+    expect(block()).toMatchObject({ enabled: false, repos: {} });
+    expect(scheduler.stopDream).toHaveBeenCalledWith(P);
+    // Off in the new project until it is set up there.
+    expect(settings.get().dreaming.projects[Q]).toBeUndefined();
+  });
+
+  it('a removed project loses its setup and its switch-off notice', async () => {
+    withRepos(repoQ());
+    await setDreaming(ready({ enabled: true }));
+    await setDreaming(forQ({ enabled: true }), Q);
+    await store.setSwitchedOff(Q, {
+      answered: 'x/y',
+      chosen: MODEL,
+      repoId: 'r2',
+    });
+    deps.projects = () => [P];
+    deps.repos = () => [
+      { id: 'r1', name: 'Portal', path: repoPath, connectionId: P },
+      { ...repoQ(), connectionId: null },
+    ];
+    await api().projectsChanged();
+    expect(Object.keys(settings.get().dreaming.projects)).toEqual([P]);
+    expect(block().enabled).toBe(true);
+    expect(store.switchedOffProjects()).toEqual([]);
+  });
+
+  it('dream:stop stops the named project’s dream only', async () => {
+    await api().handlers['dream:stop'](Q);
+    expect(scheduler.stopDream).toHaveBeenCalledWith(Q);
   });
 });

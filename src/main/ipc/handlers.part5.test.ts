@@ -1,4 +1,5 @@
 // handlers tests, part 5 of 6 (split so CI can run them on several machines at once).
+import { defaultDreaming, defaultDreamingAll } from '../../shared/dreams';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -802,27 +803,28 @@ describe('handlers: dreams', () => {
   it('the generic settings save never writes dreaming, from a patch or a stale whole object', async () => {
     const hx = await harness();
     const s = await hx.h['settings:get']();
+    const on = { ...defaultDreaming(), enabled: true };
     await hx.h['settings:save']({
       ...s,
-      dreaming: { ...s.dreaming, enabled: true },
+      dreaming: { projects: { p1: on }, legacy: on },
     });
-    expect(hx.settings.get().dreaming.enabled).toBe(false);
+    expect(hx.settings.get().dreaming).toEqual(defaultDreamingAll());
     // Dreaming on, as `dream:switchOn` leaves it; then a renderer that read the settings before a switch-off.
-    await hx.settings.updateDreaming((d) => ({ ...d, enabled: true }));
+    await hx.settings.updateDreamingOf('p1', (d) => ({ ...d, enabled: true }));
     const stale = await hx.h['settings:get']();
-    await hx.settings.updateDreaming((d) => ({ ...d, enabled: false }));
+    await hx.settings.updateDreamingOf('p1', (d) => ({ ...d, enabled: false }));
     await hx.h['settings:save']({ ...stale, showSplash: !stale.showSplash });
-    expect(hx.settings.get().dreaming.enabled).toBe(false);
+    expect(hx.settings.get().dreaming.projects.p1.enabled).toBe(false);
     expect(hx.settings.get().showSplash).toBe(!stale.showSplash);
   });
 
   it('a switch-off and other settings writes queued together end with dreaming off', async () => {
     const hx = await harness();
-    await hx.settings.updateDreaming((d) => ({ ...d, enabled: true }));
+    await hx.settings.updateDreamingOf('p1', (d) => ({ ...d, enabled: true }));
     const stale = hx.settings.get();
     // As `dream:switchOff`, then the editor prefs save (`savePrefs`) and the renderer's save, all in flight at once.
     const writes = [
-      hx.settings.updateDreaming((d) => ({ ...d, enabled: false })),
+      hx.settings.updateDreamingOf('p1', (d) => ({ ...d, enabled: false })),
       hx.settings.update((cur) => ({
         ...cur,
         editor: { ...cur.editor, default: 'vscode' },
@@ -831,7 +833,7 @@ describe('handlers: dreams', () => {
       hx.settings.save({ ...stale, notifyOnDone: !stale.notifyOnDone }),
     ];
     await Promise.all(writes);
-    expect(hx.settings.get().dreaming.enabled).toBe(false);
+    expect(hx.settings.get().dreaming.projects.p1.enabled).toBe(false);
   });
 
   const dreamBranch = 'dream/2026-11-20-1';

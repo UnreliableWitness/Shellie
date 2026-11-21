@@ -392,10 +392,13 @@ export class OpenCodeReader {
   /**
    * The tokens of dream sessions (by title, and the sessions below them) in finished assistant messages created in
    * [`since`, `until`) (epoch ms): all five kinds added up, the way the ledger counts them, and per `provider/model`.
+   * With `titlePrefix` (a project's, `dreamTitlePrefix`), only the sessions whose title starts with exactly that; a
+   * dream session of before dreams were per project carries no project and so counts for none.
    */
   dreamTokens(
     since: number,
     until: number,
+    titlePrefix: string = DREAM_JOB_TITLE,
   ): { tokens: number; byModel: Record<string, BudgetTokens> } {
     const byModel: Record<string, BudgetTokens> = {};
     let tokens = 0;
@@ -404,9 +407,9 @@ export class OpenCodeReader {
     try {
       const rows = db
         .prepare(
-          `${withChildren(db, 'SELECT id FROM session WHERE title LIKE ?')} SELECT message.id AS id, message.session_id AS session_id, message.data AS data FROM message JOIN tree ON tree.id = message.session_id WHERE message.time_created >= ? AND message.time_created < ?`,
+          `${withChildren(db, 'SELECT id FROM session WHERE substr(title, 1, ?) = ?')} SELECT message.id AS id, message.session_id AS session_id, message.data AS data FROM message JOIN tree ON tree.id = message.session_id WHERE message.time_created >= ? AND message.time_created < ?`,
         )
-        .all(`${DREAM_JOB_TITLE}%`, since, until) as {
+        .all([...titlePrefix].length, titlePrefix, since, until) as {
         id: string;
         session_id: string;
         data: string;

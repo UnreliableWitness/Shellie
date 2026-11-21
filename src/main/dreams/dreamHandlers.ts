@@ -19,6 +19,9 @@ import {
   type DreamResult,
   type DreamUsage,
   type DreamView,
+  dreamingOf,
+  pruneDreaming,
+  type DreamingAll,
 } from '../../shared/dreams';
 import type { Handlers } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/usage';
@@ -83,7 +86,13 @@ export type DreamTaskLink = {
   taskCreated(dreamId: string, repoId: string, taskName: string): Promise<void>;
 };
 
-type Repo = { id: string; name: string; path: string };
+type Repo = {
+  id: string;
+  name: string;
+  path: string;
+  /** The repo's project; a repo without one does not dream. */
+  connectionId: string | null;
+};
 
 export type DreamApi = {
   handlers: DreamHandlers;
@@ -94,6 +103,12 @@ export type DreamApi = {
    * The journal keeps its past entries. Best effort: never throws.
    */
   repoRemoved(repo: Repo): Promise<void>;
+  /**
+   * A repo moved to another project, or a project was removed: the dream settings lose what no longer belongs in
+   * them (`pruneDreaming`), a removed project's switch-off record goes, and a dream running for a repo that left
+   * its block stops. Best effort: never throws.
+   */
+  projectsChanged(): Promise<void>;
 };
 
 export type DreamHandlerDeps = {
@@ -101,9 +116,11 @@ export type DreamHandlerDeps = {
     get(): AppSettings;
     /** The one way `dreaming` is written (`SettingsStore.updateDreaming`). */
     updateDreaming(
-      fn: (current: DreamingSettings) => DreamingSettings,
+      fn: (current: DreamingAll) => DreamingAll,
     ): Promise<AppSettings>;
   };
+  /** The connection ids that exist: a dream call names one of them. */
+  projects: () => string[];
   store: DreamStore;
   /** Null until the scheduler started (the store is loaded then); only reads are answered before. */
   scheduler: () => Pick<
@@ -122,8 +139,8 @@ export type DreamHandlerDeps = {
   sessionModels: (sessionId: string) => string[];
   /** OpenCode's model list, shared with the scheduler: `dream:get` only reads what is known, `dream:test` may ask. */
   models: Pick<OpencodeModelList, 'known' | 'get'>;
-  /** Today's dream usage (`limitChecks(...).usage`). */
-  usage: () => DreamUsage;
+  /** Today's dream usage of a project (`limitChecks(...).usage`). */
+  usage: (project: string) => DreamUsage;
   /** Every dream's folder lies in it; nothing outside it is ever removed. */
   dreamsDir: string;
   /** Sends `dream:changed`. */
@@ -157,6 +174,7 @@ export function noDreams(): DreamApi {
     },
     taskLink: { opened: () => false, taskCreated: async () => undefined },
     repoRemoved: async () => undefined,
+    projectsChanged: async () => undefined,
   };
 }
 
@@ -182,19 +200,40 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     return s;
   };
 
-  /** Writes the dream settings; `before` is what the write started from. */
+  /** The project a call names: a connection that exists. */
+  const projectOf = (connectionId: unknown): string => {
+    if (
+      typeof connectionId !== 'string' ||
+      !d.projects().includes(connectionId)
+    )
+      throw refuse('This project is not known');
+    return connectionId;
+  };
+
+  /** Writes one project's dream settings; `before` is what the write started from. */
   const saveDreaming = async (
+    project: string,
     fn: (cur: DreamingSettings) => DreamingSettings,
   ): Promise<{ before: DreamingSettings; after: DreamingSettings }> => {
     const seen: { before?: DreamingSettings } = {};
-    const after = (
+    const all = (
       await d.settings.updateDreaming((cur) => {
-        seen.before = cur;
-        return fn(cur);
+        seen.before = dreamingOf(cur, project);
+        return {
+          ...cur,
+          projects: { ...cur.projects, [project]: fn(seen.before) },
+        };
       })
     ).dreaming;
+    const after = dreamingOf(all, project);
     return { before: seen.before ?? after, after };
   };
+
+  /** The projects that dream on `model`: a fault of the model stops them all. */
+  const projectsOn = (model: string): string[] =>
+    Object.entries(d.settings.get().dreaming.projects)
+      .filter(([, block]) => block.model === model)
+      .map(([id]) => id);
 
   /** A narrowing that leaves no limit or no repo to dream about switches dreaming off with it. */
   const narrowed = (s: DreamingSettings): DreamingSettings => ({
@@ -449,6 +488,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
    */
   const testCall = async (
     model: string,
+    project: string,
   ): Promise<{ message: string; others?: string[] } | null> => {
     let root: string;
     try {
@@ -472,7 +512,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       }
       const cmd = d.platform.opencodeCommand(
         undefined,
-        dreamArgs(model, 'test'),
+        dreamArgs(model, 'test', project),
       );
       const env = dreamEnv(cmd.env ?? {}, { model, worktree: cwd, dataDir });
       let stdout: string;
@@ -512,43 +552,55 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   };
 
   /**
-   * A re-test of the saved model failed. Another model answered (`others`): as after a dream answered by another model,
-   * the switch-off is recorded, dreaming goes off and the passed test is forgotten. Any other failure: dreaming goes
-   * off and the test is forgotten, so setup asks to test the model first; no record. A running dream stops.
+   * A re-test of the project's saved model failed. Another model answered (`others`): as after a dream answered by
+   * another model, every project that dreams on the model gets the switch-off record, goes off and forgets the
+   * passed test. Any other failure: this project goes off and forgets the test, so setup asks to test the model
+   * first; no record. A running dream of a project that went off stops.
    */
-  const retestFailed = async (model: string, others: string[] | null) => {
-    // The dream store is written only once loaded (the scheduler started); the settings below hold either way.
-    if (others && d.scheduler())
-      await d.store.setSwitchedOff({
-        answered: others.join(', '),
-        chosen: model,
-        // A test call is no repo's.
-        repoId: '',
-      });
-    const { before } = await saveDreaming((cur) =>
-      // Still the model that was tested: a new pick saved meanwhile is left alone.
-      cur.model !== model ? cur : { ...cur, enabled: false, testedModel: null },
-    );
-    if (before.enabled)
-      event('dream.switched_off', {
-        by: others ? 'wrong-model' : 'test-failed',
-      });
-    d.scheduler()?.stopDream();
+  const retestFailed = async (
+    project: string,
+    model: string,
+    others: string[] | null,
+  ) => {
+    const affected = others
+      ? [...new Set([project, ...projectsOn(model)])]
+      : [project];
+    for (const p of affected) {
+      // The dream store is written only once loaded (the scheduler started); the settings below hold either way.
+      if (others && d.scheduler())
+        await d.store.setSwitchedOff(p, {
+          answered: others.join(', '),
+          chosen: model,
+          // A test call is no repo's.
+          repoId: '',
+        });
+      const { before } = await saveDreaming(p, (cur) =>
+        // Still the model that was tested: a new pick saved meanwhile is left alone.
+        cur.model !== model
+          ? cur
+          : { ...cur, enabled: false, testedModel: null },
+      );
+      if (before.enabled)
+        event('dream.switched_off', {
+          by: others ? 'wrong-model' : 'test-failed',
+        });
+      d.scheduler()?.stopDream(p);
+    }
     d.broadcast();
   };
 
-  const usageNow = (): DreamUsage => {
+  const usageNow = (project: string): DreamUsage => {
     try {
-      return d.usage();
+      return d.usage(project);
     } catch (e) {
       console.error('[dreams] today’s usage could not be read', e);
       return { day: '', tokens: 0, eur: null };
     }
   };
 
-  const status = () => {
+  const status = (project: string) => {
     try {
-      return d.scheduler()?.status() ?? null;
+      return d.scheduler()?.status(project) ?? null;
     } catch (e) {
       console.error('[dreams] the scheduler status could not be read', e);
       return null;
@@ -556,14 +608,23 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   };
 
   const handlers: DreamHandlers = {
-    'dream:get': () =>
+    'dream:get': (connectionId) =>
       phrased('Dreams could not be read', async (): Promise<DreamView> => {
-        const settings = d.settings.get().dreaming;
-        const st = status();
+        const project = projectOf(connectionId);
+        const settings = dreamingOf(d.settings.get().dreaming, project);
+        const st = status(project);
+        // The project's repos, and a repo without a project that still has something to review.
+        const shown = d.repos().flatMap((r) => {
+          if (r.connectionId === project) return [{ r, orphan: false }];
+          if (r.connectionId !== null) return [];
+          const state = d.store.repo(r.id);
+          return state.result || state.opened ? [{ r, orphan: true }] : [];
+        });
         const repos = await Promise.all(
-          d.repos().map(async (r) => ({
+          shown.map(async ({ r, orphan }) => ({
             id: r.id,
             name: r.name,
+            ...(orphan ? { orphan } : {}),
             suggestedFolders: (await fs
               .stat(path.join(r.path, '.apm'))
               .then((x) => x.isDirectory())
@@ -574,26 +635,28 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             state: d.store.repo(r.id),
           })),
         );
+        const ids = new Set(repos.map((r) => r.id));
         return {
           settings,
           // Never asked here: only what the scheduler or another screen already read.
           models: d.models.known(),
           euroLimitOffered: settings.model !== null && hasPrice(settings.model),
-          usage: usageNow(),
+          usage: usageNow(project),
           waiting: st?.wait ?? null,
           next: st?.next ?? null,
           running: st?.running ?? null,
-          switchedOff: d.store.switchedOff(),
+          switchedOff: d.store.switchedOff(project),
           repos,
-          journal: d.store.journal(),
+          journal: d.store.journal().filter((e) => ids.has(e.repoId)),
         };
       }),
 
-    'dream:test': async (model) => {
+    'dream:test': async (connectionId, model) => {
       if (testing) return { ok: false, message: 'A test is already running' };
       testing = true;
       let ok = false;
       try {
+        const project = projectOf(connectionId);
         const listed = async (fresh: boolean) =>
           (await d.models.get(fresh))?.includes(model) ?? false;
         const failure =
@@ -601,17 +664,17 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           !isOpencodeModel(model) ||
           !((await listed(false)) || (await listed(true)))
             ? { message: `${String(model)} is not available in OpenCode` }
-            : await testCall(model);
+            : await testCall(model, project);
         if (failure) {
           // A failed re-test of the dreaming model is not ignored: the next dream would spend a whole run first.
-          if (d.settings.get().dreaming.model === model)
+          if (dreamingOf(d.settings.get().dreaming, project).model === model)
             await phrased(SETTINGS_FAILED, () =>
-              retestFailed(model, failure.others ?? null),
+              retestFailed(project, model, failure.others ?? null),
             );
           return { ok: false, message: failure.message };
         }
         const { before } = await phrased(SETTINGS_FAILED, () =>
-          saveDreaming((cur) => ({
+          saveDreaming(project, (cur) => ({
             ...cur,
             model,
             testedModel: model,
@@ -621,7 +684,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         );
         // A dream still running on the old model stops with it.
         if (before.enabled && before.model !== model)
-          d.scheduler()?.stopDream();
+          d.scheduler()?.stopDream(project);
         d.broadcast();
         ok = true;
         return { ok: true };
@@ -637,20 +700,25 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       }
     },
 
-    'dream:save': (next, acknowledged) =>
+    'dream:save': (connectionId, next, acknowledged) =>
       phrased(SETTINGS_FAILED, async () => {
+        const project = projectOf(connectionId);
         const parsed = DreamingSettingsSchema.safeParse(next);
         if (!parsed.success) throw refuse('These dream settings are not valid');
-        const known = new Set(d.repos().map((r) => r.id));
-        const { before, after: saved } = await saveDreaming((prev) => {
+        const home = new Map(d.repos().map((r) => [r.id, r.connectionId]));
+        // A repo Shellie no longer knows is dropped; one of another project (or of none) is refused.
+        const named = Object.entries(parsed.data.repos).filter(([id]) =>
+          home.has(id),
+        );
+        if (named.some(([id]) => home.get(id) !== project))
+          throw refuse('A repo of another project cannot dream here');
+        const { before, after: saved } = await saveDreaming(project, (prev) => {
           const merged: DreamingSettings = {
             ...parsed.data,
             enabled: prev.enabled,
             model: prev.model,
             testedModel: prev.testedModel,
-            repos: Object.fromEntries(
-              Object.entries(parsed.data.repos).filter(([id]) => known.has(id)),
-            ),
+            repos: Object.fromEntries(named),
           };
           if (prev.enabled && widens(prev, merged) && acknowledged !== true)
             throw refuse('Confirm the change first');
@@ -658,27 +726,30 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         });
         const wasOn = before.enabled;
         // As `dream:switchOff`: no more calls once dreaming is off or the running dream's repo is unticked.
-        const running = status()?.running ?? null;
+        const running = status(project)?.running ?? null;
         if (wasOn && !saved.enabled)
           event('dream.switched_off', { by: 'narrowed' });
         if (
           (wasOn && !saved.enabled) ||
           (running && saved.repos[running.repoId]?.on !== true)
         )
-          d.scheduler()?.stopDream();
+          d.scheduler()?.stopDream(project);
         d.broadcast();
         return saved;
       }),
 
-    'dream:switchOn': (acknowledged) =>
+    'dream:switchOn': (connectionId, acknowledged) =>
       phrased(SETTINGS_FAILED, async () => {
-        const reason = canSwitchOn(d.settings.get().dreaming);
+        const project = projectOf(connectionId);
+        const reason = canSwitchOn(
+          dreamingOf(d.settings.get().dreaming, project),
+        );
         if (reason)
           throw refuse(`Dreaming cannot be switched on yet: ${reason}`);
         if (acknowledged !== true) throw refuse('Tick the box first');
         let on: DreamingSettings | null = null;
-        await started().switchOn(async () => {
-          ({ after: on } = await saveDreaming((cur) => {
+        await started().switchOn(project, async () => {
+          ({ after: on } = await saveDreaming(project, (cur) => {
             // Checked again as the write runs: a save queued meanwhile may have changed the settings.
             const again = canSwitchOn(cur);
             if (again)
@@ -688,18 +759,19 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         });
         if (on) event('dream.enabled', enabledProps(on));
         d.broadcast();
-        return d.settings.get().dreaming;
+        return dreamingOf(d.settings.get().dreaming, project);
       }),
 
-    'dream:switchOff': () =>
+    'dream:switchOff': (connectionId) =>
       phrased(SETTINGS_FAILED, async () => {
-        const { before, after: saved } = await saveDreaming((cur) => ({
+        const project = projectOf(connectionId);
+        const { before, after: saved } = await saveDreaming(project, (cur) => ({
           ...cur,
           enabled: false,
         }));
         if (before.enabled) event('dream.switched_off', { by: 'owner' });
-        // Switched off means no model calls: a dream that runs now stops too.
-        d.scheduler()?.stopDream();
+        // Switched off means no model calls: a dream of the project that runs now stops too.
+        d.scheduler()?.stopDream(project);
         d.broadcast();
         return saved;
       }),
@@ -710,8 +782,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         started().dreamNow(repoId),
       ),
 
-    'dream:stop': async () => {
-      d.scheduler()?.stopDream();
+    'dream:stop': async (connectionId) => {
+      if (typeof connectionId === 'string')
+        d.scheduler()?.stopDream(connectionId);
     },
 
     'dream:drop': (repoId, proposalId, dropped) =>
@@ -902,19 +975,67 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             console.error('[dreams] a removed repo was not forgotten', e),
           );
       }
-      const saved = await saveDreaming((cur) => {
-        const { [repo.id]: _gone, ...repos } = cur.repos;
-        return narrowed({ ...cur, repos });
-      }).catch((e: unknown) => {
-        console.error('[dreams] a removed repo stays in the dream settings', e);
-        return null;
-      });
-      if (saved?.before.enabled && !saved.after.enabled) {
-        event('dream.switched_off', { by: 'narrowed' });
-        s?.stopDream();
+      // Every block that names the repo loses it (its own project's; an older one's when it moved meanwhile).
+      for (const [project, block] of Object.entries(
+        d.settings.get().dreaming.projects,
+      )) {
+        if (!(repo.id in block.repos)) continue;
+        const saved = await saveDreaming(project, (cur) => {
+          const { [repo.id]: _gone, ...repos } = cur.repos;
+          return narrowed({ ...cur, repos });
+        }).catch((e: unknown) => {
+          console.error(
+            '[dreams] a removed repo stays in the dream settings',
+            e,
+          );
+          return null;
+        });
+        if (saved?.before.enabled && !saved.after.enabled) {
+          event('dream.switched_off', { by: 'narrowed' });
+          s?.stopDream(project);
+        }
       }
       d.broadcast();
     });
 
-  return { handlers, taskLink, repoRemoved };
+  const projectsChanged = (): Promise<void> =>
+    serial(async () => {
+      const s = d.scheduler();
+      const existing = d.projects();
+      const before = d.settings.get().dreaming;
+      const after = await d.settings
+        .updateDreaming((cur) => pruneDreaming(cur, d.repos(), existing))
+        .then(
+          (x) => x.dreaming,
+          (e: unknown) => {
+            console.error('[dreams] the dream settings were not pruned', e);
+            return null;
+          },
+        );
+      if (after)
+        for (const [project, was] of Object.entries(before.projects)) {
+          const now = after.projects[project];
+          if (was.enabled && !now?.enabled)
+            event('dream.switched_off', { by: 'narrowed' });
+          // A dream of a repo that left the block, or of a project that is gone or off, stops.
+          const running = s?.status(project).running ?? null;
+          if (
+            running &&
+            (!now?.enabled || now.repos[running.repoId]?.on !== true)
+          )
+            s?.stopDream(project);
+        }
+      // The store is loaded once the scheduler started.
+      if (s)
+        for (const p of d.store.switchedOffProjects())
+          if (!existing.includes(p))
+            await d.store
+              .setSwitchedOff(p, null)
+              .catch((e: unknown) =>
+                console.error('[dreams] a removed project’s notice stays', e),
+              );
+      d.broadcast();
+    });
+
+  return { handlers, taskLink, repoRemoved, projectsChanged };
 }

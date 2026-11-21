@@ -3,6 +3,9 @@ import {
   canSwitchOn,
   confirmSentence,
   defaultDreaming,
+  defaultDreamingAll,
+  dreamingOf,
+  splitLegacyDreaming,
   DreamingSettingsSchema,
   widens,
   widenings,
@@ -33,7 +36,81 @@ describe('defaults', () => {
   it('AppSettingsSchema fills dreaming', () => {
     expect(
       AppSettingsSchema.parse({ version: 1, receiverPort: 4318 }).dreaming,
-    ).toEqual(defaultDreaming());
+    ).toEqual(defaultDreamingAll());
+  });
+});
+
+describe('dreaming per project', () => {
+  const parse = (dreaming: unknown) =>
+    AppSettingsSchema.parse({ version: 1, receiverPort: 4318, dreaming })
+      .dreaming;
+
+  it('loads one block per project', () => {
+    expect(parse({ projects: { p1: ready({ enabled: true }) } })).toEqual({
+      projects: { p1: ready({ enabled: true }) },
+      legacy: null,
+    });
+  });
+  it('keeps the old single block as legacy, with no project switched on', () => {
+    expect(parse(ready({ enabled: true }))).toEqual({
+      projects: {},
+      legacy: ready({ enabled: true }),
+    });
+  });
+  it.each([
+    [{ enabled: 'yes' }],
+    [{ projects: { p1: { model: 'nope' } } }],
+    [7],
+  ])('loads a bad block %j as dreaming off', (bad) => {
+    expect(parse(bad)).toEqual(defaultDreamingAll());
+  });
+  it('dreamingOf gives the block, or the defaults for a project without one', () => {
+    const all = { projects: { p1: ready() }, legacy: null };
+    expect(dreamingOf(all, 'p1')).toEqual(ready());
+    expect(dreamingOf(all, 'p2')).toEqual(defaultDreaming());
+  });
+
+  describe('splitLegacyDreaming', () => {
+    const old = ready({
+      enabled: true,
+      idleMinutes: 20,
+      repos: {
+        r1: { on: true, folders: ['.apm'] },
+        r2: { on: false, folders: ['.apm'] },
+        r3: { on: true, folders: ['AGENTS.md'] },
+        loose: { on: true, folders: ['.apm'] },
+        gone: { on: true, folders: ['.apm'] },
+      },
+    });
+    const repos = [
+      { id: 'r1', connectionId: 'p1' },
+      { id: 'r2', connectionId: 'p2' },
+      { id: 'r3', connectionId: 'p1' },
+      { id: 'loose', connectionId: null },
+      { id: 'r9', connectionId: 'p3' },
+    ];
+    const split = splitLegacyDreaming(old, repos);
+
+    it('copies the block to each project that owns one of its repos, with that project\u2019s repos only', () => {
+      expect(Object.keys(split).sort()).toEqual(['p1', 'p2']);
+      expect(split.p1).toEqual({
+        ...old,
+        repos: { r1: old.repos.r1, r3: old.repos.r3 },
+      });
+      expect(split.p2.repos).toEqual({ r2: old.repos.r2 });
+      expect(split.p2.limit).toEqual(old.limit);
+      expect(split.p2.idleMinutes).toBe(20);
+    });
+    it('leaves a project off whose repos were all off', () => {
+      expect(split.p2.enabled).toBe(false);
+    });
+    it('switches no project on when the old block was off', () => {
+      const off = splitLegacyDreaming({ ...old, enabled: false }, repos);
+      expect(Object.values(off).map((b) => b.enabled)).toEqual([false, false]);
+    });
+    it('is empty for a block that names no repo of a project', () => {
+      expect(splitLegacyDreaming(ready({ repos: {} }), repos)).toEqual({});
+    });
   });
 });
 
