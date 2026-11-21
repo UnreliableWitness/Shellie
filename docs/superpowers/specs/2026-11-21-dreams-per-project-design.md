@@ -120,8 +120,8 @@ The owner, one day after Dreams shipped:
 - **When Shellie cannot make the pull request** (the repo's remote is not Azure Repos, it is in another
   organization, or the repo has no project): the primary action is **Push branch** instead, with the reason in a
   line beside it. It pushes the kept proposals, closes the dream the same way, and the journal names the branch.
-- **Draft or published:** OPEN, the owner's answer (today every pull request Shellie makes is a draft, published
-  from the task's Finish page; a dream has no task).
+- **Published, not a draft** (the owner approved Claude's recommendation on 2026-11-21: the proposals were already
+  reviewed in Shellie, and a dream has no Finish page to publish from). Pull requests made from tasks stay drafts.
 - **Change with an agent** falls back to today's New task form (prefilled, as Open as task does now) when the repo's
   default environment needs a confirm or its first agent tab is not Claude Code or OpenCode.
 - The switched-off notice becomes one per project; an old stored notice belongs to its repo's project (to every
