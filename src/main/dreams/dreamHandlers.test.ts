@@ -478,8 +478,14 @@ describe('dream:test', () => {
   it('passes when only the model answered: one call with the dream args and env, in an empty folder removed afterwards', async () => {
     await setDreaming(ready({ model: null, testedModel: null }));
     let inFolder: string[] = [];
+    let under = '';
     run.mockImplementation(async (_cmd, o: { cwd: string }) => {
       inFolder = readdirSync(o.cwd);
+      // Both resolved while the folder exists: Windows temp paths come in a short and a long spelling.
+      under = path.relative(
+        realpathSync.native(deps.dreamsDir),
+        realpathSync.native(o.cwd),
+      );
       return `${JSON.stringify({ sessionID: 'ses_1' })}\n`;
     });
     expect(await api().handlers['dream:test'](MODEL)).toEqual({ ok: true });
@@ -504,9 +510,7 @@ describe('dream:test', () => {
     expect(o.timeoutMs).toBe(DREAM_TEST_TIMEOUT_MS);
     expect(deps.sessionModels).toHaveBeenCalledWith('ses_1');
     // Under the dreams folder, so the ledger knows its usage as a dream's and never sends it.
-    expect(path.relative(deps.dreamsDir, cwdHeld)).toMatch(
-      /^\.test-[^/\\]+[/\\]wt$/,
-    );
+    expect(under).toMatch(/^\.test-[^/\\]+[/\\]wt$/);
     expect(existsSync(path.dirname(cwdHeld!))).toBe(false);
     expect(settings.get().dreaming).toMatchObject({
       model: MODEL,
@@ -1118,15 +1122,16 @@ describe('dream:folderExists', () => {
     mkdirSync(path.join(repoPath, 'odd'));
     commitFile(repoPath, '.apm/rules/a.md', 'a\n', 'apm');
     commitFile(repoPath, 'AGENTS.md', 'x\n', 'agents');
-    commitFile(repoPath, 'odd/*.md', 'x\n', 'star');
+    // A name that is also a pattern; brackets, since Windows allows no star in a name.
+    commitFile(repoPath, 'odd/[x].md', 'x\n', 'pattern');
     const h = api().handlers;
     expect(await h['dream:folderExists']('r1', '.apm')).toBe(true);
     expect(await h['dream:folderExists']('r1', '.apm/rules')).toBe(true);
     expect(await h['dream:folderExists']('r1', 'AGENTS.md')).toBe(true);
     expect(await h['dream:folderExists']('r1', '.APM')).toBe(false);
     expect(await h['dream:folderExists']('r1', 'agents.md')).toBe(false);
-    expect(await h['dream:folderExists']('r1', 'odd/*.md')).toBe(true);
-    expect(await h['dream:folderExists']('r1', '*.md')).toBe(false);
+    expect(await h['dream:folderExists']('r1', 'odd/[x].md')).toBe(true);
+    expect(await h['dream:folderExists']('r1', '[A]GENTS.md')).toBe(false);
     // After `--`: never an option.
     expect(await h['dream:folderExists']('r1', '--help')).toBe(false);
     // Not on disk only: a file in the work tree that HEAD lacks does not count.
