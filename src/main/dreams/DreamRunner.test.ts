@@ -922,7 +922,10 @@ describe('DreamRunner', () => {
     const r = runner([], { run: late.run });
     const ac = new AbortController();
     const done = r.dream(repoArg(), opts(ac.signal));
-    await vi.waitFor(() => expect(late.started()).toBe(true));
+    // The dream makes a worktree before its run starts: on a slow machine that takes more than waitFor's 1 s.
+    await vi.waitFor(() => expect(late.started()).toBe(true), {
+      timeout: 15_000,
+    });
     ac.abort();
     await new Promise((res) => setTimeout(res, 300));
     expect(readdirSync(path.join(dreamsDir, 'r1'))).toEqual([`${DATE}-1`]);
@@ -937,7 +940,10 @@ describe('DreamRunner', () => {
     const r = runner([], { run: late.run });
     const ac = new AbortController();
     const done = r.dream(repoArg(), opts(ac.signal));
-    await vi.waitFor(() => expect(late.started()).toBe(true));
+    // The dream makes a worktree before its run starts: on a slow machine that takes more than waitFor's 1 s.
+    await vi.waitFor(() => expect(late.started()).toBe(true), {
+      timeout: 15_000,
+    });
     ac.abort();
     await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
     await vi.advanceTimersByTimeAsync(9_000);
