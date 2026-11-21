@@ -1939,6 +1939,29 @@ describe('sending a dream (Create pull request)', () => {
     expect(changed()).toBe(1);
   });
 
+  it('still closes the dream when its folder cannot be removed after the send: the pull request is not lost', async () => {
+    await dreamWithThree();
+    vi.spyOn(deps.git as GitClient, 'worktreeRemove').mockRejectedValue(
+      new Error('EBUSY: a file is locked'),
+    );
+    const out = await api().publish('r1', async () => ({ as: 'pr', pr }));
+    expect(out).toMatchObject({ as: 'pr', pr });
+    expect(store.repo('r1').result).toBeNull();
+    expect(store.repo('r1').rejections).toEqual([]);
+    expect(store.journal()[0].closed).toMatchObject({ as: 'pr', pr });
+  });
+
+  it('says the dream could not be sent, not opened, when the branch cannot be built', async () => {
+    await dreamWithThree({ thirdEditsSecond: true });
+    const a = api();
+    // Proposal 3 edits the file proposal 2 adds: without 2 it does not apply.
+    await a.handlers['dream:drop']('r1', 'p2', true);
+    await expect(
+      a.publish('r1', async () => ({ as: 'pushed' })),
+    ).rejects.toThrow(/^The dream could not be sent$/);
+    expect(store.repo('r1').result?.id).toBe(DREAM_ID);
+  });
+
   it('closes as pushed, with the branch, where no pull request was made', async () => {
     await dreamWithThree();
     const out = await api().publish('r1', async () => ({ as: 'pushed' }));

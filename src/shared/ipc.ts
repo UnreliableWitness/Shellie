@@ -947,7 +947,7 @@ export type Channels = {
    * to the repo's PR target, or only pushes where Shellie can make none (`dream:prTarget`); then the dream closes.
    * A stored secret in what would be pushed refuses the push (the message holds `LEAK_IN_BRANCH` or
    * `LEAK_UNCHECKED`) unless `pushAnyway`. The other failures are "Could not push the branch" and "Could not create
-   * the pull request"; after the second, a new call only creates the pull request.
+   * the pull request"; after the second, a new call finds the branch pushed and creates the pull request.
    */
   'dream:pr': {
     args: [repoId: string, pushAnyway?: boolean];

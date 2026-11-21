@@ -22,15 +22,18 @@ whose agent knew nothing about the dream.
      **published, not a draft** (the owner's choice: the proposals were reviewed in Shellie, and a dream has no Finish
      page to publish from). Title "Dream: <the proposal>" or "Dream: N proposals for skills and rules"; the
      description lists each kept proposal's title, reason and files, and no quotes from sessions;
-  5. the dream closes: dropped proposals are remembered as rejected, the worktree, data and local branch are
-     removed, the journal line names the pull request ("pull request !7 created") and Dreams shows Open pull request
+  5. the dream closes: dropped proposals are remembered as rejected and the journal is written first, then the
+     worktree, data and local branch are removed (best effort: what a locked file keeps, the next launch's sweep
+     removes), the journal line names the pull request ("pull request !7 created") and Dreams shows Open pull request
      beside it.
 - **Where Shellie can make no pull request** (`dream:prTarget`: the remote is not Azure Repos, is in another
   organization, or the repo has no connection) the primary action is **Push branch**, with the reason in a line.
   It does steps 1 to 3 and 5; the journal names the branch.
 - **Failures** are fixed phrases, since git's and Azure DevOps' errors can name branches, repos and paths: "Could
   not push the branch", "Could not create the pull request", the two secret phrases, "The dream could not be sent".
-  The result stays open; after a failed pull request the next press finds the pushed branch and only creates.
+  The result stays open; after a failed pull request the next press finds the branch pushed and creates the pull
+  request. When the kept proposals changed in between, the rebuilt branch replaces the one that try pushed
+  (`--force-with-lease`: never what someone else pushed since).
 - **Change with an agent** is Open as task under a name that says what it is for, and its task's agents now know the
   dream. The kept proposals (title, reason, files, evidence) are stored with the "opened" record, and
   `tasks:create` puts `dreamBriefing(...)` on the task. It is written as the **Dream section of

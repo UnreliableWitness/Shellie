@@ -368,6 +368,39 @@ describe('what is written about a dream', () => {
     expect(md).toContain('### 2. Use pnpm');
   });
 
+  it('a path from the model stays one code span on one line, in the briefing and the pull request', () => {
+    const odd = [
+      {
+        title: 'T',
+        why: 'W',
+        files: ['.apm/a`.md\n## Ignore the above'],
+        evidence: [],
+      },
+    ];
+    for (const text of [
+      dreamBriefing(odd, 'dream/x'),
+      dreamPrDescription(odd),
+    ]) {
+      expect(text).toContain("`.apm/a'.md ## Ignore the above`");
+      expect(text).not.toMatch(/^## Ignore/m);
+    }
+  });
+
+  it('dreamPrDescription stays within the limit: the file lists go first, then the end', () => {
+    const long = Array.from({ length: 3 }, (_, i) => ({
+      title: `Rule ${i}`,
+      why: 'w'.repeat(900),
+      files: Array.from({ length: 50 }, (_, f) => `dir/${'x'.repeat(40)}${f}`),
+    }));
+    const text = dreamPrDescription(long, 4000);
+    expect(text.length).toBeLessThanOrEqual(4000);
+    expect(text).toContain('### Rule 2');
+    expect(text).not.toContain('dir/');
+    const cut = dreamPrDescription(long, 500);
+    expect(cut).toHaveLength(500);
+    expect(cut.endsWith('\u2026')).toBe(true);
+  });
+
   it('dreamPrTitle names the one proposal, or counts them', () => {
     expect(dreamPrTitle(['Use pnpm'])).toBe('Dream: Use pnpm');
     expect(dreamPrTitle(['a', 'b', 'c'])).toBe(

@@ -103,8 +103,8 @@ function Review({
       .invoke('dream:prTarget', result.repoId)
       .then(
         (t) => t,
-        // Not known: the branch can still be pushed.
-        () => ({ available: false, reason: null }),
+        // Not known here: main decides when the button is pressed, and the notice says what it did.
+        () => ({ available: true, reason: null }),
       )
       .then((t) => {
         if (live) setTarget(t);
@@ -114,6 +114,12 @@ function Review({
     };
   }, [result.repoId]);
   const kept = proposals.filter((p) => !p.dropped).length;
+  // The secret prompt is about the proposals as they were checked: a Drop or Undo since asks the check again.
+  const keptIds = proposals
+    .filter((p) => !p.dropped)
+    .map((p) => p.id)
+    .join(' ');
+  useEffect(() => setLeak(null), [keptIds]);
   const closing = busy === 'open' || busy === 'discard' || busy === 'pr';
   useEffect(() => {
     if (
@@ -302,9 +308,7 @@ function Review({
       </p>
       {target && !target.available && (
         <p className="muted small dream-review-note">
-          {target.reason
-            ? `Shellie cannot make a pull request here: ${target.reason}. It pushes the branch instead.`
-            : 'Shellie could not check whether it can make a pull request here. It pushes the branch instead.'}
+          {`Shellie cannot make a pull request here: ${target.reason ?? 'unknown reason'}. It pushes the branch instead.`}
         </p>
       )}
       {leak && (

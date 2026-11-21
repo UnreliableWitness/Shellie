@@ -1085,10 +1085,28 @@ describe('handlers: dreams', () => {
       expect(onOrigin()).toBe(true);
     });
 
-    it('says in a fixed phrase that the push or the pull request failed, and a second try only creates', async () => {
+    it('replaces the branch an earlier try pushed when the kept proposals changed since', async () => {
+      const { hx, create, bare } = await withPublish();
+      create.mockRejectedValueOnce(new Error('TF401398'));
+      await expect(hx.h['dream:pr'](hx.added.id)).rejects.toThrow(
+        'Could not create the pull request',
+      );
+      // As a Drop and a rebuild: the same branch with other commits.
+      const wt = path.join(path.dirname(hx.repo), 'dream-wt');
+      git(wt, 'reset', '-q', '--hard', 'main');
+      commitFile(wt, 'OTHER.md', 'another rule\n', 'dream: Another rule');
+      expect(await hx.h['dream:pr'](hx.added.id)).toMatchObject({ kind: 'pr' });
+      expect(git(bare, 'log', '--format=%s', '-1', dreamBranch).trim()).toBe(
+        'dream: Another rule',
+      );
+    });
+
+    it('says in a fixed phrase that the push or the pull request failed, and the next try goes through', async () => {
       const { hx, create, onOrigin } = await withPublish();
       const push = vi
         .spyOn(hx.services.git, 'push')
+        .mockRejectedValueOnce(new Error('fatal: /secret/path refused'))
+        // Its second attempt, replacing the branch, is refused too.
         .mockRejectedValueOnce(new Error('fatal: /secret/path refused'));
       await expect(hx.h['dream:pr'](hx.added.id)).rejects.toThrow(
         /^Could not push the branch$/,
@@ -1099,7 +1117,7 @@ describe('handlers: dreams', () => {
       );
       expect(onOrigin()).toBe(true);
       expect(await hx.h['dream:pr'](hx.added.id)).toMatchObject({ kind: 'pr' });
-      expect(push).toHaveBeenCalledTimes(3);
+      expect(push.mock.calls[1][3]).toEqual({ forceWithLease: true });
     });
   });
 });

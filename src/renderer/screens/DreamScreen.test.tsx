@@ -769,6 +769,28 @@ describe('DreamScreen: what to do with a dream', () => {
     ]);
   });
 
+  it('takes the secret prompt away when the kept proposals change: the check is asked again', async () => {
+    const { calls } = fakeMain(twoProposals(), {
+      'dream:pr': () => {
+        throw new Error(`${LEAK_IN_BRANCH}; not pushed`);
+      },
+    });
+    render(<DreamScreen repoId="r1" />);
+    const create = await screen.findByRole('button', {
+      name: 'Create pull request',
+    });
+    await waitFor(() => expect(create).toBeEnabled());
+    await userEvent.click(create);
+    await screen.findByRole('button', { name: 'Push anyway' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Drop this proposal' }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Push anyway' })).toBeNull(),
+    );
+    expect(prCalls(calls)).toEqual([['r1', false]]);
+  });
+
   it('shows a failed pull request in its phrase, stays, and can be pressed again', async () => {
     let fail = true;
     fakeMain(twoProposals(), {

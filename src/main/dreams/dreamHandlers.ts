@@ -484,9 +484,13 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
    * The branch as the base plus the kept proposals' commits, in order, with hooks off. On a failure the branch is put
    * back where it was.
    */
-  const rebuild = async (r: DreamResult, kept: DreamProposal[]) => {
+  const rebuild = async (
+    r: DreamResult,
+    kept: DreamProposal[],
+    failed = OPEN_FAILED,
+  ) => {
     const wt = r.worktreePath;
-    if (!(await pathExists(wt))) throw refuse(OPEN_FAILED);
+    if (!(await pathExists(wt))) throw refuse(failed);
     let c: string[];
     let tip: string;
     try {
@@ -496,7 +500,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       c = configFlags([...base, ...(await authorConfig(d.git, wt, base))]);
       tip = (await d.git.run(wt, [...c, 'rev-parse', 'HEAD'])).trim();
     } catch {
-      throw refuse(OPEN_FAILED);
+      throw refuse(failed);
     }
     try {
       await d.git.run(wt, [...c, 'reset', '-q', '--hard', r.baseSha]);
@@ -510,7 +514,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         .catch((e: unknown) =>
           console.error('[dreams] the dream branch could not be put back', e),
         );
-      throw refuse(OPEN_FAILED);
+      throw refuse(failed);
     }
   };
 
@@ -1076,7 +1080,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         const kept = r.proposals.filter((p) => !p.dropped);
         const dropped = r.proposals.filter((p) => p.dropped);
         if (kept.length === 0) throw refuse('Nothing left to push');
-        if (!(await built(r, kept, dir))) await rebuild(r, kept);
+        if (!(await built(r, kept, dir)))
+          await rebuild(r, kept, PUBLISH_FAILED);
         const sent = await send({
           repoPath: repo.path,
           worktreePath: r.worktreePath,
@@ -1088,8 +1093,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             files: p.files,
           })),
         });
-        // The branch is on the remote now: the local one goes with the worktree and the data.
-        await removeResult(r, dir, true, 'The dream could not be removed');
+        // Recorded first: the branch (and the pull request) exist now, whatever fails after this. A failure in
+        // these writes leaves the result open, and the next press finds the pushed branch and the pull request.
         await d.store.reject(repoId, dropped);
         await d.store.closeJournal(repoId, r.id, {
           as: sent.as,
@@ -1100,6 +1105,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           ...(sent.as === 'pr' ? { pr: sent.pr } : {}),
         });
         await d.store.setResult(repoId, null);
+        // The branch is on the remote: the local one goes with the worktree and the data. Best effort: what a
+        // locked file keeps here, the sweep at the next launch removes (no open result names it any more).
+        await removeResult(r, dir, true, PUBLISH_FAILED).catch(() => undefined);
         event('dream.result', {
           kept: kept.length,
           dropped: dropped.length,

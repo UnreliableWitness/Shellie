@@ -182,6 +182,7 @@ import {
   prAvailability,
   prDescription,
   prTitle,
+  PR_DESCRIPTION_MAX,
   prWebUrl,
   targetBranch,
 } from '../services/azureRepos';
@@ -1144,7 +1145,15 @@ export function createHandlers(s: Services): Handlers {
       }
     }
     try {
-      await s.git.push(ready.worktreePath, 'origin', ready.branch);
+      await s.git
+        .push(ready.worktreePath, 'origin', ready.branch)
+        // An earlier try pushed the branch and the kept proposals changed since: the rebuilt branch has new commits.
+        // It is the dream's own branch, so it replaces what that try pushed (never what someone else pushed since).
+        .catch(() =>
+          s.git.push(ready.worktreePath, 'origin', ready.branch, {
+            forceWithLease: true,
+          }),
+        );
     } catch (e) {
       console.error('[dreams] the dream branch was not pushed', e);
       throw dreamRefusal('Could not push the branch');
@@ -1156,12 +1165,13 @@ export function createHandlers(s: Services): Handlers {
       const { project, repo: repoName } = availability.target;
       const client = s.trackers.tracker(connection.id);
       const repositoryId = await client.repositoryId(project, repoName);
+      const existing = await client.findActivePullRequest(
+        project,
+        repositoryId,
+        ready.branch,
+      );
       const raw =
-        (await client.findActivePullRequest(
-          project,
-          repositoryId,
-          ready.branch,
-        )) ??
+        existing ??
         (await client.createPullRequest(project, repositoryId, {
           source: ready.branch,
           // The repo's PR target, as a dream branches from it.
@@ -1170,12 +1180,12 @@ export function createHandlers(s: Services): Handlers {
             remotes,
           ),
           title: dreamPrTitle(ready.kept.map((p) => p.title)),
-          description: dreamPrDescription(ready.kept),
+          description: dreamPrDescription(ready.kept, PR_DESCRIPTION_MAX),
           workItemId: null,
           // The owner reviewed the proposals in Shellie, and a dream has no Finish page to publish from.
           isDraft: false,
         }));
-      tel.event('pr.created');
+      tel.event(existing ? 'pr.linked' : 'pr.created');
       return {
         as: 'pr',
         pr: {

@@ -509,6 +509,10 @@ export type DreamView = {
 /** A quote on one line, without what would end the line or read as markup of its own. */
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
+/** A path as a code span: on one line, and without a backtick that would end the span (a model wrote the path). */
+const codeSpan = (file: string): string =>
+  `\`${oneLine(file).replaceAll('`', "'")}\``;
+
 const WHO: Record<DreamEvidenceWho, string> = {
   you: 'The developer',
   agent: 'The agent',
@@ -534,7 +538,7 @@ export function dreamBriefing(
   ];
   proposals.forEach((p, i) => {
     lines.push(`### ${i + 1}. ${oneLine(p.title)}`, '');
-    lines.push(`- Files: ${p.files.map((f) => `\`${f}\``).join(', ')}`);
+    lines.push(`- Files: ${p.files.map(codeSpan).join(', ')}`);
     lines.push(`- Why: ${oneLine(p.why)}`);
     for (const e of p.evidence)
       lines.push(
@@ -557,15 +561,24 @@ export const dreamPrTitle = (titles: string[]): string =>
  */
 export function dreamPrDescription(
   proposals: { title: string; why: string; files: string[] }[],
+  /** The most characters the description may have (Azure DevOps refuses more than 4000). */
+  max = 4000,
 ): string {
-  const lines = [
-    'Proposed by a Shellie dream: while the machine was idle, a model read past agent sessions in this repo and proposed changes to its skills, rules and agents. The developer reviewed the proposals and kept these.',
-    '',
-  ];
-  for (const p of proposals) {
-    lines.push(`### ${oneLine(p.title)}`, '');
-    lines.push(oneLine(p.why), '');
-    lines.push(...p.files.map((f) => `- \`${f}\``), '');
-  }
-  return lines.join('\n').trimEnd();
+  const build = (withFiles: boolean): string => {
+    const lines = [
+      'Proposed by a Shellie dream: while the machine was idle, a model read past agent sessions in this repo and proposed changes to its skills, rules and agents. The developer reviewed the proposals and kept these.',
+      '',
+    ];
+    for (const p of proposals) {
+      lines.push(`### ${oneLine(p.title)}`, '');
+      lines.push(oneLine(p.why), '');
+      if (withFiles) lines.push(...p.files.map((f) => `- ${codeSpan(f)}`), '');
+    }
+    return lines.join('\n').trimEnd();
+  };
+  // Too long: the file lists go first (the pull request shows the files itself), then the end.
+  const full = build(true);
+  if (full.length <= max) return full;
+  const short = build(false);
+  return short.length <= max ? short : `${short.slice(0, max - 1)}\u2026`;
 }
