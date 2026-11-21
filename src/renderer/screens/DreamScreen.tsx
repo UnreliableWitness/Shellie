@@ -8,6 +8,9 @@ import type {
   DreamResult,
 } from '../../shared/dreams';
 import { errorMessage } from '../../shared/errors';
+import { LEAK_IN_BRANCH, LEAK_UNCHECKED } from '../../shared/secrets';
+
+const ELLIPSIS = String.fromCharCode(0x2026);
 import { api } from '../api';
 import {
   checkLine,
@@ -87,8 +90,37 @@ function Review({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // What main refused the push for (a stored secret in the branch, or a branch it could not check), until answered.
+  const [leak, setLeak] = useState<string | null>(null);
+  // Whether Shellie can make a pull request for this repo; null until known.
+  const [target, setTarget] = useState<{
+    available: boolean;
+    reason: string | null;
+  } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api()
+      .invoke('dream:prTarget', result.repoId)
+      .then(
+        (t) => t,
+        // Not known here: main decides when the button is pressed, and the notice says what it did.
+        () => ({ available: true, reason: null }),
+      )
+      .then((t) => {
+        if (live) setTarget(t);
+      });
+    return () => {
+      live = false;
+    };
+  }, [result.repoId]);
   const kept = proposals.filter((p) => !p.dropped).length;
-  const closing = busy === 'open' || busy === 'discard';
+  // The secret prompt is about the proposals as they were checked: a Drop or Undo since asks the check again.
+  const keptIds = proposals
+    .filter((p) => !p.dropped)
+    .map((p) => p.id)
+    .join(' ');
+  useEffect(() => setLeak(null), [keptIds]);
+  const closing = busy === 'open' || busy === 'discard' || busy === 'pr';
   useEffect(() => {
     if (
       pendingDrop &&
@@ -160,6 +192,37 @@ function Review({
       });
     });
 
+  /** Create pull request (or Push branch): the dream closes when it worked; a secret finding asks first. */
+  const send = (pushAnyway: boolean) => {
+    setLeak(null);
+    setBusy('pr');
+    setError(null);
+    return api()
+      .invoke('dream:pr', result.repoId, pushAnyway)
+      .then(
+        (sent) => {
+          useStore
+            .getState()
+            .notify(
+              'info',
+              sent.kind === 'pr'
+                ? `Pull request !${sent.id} created from the dream`
+                : `Branch ${sent.branch} pushed`,
+            );
+          go({ kind: 'dreams' });
+        },
+        (e: unknown) => {
+          const message = errorMessage(e);
+          if (message.includes(LEAK_IN_BRANCH))
+            setLeak(`${LEAK_IN_BRANCH}. Push anyway?`);
+          else if (message.includes(LEAK_UNCHECKED))
+            setLeak(`${LEAK_UNCHECKED}. Push anyway?`);
+          else setError(message);
+        },
+      )
+      .finally(() => setBusy((b) => (b === 'pr' ? null : b)));
+  };
+
   const discard = () => {
     setConfirmDiscard(false);
     return call('discard', async () => {
@@ -207,11 +270,24 @@ function Review({
             </button>
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn"
               disabled={kept === 0 || closing}
+              title="Makes a task on the dream's branch. Its agent is told what the dream proposed, so you can ask it to change a proposal."
               onClick={() => void openAsTask()}
             >
-              {`Open ${kept} as a task`}
+              Change with an agent
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={kept === 0 || closing || target === null}
+              onClick={() => void send(false)}
+            >
+              {busy === 'pr'
+                ? `Sending${ELLIPSIS}`
+                : target && !target.available
+                  ? 'Push branch'
+                  : 'Create pull request'}
             </button>
           </>
         }
@@ -222,6 +298,27 @@ function Review({
         <span>{`${spacedNumber(result.tokens)} tokens`}</span>
         <span className="mono">{result.branch}</span>
       </div>
+      <p className="dream-review-note">
+        Shellie proposes these changes to this repo&rsquo;s skills and rules,
+        from your past sessions. Drop what you don&rsquo;t want, then{' '}
+        {target && !target.available
+          ? 'push the branch'
+          : 'create a pull request'}
+        .
+      </p>
+      {target && !target.available && (
+        <p className="muted small dream-review-note">
+          {`Shellie cannot make a pull request here: ${target.reason ?? 'unknown reason'}. It pushes the branch instead.`}
+        </p>
+      )}
+      {leak && (
+        <ConfirmBar
+          message={leak}
+          confirmLabel="Push anyway"
+          onConfirm={() => void send(true)}
+          onCancel={() => setLeak(null)}
+        />
+      )}
       {confirmDiscard && (
         <ConfirmBar
           message="Discard this dream? Its branch and proposals are removed. The ideas are remembered so they are not proposed again without new evidence."

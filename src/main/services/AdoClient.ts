@@ -1151,6 +1151,8 @@ export class AdoClient {
       title: string;
       description: string;
       workItemId: number | null;
+      /** A draft unless said otherwise: a task's pull request is published from its Finish page. */
+      isDraft?: boolean;
     },
   ): Promise<RawPr> {
     const path = prPath(project, repositoryId);
@@ -1162,7 +1164,7 @@ export class AdoClient {
         targetRefName: `refs/heads/${input.target}`,
         title: input.title,
         description: input.description,
-        isDraft: true,
+        isDraft: input.isDraft ?? true,
         workItemRefs: input.workItemId
           ? [{ id: String(input.workItemId) }]
           : [],

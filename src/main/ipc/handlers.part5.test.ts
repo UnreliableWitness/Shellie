@@ -8,8 +8,13 @@ import { NoopTelemetry } from '../telemetry/AppInsightsClient';
 import { TimeStore } from '../time/TimeStore';
 import { telemetryEnv } from '../usage/telemetryEnv';
 import { echoCmd, testPlatform } from '../test-helpers/shell';
-import { commitFile, git } from '../test-helpers/gitRepo';
-import { noDreams } from '../dreams/dreamHandlers';
+import { addOrigin, commitFile, git } from '../test-helpers/gitRepo';
+import { LEAK_IN_BRANCH } from '../../shared/secrets';
+import {
+  noDreams,
+  type DreamApi,
+  type DreamToSend,
+} from '../dreams/dreamHandlers';
 import { createHandlers } from './handlers';
 import {
   telemetryEvents,
@@ -847,6 +852,8 @@ describe('handlers: dreams', () => {
           opened: (id, repoId, branch) =>
             id === 'd1' && branch === dreamBranch && repoId !== '',
           taskCreated,
+          briefing: (id) =>
+            id === 'd1' ? '## Dream\n\nWhat the dream proposed.\n' : null,
         },
       },
     });
@@ -940,5 +947,177 @@ describe('handlers: dreams', () => {
     );
     const files = await hx.h['review:files'](t.id, { kind: 'all' });
     expect(files.repos[0].files.map((f) => f.path)).toContain('RULE.md');
+  });
+
+  it('a task made from a dream carries the briefing, in its task.md too', async () => {
+    const { hx } = await withDream();
+    const done = hx.setupDone();
+    const t = await dreamTask(hx);
+    await done;
+    expect(hx.store.state.tasks[0].dreamBriefing).toBe(
+      '## Dream\n\nWhat the dream proposed.\n',
+    );
+    expect(
+      readFileSync(path.join(t.worktreePath, '.shellie', 'task.md'), 'utf8'),
+    ).toContain('## Dream\n\nWhat the dream proposed.');
+  });
+
+  describe('dream:pr', () => {
+    const AZURE = 'https://dev.azure.com/contoso/P/_git/R';
+    /** A dream branch in a worktree of its own, a bare origin, and a `publish` that hands it to `send`. */
+    const withPublish = async (remote: string | null = AZURE) => {
+      const sent: unknown[] = [];
+      let ready!: DreamToSend;
+      const publish: DreamApi['publish'] = async (_repoId, send) => {
+        const out = await send(ready);
+        sent.push(out);
+        return { ...out, branch: ready.branch };
+      };
+      const hx = await harness(fakeCrypto(), {
+        dreams: { ...noDreams(), publish },
+      });
+      const bare = addOrigin(hx.repo);
+      const baseSha = git(hx.repo, 'rev-parse', 'main').trim();
+      const wt = path.join(path.dirname(hx.repo), 'dream-wt');
+      git(hx.repo, 'worktree', 'add', '-q', '-b', dreamBranch, wt, 'main');
+      commitFile(wt, 'RULE.md', 'token=hunter2-value-77\n', 'dream: A rule');
+      ready = {
+        repoPath: hx.repo,
+        worktreePath: wt,
+        branch: dreamBranch,
+        baseSha,
+        kept: [{ title: 'A rule', why: 'Asked twice', files: ['RULE.md'] }],
+      };
+      const c = await hx.connections.save({
+        organizationUrl: 'https://dev.azure.com/contoso',
+        project: 'P',
+        pat: 'p',
+      });
+      await hx.h['repos:setConnection'](hx.added.id, c.id);
+      if (remote)
+        vi.spyOn(hx.services.git, 'remoteUrl').mockResolvedValue(remote);
+      const client = hx.services.trackers.client(c.id);
+      vi.spyOn(client, 'repositoryId').mockResolvedValue('repo-1');
+      const findActive = vi
+        .spyOn(client, 'findActivePullRequest')
+        .mockResolvedValue(null);
+      const create = vi.spyOn(client, 'createPullRequest').mockResolvedValue({
+        pullRequestId: 7,
+        status: 'active',
+        isDraft: false,
+      });
+      const onOrigin = () =>
+        git(bare, 'branch', '--list', dreamBranch).trim() !== '';
+      return { hx, bare, create, findActive, onOrigin, sent };
+    };
+
+    it('pushes the branch and opens a published pull request to the repo\u2019s target', async () => {
+      const { hx, create, onOrigin } = await withPublish();
+      expect(await hx.h['dream:prTarget'](hx.added.id)).toEqual({
+        available: true,
+        reason: null,
+      });
+      expect(await hx.h['dream:pr'](hx.added.id)).toEqual({
+        kind: 'pr',
+        id: 7,
+        url: 'https://dev.azure.com/contoso/P/_git/R/pullrequest/7',
+      });
+      expect(onOrigin()).toBe(true);
+      expect(create).toHaveBeenCalledWith('P', 'repo-1', {
+        source: dreamBranch,
+        target: 'main',
+        title: 'Dream: A rule',
+        description: expect.stringContaining('Asked twice'),
+        workItemId: null,
+        isDraft: false,
+      });
+    });
+
+    it('links the pull request that is already there instead of making a second one', async () => {
+      const { hx, create, findActive } = await withPublish();
+      findActive.mockResolvedValue({
+        pullRequestId: 9,
+        status: 'active',
+        isDraft: false,
+      });
+      expect(await hx.h['dream:pr'](hx.added.id)).toMatchObject({
+        kind: 'pr',
+        id: 9,
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('only pushes where Shellie can make no pull request, and says why', async () => {
+      const { hx, create, onOrigin } = await withPublish(
+        'https://github.com/contoso/R.git',
+      );
+      expect(await hx.h['dream:prTarget'](hx.added.id)).toEqual({
+        available: false,
+        reason: 'origin is not an Azure Repos URL',
+      });
+      expect(await hx.h['dream:pr'](hx.added.id)).toEqual({
+        kind: 'pushed',
+        branch: dreamBranch,
+      });
+      expect(onOrigin()).toBe(true);
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('refuses to push a stored secret, without naming it, until Push anyway', async () => {
+      const { hx, onOrigin, create } = await withPublish();
+      await hx.h['secrets:save']({
+        scope: 'all',
+        name: 'API_TOKEN',
+        givenTo: ['run'],
+        values: { production: { value: 'hunter2-value-77' } },
+      });
+      const error = await hx.h['dream:pr'](hx.added.id).then(
+        () => null,
+        (e: Error) => e.message,
+      );
+      expect(error).toContain(LEAK_IN_BRANCH);
+      expect(error).not.toMatch(/hunter2|API_TOKEN/);
+      expect(onOrigin()).toBe(false);
+      expect(create).not.toHaveBeenCalled();
+      expect(await hx.h['dream:pr'](hx.added.id, true)).toMatchObject({
+        kind: 'pr',
+      });
+      expect(onOrigin()).toBe(true);
+    });
+
+    it('replaces the branch an earlier try pushed when the kept proposals changed since', async () => {
+      const { hx, create, bare } = await withPublish();
+      create.mockRejectedValueOnce(new Error('TF401398'));
+      await expect(hx.h['dream:pr'](hx.added.id)).rejects.toThrow(
+        'Could not create the pull request',
+      );
+      // As a Drop and a rebuild: the same branch with other commits.
+      const wt = path.join(path.dirname(hx.repo), 'dream-wt');
+      git(wt, 'reset', '-q', '--hard', 'main');
+      commitFile(wt, 'OTHER.md', 'another rule\n', 'dream: Another rule');
+      expect(await hx.h['dream:pr'](hx.added.id)).toMatchObject({ kind: 'pr' });
+      expect(git(bare, 'log', '--format=%s', '-1', dreamBranch).trim()).toBe(
+        'dream: Another rule',
+      );
+    });
+
+    it('says in a fixed phrase that the push or the pull request failed, and the next try goes through', async () => {
+      const { hx, create, onOrigin } = await withPublish();
+      const push = vi
+        .spyOn(hx.services.git, 'push')
+        .mockRejectedValueOnce(new Error('fatal: /secret/path refused'))
+        // Its second attempt, replacing the branch, is refused too.
+        .mockRejectedValueOnce(new Error('fatal: /secret/path refused'));
+      await expect(hx.h['dream:pr'](hx.added.id)).rejects.toThrow(
+        /^Could not push the branch$/,
+      );
+      create.mockRejectedValueOnce(new Error('TF401398: customer-x'));
+      await expect(hx.h['dream:pr'](hx.added.id)).rejects.toThrow(
+        /^Could not create the pull request$/,
+      );
+      expect(onOrigin()).toBe(true);
+      expect(await hx.h['dream:pr'](hx.added.id)).toMatchObject({ kind: 'pr' });
+      expect(push.mock.calls[1][3]).toEqual({ forceWithLease: true });
+    });
   });
 });

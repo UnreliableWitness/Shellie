@@ -576,7 +576,16 @@ export class GitClient {
    * console, so ssh runs in batch mode (unless the user set their own ssh command) and the push gives up
    * after `pushTimeoutMs`. Git Credential Manager stays on: users sign in through it.
    */
-  async push(cwd: string, remote: string, branch: string): Promise<void> {
+  /**
+   * `forceWithLease` replaces the remote branch when it is still where this clone last saw it: only for a branch
+   * Shellie made and owns (a dream's), rebuilt after an earlier push.
+   */
+  async push(
+    cwd: string,
+    remote: string,
+    branch: string,
+    opts: { forceWithLease?: boolean } = {},
+  ): Promise<void> {
     const ctx = await this.remoteAuth(cwd, remote);
     const env: Record<string, string> = {
       ...((await this.hasOwnSshCommand(cwd))
@@ -585,7 +594,8 @@ export class GitClient {
       ...ctx.auth.env,
     };
     try {
-      await this.run(cwd, ['push', '-u', remote, branch], {
+      const force = opts.forceWithLease ? ['--force-with-lease'] : [];
+      await this.run(cwd, ['push', '-u', ...force, remote, branch], {
         timeoutMs: this.pushTimeoutMs,
         env,
       });

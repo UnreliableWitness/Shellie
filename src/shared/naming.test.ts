@@ -367,3 +367,22 @@ describe('claudeContext and the brain', () => {
     expect(claudeContext({ ...t, repoId: null })).not.toContain('index.md');
   });
 });
+
+describe('a task made from a dream', () => {
+  const briefing = '## Dream\n\nThis task was made from a Shellie dream.\n';
+  it('has the briefing in task.md, after the task and before the work item', () => {
+    const md = renderTaskMd({ ...task, dreamBriefing: briefing });
+    expect(md).toContain(briefing);
+    expect(md.indexOf('## Dream')).toBeGreaterThan(md.indexOf('- Branch:'));
+    expect(renderTaskMd(task)).not.toContain('Dream');
+  });
+  it('tells the agent the dream is described in task.md, without its text, quotes or backticks', () => {
+    const c = claudeContext({ ...task, dreamBriefing: briefing });
+    expect(c).toContain(
+      'This task was made from a Shellie dream: its branch already holds proposed changes to the skills and rules of this repo, described under Dream in .shellie/task.md.',
+    );
+    expect(c).toContain("wait for the user's instructions");
+    expect(c).not.toMatch(/["`]/);
+    expect(claudeContext(task)).not.toContain('dream');
+  });
+});

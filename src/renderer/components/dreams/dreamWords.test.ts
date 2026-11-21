@@ -65,6 +65,33 @@ describe('journalLine', () => {
     [
       j({
         proposals: 3,
+        closed: {
+          as: 'pr',
+          kept: 2,
+          dropped: 1,
+          taskName: null,
+          branch: 'dream/2026-11-18-1',
+          pr: { id: 7, url: 'https://example.invalid/pr/7' },
+        },
+      }),
+      '3 proposals · 2 kept, pull request !7 created · 1 dropped',
+    ],
+    [
+      j({
+        proposals: 1,
+        closed: {
+          as: 'pushed',
+          kept: 1,
+          dropped: 0,
+          taskName: null,
+          branch: 'dream/2026-11-18-1',
+        },
+      }),
+      '1 proposal · 1 kept, branch dream/2026-11-18-1 pushed',
+    ],
+    [
+      j({
+        proposals: 3,
         closed: { as: 'discarded', kept: 0, dropped: 3, taskName: null },
       }),
       '3 proposals · discarded',

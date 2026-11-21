@@ -22,6 +22,7 @@ import {
   dreamingOf,
   pruneDreaming,
   type DreamingAll,
+  dreamBriefing,
 } from '../../shared/dreams';
 import type { Handlers } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/usage';
@@ -50,6 +51,7 @@ export const DREAM_TEST_TIMEOUT_MS = 2 * 60_000;
 export const DREAM_TEST_PROMPT = 'Reply with the single word: ok';
 
 const OPEN_FAILED = 'The dream could not be opened as a task';
+const PUBLISH_FAILED = 'The dream could not be sent';
 const NO_OPENED = 'This repo has no dream branch waiting for a task';
 const TEST_FAILED = 'The test could not be run';
 const MISMATCH = "The dream's record does not match its folder";
@@ -63,6 +65,8 @@ const DREAM_ID = /^\d{4}-\d{2}-\d{2}-\d+$/;
 /** A fixed phrase for the renderer. Any other error is logged and replaced by the handler's own phrase. */
 class Refusal extends Error {}
 const refuse = (message: string) => new Refusal(message);
+/** A fixed phrase from the code that sends a dream's branch (`DreamApi.publish`): it reaches the renderer as it is. */
+export const dreamRefusal = (message: string): Error => refuse(message);
 
 /** Runs `fn`; an error that is not a `Refusal` (a disk or git error, which may name a path) becomes `message`. */
 async function phrased<T>(message: string, fn: () => Promise<T>): Promise<T> {
@@ -75,7 +79,14 @@ async function phrased<T>(message: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export type DreamChannel = Extract<keyof Handlers, `dream:${string}`>;
+/**
+ * The dream calls answered here. `dream:pr` and `dream:prTarget` are answered beside the tasks' own push and pull
+ * request code (`src/main/ipc/handlers.ts`), through `DreamApi.publish`.
+ */
+export type DreamChannel = Exclude<
+  Extract<keyof Handlers, `dream:${string}`>,
+  'dream:pr' | 'dream:prTarget'
+>;
 export type DreamHandlers = Pick<Handlers, DreamChannel>;
 
 /** What `tasks:create` asks about a `fromDream` task. */
@@ -84,7 +95,24 @@ export type DreamTaskLink = {
   opened(dreamId: string, repoId: string, branch: string): boolean;
   /** The task was made: the record is cleared and the journal names the task. */
   taskCreated(dreamId: string, repoId: string, taskName: string): Promise<void>;
+  /** What the task's agents are told about the dream (`dreamBriefing`); null for a record that does not hold it. */
+  briefing(dreamId: string, repoId: string): string | null;
 };
+
+/** The open result's branch, built from the kept proposals and ready to be pushed. */
+export type DreamToSend = {
+  repoPath: string;
+  /** The dream's own worktree, on `branch`. */
+  worktreePath: string;
+  branch: string;
+  baseSha: string;
+  kept: { title: string; why: string; files: string[] }[];
+};
+
+/** How a dream's branch left the machine. */
+export type DreamSent =
+  | { as: 'pr'; pr: { id: number; url: string } }
+  | { as: 'pushed' };
 
 type Repo = {
   id: string;
@@ -103,6 +131,17 @@ export type DreamApi = {
    * The journal keeps its past entries. Best effort: never throws.
    */
   repoRemoved(repo: Repo): Promise<void>;
+  /**
+   * Create pull request (`dream:pr`): the open result's branch is made the base plus the kept proposals, `send`
+   * pushes it and makes the pull request, and the dream closes (dropped proposals remembered as rejected, the
+   * worktree, data and local branch removed, the journal naming the pull request or the branch). All in the chain of
+   * the result's changes, so no drop or discard lands in between. A failing `send` leaves the result open; what it
+   * throws with `dreamRefusal` reaches the renderer as it is.
+   */
+  publish(
+    repoId: string,
+    send: (ready: DreamToSend) => Promise<DreamSent>,
+  ): Promise<DreamSent & { branch: string }>;
   /**
    * A repo moved to another project, or a project was removed: the dream settings lose what no longer belongs in
    * them (`pruneDreaming`), a removed project's switch-off record goes, and a dream running for a repo that left
@@ -177,8 +216,13 @@ export function noDreams(): DreamApi {
       'dream:diff': no,
       'dream:file': no,
     },
-    taskLink: { opened: () => false, taskCreated: async () => undefined },
+    taskLink: {
+      opened: () => false,
+      taskCreated: async () => undefined,
+      briefing: () => null,
+    },
     repoRemoved: async () => undefined,
+    publish: no,
     projectsChanged: async () => undefined,
   };
 }
@@ -440,9 +484,13 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
    * The branch as the base plus the kept proposals' commits, in order, with hooks off. On a failure the branch is put
    * back where it was.
    */
-  const rebuild = async (r: DreamResult, kept: DreamProposal[]) => {
+  const rebuild = async (
+    r: DreamResult,
+    kept: DreamProposal[],
+    failed = OPEN_FAILED,
+  ) => {
     const wt = r.worktreePath;
-    if (!(await pathExists(wt))) throw refuse(OPEN_FAILED);
+    if (!(await pathExists(wt))) throw refuse(failed);
     let c: string[];
     let tip: string;
     try {
@@ -452,7 +500,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       c = configFlags([...base, ...(await authorConfig(d.git, wt, base))]);
       tip = (await d.git.run(wt, [...c, 'rev-parse', 'HEAD'])).trim();
     } catch {
-      throw refuse(OPEN_FAILED);
+      throw refuse(failed);
     }
     try {
       await d.git.run(wt, [...c, 'reset', '-q', '--hard', r.baseSha]);
@@ -466,7 +514,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         .catch((e: unknown) =>
           console.error('[dreams] the dream branch could not be put back', e),
         );
-      throw refuse(OPEN_FAILED);
+      throw refuse(failed);
     }
   };
 
@@ -851,6 +899,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             at: new Date(now()).toISOString(),
             kept: kept.length,
             titles: kept.map((p) => p.title),
+            proposals: kept.map((p) => ({
+              title: p.title,
+              why: p.why,
+              files: p.files,
+              evidence: p.evidence,
+            })),
           });
           event('dream.result', {
             kept: kept.length,
@@ -937,6 +991,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       const o = d.store.repo(repoId).opened;
       return o !== null && o.dreamId === dreamId && o.branch === branch;
     },
+    briefing(dreamId, repoId) {
+      const o = d.store.repo(repoId).opened;
+      return o?.dreamId === dreamId && o.proposals && o.proposals.length > 0
+        ? dreamBriefing(o.proposals, o.branch)
+        : null;
+    },
     async taskCreated(dreamId, repoId, taskName) {
       if (d.store.repo(repoId).opened?.dreamId !== dreamId) return;
       await d.store.taskMade(repoId, dreamId, taskName);
@@ -1006,6 +1066,58 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       d.broadcast();
     });
 
+  const publish: DreamApi['publish'] = (repoId, send) =>
+    serial(() =>
+      phrased(PUBLISH_FAILED, async () => {
+        started();
+        const r = openResult(repoId);
+        const repo = repoOf(repoId);
+        if (!repo) throw refuse(PUBLISH_FAILED);
+        // Before any git or removal: the record must be the dream's own.
+        const { dir, worktree } = await checked(repoId, r);
+        // The push and its secret check run in the dream's own worktree.
+        if (worktree !== 'live') throw refuse(PUBLISH_FAILED);
+        const kept = r.proposals.filter((p) => !p.dropped);
+        const dropped = r.proposals.filter((p) => p.dropped);
+        if (kept.length === 0) throw refuse('Nothing left to push');
+        if (!(await built(r, kept, dir)))
+          await rebuild(r, kept, PUBLISH_FAILED);
+        const sent = await send({
+          repoPath: repo.path,
+          worktreePath: r.worktreePath,
+          branch: r.branch,
+          baseSha: r.baseSha,
+          kept: kept.map((p) => ({
+            title: p.title,
+            why: p.why,
+            files: p.files,
+          })),
+        });
+        // Recorded first: the branch (and the pull request) exist now, whatever fails after this. A failure in
+        // these writes leaves the result open, and the next press finds the pushed branch and the pull request.
+        await d.store.reject(repoId, dropped);
+        await d.store.closeJournal(repoId, r.id, {
+          as: sent.as,
+          kept: kept.length,
+          dropped: dropped.length,
+          taskName: null,
+          branch: r.branch,
+          ...(sent.as === 'pr' ? { pr: sent.pr } : {}),
+        });
+        await d.store.setResult(repoId, null);
+        // The branch is on the remote: the local one goes with the worktree and the data. Best effort: what a
+        // locked file keeps here, the sweep at the next launch removes (no open result names it any more).
+        await removeResult(r, dir, true, PUBLISH_FAILED).catch(() => undefined);
+        event('dream.result', {
+          kept: kept.length,
+          dropped: dropped.length,
+          outcome: sent.as,
+        });
+        d.broadcast();
+        return { ...sent, branch: r.branch };
+      }),
+    );
+
   const projectsChanged = (): Promise<void> =>
     serial(async () => {
       const s = d.scheduler();
@@ -1046,5 +1158,5 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       d.broadcast();
     });
 
-  return { handlers, taskLink, repoRemoved, projectsChanged };
+  return { handlers, taskLink, repoRemoved, publish, projectsChanged };
 }

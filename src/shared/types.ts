@@ -236,6 +236,11 @@ export const TaskSchema = z.object({
    * every other task.
    */
   existingBranch: z.literal(true).optional(),
+  /**
+   * For a task made from a dream: what its agents are told about the dream (`dreamBriefing`), written as the Dream
+   * section of `.shellie/task.md`. Absent on every other task.
+   */
+  dreamBriefing: z.string().optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
 

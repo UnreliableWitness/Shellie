@@ -40,6 +40,7 @@ import { testPlatform } from '../test-helpers/shell';
 import { commitFiles } from './dreamGit';
 import {
   createDreamHandlers,
+  dreamRefusal,
   DREAM_TEST_PROMPT,
   DREAM_TEST_TIMEOUT_MS,
   type DreamHandlerDeps,
@@ -1882,5 +1883,155 @@ describe('before the old setup is split over the projects', () => {
       projects: {},
       legacy: ready({ enabled: true }),
     });
+  });
+});
+
+describe('sending a dream (Create pull request)', () => {
+  const pr = { id: 7, url: 'https://example.invalid/pullrequest/7' };
+  const subjects = (from: string, to: string) =>
+    git(repoPath, 'log', '--format=%s', '--reverse', `${from}..${to}`)
+      .trim()
+      .split('\n');
+
+  it('hands the branch with the kept proposals to send, then closes the dream and names the pull request', async () => {
+    const r = await dreamWithThree();
+    const a = api();
+    await a.handlers['dream:drop']('r1', 'p2', true);
+    vi.mocked(deps.broadcast).mockClear();
+    const seen: { subjects: string[]; worktree: boolean }[] = [];
+    const out = await a.publish('r1', async (ready) => {
+      // As the push sees it: the branch is the base plus the kept commits, in the dream's own worktree.
+      seen.push({
+        subjects: subjects(ready.baseSha, ready.branch),
+        worktree: existsSync(ready.worktreePath),
+      });
+      expect(ready).toMatchObject({
+        repoPath,
+        branch: BRANCH,
+        baseSha: r.baseSha,
+        kept: [
+          { title: 'Rule 1', why: 'Why 1', files: ['.apm/rules/a.md'] },
+          { title: 'Rule 3', why: 'Why 3', files: ['.apm/rules/c.md'] },
+        ],
+      });
+      return { as: 'pr', pr };
+    });
+    expect(out).toEqual({ as: 'pr', pr, branch: BRANCH });
+    expect(seen).toEqual([
+      { subjects: ['dream: Rule 1', 'dream: Rule 3'], worktree: true },
+    ]);
+    // The remote has the branch now: nothing of the dream stays on this machine.
+    expect(existsSync(r.worktreePath)).toBe(false);
+    expect(existsSync(r.dataDir)).toBe(false);
+    expect(git(repoPath, 'branch', '--list', BRANCH).trim()).toBe('');
+    const state = store.repo('r1');
+    expect(state.result).toBeNull();
+    expect(state.opened).toBeNull();
+    expect(state.rejections.map((x) => x.title)).toEqual(['Rule 2']);
+    expect(store.journal()[0].closed).toEqual({
+      as: 'pr',
+      kept: 2,
+      dropped: 1,
+      taskName: null,
+      branch: BRANCH,
+      pr,
+    });
+    expect(changed()).toBe(1);
+  });
+
+  it('still closes the dream when its folder cannot be removed after the send: the pull request is not lost', async () => {
+    await dreamWithThree();
+    vi.spyOn(deps.git as GitClient, 'worktreeRemove').mockRejectedValue(
+      new Error('EBUSY: a file is locked'),
+    );
+    const out = await api().publish('r1', async () => ({ as: 'pr', pr }));
+    expect(out).toMatchObject({ as: 'pr', pr });
+    expect(store.repo('r1').result).toBeNull();
+    expect(store.repo('r1').rejections).toEqual([]);
+    expect(store.journal()[0].closed).toMatchObject({ as: 'pr', pr });
+  });
+
+  it('says the dream could not be sent, not opened, when the branch cannot be built', async () => {
+    await dreamWithThree({ thirdEditsSecond: true });
+    const a = api();
+    // Proposal 3 edits the file proposal 2 adds: without 2 it does not apply.
+    await a.handlers['dream:drop']('r1', 'p2', true);
+    await expect(
+      a.publish('r1', async () => ({ as: 'pushed' })),
+    ).rejects.toThrow(/^The dream could not be sent$/);
+    expect(store.repo('r1').result?.id).toBe(DREAM_ID);
+  });
+
+  it('closes as pushed, with the branch, where no pull request was made', async () => {
+    await dreamWithThree();
+    const out = await api().publish('r1', async () => ({ as: 'pushed' }));
+    expect(out).toEqual({ as: 'pushed', branch: BRANCH });
+    expect(store.journal()[0].closed).toMatchObject({
+      as: 'pushed',
+      branch: BRANCH,
+    });
+    expect(store.journal()[0].closed?.pr).toBeUndefined();
+  });
+
+  it('leaves the result open when send fails: a refusal in its own words, any other error as a fixed phrase', async () => {
+    const r = await dreamWithThree();
+    const a = api();
+    await expect(
+      a.publish('r1', async () => {
+        throw dreamRefusal('Could not create the pull request');
+      }),
+    ).rejects.toThrow(/^Could not create the pull request$/);
+    await expect(
+      a.publish('r1', async () => {
+        throw new Error('fatal: /Users/someone/customer-x');
+      }),
+    ).rejects.toThrow(/^The dream could not be sent$/);
+    expect(store.repo('r1').result?.id).toBe(DREAM_ID);
+    expect(existsSync(r.worktreePath)).toBe(true);
+    expect(store.journal()[0].closed).toBeNull();
+    // A second press goes through.
+    expect(await a.publish('r1', async () => ({ as: 'pushed' }))).toMatchObject(
+      { as: 'pushed' },
+    );
+  });
+
+  it('refuses when every proposal is dropped, and keeps the dream', async () => {
+    await dreamWithThree();
+    const a = api();
+    for (const id of ['p1', 'p2', 'p3'])
+      await a.handlers['dream:drop']('r1', id, true);
+    const send = vi.fn(async () => ({ as: 'pushed' as const }));
+    await expect(a.publish('r1', send)).rejects.toThrow('Nothing left to push');
+    expect(send).not.toHaveBeenCalled();
+    expect(store.repo('r1').result?.id).toBe(DREAM_ID);
+  });
+});
+
+describe('the briefing of a task made from a dream', () => {
+  it('Open as task keeps what the agent is told: each kept proposal with its reason, files and evidence', async () => {
+    await dreamWithThree();
+    const a = api();
+    await a.handlers['dream:drop']('r1', 'p2', true);
+    await a.handlers['dream:openAsTask']('r1');
+    const text = a.taskLink.briefing(DREAM_ID, 'r1');
+    expect(text).toContain('## Dream');
+    expect(text).toContain(`one commit on the branch \`${BRANCH}\``);
+    expect(text).toContain('### 1. Rule 1');
+    expect(text).toContain('- Why: Why 3');
+    expect(text).not.toContain('Rule 2');
+    // Only the dream that was opened, in its own repo.
+    expect(a.taskLink.briefing('other', 'r1')).toBeNull();
+    expect(a.taskLink.briefing(DREAM_ID, 'r2')).toBeNull();
+  });
+
+  it('is none for a record written before it was kept', async () => {
+    await store.setOpened('r1', {
+      dreamId: DREAM_ID,
+      branch: BRANCH,
+      at: '2026-11-20T03:00:00.000Z',
+      kept: 1,
+      titles: ['Rule 1'],
+    });
+    expect(api().taskLink.briefing(DREAM_ID, 'r1')).toBeNull();
   });
 });
