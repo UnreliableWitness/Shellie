@@ -12,7 +12,7 @@ import {
   type PulseView,
   type TaskLifecycle,
 } from '../../shared/pulse';
-import { groupTasks, recentAt, TaskNav } from './TaskNav';
+import { groupTasks, listTasks, recentAt, TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
   {
@@ -357,6 +357,112 @@ const lifeOf =
     sortKey: by[t.id]?.sortKey ?? 0,
   });
 const ids = (list: TaskView[]) => list.map((t) => t.id);
+
+describe('listTasks', () => {
+  const at = (id: string, createdAt: string): TaskView => ({
+    ...tasks[0],
+    id,
+    createdAt,
+  });
+  const openIds = (list: TaskView[]) =>
+    ids(listTasks(list, repos, null, undefined).open);
+
+  it('lists open tasks newest first and collects done tasks apart', () => {
+    const l = listTasks(
+      [
+        at('old', '2026-11-01T08:00:00.000Z'),
+        at('new', '2026-11-20T08:00:00.000Z'),
+        at('mid', '2026-11-10T08:00:00.000Z'),
+        tasks[2],
+      ],
+      repos,
+      null,
+      undefined,
+    );
+    expect(ids(l.open)).toEqual(['new', 'mid', 'old']);
+    expect(ids(l.done)).toEqual(['c']);
+  });
+
+  it('orders tasks created at the same moment by id', () => {
+    const t = '2026-11-20T08:00:00.000Z';
+    expect(openIds([at('z', t), at('x', t), at('y', t)])).toEqual([
+      'x',
+      'y',
+      'z',
+    ]);
+  });
+
+  it('keeps one order for unreadable dates, whatever order they arrive in', () => {
+    const list = [at('z', 'now'), at('x', 'now'), at('y', 'now')];
+    expect(openIds(list)).toEqual(['x', 'y', 'z']);
+    expect(openIds([...list].reverse())).toEqual(['x', 'y', 'z']);
+  });
+
+  it('does not order by status: a setting-up task keeps its place', () => {
+    expect(
+      openIds([
+        at('old', '2026-11-01T08:00:00.000Z'),
+        { ...at('busy', '2026-11-02T08:00:00.000Z'), status: 'setting-up' },
+        at('new', '2026-11-20T08:00:00.000Z'),
+      ]),
+    ).toEqual(['new', 'busy', 'old']);
+  });
+
+  it('lets tasks without a repo join the list like any other (#225)', () => {
+    const scratch: TaskView = {
+      ...tasks[0],
+      id: 'n',
+      repoId: null,
+      branch: '',
+      baseRef: '',
+      connectionId: 'A',
+    };
+    const l = listTasks(
+      [scratch, { ...scratch, id: 'm', status: 'done' }],
+      repos,
+      null,
+      undefined,
+    );
+    expect(ids(l.open)).toEqual(['n']);
+    expect(ids(l.done)).toEqual(['m']);
+    expect(listTasks([scratch], repos, 'B', ['A', 'B']).open).toEqual([]);
+  });
+
+  it('keeps only the connection’s tasks and tasks without one (#219)', () => {
+    const split: Repo[] = [
+      { ...repos[0], connectionId: 'A' },
+      { ...repos[1], connectionId: 'B' },
+      { ...repos[1], id: 'r3', name: 'scratch', connectionId: null },
+    ];
+    const mixed: TaskView[] = [
+      { ...tasks[0], id: 'a1' },
+      { ...tasks[0], id: 'b1', connectionId: 'B' },
+      { ...tasks[0], id: 'a2', repoId: 'r2', connectionId: 'A' },
+      { ...tasks[2], id: 'a3', repoId: 'r1' },
+      { ...tasks[2], id: 'b2' },
+      { ...tasks[1], id: 'n1', repoId: 'r3' },
+      { ...tasks[2], id: 'n2', repoId: 'r3' },
+    ];
+    const l = listTasks(mixed, split, 'A', undefined);
+    expect(ids(l.open)).toEqual(['a1', 'a2', 'n1']);
+    expect(ids(l.done)).toEqual(['a3', 'n2']);
+    const all = listTasks(mixed, split, null, undefined);
+    expect(all.open).toHaveLength(4);
+    expect(all.done).toHaveLength(3);
+  });
+
+  it('shows a task whose own connection was removed under every project (#219)', () => {
+    const split: Repo[] = [{ ...repos[0], connectionId: 'A' }];
+    const orphan: TaskView = {
+      ...tasks[0],
+      id: 'o1',
+      repoId: 'r1',
+      connectionId: 'B',
+    };
+    expect(ids(listTasks([orphan], split, 'A', ['A']).open)).toEqual(['o1']);
+    expect(listTasks([orphan], split, 'A', ['A', 'B']).open).toEqual([]);
+  });
+});
 
 describe('groupTasks', () => {
   it('groups open tasks by lifecycle in order, omits empty groups and collects done tasks', () => {
