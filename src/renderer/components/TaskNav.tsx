@@ -218,7 +218,7 @@ function Row({
   const openTask = useStore((s) => s.openTask);
   const go = useStore((s) => s.go);
   const askDiscard = useStore((s) => s.askDiscard);
-  // Finish and Discard sit inside the current task's row, so no row ever grows or moves; its Finish stands in for the merged check.
+  // Finish and Discard sit inside the current task's row, so no row ever grows or moves. They take the mark's place there; the tooltip still tells what the mark would.
   const hasFinish = useShowsFinish(task);
   const mark = useMark(task, signal);
   const done = task.status === 'done';
@@ -245,9 +245,7 @@ function Row({
           {task.workItem?.title ?? task.name}
         </span>
       </button>
-      {mark && !(hasFinish && mark.kind === 'merged') && (
-        <Mark task={task} mark={mark} prUrl={prUrl} />
-      )}
+      {mark && !hasFinish && <Mark task={task} mark={mark} prUrl={prUrl} />}
       {hasFinish && (
         <span className="navrow-actions">
           <button

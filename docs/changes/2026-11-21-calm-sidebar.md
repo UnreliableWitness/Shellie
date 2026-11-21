@@ -36,9 +36,8 @@ longer re-reads on `time:changed`.
 ## Finish and Discard
 
 They are two icons inside the current task's row (ready, and not on its Finish page), so selecting a task changes no
-row's height or position. The line under the row is gone. The merged check gives way to the Finish icon on that row;
-an amber or red mark stays beside the icons (the spec said the icons take the mark's place: kept, because failing CI
-or a blocked agent on the task you are on would otherwise be invisible).
+row's height or position. The line under the row is gone. The two icons take the mark's place on that row
+(since `2026-11-21-calm-sidebar-strict-row.md`; before that an amber or red mark stayed beside them).
 
 ## The rail and the foot
 
@@ -64,6 +63,5 @@ Telemetry: `nav.chipClicked` keeps its name; `kind` is now `waits` or `merged` (
   connection in the fresh folder); tests only. A quiet foot with a working connection likewise.
 - "In review" and "parked" are no longer told apart at a glance, and an agent that finished its turn no longer marks
   its task in the list (the task's own tab still does).
-- On the current row an amber mark plus the two icons leave little room for the title at the default 240 px width.
 - In the rail, Finish and Discard under the current icon still push the icons below it down when a task is selected.
 - Windows was not run.
