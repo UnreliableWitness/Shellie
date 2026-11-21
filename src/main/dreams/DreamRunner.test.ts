@@ -772,6 +772,8 @@ describe('DreamRunner', () => {
   it('bases the dream on the fetched target when origin is ahead', async () => {
     const other = path.join(root, 'other');
     git(root, 'clone', '-q', bare, 'other');
+    // Where git's default branch is not main, the bare's HEAD names no branch and the clone checks nothing out.
+    git(other, 'checkout', '-q', 'main');
     git(other, 'config', 'user.email', 'o@x');
     git(other, 'config', 'user.name', 'O');
     writeFileSync(path.join(other, 'ahead.txt'), 'ahead\n');

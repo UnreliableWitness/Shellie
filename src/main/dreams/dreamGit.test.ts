@@ -242,7 +242,8 @@ describe('dreamGit', () => {
     mkdirSync(path.join(repo, '.apm'));
     // Ignored, but written by the propose run inside an allowed folder: the check run must see it.
     writeFileSync(path.join(repo, '.apm', 'notes.log'), 'an ignored write\n');
-    writeFileSync(path.join(repo, '.apm', '*.md'), 'a literal star\n');
+    // A name that is also a pattern (it would match x.md); brackets, since Windows allows no star in a name.
+    writeFileSync(path.join(repo, '.apm', '[x].md'), 'a literal pattern\n');
     writeFileSync(path.join(repo, '.apm', 'x.md'), 'not changed by name\n');
     rmSync(path.join(repo, 'gone.md'));
     writeFileSync(path.join(repo, 'elsewhere.md'), 'not in the list\n');
@@ -262,7 +263,7 @@ describe('dreamGit', () => {
         file: out,
         index,
         config: [],
-        paths: ['.apm/*.md', '.apm/notes.log', 'gone.md'],
+        paths: ['.apm/[x].md', '.apm/notes.log', 'gone.md'],
       }),
     ).rejects.toThrow();
     spy.mockRestore();
@@ -280,14 +281,14 @@ describe('dreamGit', () => {
       file: out,
       index,
       config: [],
-      paths: ['.apm/*.md', '.apm/notes.log', 'gone.md'],
+      paths: ['.apm/[x].md', '.apm/notes.log', 'gone.md'],
     });
     watched.mockRestore();
     const diff = readFileSync(out, 'utf8');
     expect(diff).toContain('+++ b/.apm/notes.log');
-    expect(diff).toContain('+++ b/.apm/*.md');
+    expect(diff).toContain('+++ b/.apm/[x].md');
     expect(diff).toContain('--- a/gone.md');
-    expect(diff).not.toContain('x.md');
+    expect(diff).not.toContain('/x.md');
     expect(diff).not.toContain('elsewhere.md');
     for (const [args, o] of calls.mock.calls as [
       string[],
