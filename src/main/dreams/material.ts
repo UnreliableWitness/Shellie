@@ -41,6 +41,10 @@ const latest = (
   return best;
 };
 
+/** How many sessions the material holds. */
+export const sessionCount = (m: Material): number =>
+  m.tasks.reduce((n, t) => n + t.sessions.length, 0);
+
 /** Tasks with a developer turn after their covered mark, newest activity first, at most 20. */
 export function pickMaterial(
   all: TaskSessions[],

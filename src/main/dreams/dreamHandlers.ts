@@ -24,7 +24,8 @@ import type { Handlers } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
 import type { Platform } from '../platform/Platform';
-import type { GitClient } from '../services/GitClient';
+import { samePath } from '../paths';
+import { configFlags, type GitClient } from '../services/GitClient';
 import { programMissing, type runWithInput } from '../services/prSummary';
 import type { DreamStore } from './DreamStore';
 import { DREAM_READ_TIMEOUT_MS, proposalDiff, proposalFile } from './dreamDiff';
@@ -35,12 +36,7 @@ import {
   unattendedConfig,
 } from './dreamGit';
 import { sessionOf } from './dreamRun';
-import {
-  enabledProps,
-  resultProps,
-  sendSafely,
-  type DreamEvent,
-} from './dreamTelemetry';
+import { enabledProps, sendSafely, type DreamEvent } from './dreamTelemetry';
 import { hasPrice } from './limit';
 import type { OpencodeModelList } from './models';
 import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
@@ -75,14 +71,6 @@ async function phrased<T>(message: string, fn: () => Promise<T>): Promise<T> {
     throw refuse(message);
   }
 }
-
-const samePath = (a: string, b: string): boolean => {
-  const norm = (p: string) =>
-    process.platform === 'win32'
-      ? path.resolve(p).toLowerCase()
-      : path.resolve(p);
-  return norm(a) === norm(b);
-};
 
 export type DreamChannel = Extract<keyof Handlers, `dream:${string}`>;
 export type DreamHandlers = Pick<Handlers, DreamChannel>;
@@ -125,7 +113,7 @@ export type DreamHandlerDeps = {
   repos: () => Repo[];
   git: Pick<
     GitClient,
-    'run' | 'branchExists' | 'worktreeRemove' | 'worktreePrune' | 'deleteBranch'
+    'run' | 'branchExists' | 'worktreeRemove' | 'worktreePrune'
   >;
   platform: Pick<Platform, 'opencodeCommand'>;
   /** The spawn helper the runner uses (main: the pty host's); it kills the process on its timeout. */
@@ -144,8 +132,6 @@ export type DreamHandlerDeps = {
   /** `dream.enabled`, `dream.switched_off`, `dream.test`, `dream.result` (`docs/telemetry.md`); none when absent. */
   event?: DreamEvent;
 };
-
-const flags = (config: string[]) => config.flatMap((c) => ['-c', c]);
 
 /** The handlers when dreams are not wired (tests that do not care): every call fails, no task is from a dream. */
 export function noDreams(): DreamApi {
@@ -196,10 +182,49 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     return s;
   };
 
+  /** Writes the dream settings; `before` is what the write started from. */
   const saveDreaming = async (
     fn: (cur: DreamingSettings) => DreamingSettings,
-  ): Promise<DreamingSettings> =>
-    (await d.settings.updateDreaming(fn)).dreaming;
+  ): Promise<{ before: DreamingSettings; after: DreamingSettings }> => {
+    const seen: { before?: DreamingSettings } = {};
+    const after = (
+      await d.settings.updateDreaming((cur) => {
+        seen.before = cur;
+        return fn(cur);
+      })
+    ).dreaming;
+    return { before: seen.before ?? after, after };
+  };
+
+  /** A narrowing that leaves no limit or no repo to dream about switches dreaming off with it. */
+  const narrowed = (s: DreamingSettings): DreamingSettings => ({
+    ...s,
+    enabled: s.enabled && canSwitchOn(s) === null,
+  });
+
+  const repoOf = (id: string) => d.repos().find((x) => x.id === id);
+
+  /** Removes a folder; the failure when it could not be removed, else null. */
+  const tried = (dir: string): Promise<unknown> =>
+    removeTree(dir).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+  /** The journal and the event of a result closed as discarded. */
+  const closeDiscarded = async (repoId: string, r: DreamResult) => {
+    await d.store.closeJournal(repoId, r.id, {
+      as: 'discarded',
+      kept: 0,
+      dropped: r.proposals.length,
+      taskName: null,
+    });
+    event('dream.result', {
+      kept: 0,
+      dropped: r.proposals.length,
+      outcome: 'discarded',
+    });
+  };
 
   const openResult = (repoId: string): DreamResult => {
     const r = d.store.repo(repoId).result;
@@ -243,7 +268,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       );
     if (!dir) throw refuse(MISMATCH);
     if (!(await pathExists(r.worktreePath))) return { dir, worktree: 'gone' };
-    const c = flags(unattendedConfig(path.join(dir, 'hooks')));
+    const c = configFlags(unattendedConfig(path.join(dir, 'hooks')));
     // Read-only, to learn whether `wt` is a worktree of its own; nothing else runs there unless it is.
     const top = await d.git
       .run(r.worktreePath, [...c, 'rev-parse', '--show-toplevel'], {
@@ -280,7 +305,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     /** The repo when Shellie no longer lists it (it is being removed). */
     gone?: Repo,
   ) => {
-    const repo = gone ?? d.repos().find((x) => x.id === r.repoId);
+    const repo = gone ?? repoOf(r.repoId);
     const failure = repo
       ? await removeDream(
           d.git,
@@ -292,17 +317,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           },
           unattendedConfig(path.join(dir, 'hooks')),
         )
-      : await removeTree(dir).then(
-          () => null,
-          (e: unknown) => e,
-        );
+      : await tried(dir);
     // Inside the folder as the runner makes it; removed on its own should a result say otherwise.
-    const data = failure
-      ? null
-      : await removeTree(r.dataDir).then(
-          () => null,
-          (e: unknown) => e,
-        );
+    const data = failure ? null : await tried(r.dataDir);
     if (failure || data) {
       console.error('[dreams] a dream could not be removed', failure ?? data);
       throw refuse(message);
@@ -319,7 +336,11 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       taskName: null,
     });
     await d.store.setResult(repoId, null);
-    event('dream.result', resultProps(0, r.proposals.length, 'discarded'));
+    event('dream.result', {
+      kept: 0,
+      dropped: r.proposals.length,
+      outcome: 'discarded',
+    });
     d.broadcast();
   };
 
@@ -329,10 +350,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
    * also answers once the worktree is gone. Any doubt is false.
    */
   const built = async (r: DreamResult, kept: DreamProposal[], dir: string) => {
-    const repo = d.repos().find((x) => x.id === r.repoId);
+    const repo = repoOf(r.repoId);
     if (!repo) return false;
     const ref = `refs/heads/${r.branch}`;
-    const c = flags(unattendedConfig(path.join(dir, 'hooks')));
+    const c = configFlags(unattendedConfig(path.join(dir, 'hooks')));
     try {
       await d.git.run(repo.path, [
         ...c,
@@ -381,7 +402,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       const hooks = path.join(path.dirname(wt), 'hooks');
       await fs.mkdir(hooks, { recursive: true });
       const base = unattendedConfig(hooks);
-      c = flags([...base, ...(await authorConfig(d.git, wt, base))]);
+      c = configFlags([...base, ...(await authorConfig(d.git, wt, base))]);
       tip = (await d.git.run(wt, [...c, 'rev-parse', 'HEAD'])).trim();
     } catch {
       throw refuse(OPEN_FAILED);
@@ -412,7 +433,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     if (!p) throw refuse('This dream has no such proposal');
     const { dir } = await checked(repoId, r);
     if (!FULL_SHA.test(p.commit)) throw refuse(MISMATCH);
-    const repo = d.repos().find((x) => x.id === repoId);
+    const repo = repoOf(repoId);
     if (!repo) throw refuse(DIFF_FAILED);
     return {
       repoPath: repo.path,
@@ -504,14 +525,11 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         // A test call is no repo's.
         repoId: '',
       });
-    let wasOn = false;
-    await saveDreaming((cur) => {
-      wasOn = cur.enabled;
+    const { before } = await saveDreaming((cur) =>
       // Still the model that was tested: a new pick saved meanwhile is left alone.
-      if (cur.model !== model) return cur;
-      return { ...cur, enabled: false, testedModel: null };
-    });
-    if (wasOn)
+      cur.model !== model ? cur : { ...cur, enabled: false, testedModel: null },
+    );
+    if (before.enabled)
       event('dream.switched_off', {
         by: others ? 'wrong-model' : 'test-failed',
       });
@@ -592,23 +610,18 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             );
           return { ok: false, message: failure.message };
         }
-        let wasOn = false;
-        let changedModel = false;
-        await phrased(SETTINGS_FAILED, () =>
-          saveDreaming((cur) => {
-            wasOn = cur.enabled;
-            changedModel = cur.model !== model;
-            return {
-              ...cur,
-              model,
-              testedModel: model,
-              // A new model is confirmed again before it dreams.
-              enabled: cur.model === model ? cur.enabled : false,
-            };
-          }),
+        const { before } = await phrased(SETTINGS_FAILED, () =>
+          saveDreaming((cur) => ({
+            ...cur,
+            model,
+            testedModel: model,
+            // A new model is confirmed again before it dreams.
+            enabled: cur.model === model ? cur.enabled : false,
+          })),
         );
         // A dream still running on the old model stops with it.
-        if (wasOn && changedModel) d.scheduler()?.stopDream();
+        if (before.enabled && before.model !== model)
+          d.scheduler()?.stopDream();
         d.broadcast();
         ok = true;
         return { ok: true };
@@ -629,9 +642,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         const parsed = DreamingSettingsSchema.safeParse(next);
         if (!parsed.success) throw refuse('These dream settings are not valid');
         const known = new Set(d.repos().map((r) => r.id));
-        let wasOn = false;
-        const saved = await saveDreaming((prev) => {
-          wasOn = prev.enabled;
+        const { before, after: saved } = await saveDreaming((prev) => {
           const merged: DreamingSettings = {
             ...parsed.data,
             enabled: prev.enabled,
@@ -643,12 +654,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           };
           if (prev.enabled && widens(prev, merged) && acknowledged !== true)
             throw refuse('Confirm the change first');
-          // A narrowing that leaves no limit or no repo to dream about switches dreaming off with it.
-          return {
-            ...merged,
-            enabled: merged.enabled && canSwitchOn(merged) === null,
-          };
+          return narrowed(merged);
         });
+        const wasOn = before.enabled;
         // As `dream:switchOff`: no more calls once dreaming is off or the running dream's repo is unticked.
         const running = status()?.running ?? null;
         if (wasOn && !saved.enabled)
@@ -670,13 +678,13 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         if (acknowledged !== true) throw refuse('Tick the box first');
         let on: DreamingSettings | null = null;
         await started().switchOn(async () => {
-          on = await saveDreaming((cur) => {
+          ({ after: on } = await saveDreaming((cur) => {
             // Checked again as the write runs: a save queued meanwhile may have changed the settings.
             const again = canSwitchOn(cur);
             if (again)
               throw refuse(`Dreaming cannot be switched on yet: ${again}`);
             return { ...cur, enabled: true };
-          });
+          }));
         });
         if (on) event('dream.enabled', enabledProps(on));
         d.broadcast();
@@ -685,12 +693,11 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
 
     'dream:switchOff': () =>
       phrased(SETTINGS_FAILED, async () => {
-        let wasOn = false;
-        const saved = await saveDreaming((cur) => {
-          wasOn = cur.enabled;
-          return { ...cur, enabled: false };
-        });
-        if (wasOn) event('dream.switched_off', { by: 'owner' });
+        const { before, after: saved } = await saveDreaming((cur) => ({
+          ...cur,
+          enabled: false,
+        }));
+        if (before.enabled) event('dream.switched_off', { by: 'owner' });
         // Switched off means no model calls: a dream that runs now stops too.
         d.scheduler()?.stopDream();
         d.broadcast();
@@ -764,10 +771,11 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             kept: kept.length,
             titles: kept.map((p) => p.title),
           });
-          event(
-            'dream.result',
-            resultProps(kept.length, dropped.length, 'task'),
-          );
+          event('dream.result', {
+            kept: kept.length,
+            dropped: dropped.length,
+            outcome: 'task',
+          });
           d.broadcast();
           return { branch: r.branch };
         }),
@@ -789,9 +797,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       phrased('The folder could not be checked', async () => {
         if (!DreamRepoSchema.shape.folders.element.safeParse(folder).success)
           throw refuse('This is not a folder a dream may change');
-        const repo = d.repos().find((x) => x.id === repoId);
+        const repo = repoOf(repoId);
         if (!repo) throw refuse('Unknown repo');
-        const c = flags([
+        const c = configFlags([
           ...unattendedConfig(path.join(d.dreamsDir, '.no-hooks')),
           'core.ignorecase=false',
         ]);
@@ -883,17 +891,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
                 e,
               ),
             );
-          await d.store
-            .closeJournal(repo.id, r.id, {
-              as: 'discarded',
-              kept: 0,
-              dropped: r.proposals.length,
-              taskName: null,
-            })
-            .catch((e: unknown) => console.error('[dreams] journal', e));
-          event(
-            'dream.result',
-            resultProps(0, r.proposals.length, 'discarded'),
+          await closeDiscarded(repo.id, r).catch((e: unknown) =>
+            console.error('[dreams] journal', e),
           );
         }
         // `opened` goes with the state; its branch is the owner's and stays.
@@ -903,18 +902,14 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             console.error('[dreams] a removed repo was not forgotten', e),
           );
       }
-      let wasOn = false;
       const saved = await saveDreaming((cur) => {
-        wasOn = cur.enabled;
         const { [repo.id]: _gone, ...repos } = cur.repos;
-        const next = { ...cur, repos };
-        // As a narrowing save: nothing left to dream about switches dreaming off.
-        return { ...next, enabled: next.enabled && canSwitchOn(next) === null };
+        return narrowed({ ...cur, repos });
       }).catch((e: unknown) => {
         console.error('[dreams] a removed repo stays in the dream settings', e);
         return null;
       });
-      if (wasOn && saved && !saved.enabled) {
+      if (saved?.before.enabled && !saved.after.enabled) {
         event('dream.switched_off', { by: 'narrowed' });
         s?.stopDream();
       }

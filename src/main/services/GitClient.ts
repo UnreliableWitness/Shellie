@@ -91,6 +91,10 @@ const LOCK_FILES = [
 ];
 
 /** `origin/main` -> origin and main when `origin` is one of `remotes`; null for anything else. */
+/** `name=value` git settings as the `-c` flags that go before the command. */
+export const configFlags = (config: string[]): string[] =>
+  config.flatMap((c) => ['-c', c]);
+
 export function splitRemoteRef(
   ref: string,
   remotes: string[],
@@ -425,7 +429,7 @@ export class GitClient {
       await this.runWorktreeStep(
         cwd,
         [
-          ...(o.config ?? []).flatMap((c) => ['-c', c]),
+          ...configFlags(o.config ?? []),
           '-c',
           'core.longpaths=true',
           'worktree',
@@ -447,7 +451,7 @@ export class GitClient {
     return (
       await this.runWorktreeStep(
         o.path,
-        [...(o.config ?? []).flatMap((c) => ['-c', c]), 'rev-parse', 'HEAD'],
+        [...configFlags(o.config ?? []), 'rev-parse', 'HEAD'],
         'git rev-parse',
       )
     ).trim();
@@ -783,7 +787,7 @@ export class GitClient {
     /** Extra `name=value` settings for every git call (a dream turns the repo's hooks off). */
     config: string[] = [],
   ): Promise<void> {
-    const c = config.flatMap((x) => ['-c', x]);
+    const c = configFlags(config);
     const root = await fs.realpath(worktree);
     const targets = await Promise.all(
       paths.map(async (rel) => ({ rel, abs: await containedPath(root, rel) })),

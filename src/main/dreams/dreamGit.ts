@@ -7,7 +7,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathExists, removeTree } from '../fsRetry';
-import type { GitClient } from '../services/GitClient';
+import { dayKey } from '../../shared/budget';
+import { configFlags, type GitClient } from '../services/GitClient';
 
 /**
  * The setup test call's folders inside the dreams folder (`<dreamsDir>/.test-<random>/{wt,data}`): there the ledger
@@ -23,7 +24,7 @@ export const FALLBACK_AUTHOR = {
 
 type Git = Pick<
   GitClient,
-  'run' | 'branchExists' | 'worktreeRemove' | 'worktreePrune' | 'deleteBranch'
+  'run' | 'branchExists' | 'worktreeRemove' | 'worktreePrune'
 >;
 
 /** `-c` settings for every git call in a dream that could start a program: hooks go to an empty folder, no signing. */
@@ -35,16 +36,8 @@ export const unattendedConfig = (emptyHooksDir: string): string[] => [
   'core.longpaths=true',
 ];
 
-const withConfig = (config: string[]): string[] =>
-  config.flatMap((c) => ['-c', c]);
-
-const pad = (n: number): string => String(n).padStart(2, '0');
-
 /** The local calendar date of `ms`, `YYYY-MM-DD`. */
-export function dreamDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+export const dreamDate = (ms: number): string => dayKey(new Date(ms));
 
 /**
  * `<date>-<n>`, the first `n` not in `taken` (the ids the journal names) for which neither the branch `dream/<id>` nor
@@ -79,7 +72,7 @@ export async function changedPaths(
   config: string[],
 ): Promise<string[]> {
   const out = await git.run(worktree, [
-    ...withConfig(config),
+    ...configFlags(config),
     'status',
     '--porcelain=v1',
     '-z',
@@ -122,7 +115,7 @@ export async function writeChangesDiff(
     paths: string[];
   },
 ): Promise<void> {
-  const c = withConfig(o.config);
+  const c = configFlags(o.config);
   const opts = {
     env: { GIT_INDEX_FILE: o.index },
     timeoutMs: CHANGES_DIFF_TIMEOUT_MS,
@@ -214,17 +207,6 @@ export const sameSnapshot = (
   b: Map<string, string>,
 ): boolean => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
 
-/** Puts `paths` back as they are at `base` (a path `base` does not have is deleted), without hooks. */
-export function revertPaths(
-  git: Pick<GitClient, 'discardPaths'>,
-  worktree: string,
-  base: string,
-  paths: string[],
-  config: string[],
-): Promise<void> {
-  return git.discardPaths(worktree, base, paths, config);
-}
-
 /** The author settings for a commit: none when the repo has an author, else Shellie's own. */
 export async function authorConfig(
   git: Git,
@@ -232,7 +214,7 @@ export async function authorConfig(
   config: string[],
 ): Promise<string[]> {
   const get = (key: string) =>
-    git.run(worktree, [...withConfig(config), 'config', '--get', key]).then(
+    git.run(worktree, [...configFlags(config), 'config', '--get', key]).then(
       (s) => s.trim(),
       () => '',
     );
@@ -257,7 +239,7 @@ export async function commitFiles(
   worktree: string,
   o: { files: string[]; subject: string; body: string; config: string[] },
 ): Promise<string> {
-  const c = withConfig([
+  const c = configFlags([
     ...o.config,
     ...(await authorConfig(git, worktree, o.config)),
   ]);
@@ -337,7 +319,7 @@ export async function removeDream(
   if (made.worktree) await step(git.worktreePrune(repoPath));
   if (made.branch && (await git.branchExists(repoPath, made.branch)))
     await step(
-      git.run(repoPath, [...withConfig(config), 'branch', '-D', made.branch]),
+      git.run(repoPath, [...configFlags(config), 'branch', '-D', made.branch]),
     );
   return failure;
 }

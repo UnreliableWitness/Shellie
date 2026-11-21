@@ -13,6 +13,7 @@ import { IdleStep } from '../components/dreams/IdleStep';
 import { LimitStep } from '../components/dreams/LimitStep';
 import { RepoRow } from '../components/dreams/RepoRow';
 import { useDreamsState } from '../components/dreams/useDreams';
+import { DreamsLoading } from '../components/dreams/DreamsLoading';
 import { ConfirmBar, PageHeader } from '../components/ui';
 
 const WAITING_FOR: Record<
@@ -41,23 +42,12 @@ export function DreamSetupScreen() {
   const { view, failed, retry } = useDreamsState();
   if (view === null)
     return (
-      <div className="page">
-        <PageHeader title="Let Shellie dream" />
-        <div className="page-body">
-          {failed ? (
-            <>
-              <p role="alert">Dreams could not be loaded</p>
-              <div className="actions">
-                <button type="button" className="btn" onClick={retry}>
-                  Try again
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="muted">Loading&hellip;</p>
-          )}
-        </div>
-      </div>
+      <DreamsLoading
+        title="Let Shellie dream"
+        message="Dreams could not be loaded"
+        failed={failed}
+        retry={retry}
+      />
     );
   return <Setup view={view} />;
 }

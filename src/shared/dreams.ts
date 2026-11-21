@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isOpencodeModel } from './brain';
+import { plural } from './text';
 
 /** The title every dream session carries, so the job and its sessions can be told apart from normal work. */
 export const DREAM_JOB_TITLE = 'Shellie dream';
@@ -94,17 +95,15 @@ export function canSwitchOn(
   return null;
 }
 
-const plural = (n: number, one: string, many: string): string =>
-  `${n} ${n === 1 ? one : many}`;
-
-const spaced = (n: number): string =>
+/** 5000000 as "5 000 000". */
+export const spacedNumber = (n: number): string =>
   String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
 const limitText = (l: DreamLimit | null): string => {
   if (l === null || l.kind === 'none') return 'with no limit';
   if (l.kind === 'eur') return `up to € ${l.perDay.toFixed(2)} a day`;
   const t =
-    l.perDay % 1e6 === 0 ? `${l.perDay / 1e6} million` : spaced(l.perDay);
+    l.perDay % 1e6 === 0 ? `${l.perDay / 1e6} million` : spacedNumber(l.perDay);
   return `up to ${t} tokens a day`;
 };
 
@@ -163,19 +162,21 @@ export function confirmSentence(
 ): string {
   return (
     `Dreams run on OpenCode with ${d.model}, when this machine is idle, ` +
-    `for ${plural(repoNames.length, 'repo', 'repos')} (${repoNames.join(', ')}), ` +
+    `for ${plural(repoNames.length, 'repo')} (${repoNames.join(', ')}), ` +
     `${limitText(d.limit)}. ` +
     `What was said in those repos' agent sessions is sent to that model.`
   );
 }
 
-export type DreamProposalKind =
-  | 'new-rule'
-  | 'changed-rule'
-  | 'new-skill'
-  | 'changed-skill'
-  | 'new-agent'
-  | 'changed-agent';
+export const DREAM_PROPOSAL_KINDS = [
+  'new-rule',
+  'changed-rule',
+  'new-skill',
+  'changed-skill',
+  'new-agent',
+  'changed-agent',
+] as const;
+export type DreamProposalKind = (typeof DREAM_PROPOSAL_KINDS)[number];
 
 /** Who said a quote, as Shellie found it in the task's turns (`src/main/dreams/evidence.ts`). */
 export const DreamEvidenceWhoSchema = z.enum(['you', 'agent', 'unknown']);
@@ -193,14 +194,7 @@ export type DreamEvidence = z.infer<typeof DreamEvidenceSchema>;
 
 export const DreamProposalSchema = z.object({
   id: z.string(),
-  kind: z.enum([
-    'new-rule',
-    'changed-rule',
-    'new-skill',
-    'changed-skill',
-    'new-agent',
-    'changed-agent',
-  ]),
+  kind: z.enum(DREAM_PROPOSAL_KINDS),
   title: z.string(),
   why: z.string(),
   evidence: z.array(DreamEvidenceSchema),

@@ -10,16 +10,6 @@ import type { DreamOutcome } from './DreamRunner';
 /** Sends one event; main passes the telemetry client's `event`. */
 export type DreamEvent = (name: string, props: TelemetryProps) => void;
 
-/**
- * Who switched dreaming off: the owner, a call answered by another model (in a dream or a re-test), a narrowing that
- * left nothing, or a re-test of the dreaming model that failed otherwise.
- */
-export type SwitchedOffBy =
-  | 'owner'
-  | 'wrong-model'
-  | 'narrowed'
-  | 'test-failed';
-
 /** `dream.enabled`: the kind of limit and how many repos dream. */
 export function enabledProps(s: DreamingSettings): TelemetryProps {
   return {
@@ -55,15 +45,6 @@ export function runProps(
         ? out.result.removedByCheck
         : (entry?.removedByCheck ?? 0),
   };
-}
-
-/** `dream.result`: how a result was closed. */
-export function resultProps(
-  kept: number,
-  dropped: number,
-  outcome: 'task' | 'discarded',
-): TelemetryProps {
-  return { kept, dropped, outcome };
 }
 
 /** Never lets telemetry fail a dream or a handler. */

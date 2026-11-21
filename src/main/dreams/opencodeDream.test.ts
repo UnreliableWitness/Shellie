@@ -2,13 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  DREAM_PROTECTED,
-  dreamArgs,
-  dreamEnv,
-  isProtectedPath,
-  otherModels,
-} from './opencodeDream';
+import { DREAM_PROTECTED, isProtectedPath } from '../../shared/dreams';
+import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
 
 const MODEL = 'zai/glm-5.3';
 const WORKTREE = '/u/Shellie/dreams/2026-11-20-1/worktree';

@@ -6,19 +6,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { isProtectedPath, type DreamProposalKind } from '../../shared/dreams';
-
-const KINDS = [
-  'new-rule',
-  'changed-rule',
-  'new-skill',
-  'changed-skill',
-  'new-agent',
-  'changed-agent',
-] as const satisfies readonly DreamProposalKind[];
+import {
+  DREAM_PROPOSAL_KINDS,
+  isProtectedPath,
+  type DreamProposalKind,
+} from '../../shared/dreams';
 
 /** At most this many proposals are kept; the prompt asks for no more. */
-const MAX_KEPT = 3;
+export const MAX_PROPOSALS = 3;
 
 const oneLine = (s: string): string => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 /** Forward slashes, no leading `./`. */
@@ -48,7 +43,7 @@ const EvidenceSchema = z.object({
 });
 
 const ProposalSchema = z.object({
-  kind: z.enum(KINDS),
+  kind: z.enum(DREAM_PROPOSAL_KINDS),
   title: line(200),
   why: z.string().max(1000),
   evidence: z.array(EvidenceSchema).max(10),
@@ -157,7 +152,7 @@ export function groupProposals(
   for (const p of report.proposals) {
     const passes = checked ? p.verdict === 'pass' : p.verdict !== 'fail';
     const files = [...new Set(p.files)].filter((f) => changed.has(f));
-    if (!passes || files.length === 0 || kept.length >= MAX_KEPT) {
+    if (!passes || files.length === 0 || kept.length >= MAX_PROPOSALS) {
       removed += 1;
       continue;
     }

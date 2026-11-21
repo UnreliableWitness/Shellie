@@ -14,7 +14,7 @@ import {
 } from '../sessions/taskSessions';
 import { DreamRunner, type DreamRunnerDeps } from './DreamRunner';
 import type { DreamStore } from './DreamStore';
-import { limitChecks } from './limit';
+import type { limitChecks } from './limit';
 import type { TaskSessions } from './material';
 import { startDreamScheduler, type DreamSchedulerDeps } from './scheduler';
 
@@ -89,10 +89,9 @@ export async function startDreams(
   > &
     Pick<DreamRunnerDeps, 'git' | 'platform' | 'run'> & {
       store: DreamStore;
-      reader: Pick<
-        OpenCodeReader,
-        'sessionModels' | 'dreamTokens' | 'sessionTurns'
-      >;
+      reader: Pick<OpenCodeReader, 'sessionModels' | 'sessionTurns'>;
+      /** The day's limit, the one `dream:get` shows the usage of. */
+      limit: ReturnType<typeof limitChecks>;
       tasks: () => Task[];
       repos: () => Repo[];
       sessionFile: (sessionId: string) => string | null;
@@ -102,11 +101,7 @@ export async function startDreams(
 ) {
   await d.store.load();
   const now = Date.now;
-  const checks = limitChecks({
-    reader: d.reader,
-    limit: () => d.settings.get().dreaming.limit,
-    now,
-  });
+  const checks = d.limit;
   const sessionsOf = (repoId: string) =>
     dreamSessionsOf(d.tasks(), repoId, {
       sessionFile: d.sessionFile,
@@ -128,8 +123,7 @@ export async function startDreams(
         await d.git.remotes(repo.path).catch(() => []),
       ),
     now,
-    overLimit: () =>
-      checks.overLimitFor(runner.running()?.startedAt ?? now())(),
+    overLimit: () => checks.overLimitFor(runner.running()?.startedAt ?? now()),
     folders: (repoId) => {
       const r = d.settings.get().dreaming.repos[repoId];
       return r?.on ? r.folders : [];

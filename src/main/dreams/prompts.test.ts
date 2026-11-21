@@ -5,7 +5,7 @@ const o = { dataDir: '/data/dreams/d1', folders: ['.apm', 'AGENTS.md'] };
 
 describe('prompts', () => {
   const texts = {
-    propose: proposePrompt({ ...o, maxProposals: 3 }),
+    propose: proposePrompt(o),
     check: checkPrompt(o),
   };
   it('has a version', () => {

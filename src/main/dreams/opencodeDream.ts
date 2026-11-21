@@ -7,11 +7,7 @@ import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isOpencodeModel } from '../../shared/brain';
-import {
-  DREAM_JOB_TITLE,
-  DREAM_PROTECTED,
-  isProtectedPath,
-} from '../../shared/dreams';
+import { DREAM_JOB_TITLE, DREAM_PROTECTED } from '../../shared/dreams';
 import { pathFor, slashes } from '../attention/opencodePlugin';
 
 const checkedModel = (model: string): string => {
@@ -48,8 +44,6 @@ const AGENTS = [
 ] as const;
 /** Switched off: the two subagents, and title generation. */
 const DISABLED = new Set<string>(['general', 'explore', 'title']);
-
-export { DREAM_PROTECTED, isProtectedPath };
 
 /**
  * The global config folder as OpenCode 1.19.3 computes it on every platform (`xdg-basedir`): `$XDG_CONFIG_HOME`, or

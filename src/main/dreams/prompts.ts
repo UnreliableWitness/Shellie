@@ -3,6 +3,8 @@
  * Bump `DREAM_PROMPT_VERSION` when the wording changes in a way that matters.
  */
 
+import { MAX_PROPOSALS } from './report';
+
 export const DREAM_PROMPT_VERSION = 4;
 
 const REPORT_SHAPE = `{
@@ -35,7 +37,6 @@ Where you may write:
 export function proposePrompt(o: {
   dataDir: string;
   folders: string[];
-  maxProposals: 3;
 }): string {
   return `You are dreaming over this project's recent agent sessions: you look for what the work shows and the project's skills, rules and agents miss.
 
@@ -47,7 +48,7 @@ Look for:
 - sources that contradict each other or the way the work was actually done;
 - steps the developer walked the agent through by hand more than once.
 
-Write at most ${o.maxProposals} proposals. Make each by editing or adding files in the allowed folders. Every file belongs to exactly one proposal; two proposals must not touch the same file. Make each new or changed file well formed for its kind (frontmatter, name).
+Write at most ${MAX_PROPOSALS} proposals. Make each by editing or adding files in the allowed folders. Every file belongs to exactly one proposal; two proposals must not touch the same file. Make each new or changed file well formed for its kind (frontmatter, name).
 Only propose what the sessions really show, and quote them. Evidence quotes are the developer's own words: one or two sentences copied exactly from a line that starts with **Developer:** in the session files, without the label. Each proposal needs at least one such quote; without one, do not make the proposal. Never invent a proposal: no proposal is a good answer, then change no file and write an empty list.
 Something seen once, that is not yet a proposal, goes in "sightings".
 

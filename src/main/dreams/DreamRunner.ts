@@ -27,7 +27,6 @@ import {
   dreamDate,
   nextDreamId,
   removeDream,
-  revertPaths,
   sameSnapshot,
   snapshot,
   unattendedConfig,
@@ -44,6 +43,7 @@ import {
 } from './dreamRun';
 import {
   pickMaterial,
+  sessionCount,
   writeMaterial,
   type Material,
   type TaskSessions,
@@ -63,7 +63,6 @@ export const DREAM_RUN_TIMEOUT_MS = 30 * 60_000;
 const LIMIT_CHECK_MS = 30_000;
 /** How long a stopped run may take to end before its folders are removed anyway. */
 export const RUN_GRACE_MS = 10_000;
-const MAX_PROPOSALS = 3;
 /** The body of every dream commit. */
 export const COMMIT_BODY =
   'Proposed by a Shellie dream. Review before merging.';
@@ -328,7 +327,6 @@ export class DreamRunner {
       proposePrompt({
         dataDir: m.dataDir,
         folders: m.folders,
-        maxProposals: MAX_PROPOSALS,
       }),
     );
     const proposed = await this.report(m);
@@ -367,18 +365,24 @@ export class DreamRunner {
     );
     // Who said each quote, from the task's own turns, decided before the cap and the merge: a proposal without a
     // quote of the developer counts as failed, so it takes no place and joins no kept group.
-    const evidence = (
-      e: DreamReport['proposals'][number]['evidence'][number],
-    ): DreamEvidence => {
-      const ref = taskRef(e.task, m.material.tasks);
-      const t = m.material.tasks.find((x) => x.taskId === ref.taskId);
-      return {
-        ...ref,
-        date: e.date,
-        // The words looked for: no digest label or quotation marks in what the screen shows.
-        quote: cleanQuote(e.quote) || e.quote,
-        who: t ? quoteWho(e.quote, t.sessions) : 'unknown',
-      };
+    type Quoted = DreamReport['proposals'][number]['evidence'][number];
+    // Each quote is looked up once: the search reads the task's whole transcript.
+    const found = new Map<Quoted, DreamEvidence>();
+    const evidence = (e: Quoted): DreamEvidence => {
+      let v = found.get(e);
+      if (!v) {
+        const ref = taskRef(e.task, m.material.tasks);
+        const t = m.material.tasks.find((x) => x.taskId === ref.taskId);
+        v = {
+          ...ref,
+          date: e.date,
+          // The words looked for: no digest label or quotation marks in what the screen shows.
+          quote: cleanQuote(e.quote) || e.quote,
+          who: t ? quoteWho(e.quote, t.sessions) : 'unknown',
+        };
+        found.set(e, v);
+      }
+      return v;
     };
     const heard: DreamReport = {
       ...checked,
@@ -395,8 +399,7 @@ export class DreamRunner {
     }));
     m.removedByCheck = grouped.removedByCheck;
     await step(REASON.undo, () =>
-      revertPaths(
-        git,
+      git.discardPaths(
         m.worktree,
         baseSha,
         [...outside, ...grouped.unlisted],
@@ -439,7 +442,7 @@ export class DreamRunner {
         at: new Date(d.now()).toISOString(),
         model: m.model,
         tokens: 0, // set when settled, for the whole run window
-        sessions: m.material.tasks.reduce((n, t) => n + t.sessions.length, 0),
+        sessions: sessionCount(m.material),
         proposals,
         reverted: outside,
         removedByCheck: grouped.removedByCheck,
@@ -501,12 +504,8 @@ export class DreamRunner {
       throw new Ended({ outcome: 'wrong-model', answered: others });
   }
 
-  private async report(m: Dream): Promise<DreamReport> {
-    try {
-      return await readReport(m.dataDir);
-    } catch {
-      throw new DreamFailed(REASON.report);
-    }
+  private report(m: Dream): Promise<DreamReport> {
+    return step(REASON.report, () => readReport(m.dataDir));
   }
 
   /**

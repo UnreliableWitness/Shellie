@@ -97,7 +97,7 @@ export type Screen =
   | { kind: 'agents'; from: 'settings' | 'get-started' }
   /** The brain step as a page (from Get started). */
   | { kind: 'brain-new'; from: 'get-started' }
-  /** Dreams: what dreaming did and what it waits for (a placeholder until the screen is built). */
+  /** Dreams: what dreaming did and what it waits for. */
   | { kind: 'dreams' }
   /** "Let Shellie dream": setting up and switching on. */
   | { kind: 'dream-setup' }

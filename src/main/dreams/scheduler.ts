@@ -11,14 +11,14 @@ import type { DreamingSettings, DreamSwitchedOff } from '../../shared/dreams';
 import type { AppSettings } from '../../shared/usage';
 import { pathExists, removeTree } from '../fsRetry';
 import { isInside } from '../paths';
-import type { GitClient } from '../services/GitClient';
+import { configFlags, type GitClient } from '../services/GitClient';
 import type { DreamRunner } from './DreamRunner';
 import type { DreamStore } from './DreamStore';
 import { DREAM_TEST_PREFIX, removeDream, unattendedConfig } from './dreamGit';
 import { settledWithin } from './dreamRun';
 import type { OpencodeModelList } from './models';
 import { runProps, sendSafely, type DreamEvent } from './dreamTelemetry';
-import { pickMaterial, type TaskSessions } from './material';
+import { pickMaterial, sessionCount, type TaskSessions } from './material';
 import { nextDream, type ReadyInput, type Wait } from './ready';
 
 export const DREAM_TICK_MS = 60_000;
@@ -60,12 +60,7 @@ export type DreamSchedulerDeps = {
   now: () => number;
   git: Pick<
     GitClient,
-    | 'run'
-    | 'branchExists'
-    | 'worktreeRemove'
-    | 'worktreePrune'
-    | 'deleteBranch'
-    | 'worktreeList'
+    'run' | 'branchExists' | 'worktreeRemove' | 'worktreePrune' | 'worktreeList'
   >;
   /** The dreams folder: every dream's worktree, data and hooks lie in it. */
   dreamsDir: string;
@@ -122,7 +117,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     }
   };
 
-  /** The repo's material, read again when not known for five minutes (or `fresh`). Session text is never logged. */
+  /** The repo's material, read again when not known for an hour (or `fresh`). Session text is never logged. */
   const known = async (repoId: string, fresh: boolean): Promise<Known> => {
     const k = material.get(repoId);
     if (k && !fresh && d.now() - k.at < MATERIAL_MS) return k;
@@ -137,7 +132,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         at: d.now(),
         hasMaterial: m.tasks.length > 0,
         newestMaterialAt: marks.length ? Math.max(...marks) : null,
-        sessions: m.tasks.reduce((n, t) => n + t.sessions.length, 0),
+        sessions: sessionCount(m),
       };
     } catch {
       console.error('[dreams] the sessions of a repo could not be read');
@@ -337,7 +332,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     config: string[],
     folders: string[],
   ) => {
-    const c = config.flatMap((x) => ['-c', x]);
+    const c = configFlags(config);
     const keep = d.store.repo(repo.id).result?.branch;
     const branches: string[] = [];
     for (const id of folders) {

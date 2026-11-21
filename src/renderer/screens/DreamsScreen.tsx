@@ -16,6 +16,7 @@ import { spacedNumber } from '../components/dreams/folders';
 import { SwitchedOffNotice } from '../components/dreams/SwitchedOffNotice';
 import { UsageBar } from '../components/dreams/UsageBar';
 import { useDreamsState } from '../components/dreams/useDreams';
+import { DreamsLoading } from '../components/dreams/DreamsLoading';
 import { ConfirmBar, PageHeader } from '../components/ui';
 import { plural } from '../format';
 import { useStore } from '../store';
@@ -27,23 +28,12 @@ export function DreamsScreen() {
   const { view, failed, retry } = useDreamsState();
   if (view === null)
     return (
-      <div className="page">
-        <PageHeader title="Dreams" />
-        <div className="page-body">
-          {failed ? (
-            <>
-              <p role="alert">Dreams could not be loaded</p>
-              <div className="actions">
-                <button type="button" className="btn" onClick={retry}>
-                  Try again
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="muted">Loading&hellip;</p>
-          )}
-        </div>
-      </div>
+      <DreamsLoading
+        title="Dreams"
+        message="Dreams could not be loaded"
+        failed={failed}
+        retry={retry}
+      />
     );
   return <Dreams view={view} />;
 }

@@ -123,16 +123,16 @@ describe('limitChecks', () => {
   it('a run is measured against the day it started in, also after midnight', () => {
     const clock = { t: at(20, 23, 59) };
     const { c } = make(() => ({ kind: 'tokens', perDay: 500 }), clock);
-    const check = c.overLimitFor(clock.t);
-    expect(check()).toBe(true);
+    const startedAt = clock.t;
+    expect(c.overLimitFor(startedAt)).toBe(true);
     clock.t = at(21, 0, 1);
-    expect(check()).toBe(true); // still yesterday's day
+    expect(c.overLimitFor(startedAt)).toBe(true); // still yesterday's day
     expect(c.hasRoom()).toBe(true); // a new dream sees zero
-    expect(c.overLimitFor(clock.t)()).toBe(false);
+    expect(c.overLimitFor(clock.t)).toBe(false);
   });
   it('overLimitFor with no limit chosen is over; usage and tokens pass through', () => {
     const { c, dreamTokens } = make(() => null, { t: at(20, 10, 0) });
-    expect(c.overLimitFor(at(20, 10, 0))()).toBe(true);
+    expect(c.overLimitFor(at(20, 10, 0))).toBe(true);
     expect(c.usage()).toEqual({ day: '2026-11-20', tokens: 500, eur: 0 });
     expect(c.tokens(at(20, 0, 0), 2)).toBe(500);
     expect(dreamTokens).toHaveBeenLastCalledWith(at(20, 0, 0), 2);

@@ -10,7 +10,7 @@ import type {
   DreamFileDiff,
   DreamFileTexts,
 } from '../../shared/dreams';
-import type { GitClient } from '../services/GitClient';
+import { configFlags, type GitClient } from '../services/GitClient';
 
 type Git = Pick<GitClient, 'run'>;
 
@@ -38,13 +38,7 @@ const reader =
   (git: Git, repoPath: string, config: string[]) => (args: string[]) =>
     git.run(
       repoPath,
-      [
-        ...[...config, 'diff.suppressBlankEmpty=false'].flatMap((c) => [
-          '-c',
-          c,
-        ]),
-        ...args,
-      ],
+      [...configFlags([...config, 'diff.suppressBlankEmpty=false']), ...args],
       { timeoutMs: DREAM_READ_TIMEOUT_MS },
     );
 

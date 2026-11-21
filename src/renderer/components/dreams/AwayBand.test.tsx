@@ -63,7 +63,7 @@ describe('AwayBand', () => {
     ).toBeInTheDocument();
     first.unmount();
 
-    render(<AwayBand />);
+    const second = render(<AwayBand />);
     await screen.findByText('New skill: run the VAT test set');
     expect(screen.queryByText('Skill: release notes')).toBeNull();
 
@@ -72,7 +72,7 @@ describe('AwayBand', () => {
     view.repos[0].state = emptyState({
       result: result('c', 'r1', ['Fresh idea']),
     });
-    first.unmount();
+    second.unmount();
     render(<AwayBand />);
     expect(await screen.findByText('Fresh idea')).toBeInTheDocument();
   });

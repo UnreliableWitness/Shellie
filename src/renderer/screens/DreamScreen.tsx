@@ -19,6 +19,7 @@ import {
 } from '../components/dreams/dreamWords';
 import { spacedNumber } from '../components/dreams/folders';
 import { useDreamsState } from '../components/dreams/useDreams';
+import { DreamsLoading } from '../components/dreams/DreamsLoading';
 import { DiffView } from '../components/review/DiffView';
 import { ConfirmBar, PageHeader } from '../components/ui';
 import { plural } from '../format';
@@ -49,23 +50,12 @@ export function DreamScreen({ repoId }: { repoId: string }) {
   }, [gone, go]);
   if (view === null)
     return (
-      <div className="page">
-        <PageHeader title="Dream" />
-        <div className="page-body">
-          {failed ? (
-            <>
-              <p role="alert">The dream could not be loaded</p>
-              <div className="actions">
-                <button type="button" className="btn" onClick={retry}>
-                  Try again
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="muted">Loading&hellip;</p>
-          )}
-        </div>
-      </div>
+      <DreamsLoading
+        title="Dream"
+        message="The dream could not be loaded"
+        failed={failed}
+        retry={retry}
+      />
     );
   if (!repo || !res) return null;
   return <Review key={res.id} repoName={repo.name} result={res} />;

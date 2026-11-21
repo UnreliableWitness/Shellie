@@ -2,6 +2,7 @@ import {
   DreamRepoSchema,
   type DreamLimit,
   isProtectedPath,
+  spacedNumber,
 } from '../../../shared/dreams';
 
 const folderSchema = DreamRepoSchema.shape.folders.element;
@@ -40,9 +41,7 @@ export function parseEuros(text: string): number | null {
   return n > 0 ? n : null;
 }
 
-/** 5000000 as "5 000 000". */
-export const spacedNumber = (n: number): string =>
-  String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+export { spacedNumber };
 
 export const limitLabel = (l: DreamLimit | null): string => {
   if (l === null) return 'Not chosen';

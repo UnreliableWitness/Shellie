@@ -1,13 +1,9 @@
-import type { BudgetTokens } from '../../shared/budget';
+import { dayKey, type BudgetTokens } from '../../shared/budget';
 import type { DreamLimit, DreamUsage } from '../../shared/dreams';
 import { OFFICIAL_RATES } from '../pricing/officialRates';
 import type { OpenCodeReader } from '../budget/openCode';
 import { priceRecord } from '../ledger/price';
 import { selectRate } from '../pricing/RateTable';
-
-export type { DreamUsage };
-
-const pad = (n: number) => String(n).padStart(2, '0');
 
 /** The local calendar day of `now`: its key and [since, until) in epoch ms. */
 export function dayWindow(now: number): {
@@ -20,7 +16,7 @@ export function dayWindow(now: number): {
   const m = d.getMonth();
   const date = d.getDate();
   return {
-    day: `${y}-${pad(m + 1)}-${pad(date)}`,
+    day: dayKey(d),
     since: new Date(y, m, date).getTime(),
     until: new Date(y, m, date + 1).getTime(),
   };
@@ -79,11 +75,9 @@ export function limitChecks(deps: {
       return limit !== null && !overLimit(limit, usageAt(deps.now()));
     },
     /** For the runner: measured in the day the dream started in, also after midnight. */
-    overLimitFor(startedAt: number): () => boolean {
-      return () => {
-        const limit = deps.limit();
-        return limit === null || overLimit(limit, usageAt(startedAt));
-      };
+    overLimitFor(startedAt: number): boolean {
+      const limit = deps.limit();
+      return limit === null || overLimit(limit, usageAt(startedAt));
     },
     /** For `DreamRunnerDeps.dreamTokens`. */
     tokens: (since: number, until: number): number =>

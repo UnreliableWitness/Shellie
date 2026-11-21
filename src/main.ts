@@ -1256,6 +1256,12 @@ async function boot(): Promise<void> {
     });
     // OpenCode's model list for dreams, one for the scheduler and `dream:get` (which never asks), fed also by
     // `agents:opencodeModels`: `opencode models` runs at most every 10 minutes, a failed ask kept as long.
+    // The day's dream limit, one for `dream:get`, the scheduler and the runner.
+    const dreamLimit = limitChecks({
+      reader: openCodeSessions,
+      limit: () => settings.get().dreaming.limit,
+      now: Date.now,
+    });
     const dreamModels = opencodeModelList({
       ask: () => opencodeModels(platform, runProbe),
       now: Date.now,
@@ -1271,11 +1277,7 @@ async function boot(): Promise<void> {
       run: (cmd, o) => ptyHost.run(cmd, o),
       sessionModels: (id) => openCodeSessions.sessionModels(id),
       models: dreamModels,
-      usage: limitChecks({
-        reader: openCodeSessions,
-        limit: () => settings.get().dreaming.limit,
-        now: Date.now,
-      }).usage,
+      usage: dreamLimit.usage,
       dreamsDir,
       broadcast: () => broadcast('dream:changed', {}),
       event: (name, props) => telemetry.event(name, props),
@@ -1638,6 +1640,7 @@ async function boot(): Promise<void> {
         platform,
         run: (cmd, o) => ptyHost.run(cmd, o),
         reader: openCodeSessions,
+        limit: dreamLimit,
         dreamsDir,
         tasks: () => store.state.tasks,
         repos: () => repos.list(),

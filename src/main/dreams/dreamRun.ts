@@ -3,6 +3,7 @@
  * phrase, finding the run's session, and naming the task a report's evidence points at.
  */
 
+import { withTimeout } from '../async';
 import { opencodeResultWithSession } from '../brain/opencodeResult';
 import { programMissing } from '../services/prSummary';
 import type { TaskSessions } from './material';
@@ -34,16 +35,8 @@ export const abortable = <T>(p: Promise<T>, signal: AbortSignal): Promise<T> =>
 
 /** Resolves once `p` settles, or after `ms` when it does not. */
 export function settledWithin(p: Promise<unknown>, ms: number): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    p.then(
-      () => undefined,
-      () => undefined,
-    ),
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
+  const done = (): void => undefined;
+  return withTimeout(p.then(done, done), ms, done);
 }
 
 /** Why a run failed, as a fixed phrase: never the program's own output. */
