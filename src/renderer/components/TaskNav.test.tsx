@@ -694,6 +694,30 @@ describe('TaskNav calm list', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a blocked agent on a merged task, also when it is the current one', async () => {
+    useStore.setState({
+      tasks: [
+        {
+          ...mk('t1', 'One'),
+          terminals: [{ id: 'c1', kind: 'claude', label: 'Claude Code' }],
+        } as unknown as TaskView,
+      ],
+      attention: { c1: { reason: 'blocked', kind: 'question', since: 1 } },
+      selectedTaskId: 't1',
+      screen: { kind: 'task', taskId: 't1' } as never,
+    });
+    withPulse(pulseView({ tasks: { t1: [mergedPulse('t1')] } }));
+    render(<TaskNav />);
+    await settle();
+    const row = rowOf(/One/);
+    expect(
+      within(row).getByRole('img', { name: 'Has a question' }),
+    ).toHaveClass('navmark-waits');
+    expect(
+      within(row).getByRole('button', { name: 'Finish task' }),
+    ).toBeInTheDocument();
+  });
+
   it('leaves a quiet task without any mark, in review or not', async () => {
     useStore.setState({ tasks: three(), selectedTaskId: null });
     withPulse(

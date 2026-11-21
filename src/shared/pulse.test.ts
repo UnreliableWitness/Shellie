@@ -149,6 +149,13 @@ describe('taskSignal', () => {
       sig([withPr({ createdAt: '' }, { ci: 'failing' })]).story,
     ).not.toMatch(/NaN/);
   });
+  it('waits on a blocked agent even when the PR is merged', () => {
+    expect(sig([merged('a')], true)).toEqual({
+      state: 'waits',
+      story: 'agent needs you',
+      prWorkspaceId: null,
+    });
+  });
   it('is none for a draft PR', () => {
     expect(sig([withPr({ isDraft: true })]).state).toBe('none');
   });

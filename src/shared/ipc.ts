@@ -550,7 +550,7 @@ export type Channels = {
   'home:get': { args: []; result: HomeSnapshot | null };
   /** Rebuilds the Home snapshot over every connection, or joins the rebuild already running. */
   'home:refresh': { args: []; result: HomeSnapshot };
-  /** The last PR, CI and review status per task workspace (from disk at launch), with when each task was last active. */
+  /** The last PR, CI and review status per task workspace (from disk at launch). */
   'pulse:get': { args: []; result: PulseSnapshot };
   /** Checks Azure DevOps for every open task now, or joins the check already running. */
   'pulse:refresh': { args: []; result: PulseSnapshot };

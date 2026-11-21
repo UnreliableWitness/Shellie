@@ -126,7 +126,8 @@ export function taskSignal(input: {
   now: number;
 }): TaskSignal {
   const { pulses, agentBlocked, now } = input;
-  if (isMerged(pulses))
+  // A blocked agent comes before merged: amber outranks the green check.
+  if (!agentBlocked && isMerged(pulses))
     return { state: 'merged', story: MERGED_STORY, prWorkspaceId: null };
   const worst = worstTrouble(pulses);
   return {
