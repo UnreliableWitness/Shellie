@@ -3,6 +3,7 @@ import {
   Add20Regular,
   Brain20Regular,
   ArrowSprint20Regular,
+  CheckmarkCircle12Filled,
   CheckmarkCircle16Regular,
   CheckmarkCircle20Regular,
   ChevronDown12Regular,
@@ -25,13 +26,9 @@ import {
   useState,
 } from 'react';
 import {
-  LIFECYCLE_LABEL,
-  LIFECYCLE_ORDER,
-  type Lifecycle,
-  lifecycleOf,
-  RECENT_MS,
-  type PulseView,
-  type TaskLifecycle,
+  type PulseSnapshot,
+  type TaskSignal,
+  taskSignal,
 } from '../../shared/pulse';
 import type { Repo, TaskStatus, TaskView } from '../../shared/types';
 import {
@@ -54,58 +51,37 @@ import {
   useStore,
   useTaskConnectionId,
 } from '../store';
+import { type TaskMark, rowTitle, taskMark } from '../taskMark';
 import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
-import { AttentionDot } from './AttentionDot';
+import { attentionLabel } from './AttentionDot';
 import { DreamNavStatus } from './dreams/DreamNavStatus';
 import { DreamsNavItem } from './dreams/DreamsNavItem';
 import { WorkItemTypeIcon } from './ui';
 
-/** Tasks in these states always sit in Active: they have no PR story yet. */
-const ALWAYS_ACTIVE: TaskStatus[] = ['setting-up', 'setup-failed', 'finishing'];
+/** Tasks in these states have no PR story yet: a stale pulse must not mark them. */
+const NO_SIGNAL: TaskStatus[] = ['setting-up', 'setup-failed', 'finishing'];
 
-/** With a connection, only that project's tasks and tasks with no connection (#219). Open tasks fall into lifecycle groups. */
-export function groupTasks(
+/** With a connection, only that project's tasks and tasks with no connection (#219). Open tasks newest first, and nothing else moves them. */
+export function listTasks(
   all: TaskView[],
   repos: Repo[],
   connectionId: string | null | undefined,
   knownIds: string[] | undefined,
-  life: (t: TaskView) => TaskLifecycle,
-) {
+): { open: TaskView[]; done: TaskView[] } {
   const tasks = connectionId
     ? all.filter((t) => inConnection(t, repos, connectionId, knownIds))
     : all;
-  const lives = new Map<string, TaskLifecycle>();
-  const groupOf = (t: TaskView): Lifecycle => {
-    const l = life(t);
-    lives.set(t.id, l);
-    return ALWAYS_ACTIVE.includes(t.status) ? 'active' : l.group;
-  };
-  const sortKey = (t: TaskView) => lives.get(t.id)?.sortKey ?? 0;
-  const open = tasks.filter((t) => t.status !== 'done');
-  const byGroup = new Map(open.map((t) => [t.id, groupOf(t)]));
-  const groups = LIFECYCLE_ORDER.map((group) => ({
-    group,
-    tasks: open
-      .filter((t) => byGroup.get(t.id) === group)
-      .sort((x, y) => {
-        // Not a subtraction: two -Infinity keys would give NaN.
-        const a = sortKey(x);
-        const b = sortKey(y);
-        return a < b ? -1 : a > b ? 1 : 0;
-      }),
-  })).filter((g) => g.tasks.length > 0);
-  const done = tasks.filter((t) => t.status === 'done');
-  return { groups, done };
+  // An unreadable date counts as the oldest, so the id alone orders those.
+  const created = (t: TaskView) => Date.parse(t.createdAt) || 0;
+  const open = tasks
+    .filter((t) => t.status !== 'done')
+    .sort(
+      (x, y) =>
+        created(y) - created(x) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0),
+    );
+  return { open, done: tasks.filter((t) => t.status === 'done') };
 }
-
-/** Only a task that is not ready gets a status dot. */
-const NOT_READY: Partial<Record<TaskStatus, { color: string; label: string }>> =
-  {
-    'setting-up': { color: 'var(--accent)', label: 'Setting up' },
-    'setup-failed': { color: 'var(--red)', label: 'Setup failed' },
-    finishing: { color: 'var(--accent)', label: 'Finishing' },
-  };
 
 const AVATAR = ['#0078d4', '#8764b8', '#038387', '#ca5010', '#498205'];
 const avatarColor = (name: string) =>
@@ -115,12 +91,13 @@ const avatarColor = (name: string) =>
 const useIsCurrent = (taskId: string) =>
   useStore((s) => taskOnScreen(s) === taskId);
 
-/** The terminal of the task that waits for the developer, a blocked one first. */
-const useWaiting = (task: TaskView) =>
-  useStore((s) => {
-    const entries = task.terminals.flatMap((d) => s.attention[d.id] ?? []);
-    return entries.find((e) => e.reason === 'blocked') ?? entries[0];
-  });
+/** The task's terminal whose agent is blocked on the developer, if any. */
+const useBlocked = (task: TaskView) =>
+  useStore((s) =>
+    task.terminals
+      .flatMap((d) => s.attention[d.id] ?? [])
+      .find((e) => e.reason === 'blocked'),
+  );
 
 function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
   const connectionId = useTaskConnectionId(task);
@@ -135,121 +112,131 @@ function TypeIcon({ task, size = 16 }: { task: TaskView; size?: number }) {
   );
 }
 
-/** When a task was last active: the time store's interval, else now for the task on screen, else its creation if that is recent (a new task has no interval yet). */
-export function recentAt(
-  t: TaskView,
-  stored: number | null,
-  onScreen: string | null,
-  now = Date.now(),
-): number | null {
-  const created = Date.parse(t.createdAt);
-  const candidates = [
-    stored,
-    onScreen === t.id ? now : null,
-    !Number.isNaN(created) && now - created < RECENT_MS ? created : null,
-  ].filter((x): x is number => x !== null);
-  return candidates.length ? Math.max(...candidates) : null;
-}
-
-/** Each open task's lifecycle: its PR pulse, last terminal activity and a blocked agent, read now. */
-function useLifecycles(): {
-  pulse: PulseView | null;
-  life: (t: TaskView) => TaskLifecycle;
+/** What each open task's PRs and agents ask of the developer, read now. Null for a task with no PR story yet. */
+function useSignals(): {
+  pulse: PulseSnapshot | null;
+  signal: (t: TaskView) => TaskSignal | null;
 } {
   const pulse = usePulse();
   const attention = useStore((s) => s.attention);
-  const onScreen = useStore((s) => taskOnScreen(s));
-  // Ages only change with time: re-render every minute so groups and waits follow.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const life = (t: TaskView): TaskLifecycle =>
-    ALWAYS_ACTIVE.includes(t.status)
-      ? { group: 'active', chip: null, story: '', sortKey: -Infinity }
-      : lifecycleOf({
+  const signal = (t: TaskView): TaskSignal | null =>
+    NO_SIGNAL.includes(t.status)
+      ? null
+      : taskSignal({
           pulses: pulse?.tasks[t.id] ?? [],
-          lastActiveAt: recentAt(t, pulse?.lastActive[t.id] ?? null, onScreen),
           agentBlocked: t.terminals.some((d) =>
             [attention[d.id] ?? []].flat().some((e) => e.reason === 'blocked'),
           ),
           now: Date.now(),
         });
-  return { pulse, life };
+  return { pulse, signal };
 }
 
-/** The status chip: opens the PR in the browser, or for a merged task goes to its Finish page. */
-function Chip({
+/** The task's one mark. A blocked agent says what it asks for; a PR's trouble keeps its own story. */
+function useMark(task: TaskView, signal: TaskSignal | null): TaskMark | null {
+  const blocked = useBlocked(task);
+  const mark = taskMark(task, signal);
+  return mark?.kind === 'waits' && !signal?.prWorkspaceId && blocked
+    ? { ...mark, label: attentionLabel(blocked) }
+    : mark;
+}
+
+/** The home repo's name and how many more the task spans, for the tooltip. */
+function repoLine(task: TaskView, repos: Repo[]): string {
+  const name = repos.find((r) => r.id === activeHome(task).repoId)?.name ?? '';
+  const extras = activeWorkspaces(task).length - 1;
+  return extras > 0 ? `${name} +${plural(extras, 'repo')}`.trim() : name;
+}
+
+/** The row's one mark. Merged opens the Finish page and a PR's trouble opens the PR; the others only tell. */
+function Mark({
   task,
-  chip,
-  pulse,
+  mark,
+  prUrl,
 }: {
   task: TaskView;
-  chip: NonNullable<TaskLifecycle['chip']>;
-  pulse: PulseView | null;
+  mark: TaskMark;
+  prUrl?: string;
 }) {
   const go = useStore((s) => s.go);
-  const onClick = () => {
-    track('nav.chipClicked', { kind: chip.kind });
-    if (chip.kind === 'finish') {
-      go({ kind: 'finish', taskId: task.id });
-      return;
-    }
-    const url = (pulse?.tasks[task.id] ?? []).find(
-      (p) => p.workspaceId === chip.workspaceId,
-    )?.pr?.url;
-    if (url)
-      void api()
-        .invoke('links:open', url)
-        .catch(() => undefined);
+  const shared = {
+    className: `navmark navmark-${mark.kind}`,
+    'aria-label': mark.label,
+    title: mark.label,
   };
+  if (mark.kind === 'merged')
+    return (
+      <button
+        type="button"
+        {...shared}
+        onClick={() => {
+          track('nav.chipClicked', { kind: 'merged' });
+          go({ kind: 'finish', taskId: task.id });
+        }}
+      >
+        <CheckmarkCircle16Regular aria-hidden="true" />
+      </button>
+    );
+  const dot = <span className="navmark-dot" aria-hidden="true" />;
+  if (mark.kind === 'waits' && prUrl)
+    return (
+      <button
+        type="button"
+        {...shared}
+        onClick={() => {
+          track('nav.chipClicked', { kind: 'waits' });
+          void api()
+            .invoke('links:open', prUrl)
+            .catch(() => undefined);
+        }}
+      >
+        {dot}
+      </button>
+    );
   return (
-    <button
-      type="button"
-      className={`navchip navchip-${chip.tone}${chip.kind === 'finish' ? ' navchip-finish' : ''}`}
-      onClick={onClick}
-    >
-      {chip.text}
-    </button>
+    <span role="img" {...shared}>
+      {dot}
+    </span>
   );
 }
 
 function Row({
   task,
   cost,
-  repoName,
-  lifecycle,
+  repos = '',
+  signal = null,
   pulse,
 }: {
   task: TaskView;
   cost: number;
-  /** Shown only when the list spans more than one repo. */
-  repoName?: string;
-  lifecycle?: TaskLifecycle;
-  pulse?: PulseView | null;
+  /** For the tooltip. */
+  repos?: string;
+  signal?: TaskSignal | null;
+  pulse?: PulseSnapshot | null;
 }) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
-  const extras = activeWorkspaces(task).length - 1;
-  const waiting = useWaiting(task);
-  // The Finish button under the current task replaces the Finish chip.
+  const go = useStore((s) => s.go);
+  const askDiscard = useStore((s) => s.askDiscard);
+  // Finish and Discard sit inside the current task's row, so no row ever grows or moves; its Finish stands in for the merged check.
   const hasFinish = useShowsFinish(task);
-  const muted =
-    lifecycle?.group === 'in-review' || lifecycle?.group === 'parked';
-  const state = task.worktreeMissing
-    ? { color: 'var(--red)', label: 'Worktree folder missing' }
-    : NOT_READY[task.status];
+  const mark = useMark(task, signal);
+  const done = task.status === 'done';
+  const prUrl = signal?.prWorkspaceId
+    ? (pulse?.tasks[task.id] ?? []).find(
+        (p) => p.workspaceId === signal.prWorkspaceId,
+      )?.pr?.url
+    : undefined;
+  const title = done
+    ? ''
+    : rowTitle({ mark, story: signal?.story ?? '', repos, cost });
   return (
-    <div
-      className={muted ? 'navrow is-muted' : 'navrow'}
-      data-current={current ? 'true' : undefined}
-    >
+    <div className="navrow" data-current={current ? 'true' : undefined}>
       <button
         type="button"
         className="navrow-main"
         aria-current={current ? 'true' : undefined}
-        title={lifecycle?.story || undefined}
+        title={title || undefined}
         onClick={() => openTask(task.id)}
       >
         <TypeIcon task={task} />
@@ -257,28 +244,33 @@ function Row({
         <span className="navrow-title">
           {task.workItem?.title ?? task.name}
         </span>
-        {repoName && (
-          <span className="navrow-repos small muted">{repoName}</span>
-        )}
-        {extras > 0 && (
-          <span className="navrow-repos small muted">
-            +{plural(extras, 'repo')}
-          </span>
-        )}
-        {waiting && <AttentionDot entry={waiting} />}
-        {state && (
-          <span
-            className="dot"
-            aria-label={state.label}
-            title={state.label}
-            style={{ background: state.color }}
-          />
-        )}
       </button>
-      {lifecycle?.chip && !(hasFinish && lifecycle.chip.kind === 'finish') && (
-        <Chip task={task} chip={lifecycle.chip} pulse={pulse ?? null} />
+      {mark && !(hasFinish && mark.kind === 'merged') && (
+        <Mark task={task} mark={mark} prUrl={prUrl} />
       )}
-      {cost > 0 && <span className="navrow-cost">{eur(cost)}</span>}
+      {hasFinish && (
+        <span className="navrow-actions">
+          <button
+            type="button"
+            className="ibtn navrow-finish"
+            aria-label="Finish task"
+            title={FINISH_TITLE}
+            onClick={() => go({ kind: 'finish', taskId: task.id })}
+          >
+            <CheckmarkCircle16Regular aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="ibtn nav-discard"
+            aria-label={DISCARD_LABEL}
+            title={DISCARD_LABEL}
+            onClick={() => askDiscard(task.id)}
+          >
+            <Delete16Regular aria-hidden="true" />
+          </button>
+        </span>
+      )}
+      {done && cost > 0 && <span className="navrow-cost">{eur(cost)}</span>}
     </div>
   );
 }
@@ -286,54 +278,40 @@ function Row({
 const railName = (task: TaskView) =>
   `${task.workItem?.id ?? ''} ${task.workItem?.title ?? task.name}`.trim();
 
+const RAIL_DOT = { broken: 'red', busy: 'accent', waits: 'amber' } as const;
+
 function RailRow({
   task,
-  lifecycle,
+  signal,
 }: {
   task: TaskView;
-  lifecycle?: TaskLifecycle;
+  signal: TaskSignal | null;
 }) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
-  const waiting = useWaiting(task);
+  const mark = useMark(task, signal);
   const name = railName(task);
-  const dim = lifecycle?.group === 'in-review' || lifecycle?.group === 'parked';
-  const tone = lifecycle?.chip?.tone;
-  return (
-    <button
-      type="button"
-      className={dim ? 'railrow is-dim' : 'railrow'}
-      aria-label={name}
-      title={lifecycle?.story ? `${name} · ${lifecycle.story}` : name}
-      aria-current={current ? 'true' : undefined}
-      onClick={() => openTask(task.id)}
-    >
-      <TypeIcon task={task} />
-      {tone && tone !== 'muted' && (
-        <span className={`rail-dot rail-dot-${tone}`} aria-hidden="true" />
-      )}
-      {waiting && <AttentionDot entry={waiting} />}
-    </button>
-  );
-}
-
-/** A merged task's hollow Finish square: the rail's version of the row's Finish chip. */
-function RailMergedFinish({ task }: { task: TaskView }) {
-  const go = useStore((s) => s.go);
-  // The current ready task already has the real Finish under its icon.
-  const hasFinish = useShowsFinish(task);
-  if (hasFinish) return null;
   return (
     <button
       type="button"
       className="railrow"
-      aria-label={`Finish ${railName(task)}`}
-      title="Merged: finish this task"
-      onClick={() => go({ kind: 'finish', taskId: task.id })}
+      aria-label={name}
+      title={mark ? `${name} · ${mark.label}` : name}
+      aria-current={current ? 'true' : undefined}
+      onClick={() => openTask(task.id)}
     >
-      <span className="rail-finish-hollow">
-        <CheckmarkCircle20Regular aria-hidden="true" />
-      </span>
+      <TypeIcon task={task} />
+      {mark &&
+        (mark.kind === 'merged' ? (
+          <span className="rail-check" aria-hidden="true">
+            <CheckmarkCircle12Filled />
+          </span>
+        ) : (
+          <span
+            className={`rail-dot rail-dot-${RAIL_DOT[mark.kind]}`}
+            aria-hidden="true"
+          />
+        ))}
     </button>
   );
 }
@@ -347,53 +325,6 @@ function useShowsFinish(task: TaskView) {
 
 const FINISH_TITLE = 'Finish task: check changes, push, book time, clean up';
 const DISCARD_LABEL = 'Discard task';
-
-/** The current task's primary action, right under its row (#95): one click opens the Finish page, which asks first. */
-function FinishAction({ task }: { task: TaskView }) {
-  const go = useStore((s) => s.go);
-  const shows = useShowsFinish(task);
-  const current = useIsCurrent(task.id);
-  if (current && task.status === 'finishing')
-    return (
-      <div className="nav-task-action">
-        <button type="button" className="btn btn-primary nav-finish" disabled>
-          Finishing…
-        </button>
-      </div>
-    );
-  if (!shows) return null;
-  return (
-    <div className="nav-task-action">
-      <button
-        type="button"
-        className="btn btn-primary nav-finish"
-        aria-label="Finish task"
-        title={FINISH_TITLE}
-        onClick={() => go({ kind: 'finish', taskId: task.id })}
-      >
-        <CheckmarkCircle16Regular aria-hidden="true" />
-        Finish task
-      </button>
-      <DiscardButton task={task} />
-    </div>
-  );
-}
-
-/** Throws the task away (#124): opens the confirm on the task's page, which names what goes first. */
-function DiscardButton({ task }: { task: TaskView }) {
-  const askDiscard = useStore((s) => s.askDiscard);
-  return (
-    <button
-      type="button"
-      className="ibtn nav-discard"
-      aria-label={DISCARD_LABEL}
-      title={DISCARD_LABEL}
-      onClick={() => askDiscard(task.id)}
-    >
-      <Delete16Regular aria-hidden="true" />
-    </button>
-  );
-}
 
 /** The rail's Finish: a filled square under the current task's icon. */
 function RailFinish({ task }: { task: TaskView }) {
@@ -687,21 +618,13 @@ export function TaskNav() {
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? navWidth;
   const [showDone, setShowDone] = useState(false);
-  const { pulse, life } = useLifecycles();
-  const { groups, done } = groupTasks(
+  const { pulse, signal } = useSignals();
+  const { open, done } = listTasks(
     tasks,
     repos,
     connection?.id,
     connections.map((c) => c.id),
-    life,
   );
-  const open = groups.flatMap((g) => g.tasks);
-  // A repo tag on a row only helps when the list spans more than one repo.
-  const repoIds = new Set(open.map((t) => activeHome(t).repoId));
-  const repoName = (t: TaskView) =>
-    repoIds.size > 1
-      ? repos.find((r) => r.id === activeHome(t).repoId)?.name
-      : undefined;
   const rail = navCollapsed;
   // One read for every row that shows a cost; the rail shows none.
   const costs = useTaskCosts(
@@ -717,13 +640,11 @@ export function TaskNav() {
   const toRead = new Set(
     nudges ? reading.filter(hasEvent).map((r) => r.brain.brainId) : [],
   );
+  // Quiet while the connection is fine: the line shows only when something is wrong.
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }
     : connection.status === 'ok'
-      ? {
-          color: 'var(--green)',
-          text: `${connection.name}: ${connection.project}`,
-        }
+      ? null
       : {
           color: 'var(--red)',
           text: `${connection.name}: ${statusText(connection, true).text}`,
@@ -778,60 +699,24 @@ export function TaskNav() {
       ))}
       <div className="leftnav-scroll">
         <TasksHead rail={rail} />
-        {rail
-          ? groups.map(({ group, tasks: list }, i) => (
-              <div key={group} role="group" aria-label={LIFECYCLE_LABEL[group]}>
-                {i > 0 && <div className="rail-sep" aria-hidden="true" />}
-                {group === 'needs-you' && (
-                  <span
-                    className="rail-count"
-                    role="status"
-                    aria-label={`${plural(list.length, 'task')} need${list.length === 1 ? 's' : ''} you`}
-                  >
-                    {list.length}
-                  </span>
-                )}
-                {list.map((t) => {
-                  const l = life(t);
-                  return (
-                    <Fragment key={t.id}>
-                      <RailRow task={t} lifecycle={l} />
-                      {l.chip?.kind === 'finish' && (
-                        <RailMergedFinish task={t} />
-                      )}
-                      <RailFinish task={t} />
-                      <RailDiscard task={t} />
-                    </Fragment>
-                  );
-                })}
-              </div>
-            ))
-          : groups.map(({ group, tasks: list }) => (
-              <div key={group} role="group" aria-label={LIFECYCLE_LABEL[group]}>
-                <div
-                  className={
-                    group === 'needs-you'
-                      ? 'nav-subhead nav-subhead-amber'
-                      : 'nav-subhead'
-                  }
-                >
-                  {LIFECYCLE_LABEL[group]}{' '}
-                  <span className="nav-subhead-count">{list.length}</span>
-                </div>
-                {list.map((t) => (
-                  <Fragment key={t.id}>
-                    <Row
-                      task={t}
-                      cost={group === 'active' ? (costs[t.id] ?? 0) : 0}
-                      repoName={repoName(t)}
-                      lifecycle={life(t)}
-                      pulse={pulse}
-                    />
-                    <FinishAction task={t} />
-                  </Fragment>
-                ))}
-              </div>
-            ))}
+        {open.map((t) =>
+          rail ? (
+            <Fragment key={t.id}>
+              <RailRow task={t} signal={signal(t)} />
+              <RailFinish task={t} />
+              <RailDiscard task={t} />
+            </Fragment>
+          ) : (
+            <Row
+              key={t.id}
+              task={t}
+              cost={costs[t.id] ?? 0}
+              repos={repoLine(t, repos)}
+              signal={signal(t)}
+              pulse={pulse}
+            />
+          ),
+        )}
         {open.length === 0 && !rail && (
           <div className="nav-empty">No open tasks.</div>
         )}
@@ -865,10 +750,12 @@ export function TaskNav() {
           current={screen.kind === 'settings'}
           onClick={() => go({ kind: 'settings' })}
         />
-        <div className="nav-status" title={footer.text}>
-          <span className="dot" style={{ background: footer.color }} />
-          {!rail && <span className="nav-status-text">{footer.text}</span>}
-        </div>
+        {footer && (
+          <div className="nav-status" title={footer.text}>
+            <span className="dot" style={{ background: footer.color }} />
+            {!rail && <span className="nav-status-text">{footer.text}</span>}
+          </div>
+        )}
         <DreamNavStatus rail={rail} />
         {!rail && pulse?.error === 'auth' && (
           <div className="nav-status nav-status-note">

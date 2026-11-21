@@ -1,7 +1,7 @@
 import type { AttentionEntry } from '../../shared/attention';
 
 /** What a waiting terminal wants, for the dot's label and tooltip. */
-function attentionLabel(e: AttentionEntry): string {
+export function attentionLabel(e: AttentionEntry): string {
   const head =
     e.reason === 'done'
       ? 'Finished'

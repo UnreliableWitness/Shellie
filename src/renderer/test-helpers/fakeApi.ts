@@ -108,13 +108,11 @@ const defaults: FakeHandlers = {
     tasks: {},
     error: null,
     checkedAt: null,
-    lastActive: {},
   }),
   'pulse:refresh': () => ({
     tasks: {},
     error: null,
     checkedAt: null,
-    lastActive: {},
   }),
   'home:refresh': () => ({
     version: 1,

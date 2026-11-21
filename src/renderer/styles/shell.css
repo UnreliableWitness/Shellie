@@ -312,23 +312,52 @@ button.projecttile:hover {
 .nav-new[aria-current='page'] {
   background: var(--bg-selected);
 }
-/* The current task's Finish, right under its row, lined up with the title. */
-.nav-task-action {
-  display: flex;
-  gap: 4px;
-  padding: 4px 12px 8px 40px;
+/* Finish and Discard inside the current task's row: quiet icons, so the row keeps its height. */
+.navrow-actions {
+  display: inline-flex;
+  flex: none;
+}
+.navrow-actions .ibtn {
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+.navrow-actions .navrow-finish:hover {
+  color: var(--text);
+}
+/* The one mark a task row may carry: a quiet dot or check at its right edge. */
+.navmark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+}
+button.navmark:hover {
   background: var(--bg-selected);
 }
-.btn.nav-finish {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
+.navmark-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
-/* Discard task: a quiet icon beside Finish, in the danger tone only on hover. */
-.ibtn.nav-discard {
-  width: 28px;
-  height: 28px;
-  color: var(--muted);
+.navmark-broken {
+  color: var(--red);
+}
+.navmark-busy {
+  color: var(--accent);
+}
+.navmark-waits {
+  color: var(--warn);
+}
+.navmark-merged {
+  color: var(--green);
 }
 .railrow.rail-discard {
   background: var(--bg-selected);
@@ -357,14 +386,6 @@ button.projecttile:hover {
 }
 .rail-finish:hover .rail-finish-mark {
   background: var(--accent-hover);
-}
-.nav-subhead {
-  padding: 6px 16px 2px;
-  color: var(--muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .nav-empty {
   padding: 4px 16px;
@@ -396,42 +417,6 @@ button.projecttile:hover {
   text-align: left;
   font-size: inherit;
 }
-.nav-subhead-amber {
-  color: var(--warn);
-}
-.nav-subhead-count {
-  margin-left: 4px;
-  opacity: 0.8;
-}
-.navchip {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: none;
-  font-size: 10px;
-  line-height: 14px;
-}
-.navchip-red {
-  color: var(--red);
-  border-color: currentColor;
-}
-.navchip-amber {
-  color: var(--warn);
-  border-color: currentColor;
-}
-.navchip-green {
-  color: var(--green);
-  border-color: currentColor;
-}
-.navchip-muted {
-  color: var(--muted);
-}
-.navchip-finish {
-  background: var(--warn);
-  border-color: var(--warn);
-  color: var(--bg-chrome);
-}
 .nav-status-note {
   color: var(--warn);
   font-size: 12px;
@@ -461,10 +446,6 @@ button.projecttile:hover {
   flex: none;
   color: var(--muted);
   font-size: 12px;
-}
-.navrow-repos {
-  flex: none;
-  white-space: nowrap;
 }
 /* A multi-repo task's one "3 repos" chip: overlapping color dots, then the count. */
 .ws-chip {
@@ -529,13 +510,6 @@ button.projecttile:hover {
 .railrow[aria-current='true'] {
   background: var(--bg-selected);
 }
-.railrow.is-dim > .wit-icon,
-.railrow.is-dim > .navrow-blank {
-  opacity: 0.5;
-}
-.navrow.is-muted .navrow-title {
-  color: var(--muted);
-}
 .rail-dot {
   position: absolute;
   top: 6px;
@@ -551,35 +525,18 @@ button.projecttile:hover {
 .rail-dot-amber {
   background: var(--warn);
 }
-.rail-dot-green {
-  background: var(--green);
+.rail-dot-accent {
+  background: var(--accent);
 }
-.rail-count {
-  display: block;
-  width: fit-content;
-  margin: 4px auto 2px;
-  padding: 0 7px;
-  border-radius: 9px;
-  background: var(--warn);
-  color: var(--bg-chrome);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-}
-.rail-sep {
-  height: 1px;
-  margin: 4px 12px;
-  background: var(--line);
-}
-.rail-finish-hollow {
-  width: 28px;
-  height: 28px;
+/* A merged task in the rail: a small green check in the icon's corner. */
+.rail-check {
+  position: absolute;
+  top: 4px;
+  right: 8px;
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  border: 1.5px solid var(--warn);
-  color: var(--warn);
+  border-radius: 50%;
+  background: var(--bg-chrome);
+  color: var(--green);
 }
 .leftnav-foot {
   flex: none;
