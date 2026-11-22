@@ -238,6 +238,14 @@ describe('the dream scheduler', () => {
     expect(deps.sessionsOf).toHaveBeenCalledTimes(5);
   });
 
+  it('asks for the sessions with the repo’s covered marks, so unchanged tasks need not be read', async () => {
+    sessions = [];
+    await store.markCovered(REPO.id, { t1: 5 });
+    start();
+    await tick();
+    expect(deps.sessionsOf).toHaveBeenCalledWith(REPO.id, { t1: 5 });
+  });
+
   it('asks OpenCode for its models at most once every 10 minutes', async () => {
     sessions = [];
     start();

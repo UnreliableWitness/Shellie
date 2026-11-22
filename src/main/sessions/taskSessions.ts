@@ -10,6 +10,15 @@ import { folderPaths } from '../paths';
 import { withoutPrRequests } from '../prDraft/protocol';
 import { readClaudeTurns, type TurnAt } from './claudeTranscript';
 
+/** The folders OpenCode records the task's sessions under: each worktree's path and its real path. */
+export function opencodeDirs(task: Task): string[] {
+  return [
+    ...new Set(
+      taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
+    ),
+  ];
+}
+
 /**
  * What was said in the task's OpenCode sessions (in any of its worktrees, since it was created); none without an
  * OpenCode tab or without `texts`, and none when OpenCode's database cannot be read (logged under `tag`, so the
@@ -22,11 +31,7 @@ export function opencodeSessionTurns<T extends Turn>(
 ): T[][] {
   const tabs = [...task.closedTerminals, ...task.terminals];
   if (!texts || !tabs.some((t) => t.kind === 'opencode')) return [];
-  const dirs = [
-    ...new Set(
-      taskWorkspaces(task).flatMap((w) => folderPaths(w.worktreePath)),
-    ),
-  ];
+  const dirs = opencodeDirs(task);
   try {
     return texts(dirs, Date.parse(task.createdAt) || 0).map((turns) =>
       withoutPrRequests(turns),

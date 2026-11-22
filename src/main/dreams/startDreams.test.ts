@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import {
   defaultDreaming,
   type DreamingAll,
@@ -11,7 +11,12 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskSchema, type Task } from '../../shared/types';
 import { pickMaterial } from './material';
-import { dreamSessionsOf, taskAgentWorking, toProjects } from './startDreams';
+import {
+  changedTaskRepos,
+  dreamSessionsOf,
+  taskAgentWorking,
+  toProjects,
+} from './startDreams';
 
 const T1 = Date.parse('2026-11-19T11:30:00.000Z');
 const line = (o: Record<string, unknown>) => JSON.stringify(o) + '\n';
@@ -124,6 +129,99 @@ describe('dreamSessionsOf', () => {
       const m = pickMaterial(await sessionsAt(T1 - 5000, T1), { oc: T1 });
       expect(m.tasks).toEqual([]);
     });
+  });
+
+  describe('with the covered marks', () => {
+    const claudeAt = (mtime: number) => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'dream-marks-'));
+      const file = path.join(dir, 's1.jsonl');
+      writeFileSync(
+        file,
+        line({
+          type: 'user',
+          timestamp: new Date(mtime - 1000).toISOString(),
+          message: { role: 'user', content: 'use the helper' },
+        }),
+      );
+      utimesSync(file, new Date(mtime), new Date(mtime));
+      return file;
+    };
+    const cl = makeTask({
+      id: 'cl',
+      terminals: [
+        { id: 'a', kind: 'claude', label: 'Claude', sessionId: 's1' },
+      ],
+    });
+    const oc = makeTask({
+      id: 'oc',
+      closedTerminals: [{ id: 'o', kind: 'opencode', label: 'OpenCode' }],
+    });
+    const reads = (file: string, updatedAt: number | null) => ({
+      sessionFile: () => file,
+      opencodeSessionTurns: vi.fn(() => [
+        [{ who: 'Developer' as const, text: 'hi', at: T1 }],
+      ]),
+      opencodeUpdatedAt: vi.fn(() => updatedAt),
+    });
+
+    it('reads no task whose sessions did not change after its mark', async () => {
+      const file = claudeAt(T1);
+      const read = reads(file, T1);
+      const out = await dreamSessionsOf([cl, oc], 'r1', read, {
+        cl: T1,
+        oc: T1,
+      });
+      expect(out).toEqual([]);
+      expect(read.opencodeSessionTurns).not.toHaveBeenCalled();
+    });
+
+    it('reads a task changed after its mark, and one without a mark', async () => {
+      const read = reads(claudeAt(T1 + 5000), T1 + 5000);
+      const out = await dreamSessionsOf([cl, oc], 'r1', read, {
+        cl: T1,
+        oc: T1,
+      });
+      expect(out.map((t) => t.taskId)).toEqual(['cl', 'oc']);
+      expect(out[0].sessions).toHaveLength(1);
+      const unmarked = await dreamSessionsOf(
+        [cl, oc],
+        'r1',
+        reads(claudeAt(T1), T1),
+        {},
+      );
+      expect(unmarked.map((t) => t.taskId)).toEqual(['cl', 'oc']);
+    });
+
+    it('reads a task when its file cannot be stat’ed or OpenCode’s time is unknown', async () => {
+      const read = {
+        ...reads(path.join(tmpdir(), 'no-such-dream-file.jsonl'), null),
+        opencodeUpdatedAt: () => {
+          throw new Error('locked');
+        },
+      };
+      const out = await dreamSessionsOf([cl, oc], 'r1', read, {
+        cl: T1,
+        oc: T1,
+      });
+      expect(out.map((t) => t.taskId)).toEqual(['cl', 'oc']);
+    });
+  });
+});
+
+describe('changedTaskRepos', () => {
+  it('names the repos of the tasks added, changed, moved or removed only', () => {
+    const seen = new Map();
+    const a = makeTask({ id: 'a', repoId: 'r1' });
+    const b = makeTask({ id: 'b', repoId: 'r2' });
+    expect(changedTaskRepos(seen, [a, b])).toEqual(new Set(['r1', 'r2']));
+    expect(changedTaskRepos(seen, [a, b])).toEqual(new Set());
+    expect(changedTaskRepos(seen, [{ ...a, name: 'Renamed' }, b])).toEqual(
+      new Set(['r1']),
+    );
+    expect(
+      changedTaskRepos(seen, [{ ...a, name: 'Renamed', repoId: 'r3' }, b]),
+    ).toEqual(new Set(['r1', 'r3']));
+    expect(changedTaskRepos(seen, [b])).toEqual(new Set(['r3']));
   });
 });
 
