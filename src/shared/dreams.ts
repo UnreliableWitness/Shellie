@@ -117,6 +117,12 @@ export const dreamingOf = (
   connectionId: string,
 ): DreamingSettings => all.projects[connectionId] ?? defaultDreaming();
 
+/** The projects whose block dreams on `model`: a fault of the model stops them all. */
+export const projectsOnModel = (all: DreamingAll, model: string): string[] =>
+  Object.entries(all.projects)
+    .filter(([, block]) => block.model === model)
+    .map(([id]) => id);
+
 /**
  * The old single block as one block per project: a copy for every connection that owns a repo the block names,
  * holding that connection's repos only. A copy is on only when the old block was on and the copy can still be

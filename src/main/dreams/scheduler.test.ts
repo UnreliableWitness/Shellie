@@ -732,6 +732,82 @@ describe('several projects', () => {
     expect(store.switchedOff(Q)).toEqual(off);
   });
 
+  it('switchOffModel() records and saves off every project on the model in one write, stops its dream and says so once', async () => {
+    const event = vi.fn();
+    setBlock(blockFor('r2'), Q);
+    setBlock(
+      blockFor('r3', { model: 'zai/other', testedModel: 'zai/other' }),
+      R,
+    );
+    start({ repos: () => [REPO, repoOf('r2', Q), repoOf('r3', R)], event });
+    expect(await scheduler!.dreamNow('r1')).toEqual({ started: true });
+    vi.mocked(deps.settings.updateDreaming).mockClear();
+    await scheduler!.switchOffModel({
+      project: Q,
+      model: MODEL,
+      answered: 'x/y',
+      repoId: '',
+    });
+    const off = { answered: 'x/y', chosen: MODEL, repoId: '' };
+    expect(store.switchedOff(P)).toEqual(off);
+    expect(store.switchedOff(Q)).toEqual(off);
+    expect(store.switchedOff(R)).toBeNull();
+    expect(deps.settings.updateDreaming).toHaveBeenCalledOnce();
+    for (const p of [P, Q])
+      expect(app.dreaming.projects[p]).toMatchObject({
+        enabled: false,
+        testedModel: null,
+      });
+    expect(app.dreaming.projects[R]).toMatchObject({
+      enabled: true,
+      testedModel: 'zai/other',
+    });
+    expect(fake.calls[0].signal.aborted).toBe(true);
+    expect(
+      event.mock.calls.filter(([name]) => name === 'dream.switched_off'),
+    ).toEqual([['dream.switched_off', { by: 'wrong-model' }]]);
+  });
+
+  it('switchOffModel() sends no dream.switched_off when every affected project is already off', async () => {
+    const event = vi.fn();
+    setBlock({ ...block(), enabled: false });
+    start({ event });
+    await scheduler!.switchOffModel({
+      project: P,
+      model: MODEL,
+      answered: 'x/y',
+      repoId: '',
+    });
+    expect(store.switchedOff(P)).toEqual({
+      answered: 'x/y',
+      chosen: MODEL,
+      repoId: '',
+    });
+    expect(
+      event.mock.calls.filter(([name]) => name === 'dream.switched_off'),
+    ).toEqual([]);
+  });
+
+  it('switchOffModel() keeps a project off until quit when its record cannot be written', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(store, 'setSwitchedOff').mockRejectedValue(new Error('disk'));
+    start();
+    await scheduler!.switchOffModel({
+      project: P,
+      model: MODEL,
+      answered: 'x/y',
+      repoId: '',
+    });
+    expect(store.switchedOff(P)).toBeNull();
+    expect(block().enabled).toBe(false);
+    // Switched on behind its back: the switch-off still holds.
+    setBlock({ ...block(), enabled: true, testedModel: MODEL });
+    expect(await scheduler!.dreamNow(REPO.id)).toEqual({ wait: 'off' });
+    expect(fake.calls).toHaveLength(0);
+    expect(block().enabled).toBe(false);
+    error.mockRestore();
+  });
+
   it('Stop stops only the project\u2019s own dream', async () => {
     setBlock(blockFor('r2'), Q);
     start({ repos: () => [REPO, repoOf('r2', Q)] });

@@ -124,6 +124,7 @@ beforeEach(async () => {
       await save();
       await store.setSwitchedOff(project, null);
     }),
+    switchOffModel: vi.fn(async () => undefined),
   };
   started = true;
   answered = [MODEL];
@@ -531,35 +532,35 @@ describe('dream:test', () => {
     expect(changed()).toBe(1);
   });
 
-  it('a re-test of the saved model that another model answered does what a wrong-model dream does', async () => {
+  it('a re-test of the saved model that another model answered hands the switch-off to the scheduler, as a wrong-model dream does', async () => {
     await setDreaming(ready({ enabled: true }));
-    status = {
-      ...status,
-      running: { repoId: 'r1', project: P, startedAt: 1, step: 'reading' },
-    };
-    const events: [string, unknown][] = [];
-    deps.event = (name, props) => events.push([name, props]);
     answered = [MODEL, 'anthropic/claude-x'];
     expect(await api().handlers['dream:test'](P, MODEL)).toEqual({
       ok: false,
       message: 'Another model answered',
     });
-    expect(block()).toMatchObject({
-      enabled: false,
+    expect(scheduler.switchOffModel).toHaveBeenCalledExactlyOnceWith({
+      project: P,
       model: MODEL,
-      testedModel: null,
-    });
-    expect(store.switchedOff(P)).toEqual({
       answered: 'anthropic/claude-x',
-      chosen: MODEL,
       repoId: '',
     });
-    expect(scheduler.stopDream).toHaveBeenCalled();
+    expect(changed()).toBe(1);
+  });
+
+  it('before the scheduler started, another model answering a re-test still saves dreaming off, without a record', async () => {
+    await setDreaming(ready({ enabled: true }));
+    started = false;
+    const events: [string, unknown][] = [];
+    deps.event = (name, props) => events.push([name, props]);
+    answered = [MODEL, 'anthropic/claude-x'];
+    expect((await api().handlers['dream:test'](P, MODEL)).ok).toBe(false);
+    expect(block()).toMatchObject({ enabled: false, testedModel: null });
+    expect(store.switchedOff(P)).toBeNull();
     expect(events).toContainEqual([
       'dream.switched_off',
       { by: 'wrong-model' },
     ]);
-    expect(changed()).toBe(1);
   });
 
   it.each([
@@ -590,6 +591,7 @@ describe('dream:test', () => {
         testedModel: null,
       });
       expect(store.switchedOff(P)).toBeNull();
+      expect(scheduler.switchOffModel).not.toHaveBeenCalled();
       expect(scheduler.stopDream).toHaveBeenCalled();
       expect(events).toContainEqual([
         'dream.switched_off',
@@ -1795,7 +1797,8 @@ describe('dreams of several projects', () => {
     expect(settings.get().dreaming.projects[P]).toBeUndefined();
   });
 
-  it('another model answering a re-test switches off every project on that model, and no other', async () => {
+  it('before the scheduler started, another model answering a re-test switches off every project on that model, and no other', async () => {
+    started = false;
     withRepos(repoQ(), { ...repoQ(), id: 'r3', connectionId: 'p3' });
     deps.projects = () => [P, Q, 'p3'];
     await setDreaming(ready({ enabled: true }));
@@ -1819,10 +1822,10 @@ describe('dreams of several projects', () => {
         enabled: false,
         testedModel: null,
       });
-      expect(store.switchedOff(project)).toMatchObject({ chosen: MODEL });
+      // The dream store is not loaded yet: no record.
+      expect(store.switchedOff(project)).toBeNull();
     }
     expect(block('p3')).toMatchObject({ enabled: true, testedModel: OTHER });
-    expect(store.switchedOff('p3')).toBeNull();
   });
 
   it('a repo moved to another project leaves its old block; a block left with nothing is off and its dream stops', async () => {
