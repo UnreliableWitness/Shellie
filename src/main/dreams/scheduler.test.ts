@@ -760,6 +760,26 @@ describe('several projects', () => {
     ).toEqual([['dream.switched_off', { by: 'wrong-model' }]]);
   });
 
+  it('switchOffModel() sends no dream.switched_off when every affected project is already off', async () => {
+    const event = vi.fn();
+    setBlock({ ...block(), enabled: false });
+    start({ event });
+    await scheduler!.switchOffModel({
+      project: P,
+      model: MODEL,
+      answered: 'x/y',
+      repoId: '',
+    });
+    expect(store.switchedOff(P)).toEqual({
+      answered: 'x/y',
+      chosen: MODEL,
+      repoId: '',
+    });
+    expect(
+      event.mock.calls.filter(([name]) => name === 'dream.switched_off'),
+    ).toEqual([]);
+  });
+
   it('switchOffModel() keeps a project off until quit when its record cannot be written', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(store, 'setSwitchedOff').mockRejectedValue(new Error('disk'));

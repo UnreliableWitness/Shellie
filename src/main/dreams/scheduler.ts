@@ -266,10 +266,12 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     answered: string;
     repoId: string;
   }) => {
-    sendSafely(d.event, 'dream.switched_off', { by: 'wrong-model' });
     const affected = [
       ...new Set([off.project, ...projectsOnModel(all(), off.model)]),
     ];
+    // The event means a project's dreaming went from on to off: a re-test can find every affected project already off.
+    if (affected.some((p) => dreamingOf(all(), p).enabled))
+      sendSafely(d.event, 'dream.switched_off', { by: 'wrong-model' });
     // Recorded first: the record keeps dreaming off even when the settings cannot be saved (retried each check).
     let unrecorded = false;
     for (const p of affected) {
