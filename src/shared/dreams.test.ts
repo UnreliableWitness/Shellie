@@ -8,6 +8,7 @@ import {
   dreamPrDescription,
   dreamPrTitle,
   dreamingOf,
+  projectsOnModel,
   splitLegacyDreaming,
   DreamingSettingsSchema,
   widens,
@@ -71,6 +72,18 @@ describe('dreaming per project', () => {
     const all = { projects: { p1: ready() }, legacy: null };
     expect(dreamingOf(all, 'p1')).toEqual(ready());
     expect(dreamingOf(all, 'p2')).toEqual(defaultDreaming());
+  });
+  it('projectsOnModel gives the projects whose block dreams on the model', () => {
+    const all = {
+      projects: {
+        p1: ready({ model: 'zai/glm-5' }),
+        p2: ready({ model: 'zai/other' }),
+        p3: ready({ model: 'zai/glm-5' }),
+      },
+      legacy: null,
+    };
+    expect(projectsOnModel(all, 'zai/glm-5')).toEqual(['p1', 'p3']);
+    expect(projectsOnModel(all, 'x/y')).toEqual([]);
   });
 
   describe('splitLegacyDreaming', () => {

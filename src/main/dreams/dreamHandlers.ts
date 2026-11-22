@@ -21,6 +21,7 @@ import {
   type DreamView,
   dreamingOf,
   pruneDreaming,
+  projectsOnModel,
   type DreamingAll,
   dreamBriefing,
 } from '../../shared/dreams';
@@ -169,6 +170,7 @@ export type DreamHandlerDeps = {
     | 'stopDreamOf'
     | 'status'
     | 'switchOn'
+    | 'switchOffModel'
     | 'runningDream'
   > | null;
   repos: () => Repo[];
@@ -280,12 +282,6 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     const after = dreamingOf(all, project);
     return { before: seen.before ?? after, after };
   };
-
-  /** The projects that dream on `model`: a fault of the model stops them all. */
-  const projectsOn = (model: string): string[] =>
-    Object.entries(d.settings.get().dreaming.projects)
-      .filter(([, block]) => block.model === model)
-      .map(([id]) => id);
 
   /** A narrowing that leaves no limit or no repo to dream about switches dreaming off with it. */
   const narrowed = (s: DreamingSettings): DreamingSettings => ({
@@ -618,30 +614,43 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     model: string,
     others: string[] | null,
   ) => {
+    const s = d.scheduler();
+    if (others && s) {
+      // The scheduler's own rule, in its chain: one write, and the switch-off holds even when it cannot be recorded.
+      // A test call is no repo's.
+      await s.switchOffModel({
+        project,
+        model,
+        answered: others.join(', '),
+        repoId: '',
+      });
+      d.broadcast();
+      return;
+    }
+    // Before the scheduler started the dream store is not loaded: no record, the settings hold on their own.
     const affected = others
-      ? [...new Set([project, ...projectsOn(model)])]
+      ? [
+          ...new Set([
+            project,
+            ...projectsOnModel(d.settings.get().dreaming, model),
+          ]),
+        ]
       : [project];
+    let wasOn = false;
     for (const p of affected) {
-      // The dream store is written only once loaded (the scheduler started); the settings below hold either way.
-      if (others && d.scheduler())
-        await d.store.setSwitchedOff(p, {
-          answered: others.join(', '),
-          chosen: model,
-          // A test call is no repo's.
-          repoId: '',
-        });
       const { before } = await saveDreaming(p, (cur) =>
         // Still the model that was tested: a new pick saved meanwhile is left alone.
         cur.model !== model
           ? cur
           : { ...cur, enabled: false, testedModel: null },
       );
-      if (before.enabled)
-        event('dream.switched_off', {
-          by: others ? 'wrong-model' : 'test-failed',
-        });
-      d.scheduler()?.stopDream(p);
+      wasOn ||= before.enabled;
+      s?.stopDream(p);
     }
+    if (wasOn)
+      event('dream.switched_off', {
+        by: others ? 'wrong-model' : 'test-failed',
+      });
     d.broadcast();
   };
 

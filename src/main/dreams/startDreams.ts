@@ -6,6 +6,7 @@
 import type { AttentionState } from '../../shared/attention';
 import {
   dreamingOf,
+  projectsOnModel,
   pruneDreaming,
   splitLegacyDreaming,
 } from '../../shared/dreams';
@@ -116,9 +117,7 @@ export async function toProjects(
   await store.adoptLegacySwitchedOff((record) => {
     const home = repos.find((r) => r.id === record.repoId)?.connectionId;
     if (home) return [home];
-    return Object.entries(settings.get().dreaming.projects)
-      .filter(([, block]) => block.model === record.chosen)
-      .map(([id]) => id);
+    return projectsOnModel(settings.get().dreaming, record.chosen);
   });
 }
 

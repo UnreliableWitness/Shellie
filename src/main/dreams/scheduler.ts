@@ -9,6 +9,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   dreamingOf,
+  projectsOnModel,
   type DreamingAll,
   type DreamSwitchedOff,
 } from '../../shared/dreams';
@@ -245,24 +246,38 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       null;
     sendSafely(d.event, 'dream.run', runProps(out, entry, d.now() - startedAt));
     if (out.outcome !== 'wrong-model') return;
-    sendSafely(d.event, 'dream.switched_off', { by: 'wrong-model' });
-    // The fault is the model's: every project that dreams on it stops, each with its own record.
-    const affected = [
-      ...new Set([
+    await serial(() =>
+      switchOffModel({
         project,
-        ...Object.entries(all().projects)
-          .filter(([, block]) => block.model === model)
-          .map(([id]) => id),
-      ]),
+        model,
+        answered: out.answered.join(', '),
+        repoId,
+      }),
+    );
+  };
+
+  /**
+   * Another model answered a call of `project` on `model` (a dream, or the setup's re-test with `repoId` ''): the
+   * fault is the model's, so every project that dreams on it stops, each with its own record. Run in the serial chain.
+   */
+  const switchOffModel = async (off: {
+    project: string;
+    model: string;
+    answered: string;
+    repoId: string;
+  }) => {
+    sendSafely(d.event, 'dream.switched_off', { by: 'wrong-model' });
+    const affected = [
+      ...new Set([off.project, ...projectsOnModel(all(), off.model)]),
     ];
     // Recorded first: the record keeps dreaming off even when the settings cannot be saved (retried each check).
     let unrecorded = false;
     for (const p of affected) {
       const recorded = await d.store
         .setSwitchedOff(p, {
-          answered: out.answered.join(', '),
-          chosen: model,
-          repoId,
+          answered: off.answered,
+          chosen: off.model,
+          repoId: off.repoId,
         })
         .then(
           () => true,
@@ -281,6 +296,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
       console.error(
         '[dreams] the switch-off could be neither recorded nor saved; it holds until Shellie quits',
       );
+    for (const p of affected) if (dream?.project === p) abort('stopped');
   };
 
   /**
@@ -553,6 +569,18 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
         await d.store.setSwitchedOff(project, null);
         offUnrecorded.delete(project);
       });
+    },
+    /**
+     * Another model answered a call on `model` (the setup's re-test): as after such a dream, every project on the
+     * model is recorded and saved off, its passed test forgotten, and its running dream stops. The caller broadcasts.
+     */
+    switchOffModel(off: {
+      project: string;
+      model: string;
+      answered: string;
+      repoId: string;
+    }): Promise<void> {
+      return serial(() => switchOffModel(off));
     },
     /** The dream that runs now, with the project it was started for; null when none does. */
     runningDream(): { repoId: string; project: string } | null {
