@@ -53,7 +53,11 @@ import { getInstallId } from './main/installId';
 import { startBrainScheduler } from './main/brain/scheduler';
 import { DreamStore } from './main/dreams/DreamStore';
 import type { DreamScheduler } from './main/dreams/scheduler';
-import { startDreams, taskAgentWorking } from './main/dreams/startDreams';
+import {
+  changedTaskRepos,
+  startDreams,
+  taskAgentWorking,
+} from './main/dreams/startDreams';
 import { createDreamHandlers } from './main/dreams/dreamHandlers';
 import { limitChecks } from './main/dreams/limit';
 import { dreamingOf } from './shared/dreams';
@@ -1284,6 +1288,8 @@ async function boot(): Promise<void> {
       broadcast: () => broadcast('dream:changed', {}),
       event: (name, props) => telemetry.event(name, props),
     });
+    /** The tasks as the last `tasks:changed` left them, to tell which repos' tasks changed. */
+    const tasksSeen: Parameters<typeof changedTaskRepos>[0] = new Map();
     const handlers = createHandlers({
       dreams: dreamApi,
       opencodeModelsRead: (m) => dreamModels.seen(m),
@@ -1501,7 +1507,9 @@ async function boot(): Promise<void> {
       broadcast: (event, payload) => {
         if (event === 'tasks:changed') {
           attention.retain(new Set(terminals.ids()));
-          dreams?.materialChanged();
+          // Only the repos of the tasks that changed lose their known material.
+          for (const id of changedTaskRepos(tasksSeen, store.state.tasks))
+            dreams?.materialChanged(id);
         }
         broadcast(event, payload);
       },

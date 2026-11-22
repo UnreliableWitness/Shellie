@@ -62,7 +62,11 @@ export type DreamSchedulerDeps = {
   /** Some agent tab's last state is `working`. */
   agentWorking: () => boolean;
   repos: () => Repo[];
-  sessionsOf: (repoId: string) => Promise<TaskSessions[]>;
+  /** With `covered`, tasks whose sessions did not change after their mark may be left out unread. */
+  sessionsOf: (
+    repoId: string,
+    covered?: Record<string, number>,
+  ) => Promise<TaskSessions[]>;
   /** Whether the project (its connection id) has room under its own daily limit. */
   limit: { hasRoom(project: string): boolean };
   /** Sends `dream:changed`. */
@@ -136,10 +140,8 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     if (k && !fresh && d.now() - k.at < MATERIAL_MS) return k;
     let next: Known;
     try {
-      const m = pickMaterial(
-        await d.sessionsOf(repoId),
-        d.store.repo(repoId).covered,
-      );
+      const covered = d.store.repo(repoId).covered;
+      const m = pickMaterial(await d.sessionsOf(repoId, covered), covered);
       const marks = Object.values(m.marks);
       next = {
         at: d.now(),
@@ -615,7 +617,7 @@ export function startDreamScheduler(d: DreamSchedulerDeps) {
     sweep(): Promise<void> {
       return serial(sweep);
     },
-    /** A task changed (any repo), or an agent tab of a task of `repoId` reported: its sessions may hold new material. */
+    /** A task of `repoId` changed, or an agent tab of one reported (every repo when none is named): new material, maybe. */
     materialChanged(repoId?: string): void {
       if (repoId === undefined) material.clear();
       else material.delete(repoId);
