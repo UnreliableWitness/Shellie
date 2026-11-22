@@ -610,6 +610,44 @@
   font-weight: 600;
 }
 
+/* Week page: every task's time per day, for timesheets. */
+.week-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 32px;
+  border-top: 1px solid var(--line);
+}
+.week-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+.week-table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.week-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.week-table tfoot td {
+  font-weight: 600;
+  border-bottom: 0;
+}
+.week-table .week-hours {
+  text-align: right;
+  width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+.week-note {
+  margin-top: 8px;
+}
+
 /* Done task page: facts, commits, then the usage panel, in one scroll. */
 .done-body {
   flex: 1;

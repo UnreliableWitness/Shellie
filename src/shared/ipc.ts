@@ -89,7 +89,7 @@ import type { RepoInspection } from './repoInspection';
 import type { EditorChoice, EditorId, EditorOptions } from './editors';
 import type { RendererTelemetry } from './telemetry';
 import type { TitleBarKind } from './titleBar';
-import type { LocalItemTime, TaskTime } from './time';
+import type { LocalItemTime, TaskTime, WeekTime } from './time';
 import type { AttentionSnapshot, AttentionView } from './attention';
 import type { Vendor } from './budget';
 import type { BudgetView } from './budgetView';
@@ -635,6 +635,8 @@ export type Channels = {
     args: [connectionId: string];
     result: Record<string, LocalItemTime>;
   };
+  /** Realistic time per task and local day of the week from `weekStart` (YYYY-MM-DD, a Monday), over every task. */
+  'time:week': { args: [weekStart: string]; result: WeekTime };
   /** The terminal tab on screen (null: no task page), so main does not flag what the developer is looking at. */
   'attention:view': { args: [view: AttentionView]; result: void };
   'attention:get': { args: []; result: AttentionSnapshot };
