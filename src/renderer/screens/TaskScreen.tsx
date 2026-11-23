@@ -54,7 +54,7 @@ export function TaskScreen() {
 }
 
 /** Tasks whose terminals are shown: everything between setup and done. */
-const hasTerminals = (t: TaskView) =>
+export const hasTerminals = (t: TaskView) =>
   t.status === 'ready' || t.status === 'finishing';
 
 /**

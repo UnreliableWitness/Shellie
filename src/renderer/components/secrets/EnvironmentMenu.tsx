@@ -1,4 +1,3 @@
-import { ChevronDown12Regular, Shield16Regular } from '@fluentui/react-icons';
 import {
   Fragment,
   type KeyboardEvent,
@@ -16,6 +15,7 @@ import {
   isGuarded,
 } from '../../../shared/secrets';
 import type { TaskView } from '../../../shared/types';
+import { useLatest } from '../../hooks/useLatest';
 import { api, tryInvoke } from '../../api';
 import { clock } from '../../format';
 import { useContributeCommands } from '../../commands/registry';
@@ -133,19 +133,17 @@ export function EnvironmentConfirm({
 }
 
 /**
- * The task bar's "⛨ <Environment> ▾" chip: a menu of the four environments with the gaps in each, then a switch.
- * UAT and Production first show the confirm; agent tabs are never restarted.
+ * The menu behind the "Switch environment" command (the task menu and the palette list it): the four environments
+ * with the gaps in each, then a switch. UAT and Production first show the confirm; agent tabs are never restarted.
+ * It has no button of its own: it opens under the right end of the task bar it is rendered in.
  */
-export function EnvironmentChip({
+export function EnvironmentMenu({
   task,
-  offers = true,
-  headless = false,
+  offers,
 }: {
   task: TaskView;
-  /** No chip: the menu and the confirm open from the Switch environment command, under the task bar's right end. */
-  headless?: boolean;
-  /** Whether the switch is also offered as a command: only for the task on screen. */
-  offers?: boolean;
+  /** Whether the command is offered: only for the task on screen. */
+  offers: boolean;
 }) {
   const notify = useStore((s) => s.notify);
   const [at, setAt] = useState<{ right: number; top: number } | null>(null);
@@ -153,19 +151,17 @@ export function EnvironmentChip({
   const [asking, setAsking] = useState<Guarded | null>(null);
   const [info, setInfo] = useState<EnvironmentInfo | null>(null);
   const [busy, setBusy] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  // Without the chip: where the menu opens (the task bar's right end), and what had the focus before it did.
+  // Where the menu opens (the task bar's right end), and what had the focus before it did.
   const anchor = useRef<HTMLSpanElement>(null);
   const before = useRef<HTMLElement | null>(null);
   const pop = useRef<HTMLDivElement>(null);
   const env = task.environment;
-  const label = ENVIRONMENT_LABEL[env];
 
   const close = (refocus: boolean) => {
     setMenuOpen(false);
     setAsking(null);
     setAt(null);
-    if (refocus) (trigger.current ?? before.current)?.focus();
+    if (refocus) before.current?.focus();
   };
 
   useEffect(() => {
@@ -177,8 +173,7 @@ export function EnvironmentChip({
     first?.focus();
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (!pop.current?.contains(t) && !trigger.current?.contains(t))
-        close(false);
+      if (!pop.current?.contains(t)) close(false);
     };
     const onResize = () => close(false);
     document.addEventListener('mousedown', onDown);
@@ -194,9 +189,7 @@ export function EnvironmentChip({
     // A switch under way must end before the next one is chosen.
     if (busy) return;
     before.current = document.activeElement as HTMLElement | null;
-    const r = (
-      trigger.current ?? anchor.current?.closest('.taskbar')
-    )?.getBoundingClientRect();
+    const r = anchor.current?.closest('.taskbar')?.getBoundingClientRect();
     setAt({
       right: r ? window.innerWidth - r.right : 8,
       top: r ? r.bottom + 2 : 40,
@@ -234,10 +227,7 @@ export function EnvironmentChip({
   };
 
   // The command opens this same menu, so UAT and Production keep their confirm.
-  const latest = useRef(open);
-  useEffect(() => {
-    latest.current = open;
-  });
+  const latest = useLatest(open);
   const commands = useMemo<Command[]>(
     () =>
       offers
@@ -277,24 +267,8 @@ export function EnvironmentChip({
 
   return (
     <>
-      {headless && <span ref={anchor} hidden />}
-      {!headless && (
-        <button
-          ref={trigger}
-          type="button"
-          className={`btn btn-sm env-chip env-chip-${env}`}
-          aria-label={`Secrets environment: ${label}`}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          title="Which environment's secrets this task's tabs get"
-          disabled={task.status !== 'ready' || busy}
-          onClick={open}
-        >
-          <Shield16Regular aria-hidden="true" />
-          {label}
-          <ChevronDown12Regular aria-hidden="true" />
-        </button>
-      )}
+      {/* Marks where in the task bar the menu belongs; the menu opens under the bar's right end. */}
+      <span ref={anchor} hidden />
       {at && menuOpen && (
         <div
           ref={pop}

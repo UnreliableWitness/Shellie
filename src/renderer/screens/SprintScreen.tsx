@@ -404,7 +404,6 @@ const iterationOption = (i: SprintIteration) => {
 };
 
 function SprintPage({ connection }: { connection: Connection }) {
-  const setSprintName = useStore((s) => s.setSprintName);
   const setSprint = useStore((s) => s.setSprint);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
@@ -496,11 +495,9 @@ function SprintPage({ connection }: { connection: Connection }) {
         rows: sprint.rows,
         mine: assigned,
       });
-      setSprintName(sprint.iteration?.name ?? null);
       if (!selected) setSprint(connection.id, sprint);
     } catch (e) {
       if (mine !== seq.current) return;
-      setSprintName(null);
       setLoad({
         status: 'error',
         message: errorMessage(e),
@@ -508,7 +505,7 @@ function SprintPage({ connection }: { connection: Connection }) {
     } finally {
       if (mine === seq.current) setBusy(false);
     }
-  }, [connection.id, selected, setSprintName, setSprint, loadTime]);
+  }, [connection.id, selected, setSprint, loadTime]);
 
   useEffect(() => {
     let live = true;
@@ -526,7 +523,6 @@ function SprintPage({ connection }: { connection: Connection }) {
   }, [connection.id]);
 
   useEffect(() => {
-    setSprintName(null);
     void refresh();
     const onFocus = () => {
       if (Date.now() - lastLoad.current >= FOCUS_REFRESH_MS) void refresh();
@@ -536,7 +532,7 @@ function SprintPage({ connection }: { connection: Connection }) {
       window.removeEventListener('focus', onFocus);
       seq.current++;
     };
-  }, [refresh, setSprintName]);
+  }, [refresh]);
 
   const rows = load.status === 'ok' ? load.rows : [];
   const searching = query.trim() !== '';

@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react';
 import { eur, plural } from '../../format';
-import { useBrains } from '../../hooks/useBrains';
 import { useHomeStats } from '../../hooks/useHomeStats';
-import { useReading, useReadingNudges } from '../../hooks/useReadingFeed';
-import { hasEvent } from '../../readingFeed';
+import { useProjectBrains } from '../../hooks/useProjectBrains';
 import { activeConnection, useStore } from '../../store';
 import { track } from '../../telemetry';
 import { navLine, waitingCount } from '../dreams/dreamWords';
@@ -44,14 +42,7 @@ export function PlacesBand() {
   const sprint = useStore((s) =>
     connection ? s.sprints[connection.id]?.sprint.iteration?.name : undefined,
   );
-  const brains = useBrains().filter(
-    (b) => b.connectionId === connection?.id && !b.archived,
-  );
-  const nudges = useReadingNudges();
-  const reading = useReading();
-  const toRead = new Set(
-    nudges ? reading.filter(hasEvent).map((r) => r.brain.brainId) : [],
-  );
+  const { brains, toRead } = useProjectBrains();
   const { view, project } = useDreamsState();
   const waiting = view ? waitingCount(view) : 0;
   const month = useHomeStats('month');

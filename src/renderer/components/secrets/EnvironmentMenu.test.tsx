@@ -1,12 +1,13 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EnvironmentInfo } from '../../../shared/secrets';
 import type { TaskView } from '../../../shared/types';
+import { allCommands } from '../../commands/registry';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { EnvironmentBand } from './EnvironmentBand';
-import { EnvironmentChip } from './EnvironmentChip';
+import { EnvironmentMenu } from './EnvironmentMenu';
 
 const NOW = Date.parse('2026-10-23T10:00:00Z');
 
@@ -91,24 +92,28 @@ const info: EnvironmentInfo = {
 
 beforeEach(() => useStore.setState({ notices: [] }));
 
+const switchCommand = () =>
+  allCommands().find((c) => c.id === 'task.environment');
+
 async function openMenu(t: TaskView = task()) {
   const api = installFakeApi({
     'tasks:environmentInfo': () => info,
     'tasks:setEnvironment': (_id, env) => task({ environment: env }),
   });
-  render(<EnvironmentChip task={t} />);
-  await userEvent.click(
-    screen.getByRole('button', {
-      name: `Secrets environment: ${t.environment === 'production' ? 'Production' : t.environment === 'uat' ? 'UAT' : t.environment === 'test' ? 'Test' : 'Development'}`,
-    }),
+  render(
+    // The menu opens under the task bar it is rendered in.
+    <div className="taskbar">
+      <EnvironmentMenu task={t} offers />
+    </div>,
   );
+  act(() => switchCommand()?.run());
   const menu = await screen.findByRole('menu', {
     name: 'Secrets for this task',
   });
   return { ...api, menu };
 }
 
-describe('EnvironmentChip', () => {
+describe('EnvironmentMenu', () => {
   it('lists the four environments with the gaps and what a switch restarts', async () => {
     const { menu } = await openMenu();
     const items = within(menu).getAllByRole('menuitemradio');
@@ -186,10 +191,8 @@ describe('EnvironmentChip', () => {
       'tasks:environmentInfo': () =>
         new Promise<EnvironmentInfo>((r) => (loaded = r)),
     });
-    render(<EnvironmentChip task={task()} />);
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Secrets environment: Development' }),
-    );
+    render(<EnvironmentMenu task={task()} offers />);
+    act(() => switchCommand()?.run());
     await userEvent.click(
       screen.getByRole('menuitemradio', { name: 'Production' }),
     );

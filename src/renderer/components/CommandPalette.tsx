@@ -31,6 +31,8 @@ function Palette() {
     0,
     shown.findIndex((c) => c.id === selectedId),
   );
+  // Each command's row number, for the grouped list too.
+  const rowOf = useMemo(() => new Map(shown.map((c, i) => [c.id, i])), [shown]);
   const filtering = query.trim() !== '';
 
   // Focus goes back to where it was: the terminal, most of the time. Read while rendering, before the field takes it.
@@ -76,7 +78,7 @@ function Palette() {
   };
 
   const row = (command: Command) => {
-    const i = shown.indexOf(command);
+    const i = rowOf.get(command.id) ?? 0;
     return (
       <div
         key={command.id}

@@ -47,6 +47,32 @@ describe('useShortcuts', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  it('does nothing for the mod key itself or a key held down', () => {
+    const run = vi.fn();
+    const docs: Command = {
+      id: 'task.docs',
+      title: 'Show docs',
+      group: 'task',
+      shortcut: { code: 'KeyD', shift: true },
+      run,
+    };
+    render(<Host commands={[docs]} />);
+    expect(
+      fireEvent.keyDown(window, {
+        key: 'Control',
+        code: 'ControlLeft',
+        ctrlKey: true,
+      }),
+    ).toBe(true);
+    fireEvent.keyDown(window, {
+      code: 'KeyD',
+      ctrlKey: true,
+      shiftKey: true,
+      repeat: true,
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it('leaves a key no command has alone', () => {
     render(<Host />);
     expect(press('KeyD', true)).toBe(false);

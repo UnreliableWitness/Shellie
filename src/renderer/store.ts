@@ -179,8 +179,6 @@ export type Store = {
   /** Terminals that wait on the developer, from main. */
   attention: AttentionSnapshot;
   setAttention(attention: AttentionSnapshot): void;
-  /** The current sprint's name once the Sprint page has loaded it, for the breadcrumb. */
-  sprintName: string | null;
   /** The current sprint per connection, as last fetched; `at` is when (ms). */
   sprints: Record<string, { at: number; sprint: Sprint }>;
   setSprint(connectionId: string, sprint: Sprint): void;
@@ -241,7 +239,6 @@ export type Store = {
   setTasks(tasks: TaskView[]): void;
   setConnections(connections: Connection[]): void;
   setConnectionId(id: string | null): void;
-  setSprintName(name: string | null): void;
   notify(level: Notice['level'], message: string): void;
   dismiss(id: string): void;
   load(): Promise<void>;
@@ -340,7 +337,6 @@ export const useStore = create<Store>((set, get) => ({
       ),
     });
   },
-  sprintName: null,
   sprints: {},
   notices: [],
   reading: [],
@@ -419,7 +415,6 @@ export const useStore = create<Store>((set, get) => ({
   setRepos: (repos) => set({ repos }),
   setConnections: (connections) => set({ connections }),
   setConnectionId: (connectionId) => set({ connectionId }),
-  setSprintName: (sprintName) => set({ sprintName }),
   setSprint: (connectionId, sprint) =>
     set((s) => ({
       sprints: { ...s.sprints, [connectionId]: { at: Date.now(), sprint } },

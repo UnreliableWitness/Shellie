@@ -2,10 +2,8 @@ import { useMemo } from 'react';
 import { useContributeCommands } from '../commands/registry';
 import type { BrainView } from '../../shared/brain';
 import type { Command } from '../commands/types';
-import { useBrains } from '../hooks/useBrains';
-import { useReading, useReadingNudges } from '../hooks/useReadingFeed';
-import { hasEvent } from '../readingFeed';
-import { activeConnection, useStore } from '../store';
+import { useProjectBrains } from '../hooks/useProjectBrains';
+import { useStore } from '../store';
 import { waitingCount } from './dreams/dreamWords';
 import { useDreamsState } from './dreams/useDreams';
 
@@ -61,17 +59,7 @@ export function usePlaceCommands(
  * mounted only without it. Renders nothing.
  */
 export function PlaceCommands() {
-  const connection = useStore(activeConnection);
-  // Like the nav: only the active project's brains (#229), none without a connection.
-  const brains = useBrains().filter(
-    (b) => b.connectionId === connection?.id && !b.archived,
-  );
-  const nudges = useReadingNudges();
-  const reading = useReading();
-  // The nav's dot rule: an event (a long read for your work, a change in one you read), never the unread pile.
-  const toRead = new Set(
-    nudges ? reading.filter(hasEvent).map((r) => r.brain.brainId) : [],
-  );
+  const { brains, toRead } = useProjectBrains();
   usePlaceCommands(brains, toRead);
   return null;
 }

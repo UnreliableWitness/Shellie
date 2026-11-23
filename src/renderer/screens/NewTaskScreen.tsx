@@ -22,7 +22,7 @@ import {
   isGuarded,
 } from '../../shared/secrets';
 import { api, tryInvoke } from '../api';
-import { EnvironmentConfirm } from '../components/secrets/EnvironmentChip';
+import { EnvironmentConfirm } from '../components/secrets/EnvironmentMenu';
 import { TaskSummaryCard } from '../components/TaskSummaryCard';
 import { PageHeader, Pivots, WorkItemTypeIcon } from '../components/ui';
 import { WorkItemPicker } from '../components/WorkItemPicker';

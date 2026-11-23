@@ -25,6 +25,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { Events } from '../../shared/ipc';
 import { brainTaskId } from '../../shared/brain';
 import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
+import { useLatest } from '../hooks/useLatest';
 import { api, tryInvoke } from '../api';
 import { eur, plural } from '../format';
 import { useTaskBrain } from '../hooks/useBrains';
@@ -54,7 +55,7 @@ import {
   repoColor,
   type WorkspaceView,
 } from '../../shared/workspaces';
-import { OpenInEditor } from './OpenInEditor';
+import { EditorCommands } from './EditorCommands';
 import { ChangesTab } from './review/ChangesTab';
 import { DiscardBar } from './DiscardBar';
 import { NEW_TERMINALS, NewTerminalMenu } from './NewTerminalMenu';
@@ -63,11 +64,11 @@ import { MindMark, modKey } from './ui';
 import { UsagePanel } from './UsagePanel';
 import { EnvironmentBand } from './secrets/EnvironmentBand';
 import { RunApproveBar } from './secrets/RunApproveBar';
-import { EnvironmentChip } from './secrets/EnvironmentChip';
-import { CleanWorktreeButton } from './secrets/CleanWorktreeButton';
+import { EnvironmentMenu } from './secrets/EnvironmentMenu';
+import { CleanWorktreeCommand } from './secrets/CleanWorktreeCommand';
 import { ENVIRONMENT_LABEL } from '../../shared/secrets';
 import { TaskBarMenu } from './TaskBarMenu';
-import { TaskMenu, WorkspaceChips } from './WorkspaceChips';
+import { WorkspaceCommands, WorkspaceChips } from './WorkspaceChips';
 
 const SCAN_MS = 120000;
 const MARKDOWN = /\.(md|markdown)$/i;
@@ -102,6 +103,10 @@ function useUnseen<K extends 'docs:changed' | 'usage:changed'>(
   }, [active, tab]);
   return unseen;
 }
+
+/** An editor installed while Shellie runs shows up when the task menu opens, checked at most this often. */
+const EDITORS_EVERY_MS = 5 * 60_000;
+let editorsLookedAt = Date.now();
 
 const NO_VIEWS: HtmlView[] = [];
 const NO_TABS: string[] = [];
@@ -165,10 +170,7 @@ function RunCommands({
 }) {
   const config = useRepoConfig(workspace.repoId);
   const run = config?.config.run;
-  const latest = useRef(onOpen);
-  useEffect(() => {
-    latest.current = onOpen;
-  });
+  const latest = useLatest(onOpen);
   const commands = useMemo<Command[]>(
     () =>
       !offers || disabled
@@ -382,10 +384,7 @@ export const TerminalTabs = memo(function TerminalTabs({
     setTab(task.id, def.id);
   };
   // The palette and the shortcuts get this task's actions while it is the one on screen.
-  const latest = useRef({ open, openBrainTerminal });
-  useEffect(() => {
-    latest.current = { open, openBrainTerminal };
-  });
+  const latest = useLatest({ open, openBrainTerminal });
   const offers = visible && ready;
   const terminalKey = task.terminals
     .map((t) => `${t.id}\n${t.label}`)
@@ -423,12 +422,12 @@ export const TerminalTabs = memo(function TerminalTabs({
           ]
         : []),
       show('task.usage', 'Show usage and cost', USAGE_TAB, {
-        shortcut: { code: 'Digit0' },
+        shortcut: VIEW_TABS[USAGE_TAB].shortcut,
       }),
       ...(hasGit
         ? [
             show('task.docs', 'Show docs', DOCS_TAB, {
-              shortcut: { code: 'KeyD', shift: true },
+              shortcut: VIEW_TABS[DOCS_TAB].shortcut,
             }),
           ]
         : []),
@@ -436,7 +435,7 @@ export const TerminalTabs = memo(function TerminalTabs({
         ? [
             {
               ...show('task.brain', 'Show brain', BRAIN_TAB, {
-                shortcut: { code: 'KeyB', shift: true },
+                shortcut: VIEW_TABS[BRAIN_TAB].shortcut,
               }),
               run: () => {
                 if (useStore.getState().activeTab(id) !== BRAIN_TAB)
@@ -592,7 +591,7 @@ export const TerminalTabs = memo(function TerminalTabs({
   ].filter((t) => canShow[t]);
   // Only the run entries, and only for the task on screen: every other offer leaves this row alone.
   const runs = useContributedWith(offers ? 'task.run.' : null);
-  // How often the task menu was opened: the editors are looked for again each time (#94).
+  // Counts the task menu openings that look for the editors again (#94): at most one per EDITORS_EVERY_MS.
   const [menuOpens, setMenuOpens] = useState(0);
   // Where the task is, for the top of the task menu.
   const where = noRepo
@@ -731,15 +730,18 @@ export const TerminalTabs = memo(function TerminalTabs({
           <WorkspaceChips task={task} />
           <CostButton taskId={task.id} />
           {/* Its place in the row is where the environment menu opens. */}
-          {ready && !noRepo && (
-            <EnvironmentChip task={task} offers={visible} headless />
-          )}
+          {ready && !noRepo && <EnvironmentMenu task={task} offers={visible} />}
           {ready && (
             <TaskBarMenu
               where={where}
               dots={dots}
               visible={visible}
-              onOpen={() => setMenuOpens((n) => n + 1)}
+              onOpen={() => {
+                // Looking for editors starts processes in main: not on every opening of the menu.
+                if (Date.now() - editorsLookedAt < EDITORS_EVERY_MS) return;
+                editorsLookedAt = Date.now();
+                setMenuOpens((n) => n + 1);
+              }}
             />
           )}
         </div>
@@ -759,19 +761,16 @@ export const TerminalTabs = memo(function TerminalTabs({
           onOpen={(def) => void open(def)}
         />
       ))}
-      {ready && visible && !noRepo && (
-        <CleanWorktreeButton task={task} headless />
-      )}
+      {ready && visible && !noRepo && <CleanWorktreeCommand task={task} />}
       {ready && (
-        <OpenInEditor
+        <EditorCommands
           taskId={task.id}
           disabled={task.worktreeMissing}
           visible={visible}
-          headless
           refresh={menuOpens}
         />
       )}
-      {ready && !noRepo && <TaskMenu task={task} offers={visible} headless />}
+      {ready && !noRepo && <WorkspaceCommands task={task} offers={visible} />}
       {discarding && ready && <DiscardBar task={task} />}
       {task.mainCheckoutEdits.map((e) => (
         <div key={e.repoPath} role="status" className="ws-warning">

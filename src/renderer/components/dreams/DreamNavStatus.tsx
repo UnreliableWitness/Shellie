@@ -8,17 +8,11 @@ import { UsageBar } from './UsageBar';
 import { useDreamsState } from './useDreams';
 
 /**
- * The dream line at the foot of the navigation. A click opens Dreams; while a dream runs it opens a small panel
- * (Escape and a click outside close it, and focus returns to the line).
+ * The nav's For you line while a dream runs for the active project: "Dreaming about <repo>". A click opens a small
+ * panel with the step and Stop this dream (Escape and a click outside close it, and focus returns to the line).
+ * Nothing shows otherwise: Dreams' other states are on Home's Dreams tile.
  */
-export function DreamNavStatus({
-  rail,
-  onlyRunning = false,
-}: {
-  rail: boolean;
-  /** Shown only while a dream runs (the nav's For you block); its other states are on Home. */
-  onlyRunning?: boolean;
-}) {
+export function DreamNavStatus({ rail }: { rail: boolean }) {
   const { view, project } = useDreamsState();
   const go = useStore((s) => s.go);
   const running = view?.running ?? null;
@@ -50,11 +44,11 @@ export function DreamNavStatus({
       document.removeEventListener('keydown', onKey);
     };
   }, [shown]);
-  if (!view || (onlyRunning && !running)) return null;
+  if (!view || !running) return null;
   const now = Date.now();
   const { line, model, tone } = navLine(view, now);
   const full = model ? `${line} · ${model}` : line;
-  const repo = running && view.repos.find((r) => r.id === running.repoId);
+  const repo = view.repos.find((r) => r.id === running.repoId);
   return (
     <div className="nav-dream-wrap" ref={wrap}>
       <button
@@ -62,18 +56,15 @@ export function DreamNavStatus({
         type="button"
         className={`nav-status nav-dream is-${tone}`}
         aria-label={rail ? full : undefined}
-        aria-haspopup={running ? 'true' : undefined}
-        aria-expanded={running ? shown : undefined}
+        aria-haspopup="true"
+        aria-expanded={shown}
         title={full}
-        onClick={() => {
-          if (running) setOpen(!open);
-          else go({ kind: 'dreams' });
-        }}
+        onClick={() => setOpen(!open)}
       >
         <WeatherMoon12Regular aria-hidden="true" />
         {!rail && <span className="nav-status-text">{full}</span>}
       </button>
-      {shown && running && (
+      {shown && (
         <div
           ref={panel}
           tabIndex={-1}

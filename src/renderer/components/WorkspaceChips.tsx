@@ -1,8 +1,4 @@
-import {
-  Add16Regular,
-  ChevronDown12Regular,
-  MoreHorizontal16Regular,
-} from '@fluentui/react-icons';
+import { ChevronDown12Regular } from '@fluentui/react-icons';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { TaskView } from '../../shared/types';
 import {
@@ -11,6 +7,7 @@ import {
   repoColor,
   type WorkspaceView,
 } from '../../shared/workspaces';
+import { useLatest } from '../hooks/useLatest';
 import { api, tryInvoke } from '../api';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useContributeCommands } from '../commands/registry';
@@ -226,17 +223,14 @@ export function WorkspaceChips({ task }: { task: TaskView }) {
   );
 }
 
-/** The task menu: look for other repos or join a worktree by hand. */
-export function TaskMenu({
+/** Offers two commands for the task's repos (the task menu and the palette list them): look for other repos, or join a worktree by hand. Renders nothing. */
+export function WorkspaceCommands({
   task,
-  offers = true,
-  headless = false,
+  offers,
 }: {
   task: TaskView;
-  /** No button: only offers its commands (the task bar's menu and the palette show them). */
-  headless?: boolean;
   /** Whether its items are also offered as commands: only for the task on screen. */
-  offers?: boolean;
+  offers: boolean;
 }) {
   const notify = useStore((s) => s.notify);
   const scan = async () => {
@@ -259,10 +253,7 @@ export function TaskMenu({
       notify,
     );
   };
-  const latest = useRef({ scan, add });
-  useEffect(() => {
-    latest.current = { scan, add };
-  });
+  const latest = useLatest({ scan, add });
   const commands = useMemo<Command[]>(
     () =>
       !offers
@@ -284,33 +275,5 @@ export function TaskMenu({
     [offers],
   );
   useContributeCommands('task.menu', commands);
-  if (headless) return null;
-  return (
-    <PopMenu
-      label="Task menu"
-      className="ibtn"
-      trigger={<MoreHorizontal16Regular aria-hidden="true" />}
-    >
-      {(close) => (
-        <>
-          <Item
-            onClick={() => {
-              close();
-              void scan();
-            }}
-          >
-            Scan for other repos
-          </Item>
-          <Item
-            onClick={() => {
-              close();
-              void add();
-            }}
-          >
-            <Add16Regular aria-hidden="true" /> Add a worktree{'…'}
-          </Item>
-        </>
-      )}
-    </PopMenu>
-  );
+  return null;
 }

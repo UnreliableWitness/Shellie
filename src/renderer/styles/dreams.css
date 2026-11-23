@@ -330,28 +330,6 @@
 .dream-card-list .dream-clamp {
   min-width: 0;
 }
-.navitem-count {
-  margin-left: auto;
-  min-width: 18px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  border-radius: 9px;
-  background: var(--amber);
-  color: var(--bg-page);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-}
-.is-rail .navitem-count {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  padding: 0 3px;
-  font-size: 10px;
-  line-height: 14px;
-}
 .nav-dream-wrap {
   position: relative;
 }

@@ -1,7 +1,21 @@
-import { activeConnection, type Store } from '../store';
+import { activeConnection, type Store, useStore } from '../store';
 import { listTasks } from '../taskList';
 import { track } from '../telemetry';
 import type { Command } from './types';
+
+/**
+ * Focus mode: the one command with a shortcut that needs no component. It reads the store when it runs, so the
+ * shortcut handler and the task menu can hold it without building the rest of the store's commands.
+ */
+export function focusCommand(): Command {
+  return {
+    id: 'app.focus',
+    title: 'Focus mode',
+    group: 'app',
+    shortcut: { code: 'KeyF', shift: true },
+    run: () => useStore.getState().toggleFocus(),
+  };
+}
 
 /**
  * The commands that need nothing but the store: the places, the active project's open tasks and the app's own
@@ -65,13 +79,7 @@ export function globalCommands(s: Store): Command[] {
       group: 'tasks',
       run: () => s.openTask(t.id),
     })),
-    {
-      id: 'app.focus',
-      title: 'Focus mode',
-      group: 'app',
-      shortcut: { code: 'KeyF', shift: true },
-      run: () => s.toggleFocus(),
-    },
+    focusCommand(),
     {
       id: 'app.nav',
       title: s.navCollapsed ? 'Expand navigation' : 'Collapse navigation',
