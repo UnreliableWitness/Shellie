@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { api } from './api';
+import { CommandPalette } from './components/CommandPalette';
 import { HeaderBar } from './components/HeaderBar';
 import { Notices } from './components/Notices';
 import { TaskNav } from './components/TaskNav';
@@ -120,6 +121,7 @@ export function Shell() {
         </main>
       </div>
       <Notices />
+      <CommandPalette />
     </div>
   );
 }
