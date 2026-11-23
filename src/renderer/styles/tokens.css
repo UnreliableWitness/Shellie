@@ -26,6 +26,28 @@
   --green-bg: rgba(108, 203, 95, 0.12);
   --red: #f1707b;
   --amber: #f2c94c;
+  /*
+   * Series colours: one per task in a chart (the Week page), in this fixed order. Checked with the dataviz
+   * validator against --bg-card in both themes (colour-blind separation, contrast); --on-series-N is the text on N.
+   */
+  --series-1: #3987e5;
+  --on-series-1: #ffffff;
+  --series-2: #d95926;
+  --on-series-2: #ffffff;
+  --series-3: #199e70;
+  --on-series-3: #ffffff;
+  --series-4: #c98500;
+  --on-series-4: #ffffff;
+  --series-5: #d55181;
+  --on-series-5: #ffffff;
+  --series-6: #0ca30c;
+  --on-series-6: #ffffff;
+  --series-7: #9085e9;
+  --on-series-7: #ffffff;
+  --series-8: #e66767;
+  --on-series-8: #ffffff;
+  --series-other: #6e6d69;
+  --on-series-other: #ffffff;
   --red-bg: rgba(241, 112, 123, 0.12);
   --warn: #f7b955;
   --warn-bg: rgba(247, 185, 85, 0.12);
@@ -97,6 +119,24 @@
     --green-bg: rgba(16, 124, 16, 0.08);
     --red: #a4262c;
     --amber: #8a6100;
+    --series-1: #2a78d6;
+    --on-series-1: #ffffff;
+    --series-2: #eb6834;
+    --on-series-2: #ffffff;
+    --series-3: #1baf7a;
+    --on-series-3: #0b0b0b;
+    --series-4: #eda100;
+    --on-series-4: #0b0b0b;
+    --series-5: #e87ba4;
+    --on-series-5: #0b0b0b;
+    --series-6: #008300;
+    --on-series-6: #ffffff;
+    --series-7: #6250d6;
+    --on-series-7: #ffffff;
+    --series-8: #e34948;
+    --on-series-8: #ffffff;
+    --series-other: #605e5c;
+    --on-series-other: #ffffff;
     --scrim: rgba(0, 0, 0, 0.25);
     --red-bg: rgba(164, 38, 44, 0.08);
     --warn: #8a5300;

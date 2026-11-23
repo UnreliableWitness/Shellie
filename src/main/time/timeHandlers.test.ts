@@ -229,6 +229,15 @@ describe('time handlers', () => {
         project: 'Alpha',
         workItem: { id: '12', title: 'Twelve' },
         perDay: [7200, 3600, 0, 0, 0, 0, 0],
+        stretches: [
+          [{ start: day(12, 9), seconds: 7200 }],
+          [{ start: day(13, 9), seconds: 3600 }],
+          [],
+          [],
+          [],
+          [],
+          [],
+        ],
         totalSeconds: 10_800,
       },
       {
@@ -237,6 +246,15 @@ describe('time handlers', () => {
         project: 'Beta',
         workItem: null,
         perDay: [0, 1800, 0, 0, 0, 0, 0],
+        stretches: [
+          [],
+          [{ start: day(13, 14), seconds: 1800 }],
+          [],
+          [],
+          [],
+          [],
+          [],
+        ],
         totalSeconds: 1800,
       },
     ]);

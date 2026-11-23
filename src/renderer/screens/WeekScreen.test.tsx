@@ -1,7 +1,8 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WeekTime } from '../../shared/time';
+import { useStore } from '../store';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { mondayOf, shiftWeek, WeekScreen } from './WeekScreen';
 
@@ -16,6 +17,15 @@ const week = (weekStart: string): WeekTime => ({
             project: 'Shellie',
             workItem: { id: '12', title: 'Save a delivery address' },
             perDay: [7200, 2700, 0, 0, 0, 0, 0],
+            stretches: [
+              [{ start: 100, seconds: 7200 }],
+              [{ start: 300, seconds: 2700 }],
+              [],
+              [],
+              [],
+              [],
+              [],
+            ],
             totalSeconds: 9900,
           },
           {
@@ -24,6 +34,15 @@ const week = (weekStart: string): WeekTime => ({
             project: 'Webshop',
             workItem: null,
             perDay: [0, 1800, 0, 0, 0, 0, 0],
+            stretches: [
+              [],
+              [{ start: 200, seconds: 1800 }],
+              [],
+              [],
+              [],
+              [],
+              [],
+            ],
             totalSeconds: 1800,
           },
         ]
@@ -57,38 +76,117 @@ describe('WeekScreen', () => {
     vi.useRealTimers();
   });
 
-  it('shows this week: a row per task with hours per day, and the day totals', async () => {
+  const column = (name: RegExp) => screen.getByRole('group', { name });
+  const cards = (name: RegExp) =>
+    within(column(name))
+      .getAllByRole('button')
+      .map((b) => b.textContent);
+
+  it('shows each day as a column of cards, in the order worked, with the day totals on top', async () => {
     installFakeApi({ 'time:week': week });
     render(<WeekScreen />);
-    const row = (await screen.findByText('Save a delivery address')).closest(
-      'tr',
-    )!;
-    const cells = within(row).getAllByRole('cell');
-    expect(cells.map((c) => c.textContent)).toEqual([
-      '12 Save a delivery address',
-      'Shellie',
-      '2',
-      '0.75',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '2.75',
+    await screen.findByRole('group', { name: /^Monday 16/ });
+    expect(column(/^Monday 16/)).toHaveAccessibleName('Monday 16, 2 hours');
+    expect(column(/^Tuesday 17/)).toHaveAccessibleName(
+      'Tuesday 17, 1.25 hours',
+    );
+    expect(column(/^Wednesday 18/)).toHaveAccessibleName(
+      'Wednesday 18, no time',
+    );
+    // The id comes before the title; Tuesday began with the spike (start 200), then the story (start 300).
+    expect(cards(/^Monday 16/)).toEqual(['2 h12 Save a delivery address']);
+    expect(cards(/^Tuesday 17/)).toEqual([
+      '0.5 hSpike',
+      '0.75 h12 Save a delivery address',
     ]);
-    expect(cells[3]).toHaveAttribute('title', '0:45');
-    const foot = screen.getByRole('row', { name: /^Total/ });
     expect(
-      within(foot)
-        .getAllByRole('cell')
-        .map((c) => c.textContent),
-    ).toEqual(['Total', '', '2', '1.25', '', '', '', '', '', '3.25']);
+      within(column(/^Tuesday 17/)).getAllByRole('button')[1],
+    ).toHaveAttribute('title', expect.stringContaining('0:45'));
+    expect(screen.getByText('3.25 h')).toBeInTheDocument();
+  });
+
+  it('makes a card as tall as its time, on a scale of ten hours', async () => {
+    installFakeApi({ 'time:week': week });
+    render(<WeekScreen />);
+    await screen.findByRole('group', { name: /^Monday 16/ });
+    // 40 px per hour, less the 2 px gap under each card.
+    expect(within(column(/^Monday 16/)).getByRole('button').style.height).toBe(
+      '78px',
+    );
+    expect(
+      within(column(/^Tuesday 17/)).getAllByRole('button')[0].style.height,
+    ).toBe('18px');
+    expect(screen.getByTestId('week-axis').textContent).toBe('0 h12345678910');
+  });
+
+  it('stretches the scale for a day longer than ten hours', async () => {
+    const long = (weekStart: string): WeekTime => {
+      const w = week(weekStart);
+      const seconds = 14 * 3600 + 900;
+      w.rows[0].perDay[0] = seconds;
+      w.rows[0].stretches[0] = [{ start: 100, seconds }];
+      w.dayTotals[0] = seconds;
+      return w;
+    };
+    installFakeApi({ 'time:week': long });
+    render(<WeekScreen />);
+    await screen.findByRole('group', { name: /^Monday 16/ });
+    expect(screen.getByTestId('week-axis').textContent).toBe(
+      '0 h123456789101112131415',
+    );
+    expect(within(column(/^Monday 16/)).getByRole('button').style.height).toBe(
+      '568px',
+    );
+    expect(column(/^Monday 16/)).toHaveAccessibleName('Monday 16, 14.25 hours');
+  });
+
+  it('copies the id and title of a clicked card, and says so', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    installFakeApi({ 'time:week': week });
+    useStore.setState({ notices: [] });
+    render(<WeekScreen />);
+    await screen.findByRole('group', { name: /^Monday 16/ });
+    await userEvent.click(within(column(/^Monday 16/)).getByRole('button'));
+    expect(writeText).toHaveBeenCalledWith('12 Save a delivery address');
+    await userEvent.click(
+      within(column(/^Tuesday 17/)).getAllByRole('button')[0],
+    );
+    expect(writeText).toHaveBeenLastCalledWith('Spike');
+    await waitFor(() =>
+      expect(useStore.getState().notices.map((n) => n.message)).toEqual([
+        'Copied: 12 Save a delivery address',
+        'Copied: Spike',
+      ]),
+    );
+  });
+
+  it('lists the tasks under the columns with their colour, project and week total', async () => {
+    installFakeApi({ 'time:week': week });
+    render(<WeekScreen />);
+    const list = await screen.findByRole('list', { name: 'Tasks this week' });
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['12Save a delivery addressShellie2.75', 'SpikeWebshop0.5']);
+    // The first task worked on gets the first colour, like its cards.
+    expect(
+      within(list).getAllByRole('listitem')[0].querySelector('.week-swatch'),
+    ).toHaveAttribute('data-series', '1');
+    expect(within(column(/^Monday 16/)).getByRole('button')).toHaveAttribute(
+      'data-series',
+      '1',
+    );
   });
 
   it('steps to the week before and back to this week', async () => {
     const api = installFakeApi({ 'time:week': week });
     render(<WeekScreen />);
-    await screen.findByText('Spike');
+    await screen.findByRole('list', { name: 'Tasks this week' });
     await userEvent.click(
       screen.getByRole('button', { name: 'Previous week' }),
     );
@@ -96,7 +194,7 @@ describe('WeekScreen', () => {
       await screen.findByText('No time measured in this week.'),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'This week' }));
-    await screen.findByText('Spike');
+    await screen.findByRole('list', { name: 'Tasks this week' });
     expect(
       api.calls.filter((c) => c.channel === 'time:week').map((c) => c.args[0]),
     ).toEqual(['2026-11-16', '2026-11-09', '2026-11-16']);
@@ -119,6 +217,6 @@ describe('WeekScreen', () => {
     expect(
       screen.getByText('No time measured in this week.'),
     ).toBeInTheDocument();
-    expect(screen.queryByText('Spike')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('Spike')).toHaveLength(0);
   });
 });

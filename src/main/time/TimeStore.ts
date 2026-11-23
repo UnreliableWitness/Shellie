@@ -11,11 +11,12 @@ import {
   type AgentTool,
   type Interval,
   type TaskTime,
+  type WeekStretch,
   type WorkHours,
 } from '../../shared/time';
 import type { Task } from '../../shared/types';
 import { JsonFileStore } from '../usage/JsonFileStore';
-import { secondsPerDay } from './weekTime';
+import { secondsPerDay, stretchesPerDay } from './weekTime';
 
 const IntervalSchema = z.tuple([z.number(), z.number()]);
 const ToolSchema = z.enum(['claude-code', 'copilot-cli', 'opencode']);
@@ -127,6 +128,18 @@ export class TimeStore extends EventEmitter<{ changed: [taskId: string] }> {
   weekSeconds(task: Task, bounds: number[], now: number): number[] {
     const agent = this.agentIntervals(task.id);
     return secondsPerDay(
+      task,
+      this.activeIntervals(task.id),
+      AGENT_TOOLS.map((t) => agent[t]),
+      bounds,
+      now,
+    );
+  }
+
+  /** The task's stretches of work per day between `bounds` (see `stretchesPerDay`). */
+  weekStretches(task: Task, bounds: number[], now: number): WeekStretch[][] {
+    const agent = this.agentIntervals(task.id);
+    return stretchesPerDay(
       task,
       this.activeIntervals(task.id),
       AGENT_TOOLS.map((t) => agent[t]),

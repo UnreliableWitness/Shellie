@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { secondsPerDay, weekBounds } from './weekTime';
+import { secondsPerDay, stretchesPerDay, weekBounds } from './weekTime';
 
 // Local times, so the day split holds in any time zone the tests run in.
 const at = (d: number, h: number, m = 0) =>
@@ -77,5 +77,53 @@ describe('secondsPerDay', () => {
       NOW,
     );
     expect(r[0]).toBe(H / 1000);
+  });
+});
+
+describe('stretchesPerDay', () => {
+  const bounds = weekBounds('2026-11-16');
+  const task = {
+    openPeriods: [],
+    createdAt: new Date(at(10, 9)).toISOString(),
+    finishedAt: null,
+  };
+  const of = (active: [number, number][], agent: [number, number][][] = []) =>
+    stretchesPerDay(task, active, agent, bounds, NOW);
+
+  it('gives each day its stretches in order, with when they began and how long the work in them took', () => {
+    const r = of([
+      [at(16, 9), at(16, 12)],
+      [at(16, 14), at(16, 15, 30)],
+      [at(18, 10), at(18, 11)],
+    ]);
+    expect(r[0]).toEqual([
+      { start: at(16, 9), seconds: 3 * 3600 },
+      { start: at(16, 14), seconds: 5400 },
+    ]);
+    expect(r[1]).toEqual([]);
+    expect(r[2]).toEqual([{ start: at(18, 10), seconds: 3600 }]);
+  });
+
+  it('joins work that resumes within half an hour into one stretch, counting only the time worked', () => {
+    const r = of([
+      [at(16, 9), at(16, 10)],
+      [at(16, 10, 20), at(16, 11)],
+      [at(16, 11, 31), at(16, 12)],
+    ]);
+    expect(r[0]).toEqual([
+      { start: at(16, 9), seconds: 3600 + 40 * 60 },
+      { start: at(16, 11, 31), seconds: 29 * 60 },
+    ]);
+  });
+
+  it('adds up to the seconds per day, agent time and the split over midnight included', () => {
+    const active: [number, number][] = [[at(17, 23), at(18, 1)]];
+    const agent: [number, number][][] = [[[at(17, 23, 30), at(18, 2)]]];
+    const r = of(active, agent);
+    const perDay = secondsPerDay(task, active, agent, bounds, NOW);
+    expect(r.map((day) => day.reduce((n, s) => n + s.seconds, 0))).toEqual(
+      perDay,
+    );
+    expect(r[2][0].start).toBe(bounds[2]);
   });
 });
