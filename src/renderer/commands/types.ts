@@ -1,14 +1,14 @@
 /** Where a command shows in the palette. */
-export type CommandGroup = "task" | "goto" | "tasks" | "app";
+export type CommandGroup = 'task' | 'goto' | 'tasks' | 'app';
 
 export const GROUP_TITLE: Record<CommandGroup, string> = {
-  task: "This task",
-  goto: "Go to",
-  tasks: "Tasks",
-  app: "App",
+  task: 'This task',
+  goto: 'Go to',
+  tasks: 'Tasks',
+  app: 'App',
 };
 
-export const GROUP_ORDER: CommandGroup[] = ["task", "goto", "tasks", "app"];
+export const GROUP_ORDER: CommandGroup[] = ['task', 'goto', 'tasks', 'app'];
 
 /**
  * A key with the platform's mod key (Cmd on macOS, Ctrl elsewhere); Alt is never part of one.
@@ -30,6 +30,6 @@ export type Command = {
   /** A quiet word at the right of the row, such as "3 files". */
   note?: string;
   /** `accent` for a note that says something waits for the user. */
-  noteTone?: "accent";
+  noteTone?: 'accent';
   run(): void;
 };

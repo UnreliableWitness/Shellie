@@ -1,4 +1,4 @@
-import type { Command } from "./types";
+import type { Command } from './types';
 
 /**
  * How well `title` answers `query` (both lower case): null when the query's letters are not in it in order.

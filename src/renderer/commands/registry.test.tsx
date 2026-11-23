@@ -1,0 +1,54 @@
+import { render } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { useStore } from '../store';
+import { allCommands, useContributeCommands } from './registry';
+import type { Command } from './types';
+
+const cmd = (id: string, group: Command['group'] = 'task'): Command => ({
+  id,
+  title: id,
+  group,
+  run: () => undefined,
+});
+
+function Offer({ source, commands }: { source: string; commands: Command[] }) {
+  useContributeCommands(source, commands);
+  return null;
+}
+const ids = () => allCommands().map((c) => c.id);
+
+describe('the command registry', () => {
+  beforeEach(() => {
+    useStore.setState({ connections: [], tasks: [], repos: [] });
+  });
+
+  it("holds a mounted component's commands and drops them when it goes", () => {
+    const a = [cmd('a')];
+    const { rerender, unmount } = render(<Offer source="x" commands={a} />);
+    expect(ids()).toContain('a');
+    rerender(<Offer source="x" commands={[cmd('b')]} />);
+    expect(ids()).toContain('b');
+    expect(ids()).not.toContain('a');
+    unmount();
+    expect(ids()).not.toContain('b');
+  });
+
+  it('withdraws on an empty list', () => {
+    const { rerender } = render(<Offer source="x" commands={[cmd('a')]} />);
+    rerender(<Offer source="x" commands={[]} />);
+    expect(ids()).not.toContain('a');
+  });
+
+  it('orders by group whatever was offered first', () => {
+    render(
+      <>
+        <Offer source="late" commands={[cmd('z.app', 'app')]} />
+        <Offer source="x" commands={[cmd('a.task', 'task')]} />
+      </>,
+    );
+    const all = ids();
+    expect(all.indexOf('a.task')).toBe(0);
+    expect(all.indexOf('a.task')).toBeLessThan(all.indexOf('goto.home'));
+    expect(all.indexOf('goto.home')).toBeLessThan(all.indexOf('z.app'));
+  });
+});

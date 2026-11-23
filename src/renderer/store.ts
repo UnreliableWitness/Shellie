@@ -164,7 +164,7 @@ export type BrainPendingFile = {
   note: string;
 };
 
-type Store = {
+export type Store = {
   screen: Screen;
   /** Where Cancel and Escape on New task and Finish return to. */
   previous: Screen | null;
@@ -214,6 +214,9 @@ type Store = {
     brainId: string,
     update: (draft: ComposerDraft) => ComposerDraft,
   ): void;
+  /** The command palette is on screen. */
+  paletteOpen: boolean;
+  setPaletteOpen(v: boolean): void;
   focus: boolean;
   navCollapsed: boolean;
   /** The left nav's width in px when not collapsed (#160). */
@@ -484,6 +487,8 @@ export const useStore = create<Store>((set, get) => ({
     };
     set({ reviewByTask: { ...get().reviewByTask, [taskId]: next } });
   },
+  paletteOpen: false,
+  setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   toggleFocus: () => {
     const focus = !get().focus;
     track('focus.toggled', { on: focus });
