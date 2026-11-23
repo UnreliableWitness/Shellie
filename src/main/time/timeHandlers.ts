@@ -122,6 +122,7 @@ export function createTimeHandlers(d: TimeDeps): Pick<Handlers, TimeChannels> {
             ? { id: task.workItem.id, title: task.workItem.title }
             : null,
           perDay,
+          stretches: d.time.weekStretches(task, bounds, at),
           totalSeconds,
         });
       }

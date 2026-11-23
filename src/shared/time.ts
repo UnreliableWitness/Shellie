@@ -77,6 +77,9 @@ export type LocalItemTime = {
 };
 
 /** One task's realistic time in a week (Week page), Monday first. */
+/** A stretch of work on a task within one day: when it began (epoch ms) and the seconds worked in it. */
+export type WeekStretch = { start: number; seconds: number };
+
 export type WeekRow = {
   taskId: string;
   title: string;
@@ -84,6 +87,8 @@ export type WeekRow = {
   project: string | null;
   workItem: { id: string; title: string } | null;
   perDay: number[];
+  /** Per day, the task's stretches of work in order (see `stretchesPerDay`). */
+  stretches: WeekStretch[][];
   totalSeconds: number;
 };
 

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Week: days as columns, hours worked from 0 to 10</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+body{margin:0;background:#201f1e}
+button{font:inherit;cursor:pointer}
+a{color:#4da3ee}a:hover{color:#7dbcf3}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 720px; box-sizing: border-box; padding: 24px 32px; background: #201f1e; color: rgba(255,255,255,0.9); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; display: flex; flex-direction: column; gap: 16px">
+  <header style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600">Week</h1>
+    <span style="color: rgba(255,255,255,0.62)">16 nov – 22 nov 2026</span>
+    <span style="flex-grow: 1"></span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600">33.25 h</span>
+    <span style="color: rgba(255,255,255,0.62)">4 tasks, 6 days</span>
+    <div style="display: flex; gap: 4px; margin-left: 12px">
+      <button aria-label="Previous week" style="width: 32px; height: 30px; background: #252423; border: 1px solid rgba(255,255,255,0.16); border-radius: 2px; color: rgba(255,255,255,0.9)">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7.5 2 3.5 6l4 4"></path></svg>
+      </button>
+      <button style="height: 30px; padding: 0 12px; background: #252423; border: 1px solid rgba(255,255,255,0.16); border-radius: 2px; color: rgba(255,255,255,0.9)">This week</button>
+      <button aria-label="Next week" style="width: 32px; height: 30px; background: #252423; border: 1px solid rgba(255,255,255,0.16); border-radius: 2px; color: rgba(255,255,255,0.9)">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 2l4 4-4 4"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <section aria-label="Hours worked per day, task by task" style="background: #252423; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; padding: 14px 20px 18px; overflow-x: auto">
+    <div style="min-width: 820px; display: grid; grid-template-columns: 36px repeat(7, minmax(0, 1fr)); column-gap: 10px">
+      <span></span>
+      <div style="padding-bottom: 10px"><div>Mon <span style="color: rgba(255,255,255,0.62)">16</span></div><div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600">6.25</div></div>
+      <div style="padding-bottom: 10px"><div>Tue <span style="color: rgba(255,255,255,0.62)">17</span></div><div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600">5.25</div></div>
+      <div style="padding-bottom: 10px"><div>Wed <span style="color: rgba(255,255,255,0.62)">18</span></div><div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600">5.75</div></div>
+      <div style="padding-bottom: 10px"><div>Thu <span style="color: rgba(255,255,255,0.62)">19</span></div><div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600">7.25</div></div>
+      <div style="padding-bottom: 10px"><div>Fri <span style="color: rgba(255,255,255,0.62)">20</span></div><div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600">7.5</div></div>
+      <div style="padding-bottom: 10px"><div style="color: rgba(255,255,255,0.62)">Sat 21</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600">1.25</div></div>
+      <div style="padding-bottom: 10px"><div style="color: rgba(255,255,255,0.62)">Sun 22</div><div style="font-size: 13px; line-height: 21px; color: rgba(255,255,255,0.62)">none</div></div>
+
+      <div aria-hidden="true" style="position: relative; height: 400px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(255,255,255,0.62)">
+        <span style="position: absolute; top: -7px; right: 0">0 h</span>
+        <span style="position: absolute; top: 33px; right: 0">1</span>
+        <span style="position: absolute; top: 73px; right: 0">2</span>
+        <span style="position: absolute; top: 113px; right: 0">3</span>
+        <span style="position: absolute; top: 153px; right: 0">4</span>
+        <span style="position: absolute; top: 193px; right: 0">5</span>
+        <span style="position: absolute; top: 233px; right: 0">6</span>
+        <span style="position: absolute; top: 273px; right: 0">7</span>
+        <span style="position: absolute; top: 313px; right: 0; color: rgba(255,255,255,0.9); font-weight: 600">8</span>
+        <span style="position: absolute; top: 353px; right: 0">9</span>
+        <span style="position: absolute; top: 393px; right: 0">10</span>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+        <div title="412 Fix login redirect, Monday: 4 h 45 min" style="position: absolute; left: 0; right: 0; top: 0; height: 188px; box-sizing: border-box; padding: 6px 8px; background: #3987e5; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">412 · 4.75</div><div>Fix login redirect</div></div>
+        <div title="351 Brain sync on Windows, Monday: 1 h 30 min" style="position: absolute; left: 0; right: 0; top: 190px; height: 58px; box-sizing: border-box; padding: 6px 8px; background: #c98500; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">351 · 1.5</div><div>Brain sync on Windows</div></div>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+        <div title="412 Fix login redirect, Tuesday: 5 h 15 min" style="position: absolute; left: 0; right: 0; top: 0; height: 208px; box-sizing: border-box; padding: 6px 8px; background: #3987e5; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">412 · 5.25</div><div>Fix login redirect</div></div>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+        <div title="412 Fix login redirect, Wednesday: 1 h 30 min" style="position: absolute; left: 0; right: 0; top: 0; height: 58px; box-sizing: border-box; padding: 6px 8px; background: #3987e5; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">412 · 1.5</div><div>Fix login redirect</div></div>
+        <div title="398 Export invoices as CSV, Wednesday: 4 h 15 min" style="position: absolute; left: 0; right: 0; top: 60px; height: 168px; box-sizing: border-box; padding: 6px 8px; background: #d95926; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">398 · 4.25</div><div>Export invoices as CSV</div></div>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+        <div title="398 Export invoices as CSV, Thursday: 7 h 15 min" style="position: absolute; left: 0; right: 0; top: 0; height: 288px; box-sizing: border-box; padding: 6px 8px; background: #d95926; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">398 · 7.25</div><div>Export invoices as CSV</div></div>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+        <div title="398 Export invoices as CSV, Friday: 1 h 45 min" style="position: absolute; left: 0; right: 0; top: 0; height: 68px; box-sizing: border-box; padding: 6px 8px; background: #d95926; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">398 · 1.75</div><div>Export invoices as CSV</div></div>
+        <div title="377 Rate table per customer, Friday: 5 h 45 min" style="position: absolute; left: 0; right: 0; top: 70px; height: 228px; box-sizing: border-box; padding: 6px 8px; background: #199e70; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">377 · 5.75</div><div>Rate table per customer</div></div>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+        <div title="351 Brain sync on Windows, Saturday: 1 h 15 min" style="position: absolute; left: 0; right: 0; top: 0; height: 48px; box-sizing: border-box; padding: 6px 8px; background: #c98500; border-radius: 4px; color: #ffffff; font-size: 12px; line-height: 1.35; overflow: hidden"><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600">351 · 1.25</div><div>Brain sync on Windows</div></div>
+      </div>
+
+      <div style="position: relative; height: 400px; border-top: 1px solid rgba(255,255,255,0.16); border-bottom: 1px solid rgba(255,255,255,0.16); background-image: linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 100% 40px">
+        <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 320px; border-top: 1px dashed rgba(255,255,255,0.4)"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Tasks this week" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 24px">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 2px; background: #d95926; flex: none"></span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.62)">398</span>
+      <span style="flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Export invoices as CSV</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600">13.25</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 2px; background: #3987e5; flex: none"></span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.62)">412</span>
+      <span style="flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Fix login redirect</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600">11.5</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 2px; background: #199e70; flex: none"></span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.62)">377</span>
+      <span style="flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Rate table per customer</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600">5.75</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 2px; background: #c98500; flex: none"></span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.62)">351</span>
+      <span style="flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Brain sync on Windows</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600">2.75</span>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
