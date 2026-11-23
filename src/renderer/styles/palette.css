@@ -7,7 +7,7 @@
   justify-content: center;
   align-items: flex-start;
   padding: 96px 16px 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--scrim);
   -webkit-app-region: no-drag;
 }
 .palette {

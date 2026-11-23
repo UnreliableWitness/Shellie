@@ -10,6 +10,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskView } from '../../shared/types';
+import { allCommands } from '../commands/registry';
 import { CHANGES_TAB, useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi, noOverrides } from '../test-helpers/fakeApi';
@@ -671,6 +672,54 @@ describe('tabs and focus', () => {
     );
   });
 
+  it("offers the shown task's actions as commands, and none once another page shows", async () => {
+    setup();
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    const ids = () => allCommands().map((c) => c.id);
+    await waitFor(() =>
+      expect(ids()).toEqual(
+        expect.arrayContaining([
+          'task.usage',
+          'task.docs',
+          'task.changes',
+          'task.terminal.1',
+          'task.terminal.2',
+          'task.new.claude',
+          'task.new.shell',
+          'task.new.copilot',
+          'task.new.opencode',
+          'task.folder',
+          'task.editor',
+          'task.scan',
+          'task.addWorktree',
+          'task.environment',
+          'task.finish',
+          'task.discard',
+        ]),
+      ),
+    );
+    expect(ids()).not.toContain('task.brain');
+    expect(allCommands().find((c) => c.id === 'task.terminal.2')?.title).toBe(
+      'Switch to terminal 2: zsh',
+    );
+    act(() =>
+      allCommands()
+        .find((c) => c.id === 'task.changes')
+        ?.run(),
+    );
+    expect(useStore.getState().activeTab('a')).toBe(CHANGES_TAB);
+    act(() =>
+      allCommands()
+        .find((c) => c.id === 'task.finish')
+        ?.run(),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'finish', taskId: 'a' });
+    await waitFor(() =>
+      expect(ids().filter((id) => id.startsWith('task.'))).toEqual([]),
+    );
+  });
+
   it('switches with the numpad digits', async () => {
     setup();
     render(<Shell />);
@@ -1030,6 +1079,8 @@ describe('tabs and focus', () => {
     setup({}, { 'brain:forTask': () => listedBrain() });
     render(<Shell />);
     const term = await screen.findByTestId('term-c1');
+    // The shortcut belongs to the Brain tab: it works once the tab is there.
+    await screen.findByRole('tab', { name: 'Brain' });
     const ev = createEvent.keyDown(term, {
       key: 'B',
       code: 'KeyB',

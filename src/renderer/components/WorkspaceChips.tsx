@@ -3,7 +3,7 @@ import {
   ChevronDown12Regular,
   MoreHorizontal16Regular,
 } from '@fluentui/react-icons';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { TaskView } from '../../shared/types';
 import {
   activeWorkspaces,
@@ -13,6 +13,8 @@ import {
 } from '../../shared/workspaces';
 import { api, tryInvoke } from '../api';
 import { useGitSummary } from '../hooks/useGitSummary';
+import { useContributeCommands } from '../commands/registry';
+import type { Command } from '../commands/types';
 import { useStore } from '../store';
 import { RepoMark } from './RepoMark';
 
@@ -225,7 +227,14 @@ export function WorkspaceChips({ task }: { task: TaskView }) {
 }
 
 /** The task menu: look for other repos or join a worktree by hand. */
-export function TaskMenu({ task }: { task: TaskView }) {
+export function TaskMenu({
+  task,
+  offers = true,
+}: {
+  task: TaskView;
+  /** Whether its items are also offered as commands: only for the task on screen. */
+  offers?: boolean;
+}) {
   const notify = useStore((s) => s.notify);
   const scan = async () => {
     const added = await tryInvoke(
@@ -247,6 +256,31 @@ export function TaskMenu({ task }: { task: TaskView }) {
       notify,
     );
   };
+  const latest = useRef({ scan, add });
+  useEffect(() => {
+    latest.current = { scan, add };
+  });
+  const commands = useMemo<Command[]>(
+    () =>
+      !offers
+        ? []
+        : [
+            {
+              id: 'task.scan',
+              title: 'Scan for other repos',
+              group: 'task',
+              run: () => void latest.current.scan(),
+            },
+            {
+              id: 'task.addWorktree',
+              title: 'Add a worktree',
+              group: 'task',
+              run: () => void latest.current.add(),
+            },
+          ],
+    [offers],
+  );
+  useContributeCommands('task.menu', commands);
   return (
     <PopMenu
       label="Task menu"

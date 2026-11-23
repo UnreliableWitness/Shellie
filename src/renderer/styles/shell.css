@@ -207,6 +207,41 @@ button.projecttile:hover {
   font-size: 12px;
   font-weight: 600;
 }
+/* The palette's field at the top of the nav: looks like a search box, opens the palette. */
+.nav-palette {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  flex: none;
+  margin: 8px 8px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-page);
+  color: var(--muted);
+  text-align: left;
+}
+.nav-palette:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.nav-palette-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-palette-key {
+  flex: none;
+  font-size: 11px;
+}
+.is-rail .nav-palette {
+  justify-content: center;
+  margin: 8px 8px 4px;
+  padding: 0;
+}
 .navitem {
   display: flex;
   align-items: center;

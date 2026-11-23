@@ -16,6 +16,7 @@ import {
   Home20Regular,
   PanelLeftContract20Regular,
   PanelLeftExpand20Regular,
+  Search16Regular,
   Settings20Regular,
 } from '@fluentui/react-icons';
 import {
@@ -25,6 +26,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
 } from 'react';
 import {
   type PulseSnapshot,
@@ -32,11 +34,7 @@ import {
   taskSignal,
 } from '../../shared/pulse';
 import type { Repo, TaskStatus, TaskView } from '../../shared/types';
-import {
-  activeHome,
-  activeWorkspaces,
-  inConnection,
-} from '../../shared/workspaces';
+import { activeHome, activeWorkspaces } from '../../shared/workspaces';
 import { api } from '../api';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
@@ -52,6 +50,10 @@ import {
   useStore,
   useTaskConnectionId,
 } from '../store';
+import { useContributeCommands } from '../commands/registry';
+import { shortcutLabel } from '../commands/shortcut';
+import type { Command } from '../commands/types';
+import { PALETTE_SHORTCUT } from '../hooks/useShortcuts';
 import { listTasks } from '../taskList';
 import { type TaskMark, rowTitle, taskMark } from '../taskMark';
 
@@ -61,7 +63,7 @@ import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { attentionLabel } from './AttentionDot';
 import { DreamNavStatus } from './dreams/DreamNavStatus';
 import { DreamsNavItem } from './dreams/DreamsNavItem';
-import { WorkItemTypeIcon } from './ui';
+import { modKey, WorkItemTypeIcon } from './ui';
 
 /** Tasks in these states have no PR story yet: a stale pulse must not mark them. */
 const NO_SIGNAL: TaskStatus[] = ['setting-up', 'setup-failed', 'finishing'];
@@ -630,12 +632,64 @@ export function TaskNav() {
           color: 'var(--red)',
           text: `${connection.name}: ${statusText(connection, true).text}`,
         };
+  // The palette gets the places only the nav knows: the project's brains and the Done list.
+  const brainKey = brains
+    .map((b) => `${b.id}\n${b.name}\n${toRead.has(b.id) ? 1 : 0}`)
+    .join('\n');
+  const hasDone = done.length > 0;
+  const commands = useMemo<Command[]>(
+    () => [
+      ...brains.map((brain, i): Command => ({
+        id: `goto.brain.${i}`,
+        title: `Brain: ${brain.name}`,
+        group: 'goto',
+        ...(toRead.has(brain.id)
+          ? { note: 'something to read', noteTone: 'accent' as const }
+          : {}),
+        run: () => go({ kind: 'brain', brainId: brain.id }),
+      })),
+      ...(hasDone
+        ? [
+            {
+              id: 'goto.done',
+              title: 'Done tasks',
+              group: 'goto' as const,
+              run: () => {
+                setNavCollapsed(false);
+                setShowDone(true);
+              },
+            },
+          ]
+        : []),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- brainKey stands for the brains and what waits in them
+    [brainKey, hasDone, go, setNavCollapsed],
+  );
+  useContributeCommands('nav', commands);
+  const setPaletteOpen = useStore((s) => s.setPaletteOpen);
   return (
     <nav
       aria-label="Tasks"
       className={rail ? 'leftnav is-rail' : 'leftnav'}
       style={rail ? undefined : { width }}
     >
+      <button
+        type="button"
+        className="nav-palette"
+        aria-label="Go to or run"
+        title={`Go to or run (${shortcutLabel(PALETTE_SHORTCUT, modKey)})`}
+        onClick={() => setPaletteOpen(true)}
+      >
+        <Search16Regular aria-hidden="true" />
+        {!rail && (
+          <>
+            <span className="nav-palette-text">Go to or run</span>
+            <span className="nav-palette-key mono">
+              {shortcutLabel(PALETTE_SHORTCUT, modKey)}
+            </span>
+          </>
+        )}
+      </button>
       <ProjectTile rail={rail} />
       <NavItem
         icon={<Home20Regular aria-hidden="true" />}

@@ -12,13 +12,22 @@ import {
   FullScreenMinimize16Regular,
   Globe16Regular,
 } from '@fluentui/react-icons';
-import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  memo,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useContributeCommands } from '../commands/registry';
+import type { Command } from '../commands/types';
 import { useShallow } from 'zustand/react/shallow';
 import type { Events } from '../../shared/ipc';
 import { brainTaskId } from '../../shared/brain';
 import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
 import { api, tryInvoke } from '../api';
-import { eur } from '../format';
+import { eur, plural } from '../format';
 import { useTaskBrain } from '../hooks/useBrains';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useRepoConfig } from '../hooks/useRepoConfig';
@@ -49,7 +58,7 @@ import {
 import { OpenInEditor } from './OpenInEditor';
 import { ChangesTab } from './review/ChangesTab';
 import { DiscardBar } from './DiscardBar';
-import { NewTerminalMenu } from './NewTerminalMenu';
+import { NEW_TERMINALS, NewTerminalMenu } from './NewTerminalMenu';
 import { TerminalView } from './TerminalView';
 import { IconButton, MindMark, modKey } from './ui';
 import { UsagePanel } from './UsagePanel';
@@ -107,19 +116,49 @@ const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) ?? p;
  */
 function RunChips({
   workspace,
+  index,
+  offers,
   repoName,
   grouped,
   disabled,
   onOpen,
 }: {
   workspace: WorkspaceView;
+  /** The workspace's place among the task's, for the command ids. */
+  index: number;
+  /** Whether the entries are also offered as commands: only for the task on screen. */
+  offers: boolean;
   repoName: string;
   grouped: boolean;
   disabled: boolean;
   onOpen: (def: NewTerminal) => void;
 }) {
   const config = useRepoConfig(workspace.repoId);
-  const entries = Object.entries(config?.config.run ?? {});
+  const run = config?.config.run;
+  const entries = Object.entries(run ?? {});
+  const latest = useRef(onOpen);
+  useEffect(() => {
+    latest.current = onOpen;
+  });
+  const commands = useMemo<Command[]>(
+    () =>
+      !offers || disabled
+        ? []
+        : Object.entries(run ?? {}).map(([name, command], i) => ({
+            id: `task.run.${index}.${i}`,
+            title: grouped ? `Run ${name} in ${repoName}` : `Run ${name}`,
+            group: 'task',
+            run: () =>
+              latest.current({
+                kind: 'run',
+                label: name,
+                command,
+                ...(grouped ? { workspaceId: workspace.id } : {}),
+              }),
+          })),
+    [offers, disabled, run, index, grouped, repoName, workspace.id],
+  );
+  useContributeCommands(`task.run.${index}`, commands);
   if (entries.length === 0) return null;
   return (
     <span className="tabrow-run">
@@ -336,6 +375,133 @@ export const TerminalTabs = memo(function TerminalTabs({
     setBrainTerm(def);
     setTab(task.id, def.id);
   };
+  // The palette and the shortcuts get this task's actions while it is the one on screen.
+  const latest = useRef({ open, openBrainTerminal });
+  useEffect(() => {
+    latest.current = { open, openBrainTerminal };
+  });
+  const offers = visible && ready;
+  const terminalKey = task.terminals
+    .map((t) => `${t.id}\n${t.label}`)
+    .join('\n');
+  const workspaceKey = workspaces.map((w) => `${w.id}\n${w.name}`).join('\n');
+  const brainName = brain?.name;
+  const canOpen = !task.worktreeMissing;
+  const commands = useMemo<Command[]>(() => {
+    if (!offers) return [];
+    const { id, terminals } = task;
+    const { setTab, go, askDiscard } = useStore.getState();
+    const show = (
+      cid: string,
+      title: string,
+      tab: string,
+      rest: Partial<Command> = {},
+    ): Command => ({
+      id: cid,
+      title,
+      group: 'task',
+      run: () => setTab(id, tab),
+      ...rest,
+    });
+    return [
+      ...(hasGit
+        ? [
+            show('task.changes', 'Show changes', CHANGES_TAB, {
+              note: changeCount ? plural(changeCount, 'file') : undefined,
+            }),
+          ]
+        : []),
+      show('task.usage', 'Show usage and cost', USAGE_TAB, {
+        shortcut: { code: 'Digit0' },
+      }),
+      ...(hasGit
+        ? [
+            show('task.docs', 'Show docs', DOCS_TAB, {
+              shortcut: { code: 'KeyD', shift: true },
+            }),
+          ]
+        : []),
+      ...(brainShown
+        ? [
+            {
+              ...show('task.brain', 'Show brain', BRAIN_TAB, {
+                shortcut: { code: 'KeyB', shift: true },
+              }),
+              run: () => {
+                if (useStore.getState().activeTab(id) !== BRAIN_TAB)
+                  trackBrain('tab');
+                setTab(id, BRAIN_TAB);
+              },
+            },
+          ]
+        : []),
+      ...terminals.map((t, i) =>
+        show(
+          `task.terminal.${i + 1}`,
+          `Switch to terminal ${i + 1}: ${t.label}`,
+          t.id,
+          {
+            shortcut: i < 9 ? { code: `Digit${i + 1}` } : undefined,
+          },
+        ),
+      ),
+      ...(canOpen
+        ? NEW_TERMINALS.flatMap((t): Command[] =>
+            workspaces.length > 1
+              ? workspaces.map((w, i) => ({
+                  id: `task.new.${t.def.kind}.${i}`,
+                  title: `New terminal: ${t.title} in ${w.name}`,
+                  group: 'task',
+                  run: () =>
+                    void latest.current.open({ ...t.def, workspaceId: w.id }),
+                }))
+              : [
+                  {
+                    id: `task.new.${t.def.kind}`,
+                    title: `New terminal: ${t.title}`,
+                    group: 'task',
+                    run: () => void latest.current.open(t.def),
+                  },
+                ],
+          )
+        : []),
+      ...(canOpen && brainName !== undefined
+        ? [
+            {
+              id: 'task.new.brain',
+              title: 'New terminal: Brain',
+              group: 'task' as const,
+              run: () => void latest.current.openBrainTerminal(),
+            },
+          ]
+        : []),
+      {
+        id: 'task.finish',
+        title: 'Finish task',
+        group: 'task',
+        run: () => go({ kind: 'finish', taskId: id }),
+      },
+      {
+        id: 'task.discard',
+        title: 'Discard task',
+        group: 'task',
+        run: () => askDiscard(id),
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the keys stand for the terminals and workspaces
+  }, [
+    offers,
+    task.id,
+    terminalKey,
+    workspaceKey,
+    hasGit,
+    changeCount,
+    brainShown,
+    brainName,
+    canOpen,
+  ]);
+  useContributeCommands('task', commands);
+
   // A ready task whose brain asks for it gets the brain terminal in its tab bar, once per app session (not selected).
   const autoOpen = brainShown && !!brain?.options.openBrainTerminalOnStart;
   useEffect(() => {
@@ -491,10 +657,12 @@ export const TerminalTabs = memo(function TerminalTabs({
                 {`${brain?.name ?? 'Brain'} brain`}
               </ClosableTab>
             )}
-            {runFrom.map((w) => (
+            {runFrom.map((w, i) => (
               <RunChips
                 key={w.id}
                 workspace={w}
+                index={i}
+                offers={offers}
                 repoName={repoName(w)}
                 grouped={runFrom.length > 1}
                 disabled={task.worktreeMissing}
@@ -512,7 +680,7 @@ export const TerminalTabs = memo(function TerminalTabs({
           />
         </div>
         <div className="taskbar-right">
-          {ready && !noRepo && <EnvironmentChip task={task} />}
+          {ready && !noRepo && <EnvironmentChip task={task} offers={visible} />}
           {ready && visible && !noRepo && <CleanWorktreeButton task={task} />}
           <WorkspaceChips task={task} />
           {noRepo ? (
@@ -554,7 +722,7 @@ export const TerminalTabs = memo(function TerminalTabs({
                   <Delete16Regular />
                 </IconButton>
               )}
-              {!noRepo && <TaskMenu task={task} />}
+              {!noRepo && <TaskMenu task={task} offers={visible} />}
               <IconButton
                 label={inFocus ? 'Exit focus' : 'Focus'}
                 shortcut={`${modKey}+Shift+F`}

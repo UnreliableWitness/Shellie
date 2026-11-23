@@ -4,6 +4,7 @@ import {
   type KeyboardEvent,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -17,6 +18,8 @@ import {
 import type { TaskView } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
 import { clock } from '../../format';
+import { useContributeCommands } from '../../commands/registry';
+import type { Command } from '../../commands/types';
 import { useStore } from '../../store';
 import { joinAnd, tabNames, taskShortName } from './environment';
 
@@ -133,7 +136,14 @@ export function EnvironmentConfirm({
  * The task bar's "⛨ <Environment> ▾" chip: a menu of the four environments with the gaps in each, then a switch.
  * UAT and Production first show the confirm; agent tabs are never restarted.
  */
-export function EnvironmentChip({ task }: { task: TaskView }) {
+export function EnvironmentChip({
+  task,
+  offers = true,
+}: {
+  task: TaskView;
+  /** Whether the switch is also offered as a command: only for the task on screen. */
+  offers?: boolean;
+}) {
   const notify = useStore((s) => s.notify);
   const [at, setAt] = useState<{ right: number; top: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -211,6 +221,27 @@ export function EnvironmentChip({ task }: { task: TaskView }) {
     if (next === env) return close(true);
     void switchTo(next, false);
   };
+
+  // The command opens this same menu, so UAT and Production keep their confirm.
+  const latest = useRef(open);
+  useEffect(() => {
+    latest.current = open;
+  });
+  const commands = useMemo<Command[]>(
+    () =>
+      offers
+        ? [
+            {
+              id: 'task.environment',
+              title: 'Switch environment',
+              group: 'task',
+              run: () => latest.current(),
+            },
+          ]
+        : [],
+    [offers],
+  );
+  useContributeCommands('task.environment', commands);
 
   const onMenuKey = (e: KeyboardEvent) => {
     const items = [
