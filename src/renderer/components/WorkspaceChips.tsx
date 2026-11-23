@@ -230,8 +230,11 @@ export function WorkspaceChips({ task }: { task: TaskView }) {
 export function TaskMenu({
   task,
   offers = true,
+  headless = false,
 }: {
   task: TaskView;
+  /** No button: only offers its commands (the task bar's menu and the palette show them). */
+  headless?: boolean;
   /** Whether its items are also offered as commands: only for the task on screen. */
   offers?: boolean;
 }) {
@@ -281,6 +284,7 @@ export function TaskMenu({
     [offers],
   );
   useContributeCommands('task.menu', commands);
+  if (headless) return null;
   return (
     <PopMenu
       label="Task menu"

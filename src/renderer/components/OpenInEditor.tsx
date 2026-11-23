@@ -24,7 +24,10 @@ export function OpenInEditor({
   workspaceId,
   disabled,
   visible = true,
+  headless = false,
 }: {
+  /** No buttons: only offers its commands (the task menu and the palette show them). */
+  headless?: boolean;
   taskId: string;
   workspaceId?: string;
   disabled?: boolean;
@@ -120,6 +123,7 @@ export function OpenInEditor({
     opts.solutions.length > 1
       ? opts.solutions
       : [];
+  if (headless) return null;
   return (
     <span className="split-btn">
       <button

@@ -65,6 +65,12 @@ export function contributed(): Command[] {
   return inSourceOrder(useSources.getState());
 }
 
+/** What mounted components offer, following the offers only (not the store): for a menu built from them. */
+export function useContributed(): Command[] {
+  const offered = useSources();
+  return useMemo(() => inSourceOrder(offered), [offered]);
+}
+
 /** Every command there is right now: the store's own, then what components offer, by group. */
 export function allCommands(): Command[] {
   return ordered([...globalCommands(useStore.getState()), ...contributed()]);

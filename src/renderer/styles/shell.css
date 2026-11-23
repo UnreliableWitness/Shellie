@@ -919,3 +919,27 @@ button.navmark:hover {
   border-radius: 1px;
   margin-right: 6px;
 }
+
+/* The task menu: where the task is, then its commands with their shortcut at the right. */
+.taskmenu-where {
+  padding: 6px 12px 4px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+.taskmenu-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.taskmenu-title {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -139,8 +139,11 @@ export function EnvironmentConfirm({
 export function EnvironmentChip({
   task,
   offers = true,
+  headless = false,
 }: {
   task: TaskView;
+  /** No chip: the menu and the confirm open from the Switch environment command, under the task bar's right end. */
+  headless?: boolean;
   /** Whether the switch is also offered as a command: only for the task on screen. */
   offers?: boolean;
 }) {
@@ -266,21 +269,23 @@ export function EnvironmentChip({
 
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className={`btn btn-sm env-chip env-chip-${env}`}
-        aria-label={`Secrets environment: ${label}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        title="Which environment's secrets this task's tabs get"
-        disabled={task.status !== 'ready' || busy}
-        onClick={open}
-      >
-        <Shield16Regular aria-hidden="true" />
-        {label}
-        <ChevronDown12Regular aria-hidden="true" />
-      </button>
+      {!headless && (
+        <button
+          ref={trigger}
+          type="button"
+          className={`btn btn-sm env-chip env-chip-${env}`}
+          aria-label={`Secrets environment: ${label}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          title="Which environment's secrets this task's tabs get"
+          disabled={task.status !== 'ready' || busy}
+          onClick={open}
+        >
+          <Shield16Regular aria-hidden="true" />
+          {label}
+          <ChevronDown12Regular aria-hidden="true" />
+        </button>
+      )}
       {at && menuOpen && (
         <div
           ref={pop}
