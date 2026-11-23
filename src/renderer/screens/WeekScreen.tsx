@@ -27,7 +27,7 @@ const DAYS = [
 const HOUR_PX = 40;
 const GAP_PX = 2;
 /** A card this tall has room for its hours above its title; a lower one shows both on one line, a sliver neither. */
-const TWO_LINES_PX = 36;
+const TWO_LINES_PX = 43;
 const ONE_LINE_PX = 16;
 
 const iso = (d: Date) =>
@@ -61,7 +61,16 @@ const hmm = (seconds: number) => {
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 };
 
-/** A task as its cards and the list name it: the work item id before the title. */
+/** A cell of the table: hours to the quarter, blank for none, the exact time on hover. */
+function Hours({ seconds }: { seconds: number }) {
+  return (
+    <td className="week-hours" title={seconds ? hmm(seconds) : undefined}>
+      {seconds ? quarters(seconds) : ''}
+    </td>
+  );
+}
+
+/** A task as its cards and the table name it: the work item id before the title. */
 const nameOf = (r: WeekRow) =>
   r.workItem ? `${r.workItem.id} ${r.title}` : r.title;
 
@@ -164,10 +173,12 @@ function WeekColumns({
                 {blocks[i].map((b, n) => {
                   const row = byId.get(b.taskId);
                   if (!row) return null;
+                  // Never more than its time: a sliver of minutes is a line, so a day's cards end at its total.
                   const height = Math.max(
-                    3,
+                    1,
                     Math.round((b.seconds / 3600) * HOUR_PX) - GAP_PX,
                   );
+                  const worked = quarters(b.seconds);
                   const name = nameOf(row);
                   return (
                     <button
@@ -192,12 +203,11 @@ function WeekColumns({
                           ),
                         } as CSSProperties
                       }
+                      aria-label={`${name}, ${day}, ${worked} ${worked === 1 ? 'hour' : 'hours'}. Copy to the clipboard`}
                       title={`${name}\n${day}: ${hmm(b.seconds)}\nClick to copy`}
                       onClick={() => copy(name)}
                     >
-                      <span className="week-card-hours mono">
-                        {quarters(b.seconds)} h
-                      </span>
+                      <span className="week-card-hours mono">{worked} h</span>
                       <span className="week-card-title">
                         <TaskName row={row} />
                       </span>
@@ -209,27 +219,54 @@ function WeekColumns({
           })}
         </div>
       </section>
-      <ul className="week-tasks" aria-label="Tasks this week">
-        {rows.map((r) => (
-          <li key={r.taskId}>
-            <span
-              className="week-swatch"
-              data-series={seriesOf(slots.get(r.taskId))}
-              aria-hidden="true"
-            />
-            <span className="week-task-name">
-              {r.workItem && (
-                <span className="mono muted">{r.workItem.id}</span>
-              )}
-              <span>{r.title}</span>
-            </span>
-            <span className="muted">{r.project ?? ''}</span>
-            <span className="week-task-total mono" title={hmm(r.totalSeconds)}>
-              {quarters(r.totalSeconds)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {/* The exact numbers, for a timesheet: each task's hours per day, which the cards only round and stack. */}
+      <table className="week-table" aria-label="Tasks this week">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Project</th>
+            {DAYS.map((day, i) => (
+              <th key={day} className="week-hours">
+                {day.slice(0, 3)} {dateOf(weekStart, i).getDate()}
+              </th>
+            ))}
+            <th className="week-hours">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.taskId}>
+              <td>
+                <span
+                  className="week-swatch"
+                  data-series={seriesOf(slots.get(r.taskId))}
+                  aria-hidden="true"
+                />
+                {r.workItem && (
+                  <span className="mono muted">{r.workItem.id}</span>
+                )}
+                {r.workItem && ' '}
+                <span>{r.title}</span>
+              </td>
+              <td className="muted">{r.project ?? ''}</td>
+              {r.perDay.map((sec, i) => (
+                <Hours key={i} seconds={sec} />
+              ))}
+              <Hours seconds={r.totalSeconds} />
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td />
+            {dayTotals.map((sec, i) => (
+              <Hours key={i} seconds={sec} />
+            ))}
+            <Hours seconds={dayTotals.reduce((n, sec) => n + sec, 0)} />
+          </tr>
+        </tfoot>
+      </table>
     </>
   );
 }
@@ -314,8 +351,9 @@ export function WeekScreen() {
             />
             <p className="muted week-note">
               Time in Shellie and agent time, overlap counted once, in hours
-              rounded to the quarter. Hover a card or a number for the exact
-              time; click a card to copy its task.
+              rounded to the quarter, each number on its own, so rounded numbers
+              need not add up. Hover a card or a number for the exact time;
+              click a card to copy its task.
             </p>
           </>
         )}

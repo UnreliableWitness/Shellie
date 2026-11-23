@@ -104,6 +104,14 @@ describe.each([
   it.each(CHART)(`${name}: %s on --bg-card is at least 3:1`, (fg) =>
     expect(contrast(fg, '--bg-card', t)).toBeGreaterThanOrEqual(3),
   );
+  // The text on a Week card: 12 px on the task's series colour.
+  it.each(['1', '2', '3', '4', '5', '6', '7', '8', 'other'])(
+    `${name}: --on-series-%s on its series colour is at least 4.5:1`,
+    (n) =>
+      expect(
+        contrast(`--on-series-${n}`, `--series-${n}`, t),
+      ).toBeGreaterThanOrEqual(4.5),
+  );
 });
 
 describe('button hover', () => {

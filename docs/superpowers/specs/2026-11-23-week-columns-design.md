@@ -28,7 +28,9 @@ for a visually attractive way to show the tasks per day and how long they took.
   as the time it took. A card shows the hours, then **the work item id before the title** (owner, while it was
   being built).
 - **A click on a card copies its task to the clipboard** (owner, while it was being built).
-- Under the columns: the tasks with their colour, project and week total.
+- Under the columns: the tasks with their colour, project and week total. (Built as a table that also gives each
+  task's hours per day, Claude's call after review: a timesheet needs those exact numbers, and the cards only round
+  and stack them.)
 
 ## Decisions made by Claude, not asked
 

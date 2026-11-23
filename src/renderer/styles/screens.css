@@ -786,41 +786,39 @@
   background: var(--series-other);
   color: var(--on-series-other);
 }
-/* Under the columns: the tasks with their colour, project and week total. */
-.week-tasks {
-  list-style: none;
-  margin: 14px 0 0;
-  padding: 0;
+/* Under the columns: the exact hours per task and day. */
+.week-table {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: collapse;
 }
-.week-tasks li {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 3fr) minmax(0, 1fr) 56px;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 4px;
+.week-table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.week-table td {
+  padding: 7px 10px;
   border-bottom: 1px solid var(--line);
 }
-.week-tasks li:last-child {
+.week-table tfoot td {
+  font-weight: 600;
   border-bottom: 0;
 }
+.week-table .week-hours {
+  text-align: right;
+  width: 64px;
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+}
 .week-swatch {
+  display: inline-block;
   width: 10px;
   height: 10px;
+  margin-right: 10px;
   border-radius: 2px;
-}
-.week-task-name {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-}
-.week-task-name > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.week-task-total {
-  text-align: right;
-  font-weight: 600;
 }
 .week-note {
   margin-top: 8px;
