@@ -1,7 +1,4 @@
 import { WeatherMoon20Regular } from '@fluentui/react-icons';
-import { useMemo } from 'react';
-import { useContributeCommands } from '../../commands/registry';
-import type { Command } from '../../commands/types';
 import { plural } from '../../format';
 import { useStore } from '../../store';
 import { waitingCount } from './dreamWords';
@@ -18,28 +15,8 @@ export function DreamsNavItem({ rail }: { rail: boolean }) {
   const count = view ? waitingCount(view) : 0;
   const waiting = `${plural(count, 'dream')} to review`;
   const named = count > 0 ? `Dreams, ${waiting}` : 'Dreams';
-  // Also a place the palette can go to, with what waits there.
-  const shows = project !== null;
-  const commands = useMemo<Command[]>(
-    () =>
-      shows
-        ? [
-            {
-              id: 'goto.dreams',
-              title: 'Dreams',
-              group: 'goto',
-              ...(count > 0
-                ? { note: `${count} to review`, noteTone: 'accent' as const }
-                : {}),
-              run: () => go({ kind: 'dreams' }),
-            },
-          ]
-        : [],
-    [shows, count, go],
-  );
-  useContributeCommands('nav.dreams', commands);
   // Dreams belong to a project: without one there is nothing to open.
-  if (!shows) return null;
+  if (project === null) return null;
   return (
     <button
       type="button"

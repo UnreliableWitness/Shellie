@@ -164,6 +164,64 @@ describe('CommandPalette', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it('keeps the selection on its command when a row appears above it', async () => {
+    const run = vi.fn();
+    const mine: Command = { id: 'mine', title: 'Mine', group: 'goto', run };
+    const above: Command = {
+      id: 'above',
+      title: 'Above',
+      group: 'task',
+      run: vi.fn(),
+    };
+    function Late({ on }: { on: boolean }) {
+      useContributeCommands('late', on ? [above] : []);
+      return null;
+    }
+    const late = [above];
+    void late;
+    const { rerender } = render(
+      <>
+        <Offer commands={[mine]} />
+        <Late on={false} />
+        <CommandPalette />
+      </>,
+    );
+    open();
+    const selected = () =>
+      screen
+        .getAllByRole('option')
+        .find((o) => o.getAttribute('aria-selected') === 'true')?.textContent;
+    while (selected() !== 'Mine') await userEvent.keyboard('{ArrowDown}');
+    rerender(
+      <>
+        <Offer commands={[mine]} />
+        <Late on />
+        <CommandPalette />
+      </>,
+    );
+    expect(rows()[0]).toContain('Above');
+    expect(selected()).toBe('Mine');
+    await userEvent.keyboard('{Enter}');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(above.run).not.toHaveBeenCalled();
+  });
+
+  it('keeps the focus on its field: Tab stays, and a click on its own chrome does not blur it', async () => {
+    render(
+      <>
+        <button type="button">behind</button>
+        <CommandPalette />
+      </>,
+    );
+    open();
+    await userEvent.tab();
+    expect(field()).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(field()).toHaveFocus();
+    const foot = screen.getByText(/Esc to close/);
+    expect(fireEvent.mouseDown(foot)).toBe(false);
+  });
+
   it('keeps its key presses to itself', async () => {
     const outside = vi.fn();
     window.addEventListener('keydown', outside);

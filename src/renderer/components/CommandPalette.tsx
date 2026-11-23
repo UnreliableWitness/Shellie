@@ -22,11 +22,15 @@ function Palette() {
   const close = useStore((s) => s.setPaletteOpen);
   const commands = useAllCommands();
   const [query, setQuery] = useState('');
-  const [at, setAt] = useState(0);
+  // The selection is a command, not a row number: rows can appear and go above it while the palette is open.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const shown = useMemo(() => rank(query, commands), [query, commands]);
-  // The list can shrink under the selection (a task finished, a tab closed).
-  const selected = Math.min(at, shown.length - 1);
+  // Nothing chosen yet, or the chosen command is gone (a task finished, a tab closed): the first row.
+  const selected = Math.max(
+    0,
+    shown.findIndex((c) => c.id === selectedId),
+  );
   const filtering = query.trim() !== '';
 
   // Focus goes back to where it was: the terminal, most of the time. Read while rendering, before the field takes it.
@@ -54,11 +58,15 @@ function Palette() {
     e.stopPropagation();
     const move = (to: number) => {
       e.preventDefault();
-      if (shown.length) setAt((to + shown.length) % shown.length);
+      if (shown.length)
+        setSelectedId(shown[(to + shown.length) % shown.length].id);
     };
     if (e.key === 'Escape') {
       e.preventDefault();
       close(false);
+    } else if (e.key === 'Tab') {
+      // The field is the palette's one stop: Tab must not walk out to what is behind it.
+      e.preventDefault();
     } else if (e.key === 'ArrowDown') move(selected + 1);
     else if (e.key === 'ArrowUp') move(selected - 1);
     else if (e.key === 'Enter') {
@@ -76,7 +84,7 @@ function Palette() {
         role="option"
         aria-selected={i === selected}
         className="palette-row"
-        onMouseMove={() => setAt(i)}
+        onMouseMove={() => setSelectedId(command.id)}
         // The field keeps the focus, so the click is not lost to a blur.
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => run(command)}
@@ -117,6 +125,10 @@ function Palette() {
         aria-modal="true"
         className="palette"
         onKeyDown={onKey}
+        // A click on the palette's own chrome (a heading, the foot) must not take the focus from the field.
+        onMouseDown={(e) => {
+          if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+        }}
       >
         <div className="palette-field">
           <Search16Regular aria-hidden="true" />
@@ -136,7 +148,7 @@ function Palette() {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setAt(0);
+              setSelectedId(null);
             }}
           />
         </div>

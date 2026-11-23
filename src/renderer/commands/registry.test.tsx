@@ -50,6 +50,35 @@ describe('the command registry', () => {
     expect(task).toEqual(['later', 'end']);
   });
 
+  it('keeps a source in its place when it offers a new list', () => {
+    const two = [cmd('b')];
+    const { rerender } = render(
+      <>
+        <Offer source="one" commands={[cmd('a')]} />
+        <Offer source="two" commands={two} />
+      </>,
+    );
+    rerender(
+      <>
+        <Offer source="one" commands={[cmd('a2')]} />
+        <Offer source="two" commands={two} />
+      </>,
+    );
+    const mine = ids().filter((id) => ['a2', 'b'].includes(id));
+    expect(mine).toEqual(['a2', 'b']);
+  });
+
+  it("puts the task bar's own commands before the rest of the task's, whoever offered first", () => {
+    render(
+      <>
+        <Offer source="task.editor" commands={[cmd('editor')]} />
+        <Offer source="task" commands={[cmd('tabs')]} />
+      </>,
+    );
+    const mine = ids().filter((id) => ['editor', 'tabs'].includes(id));
+    expect(mine).toEqual(['tabs', 'editor']);
+  });
+
   it('orders by group whatever was offered first', () => {
     render(
       <>

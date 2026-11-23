@@ -19,13 +19,16 @@ reach everything.
   Get started.
 - Components offer the commands only they can know, for as long as they are mounted (`useContributeCommands` in
   `commands/registry.ts`): the task bar (tabs, terminals, new terminals, Finish, Discard), its run entries, the
-  editor button, the task menu, Clean worktree, the environment chip, the nav (brains, Done tasks) and the Dreams
-  item. So nothing is fetched because the palette opened, and a command whose data has not loaded is not listed.
+  editor button, the task menu, Clean worktree, the environment chip, and the nav (brains, Dreams, Done tasks; in
+  Focus, where the nav is hidden, `PlaceCommands` offers brains and Dreams instead). So nothing is fetched because the palette opened, and a command whose data has not loaded is not listed.
   Hidden task layers offer nothing.
 - `hooks/useShortcuts.ts` no longer hard-codes keys: it runs the command whose shortcut matches. The keys are the
   same as before. While the palette is open no other shortcut runs.
 - `components/CommandPalette.tsx` is mounted once and renders only while open. It filters by subsequence
-  (`commands/match.ts`), keeps its key presses from everything behind it, and gives focus back on close.
+  (`commands/match.ts`), keeps its key presses from everything behind it, keeps the focus on its field (Tab and
+  clicks on its own chrome do not move it), and gives focus back on close. The selection is a command, not a row
+  number, and a source that offers a new list keeps its place, so rows arriving while it is open (a changed file
+  count, a loaded editor list) cannot move the selection onto another command.
 - Telemetry: `palette.open` and `palette.run` with the command id (fixed strings or an index), in `docs/telemetry.md`.
 
 ## Verified
@@ -44,5 +47,11 @@ reach everything.
   editors and Dreams have no test either.
 - Mod+Shift+B now works once the task's Brain tab is there; in the first moments after a task opens the key goes to
   the terminal. Before, the key asked main for the brain on each press.
+- Mod+Shift+D is likewise no longer taken from the terminal for a task without a repo or with a missing worktree,
+  where there is no Docs tab.
+- "What is new" from the spec is not a command: the Home card shows only after an update and has no way to be
+  opened again, so there is nothing for the command to open yet.
+- "Done tasks" is offered by the nav, so not in Focus with the nav hidden. "Get started" is always offered.
+- Opened from the nav field, Escape returns focus to that field, not to the terminal.
 - "Add to brain" is not its own command yet: Show brain opens the tab where adding happens. Step 2 gives it one.
 - With two or more repos in a task, the palette lists a new-terminal command per kind and repo, which is long.

@@ -63,6 +63,7 @@ import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { attentionLabel } from './AttentionDot';
 import { DreamNavStatus } from './dreams/DreamNavStatus';
 import { DreamsNavItem } from './dreams/DreamsNavItem';
+import { usePlaceCommands } from './PlaceCommands';
 import { modKey, WorkItemTypeIcon } from './ui';
 
 /** Tasks in these states have no PR story yet: a stale pulse must not mark them. */
@@ -632,38 +633,25 @@ export function TaskNav() {
           color: 'var(--red)',
           text: `${connection.name}: ${statusText(connection, true).text}`,
         };
-  // The palette gets the places only the nav knows: the project's brains and the Done list.
-  const brainKey = brains
-    .map((b) => `${b.id}\n${b.name}\n${toRead.has(b.id) ? 1 : 0}`)
-    .join('\n');
+  usePlaceCommands(brains, toRead);
+  // The palette can open the Done list, which lives here.
   const hasDone = done.length > 0;
   const commands = useMemo<Command[]>(
-    () => [
-      ...brains.map((brain, i): Command => ({
-        id: `goto.brain.${i}`,
-        title: `Brain: ${brain.name}`,
-        group: 'goto',
-        ...(toRead.has(brain.id)
-          ? { note: 'something to read', noteTone: 'accent' as const }
-          : {}),
-        run: () => go({ kind: 'brain', brainId: brain.id }),
-      })),
-      ...(hasDone
+    () =>
+      hasDone
         ? [
             {
               id: 'goto.done',
               title: 'Done tasks',
-              group: 'goto' as const,
+              group: 'goto',
               run: () => {
                 setNavCollapsed(false);
                 setShowDone(true);
               },
             },
           ]
-        : []),
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- brainKey stands for the brains and what waits in them
-    [brainKey, hasDone, go, setNavCollapsed],
+        : [],
+    [hasDone, setNavCollapsed],
   );
   useContributeCommands('nav', commands);
   const setPaletteOpen = useStore((s) => s.setPaletteOpen);

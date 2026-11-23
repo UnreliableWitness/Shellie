@@ -4,10 +4,28 @@ import { useStore } from '../store';
 import { globalCommands } from './global';
 import { type Command, GROUP_ORDER } from './types';
 
-/** What mounted components offer, by source, in the order the sources first offered. */
-const useSources = create<{ sources: Record<string, Command[]> }>(() => ({
-  sources: {},
-}));
+/**
+ * What mounted components offer, by source. `order` is every source that ever offered, in the order of its first
+ * offer: a source that offers a new list keeps its place, so the palette's rows do not jump while it is open.
+ */
+const useSources = create<{
+  sources: Record<string, Command[]>;
+  order: string[];
+}>(() => ({ sources: {}, order: [] }));
+
+/** The task bar's own commands (its tabs and terminals) lead "This task", whichever component's effect ran first. */
+const FIRST_SOURCE = 'task';
+
+/** Every offered command, source by source. */
+function inSourceOrder(s: {
+  sources: Record<string, Command[]>;
+  order: string[];
+}): Command[] {
+  return [
+    FIRST_SOURCE,
+    ...s.order.filter((source) => source !== FIRST_SOURCE),
+  ].flatMap((source) => s.sources[source] ?? []);
+}
 
 /**
  * Offers a component's commands for as long as it is mounted: the palette and the shortcuts see them, and they go
@@ -22,6 +40,7 @@ export function useContributeCommands(
     if (commands.length === 0) return;
     useSources.setState((s) => ({
       sources: { ...s.sources, [source]: commands },
+      order: s.order.includes(source) ? s.order : [...s.order, source],
     }));
     return () =>
       useSources.setState((s) => {
@@ -43,7 +62,7 @@ function ordered(commands: Command[]): Command[] {
 
 /** Every command a mounted component offers. */
 export function contributed(): Command[] {
-  return Object.values(useSources.getState().sources).flat();
+  return inSourceOrder(useSources.getState());
 }
 
 /** Every command there is right now: the store's own, then what components offer, by group. */
@@ -54,9 +73,9 @@ export function allCommands(): Command[] {
 /** `allCommands`, following the store and the offers. Use it only where it is on screen: it follows every store change. */
 export function useAllCommands(): Command[] {
   const store = useStore();
-  const sources = useSources((s) => s.sources);
+  const offered = useSources();
   return useMemo(
-    () => ordered([...globalCommands(store), ...Object.values(sources).flat()]),
-    [store, sources],
+    () => ordered([...globalCommands(store), ...inSourceOrder(offered)]),
+    [store, offered],
   );
 }

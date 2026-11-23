@@ -316,6 +316,11 @@ describe('brains', () => {
     });
     render(<TaskNav />);
     await screen.findByRole('button', { name: 'Globex' });
+    await waitFor(() =>
+      expect(
+        allCommands().filter((c) => c.id.startsWith('goto.brain.')),
+      ).toHaveLength(2),
+    );
     const brains = allCommands().filter((c) => c.id.startsWith('goto.brain.'));
     expect(brains.map((c) => [c.id, c.title, c.note, c.noteTone])).toEqual([
       ['goto.brain.0', 'Brain: Acme', 'something to read', 'accent'],
