@@ -53,6 +53,8 @@
   --danger-hover: #8e1f25;
   --focus-ring: rgba(255, 255, 255, 0.3);
   --highlight-flash: rgba(0, 120, 212, 0.25);
+  /* What dims the window behind the command palette; lighter in the light theme. */
+  --scrim: rgba(0, 0, 0, 0.4);
   --shadow-1:
     0 1.6px 3.6px rgba(0, 0, 0, 0.26), 0 0.3px 0.9px rgba(0, 0, 0, 0.22);
   --shadow-2:
@@ -95,6 +97,7 @@
     --green-bg: rgba(16, 124, 16, 0.08);
     --red: #a4262c;
     --amber: #8a6100;
+    --scrim: rgba(0, 0, 0, 0.25);
     --red-bg: rgba(164, 38, 44, 0.08);
     --warn: #8a5300;
     --warn-bg: rgba(138, 83, 0, 0.1);

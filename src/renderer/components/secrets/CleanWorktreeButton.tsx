@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { activeWorkspaces } from '../../../shared/workspaces';
 import type { TaskView } from '../../../shared/types';
 import { api, tryInvoke } from '../../api';
+import { useContributeCommands } from '../../commands/registry';
+import type { Command } from '../../commands/types';
 import { useStore } from '../../store';
 
 /**
@@ -44,7 +46,6 @@ export function CleanWorktreeButton({ task }: { task: TaskView }) {
     };
   }, [check]);
 
-  if (repoIds.length === 0) return null;
   const clean = async () => {
     setBusy(true);
     // Main sends secrets.worktreesCleaned.
@@ -55,6 +56,28 @@ export function CleanWorktreeButton({ task }: { task: TaskView }) {
       );
     setBusy(false);
   };
+  // Offered as a command for as long as the button shows.
+  const latest = useRef(clean);
+  useEffect(() => {
+    latest.current = clean;
+  });
+  const shows = repoIds.length > 0;
+  const commands = useMemo<Command[]>(
+    () =>
+      shows
+        ? [
+            {
+              id: 'task.cleanWorktree',
+              title: 'Clean worktree',
+              group: 'task',
+              run: () => void latest.current(),
+            },
+          ]
+        : [],
+    [shows],
+  );
+  useContributeCommands('task.cleanWorktree', commands);
+  if (!shows) return null;
   return (
     <button
       type="button"

@@ -4,7 +4,7 @@ import { RepoMark } from './RepoMark';
 import type { NewTerminal } from '../../shared/types';
 
 /** What the + menu can open; the shell is named after the platform's shell by main. */
-const NEW_TERMINALS: {
+export const NEW_TERMINALS: {
   def: NewTerminal;
   title: string;
   note?: string;

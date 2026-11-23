@@ -4,9 +4,11 @@ import {
   Code16Regular,
   FolderOpen16Regular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type EditorId, type EditorOptions } from '../../shared/editors';
 import { api, tryInvoke } from '../api';
+import { useContributeCommands } from '../commands/registry';
+import type { Command } from '../commands/types';
 import { useStore } from '../store';
 import { PopupMenu } from './ui';
 
@@ -68,6 +70,42 @@ export function OpenInEditor({
       notify,
     );
   };
+
+  // The task's own row offers its folder and editors as commands; a repo's row in a multi-repo task does not.
+  const latest = useRef({ open, showFolder });
+  useEffect(() => {
+    latest.current = { open, showFolder };
+  });
+  const offers = visible && !disabled && workspaceId === undefined;
+  const commands = useMemo<Command[]>(
+    () =>
+      !offers
+        ? []
+        : [
+            {
+              id: 'task.editor',
+              title: 'Open in editor',
+              group: 'task',
+              run: () => latest.current.open(),
+            },
+            ...(opts?.editors ?? [])
+              .filter((e) => e.id !== opts?.chosen)
+              .map((e): Command => ({
+                id: `task.editor.${e.id}`,
+                title: `Open in ${e.label}`,
+                group: 'task',
+                run: () => latest.current.open({ editorId: e.id }),
+              })),
+            {
+              id: 'task.folder',
+              title: 'Open folder',
+              group: 'task',
+              run: () => latest.current.showFolder(),
+            },
+          ],
+    [offers, opts],
+  );
+  useContributeCommands('task.editor', commands);
 
   const chosen = opts?.chosen ?? null;
   const editors = chosen

@@ -9,6 +9,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
+import { allCommands } from '../commands/registry';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi } from '../test-helpers/fakeApi';
@@ -296,6 +297,40 @@ describe('brains', () => {
     render(<TaskNav />);
     await screen.findByRole('button', { name: 'Acme' });
     expect(screen.queryByText(/Your team has a brain/)).not.toBeInTheDocument();
+  });
+
+  it('offers each brain as a place to go to, with what waits to be read', async () => {
+    installFakeApi({
+      'brain:list': () => [
+        listedBrain(),
+        listedBrain({ id: 'b2', name: 'Globex' }),
+      ],
+    });
+    useStore.setState({
+      connections: [conn('c1', 'Shellie')],
+      reading: [
+        readingBrain({
+          reads: [readingRead({ work: [{ id: 412, title: 'Return flow' }] })],
+        }),
+      ],
+    });
+    render(<TaskNav />);
+    await screen.findByRole('button', { name: 'Globex' });
+    await waitFor(() =>
+      expect(
+        allCommands().filter((c) => c.id.startsWith('goto.brain.')),
+      ).toHaveLength(2),
+    );
+    const brains = allCommands().filter((c) => c.id.startsWith('goto.brain.'));
+    expect(brains.map((c) => [c.id, c.title, c.note, c.noteTone])).toEqual([
+      ['goto.brain.0', 'Brain: Acme', 'something to read', 'accent'],
+      ['goto.brain.1', 'Brain: Globex', undefined, undefined],
+    ]);
+    act(() => brains[1].run());
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b2',
+    });
   });
 
   it('marks a brain with something for the work or a change to read, unless the nudges are off', async () => {
@@ -1041,6 +1076,36 @@ describe('TaskNav', () => {
     expect(screen.queryByText('47988')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Done \(1\)/ }));
     expect(screen.getByText('47988')).toBeInTheDocument();
+  });
+
+  it('opens the palette from the field at the top, and from its icon on the rail', async () => {
+    installFakeApi();
+    useStore.setState({ paletteOpen: false, navCollapsed: false });
+    const { unmount } = render(<TaskNav />);
+    const field = screen.getByRole('button', { name: 'Go to or run' });
+    expect(field).toHaveTextContent(/Go to or run.*(Ctrl|Cmd)\+Shift\+P/);
+    await userEvent.click(field);
+    expect(useStore.getState().paletteOpen).toBe(true);
+    unmount();
+    useStore.setState({ paletteOpen: false, navCollapsed: true });
+    render(<TaskNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'Go to or run' }));
+    expect(useStore.getState().paletteOpen).toBe(true);
+    useStore.setState({ paletteOpen: false, navCollapsed: false });
+  });
+
+  it('offers Done tasks as a command that opens the list, also from the rail', async () => {
+    installFakeApi();
+    useStore.setState({ navCollapsed: true });
+    render(<TaskNav />);
+    const done = () => allCommands().find((c) => c.id === 'goto.done');
+    await waitFor(() => expect(done()?.title).toBe('Done tasks'));
+    act(() => done()?.run());
+    expect(useStore.getState().navCollapsed).toBe(false);
+    expect(screen.getByRole('button', { name: 'Done (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 
   it('draws Done as a section header aligned with Tasks, with a chevron (#11)', async () => {

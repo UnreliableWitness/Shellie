@@ -97,6 +97,8 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `nav.chipClicked` | `kind`: which mark on a task row in the list was clicked: `waits` (the amber dot, opens the PR) or `merged` (the green check, opens Finish); never names |
 | `usage.exportCsv` | none |
 | `focus.toggled`, `nav.toggled` | on / collapsed |
+| `palette.open` | none: the command palette was opened |
+| `palette.run` | `command`: the id of the command run from the palette (a fixed string such as `goto.sprint` or `task.changes`, or one ending in an index such as `tasks.open.2`); never a title, so no task, project, repo, brain or file name |
 | `settings.changed` | names of the changed settings (not their values) |
 | `settings.repoOverride` | `key`: which per-repo setting was overridden (`base`, `branch`, `copy`, `copyAgentConfig`, `setup`, `run`, `apm`, `reviewCollapse`, or `all` for Reset all), `reset`: true when it was removed; never the value |
 | `settings.copyEntries` | measurements: count per `copy:` entry state (`present`, `missing`, `holdsSecrets`, `notIgnored`, `outside`) and `suggestions`; no names or paths |

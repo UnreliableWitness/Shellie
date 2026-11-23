@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { api } from './api';
+import { CommandPalette } from './components/CommandPalette';
 import { HeaderBar } from './components/HeaderBar';
 import { Notices } from './components/Notices';
+import { PlaceCommands } from './components/PlaceCommands';
 import { TaskNav } from './components/TaskNav';
 import { invalidateRepoConfig } from './hooks/useRepoConfig';
 import { useAttention } from './hooks/useAttention';
@@ -120,6 +122,9 @@ export function Shell() {
         </main>
       </div>
       <Notices />
+      <CommandPalette />
+      {/* The nav offers the palette its places; without the nav this does. */}
+      {inFocus && !navCollapsed && <PlaceCommands />}
     </div>
   );
 }

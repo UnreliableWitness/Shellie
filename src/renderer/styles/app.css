@@ -8,6 +8,7 @@
 @import './docs.css';
 @import './brain.css';
 @import './dreams.css';
+@import './palette.css';
 
 * {
   box-sizing: border-box;

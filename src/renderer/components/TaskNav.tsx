@@ -16,6 +16,7 @@ import {
   Home20Regular,
   PanelLeftContract20Regular,
   PanelLeftExpand20Regular,
+  Search16Regular,
   Settings20Regular,
 } from '@fluentui/react-icons';
 import {
@@ -25,6 +26,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
 } from 'react';
 import {
   type PulseSnapshot,
@@ -32,11 +34,7 @@ import {
   taskSignal,
 } from '../../shared/pulse';
 import type { Repo, TaskStatus, TaskView } from '../../shared/types';
-import {
-  activeHome,
-  activeWorkspaces,
-  inConnection,
-} from '../../shared/workspaces';
+import { activeHome, activeWorkspaces } from '../../shared/workspaces';
 import { api } from '../api';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
@@ -52,37 +50,24 @@ import {
   useStore,
   useTaskConnectionId,
 } from '../store';
+import { useContributeCommands } from '../commands/registry';
+import { shortcutLabel } from '../commands/shortcut';
+import type { Command } from '../commands/types';
+import { PALETTE_SHORTCUT } from '../hooks/useShortcuts';
+import { listTasks } from '../taskList';
 import { type TaskMark, rowTitle, taskMark } from '../taskMark';
+
+export { listTasks };
 import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { attentionLabel } from './AttentionDot';
 import { DreamNavStatus } from './dreams/DreamNavStatus';
 import { DreamsNavItem } from './dreams/DreamsNavItem';
-import { WorkItemTypeIcon } from './ui';
+import { usePlaceCommands } from './PlaceCommands';
+import { modKey, WorkItemTypeIcon } from './ui';
 
 /** Tasks in these states have no PR story yet: a stale pulse must not mark them. */
 const NO_SIGNAL: TaskStatus[] = ['setting-up', 'setup-failed', 'finishing'];
-
-/** With a connection, only that project's tasks and tasks with no connection (#219). Open tasks newest first, and nothing else moves them. */
-export function listTasks(
-  all: TaskView[],
-  repos: Repo[],
-  connectionId: string | null | undefined,
-  knownIds: string[] | undefined,
-): { open: TaskView[]; done: TaskView[] } {
-  const tasks = connectionId
-    ? all.filter((t) => inConnection(t, repos, connectionId, knownIds))
-    : all;
-  // An unreadable date counts as the oldest, so the id alone orders those.
-  const created = (t: TaskView) => Date.parse(t.createdAt) || 0;
-  const open = tasks
-    .filter((t) => t.status !== 'done')
-    .sort(
-      (x, y) =>
-        created(y) - created(x) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0),
-    );
-  return { open, done: tasks.filter((t) => t.status === 'done') };
-}
 
 const AVATAR = ['#0078d4', '#8764b8', '#038387', '#ca5010', '#498205'];
 const avatarColor = (name: string) =>
@@ -648,12 +633,51 @@ export function TaskNav() {
           color: 'var(--red)',
           text: `${connection.name}: ${statusText(connection, true).text}`,
         };
+  usePlaceCommands(brains, toRead);
+  // The palette can open the Done list, which lives here.
+  const hasDone = done.length > 0;
+  const commands = useMemo<Command[]>(
+    () =>
+      hasDone
+        ? [
+            {
+              id: 'goto.done',
+              title: 'Done tasks',
+              group: 'goto',
+              run: () => {
+                setNavCollapsed(false);
+                setShowDone(true);
+              },
+            },
+          ]
+        : [],
+    [hasDone, setNavCollapsed],
+  );
+  useContributeCommands('nav', commands);
+  const setPaletteOpen = useStore((s) => s.setPaletteOpen);
   return (
     <nav
       aria-label="Tasks"
       className={rail ? 'leftnav is-rail' : 'leftnav'}
       style={rail ? undefined : { width }}
     >
+      <button
+        type="button"
+        className="nav-palette"
+        aria-label="Go to or run"
+        title={`Go to or run (${shortcutLabel(PALETTE_SHORTCUT, modKey)})`}
+        onClick={() => setPaletteOpen(true)}
+      >
+        <Search16Regular aria-hidden="true" />
+        {!rail && (
+          <>
+            <span className="nav-palette-text">Go to or run</span>
+            <span className="nav-palette-key mono">
+              {shortcutLabel(PALETTE_SHORTCUT, modKey)}
+            </span>
+          </>
+        )}
+      </button>
       <ProjectTile rail={rail} />
       <NavItem
         icon={<Home20Regular aria-hidden="true" />}
