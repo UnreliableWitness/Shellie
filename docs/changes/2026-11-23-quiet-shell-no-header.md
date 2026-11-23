@@ -28,6 +28,11 @@ The header was also the title bar (#49). Now:
   rail. These are the rules Focus mode already used, now always on.
 - **macOS:** the nav leaves the traffic lights' row free at its top, and that row drags the window. A page's own
   header drags the window too (its buttons, inputs, links and tab lists do not).
+- **The tab row is the first row of a task.** The environment band (UAT, Production) and the run approval bar sit
+  under it, not above: only the tab row keeps clear of the window controls, and on Windows their buttons (Back to
+  Development, Approve, Refuse) would have been under min/max/close. A 48 px stretch of the row stays free of tabs
+  and buttons, so a full row still drags the window. On Windows the row takes the chrome colour the controls are
+  drawn on.
 - **Any other page** gets an empty 40 px strip at the top where the window controls would cover it: always on
   Windows (the controls are drawn over the top right, where a page's buttons are), on macOS only beside the rail
   (the lights are wider than the rail). On macOS with the wide nav there is no strip, so pages gain the 40 px.
@@ -58,3 +63,15 @@ The header was also the title bar (#49). Now:
 - On macOS a page without a `PageHeader` can be dragged only by the nav's top.
 - The sprint's name is no longer shown outside the Sprint page and Home's Sprint tile.
 - On Windows pages do not gain the header's 40 px: the strip takes it.
+- Not known for Windows: the controls' real width at 125% or 150% display scaling and at an app zoom other than
+  100% (the row's padding follows `env(titlebar-area-width)`, as the header's did).
+- On macOS, text in a page's header cannot be selected and a double click there zooms the window, as on any title
+  bar.
+- "Copy worktree path" says nothing when it has copied, and copies the task's own folder only, not each repo's.
+- A finishing task has no task menu, so no work item link or path; with the rail, a ready task's screen does not
+  name the task outside Focus.
+- A dream result that is still loading or failed to load has no Dreams back button (the palette and Home lead
+  there).
+- Left in the code: the breadcrumb and callout styles, and comments in main that still say "the header".
+- No test for the strip with setting-up, setup-failed or done tasks, for the two new commands being absent when
+  they do not apply, or for the copy failing.

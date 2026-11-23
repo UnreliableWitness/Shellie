@@ -1524,6 +1524,23 @@ describe('the quiet task bar', () => {
     expect(screen.getByRole('button', { name: 'Task menu' })).toHaveFocus();
   });
 
+  it('keeps the tab row at the very top, above the environment band, with a strip left free to drag the window by', async () => {
+    setup({ environment: 'uat' });
+    const { container } = render(<Shell />);
+    await screen.findByTestId('term-c1');
+    const layer = container.querySelector('.task-layer:not([hidden])')!;
+    // The window controls are drawn over the top right: only the tab row keeps clear of them.
+    expect(layer.firstElementChild).toHaveClass('taskbar');
+    const band = within(layer as HTMLElement).getByText(/UAT/, {
+      selector: '.env-band *, .env-band',
+    });
+    expect(
+      layer.querySelector('.taskbar')!.compareDocumentPosition(band) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(layer.querySelector('.taskbar > .taskbar-grip')).not.toBeNull();
+  });
+
   it('copies the worktree path and opens the work item from the task menu', async () => {
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, 'clipboard', {

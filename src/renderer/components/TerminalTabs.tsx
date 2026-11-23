@@ -617,8 +617,7 @@ export const TerminalTabs = memo(function TerminalTabs({
 
   return (
     <>
-      <EnvironmentBand task={task} />
-      <RunApproveBar taskId={task.id} />
+      {/* First: the tab row is the window's title bar, and only it keeps clear of the window controls. */}
       <div className="taskbar">
         <div className="tabs">
           <div
@@ -726,6 +725,8 @@ export const TerminalTabs = memo(function TerminalTabs({
             onOpenBrain={() => void openBrainTerminal()}
           />
         </div>
+        {/* Always free, however many tabs: something to drag the window by (shell.css). */}
+        <span className="taskbar-grip" aria-hidden="true" />
         <div className="taskbar-right">
           <WorkspaceChips task={task} />
           <CostButton taskId={task.id} />
@@ -743,6 +744,8 @@ export const TerminalTabs = memo(function TerminalTabs({
           )}
         </div>
       </div>
+      <EnvironmentBand task={task} />
+      <RunApproveBar taskId={task.id} />
       {/* No buttons of their own any more: they offer the task menu and the palette their commands. */}
       {runFrom.map((w, i) => (
         <RunCommands

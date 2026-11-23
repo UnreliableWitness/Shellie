@@ -62,6 +62,9 @@
 .pagehead a,
 .pagehead [role='tablist'],
 .pagehead [role='group'],
+.pagehead label,
+.brain-lightbox,
+.helptip-pop,
 .leftnav > *,
 .menu,
 .terminal-menu {
@@ -86,6 +89,21 @@
 }
 :root[data-titlebar='overlay'] .taskbar {
   padding-right: calc(var(--titlebar-overlay) + 8px);
+}
+/* A stretch of the tab row no tab or button can take, so a full row still drags the window. */
+.taskbar-grip {
+  display: none;
+  flex: none;
+  width: 48px;
+  align-self: stretch;
+}
+:root[data-titlebar='inset'] .taskbar-grip,
+:root[data-titlebar='overlay'] .taskbar-grip {
+  display: block;
+}
+/* Windows draws its controls on the chrome colour (main's chromeColors): the row under them takes it too. */
+:root[data-titlebar='overlay'] .taskbar {
+  background: var(--bg-chrome);
 }
 /* The window controls are centred on 40 px; the tab row matches it. */
 :root[data-titlebar='inset'] .taskbar,
