@@ -1018,25 +1018,25 @@ export function createHandlers(s: Services): Handlers {
     sync: brain.sync,
     takePendingJoin: brain.takePendingJoin,
   });
-  /** The brain a new task's summary names: by the work item's project when it is known (no network). */
+  /**
+   * The brain a new task's summary names: by the work item's project when it is known, else the connection's
+   * (no network).
+   */
   const summaryBrain = (
     connectionId: string | null,
     workItem: WorkItemRef | null,
   ): string | null => {
-    const b = brainForTask(
-      brain.store,
-      connectionId,
-      workItem?.project ?? null,
-    );
+    const project =
+      workItem?.project ||
+      (connectionId ? s.connections.find(connectionId)?.project : null);
+    const b = brainForTask(brain.store, connectionId, project ?? null);
     return b?.options.contextInTaskMd ? b.name : null;
   };
   /**
-   * The brain of a task's work item project (else its connection's, for refs from before the project was stored),
-   * from what is stored; no network. A task without a work item has none, unless it has no repo either: then its
-   * project's brain is the point of the task (#225).
+   * The brain of a task's work item project (else its connection's: for refs from before the project was stored,
+   * and for a task without a work item, #225 #359), from what is stored; no network.
    */
   const taskBrain = (task: Task): Brain | null => {
-    if (!task.workItem && !hasNoRepo(task)) return null;
     const connectionId = taskConnectionId(task, s.repos.list());
     if (!connectionId) return null;
     const project =
@@ -2111,28 +2111,29 @@ export function createHandlers(s: Services): Handlers {
   /**
    * The brain whose context task.md gets: of the work item's project (as Azure DevOps says, else as stored, else
    * the connection's). A project learned from Azure DevOps is stored on the task's work item. A task without a work
-   * item has none.
+   * item gets its connection's project's (#359).
    */
   const setupBrain = async (
     task: Task,
     repo: Repo,
     details: WorkItemDetails | undefined,
   ): Promise<SetupPlan['brain']> => {
-    if (!task.workItem) return undefined;
     const connectionId = taskConnectionId(task, [repo]);
     if (!connectionId) return undefined;
-    const learned = details?.fields['System.TeamProject'];
+    const learned = task.workItem
+      ? details?.fields['System.TeamProject']
+      : undefined;
     if (
       typeof learned === 'string' &&
       learned &&
-      task.workItem.project !== learned
+      task.workItem?.project !== learned
     )
       await mutateTask(task.id, (t) => {
         if (t.workItem) t.workItem.project = learned;
       });
     const project =
       (typeof learned === 'string' && learned) ||
-      task.workItem.project ||
+      task.workItem?.project ||
       s.connections.find(connectionId)?.project;
     if (project === undefined) return undefined;
     const b = brainForTask(brain.store, connectionId, project);

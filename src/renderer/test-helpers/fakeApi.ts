@@ -138,6 +138,7 @@ const defaults: FakeHandlers = {
   'attention:get': () => ({}),
   'brain:list': () => [],
   'brain:forTask': () => null,
+  'brain:forNewTask': () => null,
   'brain:pickFolder': () => null,
   'brain:wikis': () => [],
   'brain:wikiPages': () => [],

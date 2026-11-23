@@ -257,6 +257,24 @@ export function NewTaskScreen({
   const chosenCommands = (config?.config.setup ?? []).filter(
     (c) => commands[c],
   );
+  const summaryWorkItem = mode === 'blank' || !workItem?.id ? null : workItem;
+  // The brain main gives the task: the work item's project's, else the connection's (a blank task, #359).
+  const brainProject = summaryWorkItem?.project ?? null;
+  const [brainName, setBrainName] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setBrainName(null);
+    if (!connectionId) return;
+    void tryInvoke(
+      () => api().invoke('brain:forNewTask', connectionId, brainProject),
+      notify,
+    ).then((name) => {
+      if (live) setBrainName(name ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [connectionId, brainProject, notify]);
   /** What the task will get, live from the form and the repo's current settings. */
   const summary =
     repo && config
@@ -277,12 +295,11 @@ export function NewTaskScreen({
             openCopilot,
             openOpencode,
           }),
-          workItem: mode === 'blank' || !workItem?.id ? null : workItem,
+          workItem: summaryWorkItem,
           ...startOf(repo, connectionOf(repo.id)),
           types: typeMeta ? [typeMeta] : null,
           editor: editorPrefs,
-          // Main fills it in when the task is created.
-          brain: null,
+          brain: brainName,
         })
       : null;
 
