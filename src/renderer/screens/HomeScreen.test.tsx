@@ -304,15 +304,13 @@ describe('Home page', () => {
     expect(screen.queryByRole('region', { name: 'Get started' })).toBeNull();
   });
 
-  it('the app header goes Home, and Home has the places the nav no longer lists', async () => {
+  it('the nav goes Home, and Home has the places the nav no longer lists', async () => {
     installFakeApi({
       'brain:list': () => [listedBrain({ connectionId: 'c1' })],
     });
     useStore.setState({ screen: { kind: 'settings' } });
     render(<Shell />);
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Shellie, go to Home' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Home' }));
     expect(useStore.getState().screen.kind).toBe('home');
     const places = await screen.findByRole('region', { name: 'Places' });
     expect(

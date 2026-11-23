@@ -161,7 +161,7 @@ beforeEach(() =>
 );
 
 describe('TaskScreen', () => {
-  it('shows the task in the breadcrumb, git state and the terminal tabs', async () => {
+  it('shows the task in the nav, its git state in the task menu, and the terminal tabs', async () => {
     installFakeApi({
       'repos:config': () => config,
       'tasks:gitSummary': () => ({
@@ -178,10 +178,11 @@ describe('TaskScreen', () => {
     });
     render(<Shell />);
     expect(
-      within(screen.getByRole('banner')).getByText(
-        'User Story 48213 Checkout: allow saving a delivery address',
+      within(screen.getByRole('navigation', { name: 'Tasks' })).getByRole(
+        'button',
+        { name: /48213 Checkout: allow saving a delivery address/ },
       ),
-    ).toBeInTheDocument();
+    ).toHaveAttribute('aria-current', 'page');
     // The git state is in the task menu.
     await userEvent.click(
       await screen.findByRole('button', { name: 'Task menu' }),
@@ -495,8 +496,11 @@ describe('TaskScreen', () => {
     expect(screen.getByTestId('term-c1')).toBeInTheDocument();
     act(() => useStore.setState({ selectedTaskId: 'b' }));
     expect(
-      within(screen.getByRole('banner')).getByText('Bug 2 Second task'),
-    ).toBeInTheDocument();
+      within(screen.getByRole('navigation', { name: 'Tasks' })).getByRole(
+        'button',
+        { name: /2 Second task/ },
+      ),
+    ).toHaveAttribute('aria-current', 'page');
     expect(screen.getByTestId('term-c2')).toHaveAttribute(
       'data-active',
       'true',
@@ -1526,6 +1530,31 @@ describe('the quiet task bar', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.getByRole('button', { name: 'Task menu' })).toHaveFocus();
+  });
+
+  it('copies the worktree path and opens the work item from the task menu', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const url = 'https://dev.azure.com/acme/Shellie/_workitems/edit/48213';
+    const { calls } = setup(
+      { workItem: { ...task.workItem!, url } },
+      { 'shell:openExternal': () => undefined },
+    );
+    render(<Shell />);
+    await userEvent.click(await taskMenuItem('Copy worktree path'));
+    expect(writeText).toHaveBeenCalledWith(
+      '/src/webshop.worktrees/48213-save-delivery-address',
+    );
+    await userEvent.click(
+      await taskMenuItem('Open User Story 48213 in Azure DevOps'),
+    );
+    expect(calls).toContainEqual({
+      channel: 'shell:openExternal',
+      args: [url],
+    });
   });
 
   it('finishes from the task menu in Focus, where there is no nav', async () => {

@@ -12,7 +12,14 @@ import { modKey, PopupMenu } from './ui';
  */
 const SECTIONS: string[][] = [
   ['task.changes', 'task.usage', 'task.docs', 'task.brain'],
-  ['task.editor', 'task.editor.', 'task.folder', 'app.focus'],
+  [
+    'task.workItem',
+    'task.editor',
+    'task.editor.',
+    'task.folder',
+    'task.copyPath',
+    'app.focus',
+  ],
   ['task.environment', 'task.cleanWorktree', 'task.scan', 'task.addWorktree'],
   ['task.finish', 'task.discard'],
 ];

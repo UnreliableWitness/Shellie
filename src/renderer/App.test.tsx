@@ -201,6 +201,35 @@ describe('App', () => {
   });
 });
 
+describe('without a header bar', () => {
+  it('has no banner and no breadcrumb; a page gets an empty title strip and a task its tab row', () => {
+    installFakeApi();
+    useStore.setState({
+      screen: { kind: 'home' },
+      tasks: [],
+      selectedTaskId: null,
+    });
+    const { container, unmount } = render(<Shell />);
+    expect(screen.queryByRole('banner', { name: '' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull();
+    expect(container.querySelector('.titlestrip')).not.toBeNull();
+    unmount();
+    useStore.setState({
+      screen: { kind: 'task' },
+      tasks: [{ ...task, status: 'ready' }],
+      selectedTaskId: task.id,
+    });
+    const shown = render(<Shell />);
+    expect(shown.container.querySelector('.taskbar')).not.toBeNull();
+    expect(shown.container.querySelector('.titlestrip')).toBeNull();
+    useStore.setState({
+      screen: { kind: 'home' },
+      tasks: [],
+      selectedTaskId: null,
+    });
+  });
+});
+
 describe('first page', () => {
   const fresh = {
     dismissedAt: null,
@@ -351,11 +380,6 @@ describe('full pages', () => {
     const content = expectFullPage();
     expect(
       within(content).getByRole('heading', { name: 'Finish task' }),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByText(
-        /Bug 48213 Broken checkout/,
-      ),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Keep task' }));
     expect(useStore.getState().screen).toEqual({ kind: 'task' });

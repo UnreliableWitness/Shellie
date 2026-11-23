@@ -31,56 +31,76 @@
 }
 
 /*
- * The header is the window's title bar (#49): no system title bar above it, it drags the window (a double click
- * maximises, natively) and keeps clear of the window controls. `data-titlebar` comes from the preload (windowChrome.ts):
- * `inset` is macOS (traffic lights on the left, gone in full screen), `overlay` is Windows (min/max/close drawn
- * over the right end, `env(titlebar-area-*)` gives what is left). In focus the task's tab row is the top bar instead.
+ * There is no header bar: what is at the top of the window is its title bar (#49). `data-titlebar` comes from the
+ * preload (windowChrome.ts): `inset` is macOS (traffic lights on the left, gone in full screen), `overlay` is
+ * Windows (min/max/close drawn over the right end, `env(titlebar-area-*)` gives what is left).
+ * - A task's tab row drags the window and keeps clear of the controls on either side.
+ * - Any other page gets an empty strip where the controls would cover it: always on Windows, on macOS only beside
+ *   the rail (the wide nav is under the traffic lights and keeps their row free itself).
+ * - On macOS the nav's top and a page's own header drag the window too.
  */
 :root {
   --titlebar-inset: 78px;
   --titlebar-overlay: calc(100vw - env(titlebar-area-width, 100vw));
 }
-:root[data-titlebar='inset'] .headerbar,
-:root[data-titlebar='overlay'] .headerbar,
-:root[data-titlebar='inset'] .app.in-focus .taskbar,
-:root[data-titlebar='overlay'] .app.in-focus .taskbar,
-:root[data-titlebar='inset']:not([data-fullscreen]) .app.in-focus .leftnav {
+.titlestrip {
+  display: none;
+  height: 40px;
+  flex: none;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
 }
-.headerbar button,
-.headerbar a,
-.headerbar input,
-.headerbar [role='dialog'],
+:root[data-titlebar='overlay'] .titlestrip,
+:root[data-titlebar='inset']:not([data-fullscreen])
+  .leftnav.is-rail
+  + .content
+  .titlestrip {
+  display: block;
+}
+:root[data-titlebar='inset'] .taskbar,
+:root[data-titlebar='overlay'] .taskbar,
+:root[data-titlebar='inset'] .pagehead,
+:root[data-titlebar='inset']:not([data-fullscreen]) .leftnav {
+  -webkit-app-region: drag;
+}
 .taskbar button,
 .taskbar input,
 .taskbar .tabrow,
+.pagehead button,
+.pagehead input,
+.pagehead select,
+.pagehead a,
+.pagehead [role='tablist'],
+.pagehead [role='group'],
 .leftnav > *,
 .menu,
 .terminal-menu {
   -webkit-app-region: no-drag;
 }
-:root[data-titlebar='inset']:not([data-fullscreen]) .headerbar,
-:root[data-titlebar='inset']:not([data-fullscreen]) .app.in-focus .taskbar {
-  padding-left: var(--titlebar-inset);
-}
-/* In focus with the rail shown, the rail keeps the traffic lights' row and the tab row starts after them. */
-:root[data-titlebar='inset']:not([data-fullscreen]) .app.in-focus .leftnav {
+/* macOS: the nav keeps the traffic lights' row free. */
+:root[data-titlebar='inset']:not([data-fullscreen]) .leftnav {
   padding-top: 40px;
 }
+/* Without the nav (Focus) the tab row starts after the lights; beside the rail, after what the rail leaves of them. */
 :root[data-titlebar='inset']:not([data-fullscreen])
-  .app.in-focus
-  .leftnav
+  .shell
+  > .content:first-child
+  .taskbar {
+  padding-left: var(--titlebar-inset);
+}
+:root[data-titlebar='inset']:not([data-fullscreen])
+  .leftnav.is-rail
   + .content
   .taskbar {
   padding-left: calc(var(--titlebar-inset) - 48px);
 }
-:root[data-titlebar='overlay'] .headerbar,
-:root[data-titlebar='overlay'] .app.in-focus .taskbar {
+:root[data-titlebar='overlay'] .taskbar {
   padding-right: calc(var(--titlebar-overlay) + 8px);
 }
-/* The window controls are centred on the header's 40 px; the tab row matches it while it stands in. */
-:root[data-titlebar='inset'] .app.in-focus .taskbar,
-:root[data-titlebar='overlay'] .app.in-focus .taskbar {
+/* The window controls are centred on 40 px; the tab row matches it. */
+:root[data-titlebar='inset'] .taskbar,
+:root[data-titlebar='overlay'] .taskbar {
   height: 40px;
 }
 .headerbar .btn-primary {

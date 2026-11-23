@@ -210,12 +210,6 @@ describe('Sprint page', () => {
     expect(within(rows[1]).getByText('3')).toBeInTheDocument();
     // Done in ADO shows as in ADO: no extra dimming class.
     expect(rows[3].className).not.toMatch(/dim|done/);
-    // The breadcrumb names the sprint.
-    expect(
-      within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByText(
-        'Sprint 1',
-      ),
-    ).toBeInTheDocument();
   });
 
   it('collapses a parent, and collapses and expands all', async () => {
