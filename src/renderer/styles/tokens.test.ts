@@ -114,6 +114,34 @@ describe.each([
   );
 });
 
+describe('status washes', () => {
+  // A warning, an error and a success row: the status colour as text on its own wash, laid over a card or the page.
+  it.each(
+    (['dark', 'light'] as const).flatMap((name) =>
+      [
+        ['--warn', '--warn-bg'],
+        ['--red', '--red-bg'],
+        ['--green', '--green-bg'],
+      ].flatMap(([fg, wash]) =>
+        ['--bg-card', '--bg-page'].map((ground) => [name, fg, wash, ground]),
+      ),
+    ),
+  )('%s: %s on %s over %s is at least 4.5:1', (name, fg, wash, ground) => {
+    const t = name === 'dark' ? DARK : LIGHT;
+    const bg = over(parseColor(t[wash]), parseColor(t[ground]));
+    const text = over(parseColor(t[fg]), bg);
+    const [a, b] = [lum(text), lum(bg)].sort((x, y) => y - x);
+    expect((a + 0.05) / (b + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('scrollbars', () => {
+  it('have a thumb colour in both themes, dark ink on light and light ink on dark', () => {
+    expect(parseColor(DARK['--scroll-thumb'])[0]).toBe(255);
+    expect(parseColor(LIGHT['--scroll-thumb'])[0]).toBe(0);
+  });
+});
+
 describe('button hover', () => {
   it('keeps the dark --btn-hover opaque as before and lightens in light', () => {
     expect(DARK['--btn-hover']).toBe('#2f2e2d');

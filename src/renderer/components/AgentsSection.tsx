@@ -227,7 +227,7 @@ export function AgentsSection({ embedded }: { embedded?: boolean }) {
     </>
   );
 
-  if (embedded) return <div className="list">{body}</div>;
+  if (embedded) return <div className="list list-pad">{body}</div>;
   const defaults = defaultSettings().defaultTerminals;
   const modified =
     !!tabs &&

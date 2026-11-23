@@ -68,6 +68,10 @@
   overflow: hidden;
   box-shadow: var(--shadow-1);
 }
+/* A list card that holds free content instead of rows. */
+.list-pad {
+  padding: 12px 16px;
+}
 .list-row {
   display: flex;
   align-items: center;

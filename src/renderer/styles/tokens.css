@@ -77,8 +77,12 @@
   --highlight-flash: rgba(0, 120, 212, 0.25);
   /* What dims the window behind the command palette; lighter in the light theme. */
   --scrim: rgba(0, 0, 0, 0.4);
+  /* The scrollbar thumb (app.css); the track stays clear so a scrolling pane has no gutter stripe. */
+  --scroll-thumb: rgba(255, 255, 255, 0.2);
+  /* The first layer is a hairline: on the dark page a drop shadow alone does not show where a card ends. */
   --shadow-1:
-    0 1.6px 3.6px rgba(0, 0, 0, 0.26), 0 0.3px 0.9px rgba(0, 0, 0, 0.22);
+    0 0 0 1px rgba(255, 255, 255, 0.07), 0 1.6px 3.6px rgba(0, 0, 0, 0.26),
+    0 0.3px 0.9px rgba(0, 0, 0, 0.22);
   --shadow-2:
     0 6.4px 14.4px rgba(0, 0, 0, 0.4), 0 1.2px 3.6px rgba(0, 0, 0, 0.3);
   --font-ui:
@@ -138,9 +142,11 @@
     --series-other: #605e5c;
     --on-series-other: #ffffff;
     --scrim: rgba(0, 0, 0, 0.25);
+    --scroll-thumb: rgba(0, 0, 0, 0.22);
     --red-bg: rgba(164, 38, 44, 0.08);
     --warn: #8a5300;
-    --warn-bg: rgba(138, 83, 0, 0.1);
+    /* A clear amber wash (Fluent's warning ground); the brown of --warn at low alpha read as dirt on white. */
+    --warn-bg: rgba(255, 185, 0, 0.18);
     --chart-claude: #0078d4;
     --chart-copilot: #8764b8;
     --chart-opus: #0063b1;
