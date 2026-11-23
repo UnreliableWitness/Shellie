@@ -327,6 +327,50 @@ describe('Home page', () => {
     expect(useStore.getState().screen.kind).toBe('week');
   });
 
+  it("lists only the active project's brains that are not archived as places, and opens one", async () => {
+    installFakeApi({
+      'brain:list': () => [
+        listedBrain({ id: 'b1', name: 'Acme', connectionId: 'c1' }),
+        listedBrain({ id: 'b2', name: 'Elsewhere', connectionId: 'c9' }),
+        listedBrain({
+          id: 'b3',
+          name: 'Old',
+          connectionId: 'c1',
+          archived: true,
+        }),
+      ],
+    });
+    render(<Shell />);
+    const places = await screen.findByRole('region', { name: 'Places' });
+    await userEvent.click(
+      await within(places).findByRole('button', { name: /Acme/ }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b1',
+    });
+    act(() => useStore.getState().go({ kind: 'home' }));
+    const again = await screen.findByRole('region', { name: 'Places' });
+    await within(again).findByRole('button', { name: /Acme/ });
+    expect(
+      within(again).queryByRole('button', { name: /Elsewhere/ }),
+    ).toBeNull();
+    expect(within(again).queryByRole('button', { name: /Old/ })).toBeNull();
+  });
+
+  it('has no Dreams place and no Project link without a project', async () => {
+    installFakeApi();
+    useStore.setState({ connections: [], connectionId: null });
+    render(<Shell />);
+    const places = await screen.findByRole('region', { name: 'Places' });
+    expect(within(places).queryByRole('button', { name: /Dreams/ })).toBeNull();
+    expect(
+      within(
+        screen.getByRole('navigation', { name: 'More places' }),
+      ).queryByRole('button', { name: 'Project' }),
+    ).toBeNull();
+  });
+
   it('ends with quiet links to Project, Settings, Secrets and Get started', async () => {
     installFakeApi({ 'home:get': () => snapshot() });
     render(<Shell />);

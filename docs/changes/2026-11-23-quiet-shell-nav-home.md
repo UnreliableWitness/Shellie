@@ -15,8 +15,9 @@ Project, Sprint, Week, Dreams, the brain items and Settings are gone from it; th
 - **For you** has a line only while its reason holds: "N dreams to review" (opens Dreams), "Dreaming about X"
   while a dream runs (its panel with Stop this dream, as before), "Something to read in <brain>" by the same rule
   the brain items' dot followed (opens the brain; with several, Home), and the offer to join the team's brain. The
-  heading shows only with a line. The block sits under the scrolling list, so a line coming or going never moves a
-  task.
+  heading shows only with a line. The block lies over the foot of the list and takes no height from it, so a line
+  coming or going never moves a task, also when the list is scrolled to its end; the list has room at its end to
+  scroll its last rows clear of the block.
 - The foot keeps the connection line and the pull request note, which show only when something is wrong, and the
   collapse button.
 - The rail has the palette icon, Home, the task icons and the For you lines as icons with a dot.
@@ -48,4 +49,12 @@ they were.
 - The Sprint tile shows the sprint's name only after the Sprint page has loaded it once; the Week tile has no figure.
 - "Done tasks" and "What is new" are not among the quiet links: the Done list is in the nav, and the What's new card
   cannot be reopened.
-- In Focus mode the nav and its For you block are hidden, as the spec says.
+- In Focus mode the nav and its For you block are hidden, as the spec says; with the rail kept in Focus, the rail's
+  For you icons stay.
+- With a long task list, a For you line covers the list's lowest visible rows until the list is scrolled.
+- The Cost tile is the total of all projects (as Stats is), also when the band names the active project, and it
+  asks for the month's stats a second time when Stats shows the month.
+- With something to read in several brains the line opens Home, where the Reading band lists them; it does not
+  scroll to it. The project switcher is still the tile, not a line of text.
+- Left unused in the code: the single-project tile and its "No project" avatar, the nav item's note, the Dreams
+  count style, and the dream line's states other than "running" (kept with their tests).

@@ -691,95 +691,99 @@ export function TaskNav() {
       />
       {/* One project needs no switcher; Home and the palette go to its page. */}
       {connections.length > 1 && <ProjectTile rail={rail} />}
-      <div className="leftnav-scroll">
-        <TasksHead rail={rail} />
-        {open.map((t) =>
-          rail ? (
-            <Fragment key={t.id}>
-              <RailRow task={t} signal={signal(t)} />
-              <RailFinish task={t} />
-              <RailDiscard task={t} />
-            </Fragment>
-          ) : (
-            <Row
-              key={t.id}
-              task={t}
-              cost={costs[t.id] ?? 0}
-              repos={repoLine(t, repos)}
-              signal={signal(t)}
-              pulse={pulse}
-            />
-          ),
-        )}
-        {open.length === 0 && !rail && (
-          <div className="nav-empty">No open tasks.</div>
-        )}
-        {done.length > 0 && !rail && (
-          <>
-            <button
-              type="button"
-              className="nav-section nav-section-toggle"
-              aria-expanded={showDone}
-              onClick={() => setShowDone(!showDone)}
-            >
-              {showDone ? (
-                <ChevronDown12Regular aria-hidden="true" />
-              ) : (
-                <ChevronRight12Regular aria-hidden="true" />
-              )}
-              Done ({done.length})
-            </button>
-            {showDone &&
-              done.map((t) => (
-                <Row key={t.id} task={t} cost={costs[t.id] ?? 0} />
-              ))}
-          </>
-        )}
-      </div>
-      {/*
-        Pinned under the list, so a line coming or going never moves a task. Each line is there only while its
-        reason holds; the heading hides with the last of them (shell.css).
+      {/* The list and, over its foot, the For you block: one box, so the block takes no height from the list. */}
+      <div className="leftnav-main">
+        <div className="leftnav-scroll">
+          <TasksHead rail={rail} />
+          {open.map((t) =>
+            rail ? (
+              <Fragment key={t.id}>
+                <RailRow task={t} signal={signal(t)} />
+                <RailFinish task={t} />
+                <RailDiscard task={t} />
+              </Fragment>
+            ) : (
+              <Row
+                key={t.id}
+                task={t}
+                cost={costs[t.id] ?? 0}
+                repos={repoLine(t, repos)}
+                signal={signal(t)}
+                pulse={pulse}
+              />
+            ),
+          )}
+          {open.length === 0 && !rail && (
+            <div className="nav-empty">No open tasks.</div>
+          )}
+          {done.length > 0 && !rail && (
+            <>
+              <button
+                type="button"
+                className="nav-section nav-section-toggle"
+                aria-expanded={showDone}
+                onClick={() => setShowDone(!showDone)}
+              >
+                {showDone ? (
+                  <ChevronDown12Regular aria-hidden="true" />
+                ) : (
+                  <ChevronRight12Regular aria-hidden="true" />
+                )}
+                Done ({done.length})
+              </button>
+              {showDone &&
+                done.map((t) => (
+                  <Row key={t.id} task={t} cost={costs[t.id] ?? 0} />
+                ))}
+            </>
+          )}
+        </div>
+        {/*
+        Laid over the foot of the list, so a line coming or going never moves a task: the list keeps its height and
+        its scroll position, and has room at its end to scroll the last rows clear. Each line is there only while
+        its reason holds; the heading hides with the last of them (shell.css).
       */}
-      <div className="nav-foryou" role="group" aria-label="For you">
-        {!rail && <div className="nav-section">For you</div>}
-        <div className="nav-foryou-lines">
-          {dreamsWaiting > 0 && (
-            <NavItem
-              icon={<WeatherMoon20Regular aria-hidden="true" />}
-              label={`${plural(dreamsWaiting, 'dream')} to review`}
-              rail={rail}
-              current={false}
-              dot
-              onClick={() => go({ kind: 'dreams' })}
-            />
-          )}
-          <DreamNavStatus rail={rail} onlyRunning />
-          {reads.length > 0 && (
-            <NavItem
-              icon={<Brain20Regular aria-hidden="true" />}
-              label={
-                reads.length === 1
-                  ? `Something to read in ${reads[0].name}`
-                  : `Something to read in ${reads.length} brains`
-              }
-              rail={rail}
-              current={false}
-              dot
-              onClick={() =>
-                go(
+        <div className="nav-foryou" role="group" aria-label="For you">
+          {!rail && <div className="nav-section">For you</div>}
+          <div className="nav-foryou-lines">
+            {dreamsWaiting > 0 && (
+              <NavItem
+                icon={<WeatherMoon20Regular aria-hidden="true" />}
+                label={`${plural(dreamsWaiting, 'dream')} to review`}
+                rail={rail}
+                current={false}
+                dot
+                onClick={() => go({ kind: 'dreams' })}
+              />
+            )}
+            <DreamNavStatus rail={rail} onlyRunning />
+            {reads.length > 0 && (
+              <NavItem
+                icon={<Brain20Regular aria-hidden="true" />}
+                label={
                   reads.length === 1
-                    ? { kind: 'brain', brainId: reads[0].id }
-                    : { kind: 'home' },
-                )
-              }
-            />
-          )}
-          {!rail && connection && (
-            <JoinCard
-              connectionId={connection.id}
-              project={connection.project}
-            />
-          )}
+                    ? `Something to read in ${reads[0].name}`
+                    : `Something to read in ${reads.length} brains`
+                }
+                rail={rail}
+                current={false}
+                dot
+                onClick={() =>
+                  go(
+                    reads.length === 1
+                      ? { kind: 'brain', brainId: reads[0].id }
+                      : { kind: 'home' },
+                  )
+                }
+              />
+            )}
+            {!rail && connection && (
+              <JoinCard
+                connectionId={connection.id}
+                project={connection.project}
+              />
+            )}
+          </div>
         </div>
       </div>
       <div className="leftnav-foot">

@@ -338,3 +338,15 @@ describe('dreamTaskName', () => {
     ).toBe('Dream 20 Nov');
   });
 });
+
+describe('waitingCount', () => {
+  it('counts the results to review, and a result opened as a task whose task is not made yet', async () => {
+    const { waitingCount } = await import('./dreamWords');
+    const { emptyState, OPENED, withResults } =
+      await import('../../test-helpers/dreamFixtures');
+    const view = withResults();
+    expect(waitingCount(view)).toBe(2);
+    view.repos[2].state = emptyState({ opened: OPENED });
+    expect(waitingCount(view)).toBe(3);
+  });
+});

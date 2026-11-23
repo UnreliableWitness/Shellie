@@ -7,6 +7,8 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { allCommands } from '../commands/registry';
@@ -321,6 +323,48 @@ describe('the quiet nav', () => {
       kind: 'brain',
       brainId: 'b1',
     });
+  });
+
+  it('lays For you over the foot of the list, so a line coming or going moves no task', async () => {
+    installFakeApi({ 'dream:get': () => withResults() });
+    useStore.setState({ connections: [conn('c1', 'Shellie')], reading: [] });
+    const { container } = render(<TaskNav />);
+    const line = await screen.findByRole('button', {
+      name: /dreams? to review/,
+    });
+    // Not in the scrolling list, and not a sibling that takes height from it: both sit in one box, the block on top.
+    const list = container.querySelector('.leftnav-scroll')!;
+    expect(list).not.toContainElement(line);
+    expect(list.parentElement).toBe(forYou()!.parentElement);
+    expect(list.parentElement).toHaveClass('leftnav-main');
+    const css = readFileSync(
+      path.join(__dirname, '..', 'styles', 'shell.css'),
+      'utf8',
+    );
+    const rule = (selector: string) =>
+      new RegExp(`\\n${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+    expect(rule('\\.nav-foryou')).toContain('position: absolute;');
+    expect(rule('\\.leftnav-main')).toContain('position: relative;');
+    // Room at the end of the list, always there, so its last rows can be scrolled clear of the block.
+    expect(rule('\\.leftnav-main \\.leftnav-scroll')).toMatch(
+      /padding-bottom: \d+px;/,
+    );
+  });
+
+  it('shows a For you line in the rail as an icon named by what waits', async () => {
+    installFakeApi({ 'dream:get': () => withResults() });
+    useStore.setState({
+      connections: [conn('c1', 'Shellie')],
+      reading: [],
+      navCollapsed: true,
+    });
+    render(<TaskNav />);
+    const line = await screen.findByRole('button', {
+      name: '2 dreams to review',
+    });
+    expect(line).toHaveAttribute('title', '2 dreams to review');
+    expect(line).toHaveTextContent('');
+    useStore.setState({ navCollapsed: false });
   });
 
   it('says under For you that dreams wait for review, and opens Dreams', async () => {
