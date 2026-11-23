@@ -2,8 +2,6 @@ import {
   Add16Regular,
   Add20Regular,
   Brain20Regular,
-  ArrowSprint20Regular,
-  CalendarLtr20Regular,
   CheckmarkCircle12Filled,
   CheckmarkCircle16Regular,
   CheckmarkCircle20Regular,
@@ -12,12 +10,11 @@ import {
   Delete16Regular,
   Delete20Regular,
   Document16Regular,
-  Grid20Regular,
   Home20Regular,
+  WeatherMoon20Regular,
   PanelLeftContract20Regular,
   PanelLeftExpand20Regular,
   Search16Regular,
-  Settings20Regular,
 } from '@fluentui/react-icons';
 import {
   Fragment,
@@ -62,7 +59,8 @@ import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { attentionLabel } from './AttentionDot';
 import { DreamNavStatus } from './dreams/DreamNavStatus';
-import { DreamsNavItem } from './dreams/DreamsNavItem';
+import { waitingCount } from './dreams/dreamWords';
+import { useDreamsState } from './dreams/useDreams';
 import { usePlaceCommands } from './PlaceCommands';
 import { modKey, WorkItemTypeIcon } from './ui';
 
@@ -386,12 +384,15 @@ function NavItem({
   current,
   rail,
   note,
+  dot = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   current: boolean;
   rail: boolean;
+  /** A dot whose reason the label already gives (a For you line). */
+  dot?: boolean;
   /** Something waits behind this item: a dot, with these words for a screen reader and the tooltip. */
   note?: string;
   onClick: () => void;
@@ -408,7 +409,7 @@ function NavItem({
     >
       {icon}
       {!rail && <span>{label}</span>}
-      {note && <span className="navitem-dot" aria-hidden="true" />}
+      {(note || dot) && <span className="navitem-dot" aria-hidden="true" />}
     </button>
   );
 }
@@ -634,6 +635,9 @@ export function TaskNav() {
           text: `${connection.name}: ${statusText(connection, true).text}`,
         };
   usePlaceCommands(brains, toRead);
+  const reads = brains.filter((b) => toRead.has(b.id));
+  const dreams = useDreamsState().view;
+  const dreamsWaiting = dreams ? waitingCount(dreams) : 0;
   // The palette can open the Done list, which lives here.
   const hasDone = done.length > 0;
   const commands = useMemo<Command[]>(
@@ -678,7 +682,6 @@ export function TaskNav() {
           </>
         )}
       </button>
-      <ProjectTile rail={rail} />
       <NavItem
         icon={<Home20Regular aria-hidden="true" />}
         label="Home"
@@ -686,47 +689,8 @@ export function TaskNav() {
         current={screen.kind === 'home'}
         onClick={() => go({ kind: 'home' })}
       />
-      {connection && (
-        <NavItem
-          icon={<Grid20Regular aria-hidden="true" />}
-          label="Project"
-          rail={rail}
-          current={screen.kind === 'project'}
-          onClick={() => {
-            go({ kind: 'project' });
-            track('project.open', { from: 'nav' });
-          }}
-        />
-      )}
-      <NavItem
-        icon={<ArrowSprint20Regular aria-hidden="true" />}
-        label="Sprint"
-        rail={rail}
-        current={screen.kind === 'sprint'}
-        onClick={() => go({ kind: 'sprint' })}
-      />
-      <NavItem
-        icon={<CalendarLtr20Regular aria-hidden="true" />}
-        label="Week"
-        rail={rail}
-        current={screen.kind === 'week'}
-        onClick={() => go({ kind: 'week' })}
-      />
-      <DreamsNavItem rail={rail} />
-      {!rail && connection && (
-        <JoinCard connectionId={connection.id} project={connection.project} />
-      )}
-      {brains.map((b) => (
-        <NavItem
-          key={b.id}
-          icon={<Brain20Regular aria-hidden="true" />}
-          label={b.name}
-          rail={rail}
-          current={screen.kind === 'brain' && screen.brainId === b.id}
-          note={toRead.has(b.id) ? 'something to read' : undefined}
-          onClick={() => go({ kind: 'brain', brainId: b.id })}
-        />
-      ))}
+      {/* One project needs no switcher; Home and the palette go to its page. */}
+      {connections.length > 1 && <ProjectTile rail={rail} />}
       <div className="leftnav-scroll">
         <TasksHead rail={rail} />
         {open.map((t) =>
@@ -772,21 +736,59 @@ export function TaskNav() {
           </>
         )}
       </div>
+      {/*
+        Pinned under the list, so a line coming or going never moves a task. Each line is there only while its
+        reason holds; the heading hides with the last of them (shell.css).
+      */}
+      <div className="nav-foryou" role="group" aria-label="For you">
+        {!rail && <div className="nav-section">For you</div>}
+        <div className="nav-foryou-lines">
+          {dreamsWaiting > 0 && (
+            <NavItem
+              icon={<WeatherMoon20Regular aria-hidden="true" />}
+              label={`${plural(dreamsWaiting, 'dream')} to review`}
+              rail={rail}
+              current={false}
+              dot
+              onClick={() => go({ kind: 'dreams' })}
+            />
+          )}
+          <DreamNavStatus rail={rail} onlyRunning />
+          {reads.length > 0 && (
+            <NavItem
+              icon={<Brain20Regular aria-hidden="true" />}
+              label={
+                reads.length === 1
+                  ? `Something to read in ${reads[0].name}`
+                  : `Something to read in ${reads.length} brains`
+              }
+              rail={rail}
+              current={false}
+              dot
+              onClick={() =>
+                go(
+                  reads.length === 1
+                    ? { kind: 'brain', brainId: reads[0].id }
+                    : { kind: 'home' },
+                )
+              }
+            />
+          )}
+          {!rail && connection && (
+            <JoinCard
+              connectionId={connection.id}
+              project={connection.project}
+            />
+          )}
+        </div>
+      </div>
       <div className="leftnav-foot">
-        <NavItem
-          icon={<Settings20Regular aria-hidden="true" />}
-          label="Settings"
-          rail={rail}
-          current={screen.kind === 'settings'}
-          onClick={() => go({ kind: 'settings' })}
-        />
         {footer && (
           <div className="nav-status" title={footer.text}>
             <span className="dot" style={{ background: footer.color }} />
             {!rail && <span className="nav-status-text">{footer.text}</span>}
           </div>
         )}
-        <DreamNavStatus rail={rail} />
         {!rail && pulse?.error === 'auth' && (
           <div className="nav-status nav-status-note">
             <span className="nav-status-text">{PULSE_AUTH_NOTE}</span>

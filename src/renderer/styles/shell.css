@@ -944,3 +944,18 @@ button.navmark:hover {
   align-items: center;
   gap: 6px;
 }
+
+/* For you: under the task list, above the foot. Nothing shows, not even the heading, while no line is there. */
+.nav-foryou {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+}
+.nav-foryou:not(:has(.nav-foryou-lines > *)) {
+  display: none;
+}
+.nav-foryou-lines {
+  display: flex;
+  flex-direction: column;
+}
