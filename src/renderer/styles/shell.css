@@ -944,3 +944,38 @@ button.navmark:hover {
   align-items: center;
   gap: 6px;
 }
+
+/*
+ * For you lies over the foot of the task list instead of under it. A block under the list would take its height
+ * from the list, and a line leaving while the list is scrolled to its end would then shift every row. So the list
+ * keeps the whole box, with room at its end (always there, whether a line shows or not) to scroll its last rows
+ * clear of the block. Nothing shows, not even the heading, while no line is there.
+ */
+.leftnav-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.leftnav-main .leftnav-scroll {
+  padding-bottom: 160px;
+}
+.nav-foryou {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+  background: var(--bg-chrome);
+  border-top: 1px solid var(--line);
+}
+.nav-foryou:not(:has(.nav-foryou-lines > *)) {
+  display: none;
+}
+.nav-foryou-lines {
+  display: flex;
+  flex-direction: column;
+}

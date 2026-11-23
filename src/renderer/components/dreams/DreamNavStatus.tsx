@@ -11,7 +11,14 @@ import { useDreamsState } from './useDreams';
  * The dream line at the foot of the navigation. A click opens Dreams; while a dream runs it opens a small panel
  * (Escape and a click outside close it, and focus returns to the line).
  */
-export function DreamNavStatus({ rail }: { rail: boolean }) {
+export function DreamNavStatus({
+  rail,
+  onlyRunning = false,
+}: {
+  rail: boolean;
+  /** Shown only while a dream runs (the nav's For you block); its other states are on Home. */
+  onlyRunning?: boolean;
+}) {
   const { view, project } = useDreamsState();
   const go = useStore((s) => s.go);
   const running = view?.running ?? null;
@@ -43,7 +50,7 @@ export function DreamNavStatus({ rail }: { rail: boolean }) {
       document.removeEventListener('keydown', onKey);
     };
   }, [shown]);
-  if (!view) return null;
+  if (!view || (onlyRunning && !running)) return null;
   const now = Date.now();
   const { line, model, tone } = navLine(view, now);
   const full = model ? `${line} · ${model}` : line;

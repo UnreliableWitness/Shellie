@@ -3,6 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { AwayBand } from '../components/dreams/AwayBand';
 import { Band } from '../components/home/Band';
 import { GetStartedBand } from '../components/home/GetStartedBand';
+import { MoreLinks, PlacesBand } from '../components/home/PlacesBand';
 import { PrBand } from '../components/home/PrBand';
 import { ReadingBand } from '../components/reading/ReadingBand';
 import { SprintsBand } from '../components/home/SprintsBand';
@@ -113,6 +114,7 @@ export function HomeScreen() {
         <WhatsNewBand />
         <GetStartedBand />
         <AwayBand />
+        <PlacesBand />
         <TasksBand snapshot={snapshot} />
         <ReadingBand />
         {connections.length > 0 && (
@@ -141,6 +143,7 @@ export function HomeScreen() {
         <StatsBand />
         <BudgetBand vendor="claude" />
         <BudgetBand vendor="copilot" />
+        <MoreLinks />
       </div>
     </div>
   );

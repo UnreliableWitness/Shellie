@@ -8,6 +8,7 @@ import type { Connection } from '../../shared/types';
 import { defaultSettings } from '../../shared/usage';
 import { Shell } from '../App';
 import { useStore } from '../store';
+import { listedBrain } from '../test-helpers/brainFixture';
 import { installFakeApi } from '../test-helpers/fakeApi';
 
 vi.mock('../components/TerminalView', () => ({ TerminalView: () => null }));
@@ -245,18 +246,19 @@ describe('Home page', () => {
       repos: [{ id: 'r1', name: 'webshop' } as never],
       settings: { ...s, onboarding: { ...s.onboarding, agentsCheckedAt: 'x' } },
     });
-    let answer: (b: unknown[]) => void = () => undefined;
+    // Home asks for the brains in more than one place; all of them wait.
+    const answers: ((b: unknown[]) => void)[] = [];
     installFakeApi({
       'home:get': () => snapshot(),
       'brain:list': () =>
         new Promise((r) => {
-          answer = r;
+          answers.push(r);
         }) as never,
     });
     render(<Shell />);
     await screen.findByRole('heading', { name: 'Home' });
     expect(screen.queryByRole('region', { name: 'Get started' })).toBeNull();
-    act(() => answer([]));
+    act(() => answers.forEach((answer) => answer([])));
     expect(
       await screen.findByRole('region', { name: 'Get started' }),
     ).toBeTruthy();
@@ -302,16 +304,88 @@ describe('Home page', () => {
     expect(screen.queryByRole('region', { name: 'Get started' })).toBeNull();
   });
 
-  it('the nav has Home above Sprint and the app header goes Home', async () => {
-    installFakeApi();
+  it('the app header goes Home, and Home has the places the nav no longer lists', async () => {
+    installFakeApi({
+      'brain:list': () => [listedBrain({ connectionId: 'c1' })],
+    });
     useStore.setState({ screen: { kind: 'settings' } });
     render(<Shell />);
     await userEvent.click(
       screen.getByRole('button', { name: 'Shellie, go to Home' }),
     );
     expect(useStore.getState().screen.kind).toBe('home');
-    await userEvent.click(screen.getByRole('button', { name: 'Sprint' }));
-    expect(useStore.getState().screen.kind).toBe('sprint');
+    const places = await screen.findByRole('region', { name: 'Places' });
+    expect(
+      await within(places).findByRole('button', { name: /Acme/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(places)
+        .getAllByRole('button')
+        .map((b) => b.querySelector('b')?.textContent),
+    ).toEqual(['Sprint', 'Week', 'Dreams', 'Acme', 'Cost']);
+    await userEvent.click(within(places).getByRole('button', { name: /Week/ }));
+    expect(useStore.getState().screen.kind).toBe('week');
+  });
+
+  it("lists only the active project's brains that are not archived as places, and opens one", async () => {
+    installFakeApi({
+      'brain:list': () => [
+        listedBrain({ id: 'b1', name: 'Acme', connectionId: 'c1' }),
+        listedBrain({ id: 'b2', name: 'Elsewhere', connectionId: 'c9' }),
+        listedBrain({
+          id: 'b3',
+          name: 'Old',
+          connectionId: 'c1',
+          archived: true,
+        }),
+      ],
+    });
+    render(<Shell />);
+    const places = await screen.findByRole('region', { name: 'Places' });
+    await userEvent.click(
+      await within(places).findByRole('button', { name: /Acme/ }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b1',
+    });
+    act(() => useStore.getState().go({ kind: 'home' }));
+    const again = await screen.findByRole('region', { name: 'Places' });
+    await within(again).findByRole('button', { name: /Acme/ });
+    expect(
+      within(again).queryByRole('button', { name: /Elsewhere/ }),
+    ).toBeNull();
+    expect(within(again).queryByRole('button', { name: /Old/ })).toBeNull();
+  });
+
+  it('has no Dreams place and no Project link without a project', async () => {
+    installFakeApi();
+    useStore.setState({ connections: [], connectionId: null });
+    render(<Shell />);
+    const places = await screen.findByRole('region', { name: 'Places' });
+    expect(within(places).queryByRole('button', { name: /Dreams/ })).toBeNull();
+    expect(
+      within(
+        screen.getByRole('navigation', { name: 'More places' }),
+      ).queryByRole('button', { name: 'Project' }),
+    ).toBeNull();
+  });
+
+  it('ends with quiet links to Project, Settings, Secrets and Get started', async () => {
+    installFakeApi({ 'home:get': () => snapshot() });
+    render(<Shell />);
+    const links = await screen.findByRole('navigation', {
+      name: 'More places',
+    });
+    expect(
+      within(links)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Project', 'Settings', 'Secrets', 'Get started']);
+    await userEvent.click(
+      within(links).getByRole('button', { name: 'Secrets' }),
+    );
+    expect(useStore.getState().screen.kind).toBe('secrets');
   });
 });
 

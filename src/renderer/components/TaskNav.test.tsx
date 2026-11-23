@@ -7,11 +7,14 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Repo, TaskView } from '../../shared/types';
 import { allCommands } from '../commands/registry';
 import { useStore } from '../store';
 import { listedBrain } from '../test-helpers/brainFixture';
+import { withResults } from '../test-helpers/dreamFixtures';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { readingBrain, readingRead } from '../test-helpers/readingFixture';
 import { type PrPulse, type PulseSnapshot } from '../../shared/pulse';
@@ -237,6 +240,146 @@ describe('attention', () => {
   });
 });
 
+describe('the quiet nav', () => {
+  const conn = (id: string, project: string) =>
+    ({
+      id,
+      name: 'acme',
+      organizationUrl: 'https://dev.azure.com/acme',
+      project,
+      user: 'D',
+      status: 'ok',
+      checkedAt: null,
+      userUniqueName: null,
+      provider: 'azure-devops',
+      workItemOnStart: {
+        moveToInProgress: true,
+        assignToMe: true,
+        stateOverrides: {},
+      },
+      writeTimeToAdo: false,
+    }) as never;
+  const forYou = () => screen.queryByRole('group', { name: 'For you' });
+
+  it('shows the palette field, Home, the tasks and New task, and no other places', async () => {
+    installFakeApi({ 'brain:list': () => [listedBrain()] });
+    useStore.setState({ connections: [conn('c1', 'Shellie')], reading: [] });
+    render(<TaskNav />);
+    expect(
+      screen.getByRole('button', { name: 'Go to or run' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /New task/ }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(allCommands().map((c) => c.title)).toContain('Brain: Acme'),
+    );
+    for (const name of [
+      'Sprint',
+      'Week',
+      'Project',
+      'Dreams',
+      'Settings',
+      'Acme',
+    ])
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    expect(within(forYou()!).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('shows the project switcher only with a second project', () => {
+    installFakeApi();
+    useStore.setState({
+      connections: [conn('c1', 'Shellie')],
+      connectionId: 'c1',
+    });
+    const { unmount } = render(<TaskNav />);
+    expect(screen.queryByRole('button', { name: /Shellie/ })).toBeNull();
+    unmount();
+    useStore.setState({
+      connections: [conn('c1', 'Shellie'), conn('c2', 'Oslo')],
+    });
+    render(<TaskNav />);
+    expect(screen.getByRole('button', { name: /Shellie/ })).toBeInTheDocument();
+  });
+
+  it('says under For you that a brain has something to read, and opens it', async () => {
+    installFakeApi({ 'brain:list': () => [listedBrain()] });
+    useStore.setState({
+      connections: [conn('c1', 'Shellie')],
+      reading: [
+        readingBrain({
+          reads: [readingRead({ work: [{ id: 412, title: 'Return flow' }] })],
+        }),
+      ],
+    });
+    render(<TaskNav />);
+    const line = await screen.findByRole('button', {
+      name: 'Something to read in Acme',
+    });
+    expect(forYou()).toContainElement(line);
+    await userEvent.click(line);
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b1',
+    });
+  });
+
+  it('lays For you over the foot of the list, so a line coming or going moves no task', async () => {
+    installFakeApi({ 'dream:get': () => withResults() });
+    useStore.setState({ connections: [conn('c1', 'Shellie')], reading: [] });
+    const { container } = render(<TaskNav />);
+    const line = await screen.findByRole('button', {
+      name: /dreams? to review/,
+    });
+    // Not in the scrolling list, and not a sibling that takes height from it: both sit in one box, the block on top.
+    const list = container.querySelector('.leftnav-scroll')!;
+    expect(list).not.toContainElement(line);
+    expect(list.parentElement).toBe(forYou()!.parentElement);
+    expect(list.parentElement).toHaveClass('leftnav-main');
+    const css = readFileSync(
+      path.join(__dirname, '..', 'styles', 'shell.css'),
+      'utf8',
+    );
+    const rule = (selector: string) =>
+      new RegExp(`\\n${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+    expect(rule('\\.nav-foryou')).toContain('position: absolute;');
+    expect(rule('\\.leftnav-main')).toContain('position: relative;');
+    // Room at the end of the list, always there, so its last rows can be scrolled clear of the block.
+    expect(rule('\\.leftnav-main \\.leftnav-scroll')).toMatch(
+      /padding-bottom: \d+px;/,
+    );
+  });
+
+  it('shows a For you line in the rail as an icon named by what waits', async () => {
+    installFakeApi({ 'dream:get': () => withResults() });
+    useStore.setState({
+      connections: [conn('c1', 'Shellie')],
+      reading: [],
+      navCollapsed: true,
+    });
+    render(<TaskNav />);
+    const line = await screen.findByRole('button', {
+      name: '2 dreams to review',
+    });
+    expect(line).toHaveAttribute('title', '2 dreams to review');
+    expect(line).toHaveTextContent('');
+    useStore.setState({ navCollapsed: false });
+  });
+
+  it('says under For you that dreams wait for review, and opens Dreams', async () => {
+    installFakeApi({ 'dream:get': () => withResults() });
+    useStore.setState({ connections: [conn('c1', 'Shellie')], reading: [] });
+    render(<TaskNav />);
+    const line = await screen.findByRole('button', {
+      name: /dreams? to review/,
+    });
+    expect(forYou()).toContainElement(line);
+    await userEvent.click(line);
+    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
+  });
+});
+
 describe('brains', () => {
   const conn = (id: string, project: string) => ({
     id,
@@ -256,29 +399,6 @@ describe('brains', () => {
     writeTimeToAdo: false,
   });
 
-  it('shows one item per brain and opens its screen', async () => {
-    installFakeApi({
-      'brain:list': () => [
-        listedBrain(),
-        listedBrain({ id: 'b2', name: 'Globex' }),
-      ],
-    });
-    useStore.setState({ connections: [conn('c1', 'Shellie')] });
-    render(<TaskNav />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Globex' }),
-    );
-    expect(useStore.getState().screen).toEqual({
-      kind: 'brain',
-      brainId: 'b2',
-    });
-    expect(screen.getByRole('button', { name: 'Acme' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Globex' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-  });
-
   it('offers the shared brain of the project only when there is none of its own', async () => {
     const found = [
       { repositoryId: 'r', name: 'Acme', joinLink: 'shellie://join?a' },
@@ -295,7 +415,9 @@ describe('brains', () => {
       'brain:list': () => [listedBrain()],
     });
     render(<TaskNav />);
-    await screen.findByRole('button', { name: 'Acme' });
+    await waitFor(() =>
+      expect(allCommands().map((c) => c.title)).toContain('Brain: Acme'),
+    );
     expect(screen.queryByText(/Your team has a brain/)).not.toBeInTheDocument();
   });
 
@@ -315,7 +437,6 @@ describe('brains', () => {
       ],
     });
     render(<TaskNav />);
-    await screen.findByRole('button', { name: 'Globex' });
     await waitFor(() =>
       expect(
         allCommands().filter((c) => c.id.startsWith('goto.brain.')),
@@ -355,13 +476,14 @@ describe('brains', () => {
     });
     render(<TaskNav />);
     expect(
-      await screen.findByRole('button', { name: 'Acme, something to read' }),
+      await screen.findByRole('button', { name: 'Something to read in Acme' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Globex' })).toBeInTheDocument();
     act(() =>
       useStore.setState({ settings: { readingNudges: false } as never }),
     );
-    expect(screen.getByRole('button', { name: 'Acme' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Something to read/ }),
+    ).toBeNull();
   });
 
   it('shows only the active project’s brains (#229)', async () => {
@@ -378,10 +500,11 @@ describe('brains', () => {
       screen: { kind: 'sprint' },
     });
     render(<TaskNav />);
-    expect(
-      await screen.findByRole('button', { name: 'DXP brain' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'IML HUB brain' })).toBeNull();
+    const brainTitles = () =>
+      allCommands()
+        .filter((c) => c.id.startsWith('goto.brain.'))
+        .map((c) => c.title);
+    await waitFor(() => expect(brainTitles()).toEqual(['Brain: DXP brain']));
     await userEvent.click(
       screen.getByRole('button', { name: 'Project DXP, switch project' }),
     );
@@ -391,10 +514,9 @@ describe('brains', () => {
         { name: /IML Hub/ },
       ),
     );
-    expect(
-      screen.getByRole('button', { name: 'IML HUB brain' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'DXP brain' })).toBeNull();
+    await waitFor(() =>
+      expect(brainTitles()).toEqual(['Brain: IML HUB brain']),
+    );
   });
 });
 
@@ -991,12 +1113,6 @@ describe('TaskNav collapsed rail', () => {
 });
 
 describe('TaskNav', () => {
-  it('draws the no-connection avatar in a readable text colour, not white', () => {
-    installFakeApi();
-    useStore.setState({ repos, connections: [] });
-    render(<TaskNav />);
-    expect(screen.getByText('?').style.color).toBe('var(--muted)');
-  });
   it('shows the selected task repo connection status in the footer', () => {
     installFakeApi();
     useStore.setState({
@@ -1120,54 +1236,6 @@ describe('TaskNav', () => {
     expect(done.querySelector('svg')).not.toBeNull();
     await userEvent.click(done);
     expect(done).toHaveAttribute('aria-expanded', 'true');
-  });
-
-  it('has a Week item that opens the week overview', async () => {
-    installFakeApi();
-    render(<TaskNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Week' }));
-    expect(useStore.getState().screen).toEqual({ kind: 'week' });
-    expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-  });
-
-  it('has the Sprint hub and Settings items', async () => {
-    installFakeApi();
-    render(<TaskNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Sprint' }));
-    expect(useStore.getState().screen).toEqual({ kind: 'sprint' });
-    expect(screen.getByRole('button', { name: 'Sprint' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    // On Sprint no task row is highlighted.
-    expect(
-      screen.getByRole('button', { name: /Checkout: save address/ }),
-    ).not.toHaveAttribute('aria-current');
-    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(useStore.getState().screen).toEqual({ kind: 'settings' });
-  });
-
-  it('has a Project item that opens the project page', async () => {
-    installFakeApi();
-    useStore.setState({ connections: [conn('c1', 'Shellie')] });
-    render(<TaskNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Project' }));
-    expect(useStore.getState().screen).toEqual({ kind: 'project' });
-    expect(screen.getByRole('button', { name: 'Project' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-  });
-
-  it('has no Project item without connections', () => {
-    installFakeApi();
-    render(<TaskNav />);
-    expect(
-      screen.queryByRole('button', { name: 'Project' }),
-    ).not.toBeInTheDocument();
   });
 
   it('switches project when there is more than one connection', async () => {
@@ -1331,10 +1399,12 @@ describe('TaskNav', () => {
     expect(
       within(rail).getByRole('img', { name: 'User Story' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sprint' })).toBeInTheDocument();
+    // The rail keeps the palette and Home; the other places are behind them.
     expect(
-      screen.getByRole('button', { name: 'Settings' }),
+      screen.getByRole('button', { name: 'Go to or run' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sprint' })).toBeNull();
     await userEvent.click(
       screen.getByRole('button', { name: 'Expand task list' }),
     );

@@ -5,14 +5,7 @@ import { defaultDreaming, type DreamView } from '../../../shared/dreams';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
 import { DreamNavStatus } from './DreamNavStatus';
-import { DreamsNavItem } from './DreamsNavItem';
-import {
-  emptyState,
-  OPENED,
-  settings,
-  viewOf,
-  withResults,
-} from '../../test-helpers/dreamFixtures';
+import { settings, viewOf } from '../../test-helpers/dreamFixtures';
 import { activateProject } from '../../test-helpers/project';
 
 beforeEach(() => {
@@ -29,50 +22,18 @@ const running = (): DreamView =>
     },
   });
 
-describe('DreamsNavItem', () => {
-  it('shows the count of open results with an accessible name', async () => {
-    installFakeApi({ 'dream:get': () => withResults() });
-    render(<DreamsNavItem rail={false} />);
-    expect(
-      await screen.findByLabelText('2 dreams to review'),
-    ).toHaveTextContent('2');
-    await userEvent.click(screen.getByRole('button', { name: /Dreams/ }));
-    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
-  });
-
-  it('counts a result opened as a task whose task is not made yet', async () => {
-    const v = withResults();
-    v.repos[2].state = emptyState({ opened: OPENED });
-    installFakeApi({ 'dream:get': () => v });
-    render(<DreamsNavItem rail={false} />);
-    expect(
-      await screen.findByLabelText('3 dreams to review'),
-    ).toHaveTextContent('3');
-  });
-
-  it('shows no count at zero and is there while dreaming is off', async () => {
-    const { calls } = installFakeApi({
-      'dream:get': () => viewOf({ settings: defaultDreaming() }),
-    });
-    render(<DreamsNavItem rail={false} />);
+describe('DreamNavStatus', () => {
+  it('shows nothing in the nav unless a dream runs, when asked for only that', async () => {
+    const { calls } = installFakeApi({ 'dream:get': () => viewOf() });
+    activateProject();
+    const { unmount } = render(<DreamNavStatus rail={false} onlyRunning />);
     await waitFor(() =>
       expect(calls.some((c) => c.channel === 'dream:get')).toBe(true),
     );
-    expect(screen.getByRole('button', { name: 'Dreams' })).toBeInTheDocument();
-    expect(screen.queryByLabelText(/to review/)).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+    unmount();
   });
 
-  it('in the rail is the icon with the count and a tooltip', async () => {
-    installFakeApi({ 'dream:get': () => withResults() });
-    render(<DreamsNavItem rail />);
-    const b = await screen.findByRole('button', {
-      name: 'Dreams, 2 dreams to review',
-    });
-    expect(b).toHaveAttribute('title', 'Dreams, 2 dreams to review');
-  });
-});
-
-describe('DreamNavStatus', () => {
   it.each([
     [viewOf({ settings: defaultDreaming() }), 'Dreams off'],
     [viewOf(), 'Dreams on · zai/glm-5.3'],
@@ -173,15 +134,10 @@ describe('dreams of another project', () => {
     expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
   });
 
-  it('without a project there is no Dreams item and no status line', async () => {
+  it('without a project there is no status line', async () => {
     const { calls } = installFakeApi();
     useStore.setState({ connections: [], connectionId: null });
-    const { container } = render(
-      <>
-        <DreamsNavItem rail={false} />
-        <DreamNavStatus rail={false} />
-      </>,
-    );
+    const { container } = render(<DreamNavStatus rail={false} />);
     await new Promise((r) => setTimeout(r, 20));
     expect(container).toBeEmptyDOMElement();
     expect(calls.filter((c) => c.channel === 'dream:get')).toHaveLength(0);
