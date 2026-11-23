@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WeekTime } from '../../shared/time';
@@ -100,5 +100,25 @@ describe('WeekScreen', () => {
     expect(
       api.calls.filter((c) => c.channel === 'time:week').map((c) => c.args[0]),
     ).toEqual(['2026-11-16', '2026-11-09', '2026-11-16']);
+  });
+
+  it('ignores a late answer for the week it has already left', async () => {
+    let answerThisWeek: (w: WeekTime) => void = () => {};
+    installFakeApi({
+      'time:week': (weekStart: string) =>
+        weekStart === '2026-11-16'
+          ? new Promise<WeekTime>((resolve) => (answerThisWeek = resolve))
+          : Promise.resolve(week(weekStart)),
+    });
+    render(<WeekScreen />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Previous week' }),
+    );
+    await screen.findByText('No time measured in this week.');
+    await act(async () => answerThisWeek(week('2026-11-16')));
+    expect(
+      screen.getByText('No time measured in this week.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Spike')).not.toBeInTheDocument();
   });
 });
