@@ -25,6 +25,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { Events } from '../../shared/ipc';
 import { brainTaskId } from '../../shared/brain';
 import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
+import { useLatest } from '../hooks/useLatest';
 import { api, tryInvoke } from '../api';
 import { eur, plural } from '../format';
 import { useTaskBrain } from '../hooks/useBrains';
@@ -103,6 +104,10 @@ function useUnseen<K extends 'docs:changed' | 'usage:changed'>(
   return unseen;
 }
 
+/** An editor installed while Shellie runs shows up when the task menu opens, checked at most this often. */
+const EDITORS_EVERY_MS = 5 * 60_000;
+let editorsLookedAt = Date.now();
+
 const NO_VIEWS: HtmlView[] = [];
 const NO_TABS: string[] = [];
 
@@ -165,10 +170,7 @@ function RunCommands({
 }) {
   const config = useRepoConfig(workspace.repoId);
   const run = config?.config.run;
-  const latest = useRef(onOpen);
-  useEffect(() => {
-    latest.current = onOpen;
-  });
+  const latest = useLatest(onOpen);
   const commands = useMemo<Command[]>(
     () =>
       !offers || disabled
@@ -382,10 +384,7 @@ export const TerminalTabs = memo(function TerminalTabs({
     setTab(task.id, def.id);
   };
   // The palette and the shortcuts get this task's actions while it is the one on screen.
-  const latest = useRef({ open, openBrainTerminal });
-  useEffect(() => {
-    latest.current = { open, openBrainTerminal };
-  });
+  const latest = useLatest({ open, openBrainTerminal });
   const offers = visible && ready;
   const terminalKey = task.terminals
     .map((t) => `${t.id}\n${t.label}`)
@@ -423,12 +422,12 @@ export const TerminalTabs = memo(function TerminalTabs({
           ]
         : []),
       show('task.usage', 'Show usage and cost', USAGE_TAB, {
-        shortcut: { code: 'Digit0' },
+        shortcut: VIEW_TABS[USAGE_TAB].shortcut,
       }),
       ...(hasGit
         ? [
             show('task.docs', 'Show docs', DOCS_TAB, {
-              shortcut: { code: 'KeyD', shift: true },
+              shortcut: VIEW_TABS[DOCS_TAB].shortcut,
             }),
           ]
         : []),
@@ -436,7 +435,7 @@ export const TerminalTabs = memo(function TerminalTabs({
         ? [
             {
               ...show('task.brain', 'Show brain', BRAIN_TAB, {
-                shortcut: { code: 'KeyB', shift: true },
+                shortcut: VIEW_TABS[BRAIN_TAB].shortcut,
               }),
               run: () => {
                 if (useStore.getState().activeTab(id) !== BRAIN_TAB)
@@ -592,7 +591,7 @@ export const TerminalTabs = memo(function TerminalTabs({
   ].filter((t) => canShow[t]);
   // Only the run entries, and only for the task on screen: every other offer leaves this row alone.
   const runs = useContributedWith(offers ? 'task.run.' : null);
-  // How often the task menu was opened: the editors are looked for again each time (#94).
+  // Counts the task menu openings that look for the editors again (#94): at most one per EDITORS_EVERY_MS.
   const [menuOpens, setMenuOpens] = useState(0);
   // Where the task is, for the top of the task menu.
   const where = noRepo
@@ -739,7 +738,12 @@ export const TerminalTabs = memo(function TerminalTabs({
               where={where}
               dots={dots}
               visible={visible}
-              onOpen={() => setMenuOpens((n) => n + 1)}
+              onOpen={() => {
+                // Looking for editors starts processes in main: not on every opening of the menu.
+                if (Date.now() - editorsLookedAt < EDITORS_EVERY_MS) return;
+                editorsLookedAt = Date.now();
+                setMenuOpens((n) => n + 1);
+              }}
             />
           )}
         </div>

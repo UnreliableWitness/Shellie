@@ -11,6 +11,7 @@ import {
   repoColor,
   type WorkspaceView,
 } from '../../shared/workspaces';
+import { useLatest } from '../hooks/useLatest';
 import { api, tryInvoke } from '../api';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useContributeCommands } from '../commands/registry';
@@ -259,10 +260,7 @@ export function TaskMenu({
       notify,
     );
   };
-  const latest = useRef({ scan, add });
-  useEffect(() => {
-    latest.current = { scan, add };
-  });
+  const latest = useLatest({ scan, add });
   const commands = useMemo<Command[]>(
     () =>
       !offers

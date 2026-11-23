@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activeWorkspaces } from '../../../shared/workspaces';
 import type { TaskView } from '../../../shared/types';
+import { useLatest } from '../../hooks/useLatest';
 import { api, tryInvoke } from '../../api';
 import { useContributeCommands } from '../../commands/registry';
 import type { Command } from '../../commands/types';
@@ -66,10 +67,7 @@ export function CleanWorktreeButton({
     setBusy(false);
   };
   // Offered as a command for as long as the button shows.
-  const latest = useRef(clean);
-  useEffect(() => {
-    latest.current = clean;
-  });
+  const latest = useLatest(clean);
   const shows = repoIds.length > 0;
   const commands = useMemo<Command[]>(
     () =>

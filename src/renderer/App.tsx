@@ -28,7 +28,7 @@ import { HomeScreen } from './screens/HomeScreen';
 import { ProjectScreen } from './screens/ProjectScreen';
 import { SetupScreen } from './screens/SetupScreen';
 import { SprintScreen } from './screens/SprintScreen';
-import { TaskScreen, TaskTerminals } from './screens/TaskScreen';
+import { hasTerminals, TaskScreen, TaskTerminals } from './screens/TaskScreen';
 import { WeekScreen } from './screens/WeekScreen';
 import { useStore } from './store';
 import { useWorkItemTypes } from './workItemTypes';
@@ -113,9 +113,10 @@ export function Shell() {
   const navCollapsed = useStore((s) => s.navCollapsed);
   // A task with terminals shows its tab row at the top; every other page has nothing there.
   const taskBar = useStore((s) => {
-    if (s.screen.kind !== 'task') return false;
-    const status = s.tasks.find((t) => t.id === s.selectedTaskId)?.status;
-    return status === 'ready' || status === 'finishing';
+    const task =
+      s.screen.kind === 'task' &&
+      s.tasks.find((t) => t.id === s.selectedTaskId);
+    return !!task && hasTerminals(task);
   });
   useShortcuts();
   return (

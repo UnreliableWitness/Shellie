@@ -35,12 +35,10 @@ import { activeHome, activeWorkspaces } from '../../shared/workspaces';
 import { api } from '../api';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
-import { useBrains } from '../hooks/useBrains';
 import { JoinCard } from './brain/JoinCard';
-import { useReading, useReadingNudges } from '../hooks/useReadingFeed';
+import { useProjectBrains } from '../hooks/useProjectBrains';
 import { usePulse } from '../hooks/usePulse';
 import { useTaskCosts } from '../hooks/useTaskCosts';
-import { hasEvent } from '../readingFeed';
 import {
   activeConnection,
   taskOnScreen,
@@ -615,16 +613,7 @@ export function TaskNav() {
   const costs = useTaskCosts(
     rail ? [] : [...open, ...(showDone ? done : [])].map((t) => t.id),
   );
-  // Like tasks, only the active project's brains (#229); none without a connection.
-  const brains = useBrains().filter(
-    (b) => b.connectionId === connection?.id && !b.archived,
-  );
-  const nudges = useReadingNudges();
-  const reading = useReading();
-  // A dot for an event (a long read for your work, a change in one you read), never for the pile of unread ones.
-  const toRead = new Set(
-    nudges ? reading.filter(hasEvent).map((r) => r.brain.brainId) : [],
-  );
+  const { brains, toRead } = useProjectBrains();
   // Quiet while the connection is fine: the line shows only when something is wrong.
   const footer = !connection
     ? { color: 'var(--disabled)', text: 'Azure DevOps: not connected' }

@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store';
-import { globalCommands } from './global';
+import { focusCommand, globalCommands } from './global';
 import { type Command, GROUP_ORDER } from './types';
 
 /**
@@ -62,7 +62,7 @@ function ordered(commands: Command[]): Command[] {
 }
 
 /** Every command a mounted component offers. */
-export function contributed(): Command[] {
+function contributed(): Command[] {
   return inSourceOrder(useSources.getState());
 }
 
@@ -87,17 +87,43 @@ export function useContributed(): Command[] {
   return useMemo(() => inSourceOrder(offered), [offered]);
 }
 
+/**
+ * The commands a key press can run: what components offer, then Focus mode. The shortcut handler asks on every key
+ * with the mod key down (every Ctrl+C in a shell), so this builds nothing: no task list, no places.
+ */
+export function shortcutCommands(): Command[] {
+  return [...contributed(), focusCommand()].filter((c) => c.shortcut);
+}
+
 /** Every command there is right now: the store's own, then what components offer, by group. */
 export function allCommands(): Command[] {
   return ordered([...globalCommands(useStore.getState()), ...contributed()]);
 }
 
-/** `allCommands`, following the store and the offers. Use it only where it is on screen: it follows every store change. */
+/**
+ * `allCommands`, following the offers and the parts of the store its commands are built from (the tasks, the
+ * projects, what is on screen), not every store change: an agent's attention or a reading update leaves it alone.
+ */
 export function useAllCommands(): Command[] {
-  const store = useStore();
+  const built = useStore(
+    useShallow((s) => [
+      s.tasks,
+      s.repos,
+      s.connections,
+      s.connectionId,
+      s.selectedTaskId,
+      s.screen,
+      s.navCollapsed,
+    ]),
+  );
   const offered = useSources();
   return useMemo(
-    () => ordered([...globalCommands(store), ...inSourceOrder(offered)]),
-    [store, offered],
+    () =>
+      ordered([
+        ...globalCommands(useStore.getState()),
+        ...inSourceOrder(offered),
+      ]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `built` is what globalCommands reads from the store
+    [built, offered],
   );
 }

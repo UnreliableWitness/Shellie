@@ -1,9 +1,8 @@
 import { MoreHorizontal16Regular } from '@fluentui/react-icons';
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { focusCommand } from '../commands/global';
 import { useContributed } from '../commands/registry';
 import { shortcutLabel } from '../commands/shortcut';
-import type { Command } from '../commands/types';
-import { useStore } from '../store';
 import { modKey, PopupMenu } from './ui';
 
 /**
@@ -24,8 +23,6 @@ const SECTIONS: string[][] = [
   ['task.finish', 'task.discard'],
 ];
 
-const FOCUS_SHORTCUT = { code: 'KeyF', shift: true };
-
 /**
  * The "..." at the right of the task bar: where the task is (branch, git state, environment), then everything the
  * bar used to show as buttons. Its items are the commands the task's components offer (`useContributeCommands`), so
@@ -33,18 +30,18 @@ const FOCUS_SHORTCUT = { code: 'KeyF', shift: true };
  */
 export function TaskBarMenu({
   where,
-  dots = {},
-  visible = true,
+  dots,
+  visible,
   onOpen,
 }: {
   /** False while its task is kept mounted behind another page: the menu closes, it is not that page's. */
-  visible?: boolean;
+  visible: boolean;
   /** Called each time the menu opens. */
-  onOpen?: () => void;
+  onOpen: () => void;
   /** The lines of the block at the top: branch, git state, environment. */
   where: string[];
   /** Command ids that carry a "new" dot: a view with something unseen whose tab is closed. */
-  dots?: Record<string, boolean>;
+  dots: Record<string, boolean>;
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -68,7 +65,7 @@ export function TaskBarMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => {
-          if (!open) onOpen?.();
+          if (!open) onOpen();
           setOpen(!open);
         }}
       >
@@ -97,15 +94,8 @@ function Items({
   close: () => void;
 }) {
   const offered = useContributed();
-  const toggleFocus = useStore((s) => s.toggleFocus);
-  const focus: Command = {
-    id: 'app.focus',
-    title: 'Focus mode',
-    group: 'app',
-    shortcut: FOCUS_SHORTCUT,
-    run: toggleFocus,
-  };
-  const all = [...offered, focus];
+  // Focus mode is the store's own command: the same one the palette lists and the shortcut runs.
+  const all = useMemo(() => [...offered, focusCommand()], [offered]);
   const sections = SECTIONS.map((ids) =>
     ids.flatMap((id) =>
       all.filter((c) => (id.endsWith('.') ? c.id.startsWith(id) : c.id === id)),

@@ -4,8 +4,9 @@ import {
   Code16Regular,
   FolderOpen16Regular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type EditorId, type EditorOptions } from '../../shared/editors';
+import { useLatest } from '../hooks/useLatest';
 import { api, tryInvoke } from '../api';
 import { useContributeCommands } from '../commands/registry';
 import type { Command } from '../commands/types';
@@ -79,10 +80,7 @@ export function OpenInEditor({
 
   // The task's own row offers its folder and editors as commands; a repo's row in a multi-repo task does not.
   const settings = () => go({ kind: 'settings' });
-  const latest = useRef({ open, showFolder, settings });
-  useEffect(() => {
-    latest.current = { open, showFolder, settings };
-  });
+  const latest = useLatest({ open, showFolder, settings });
   const offers = visible && !disabled && workspaceId === undefined;
   const commands = useMemo<Command[]>(() => {
     if (!offers) return [];

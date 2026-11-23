@@ -16,6 +16,7 @@ import {
   isGuarded,
 } from '../../../shared/secrets';
 import type { TaskView } from '../../../shared/types';
+import { useLatest } from '../../hooks/useLatest';
 import { api, tryInvoke } from '../../api';
 import { clock } from '../../format';
 import { useContributeCommands } from '../../commands/registry';
@@ -234,10 +235,7 @@ export function EnvironmentChip({
   };
 
   // The command opens this same menu, so UAT and Production keep their confirm.
-  const latest = useRef(open);
-  useEffect(() => {
-    latest.current = open;
-  });
+  const latest = useLatest(open);
   const commands = useMemo<Command[]>(
     () =>
       offers
