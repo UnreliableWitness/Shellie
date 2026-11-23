@@ -650,6 +650,14 @@ export type Channels = {
   'brain:get': { args: [brainId: string]; result: BrainView };
   /** The brain of the task's connection and work item project, null when there is none. */
   'brain:forTask': { args: [taskId: string]; result: BrainView | null };
+  /**
+   * The name of the brain whose context a task being made gets: of the work item's project, else the connection's
+   * (a blank task); null when there is none or it adds no context.
+   */
+  'brain:forNewTask': {
+    args: [connectionId: string | null, project: string | null];
+    result: string | null;
+  };
   /** `path` null: `<userData>/brains/<id>`; an existing brain folder is adopted (its skills show as changed). */
   'brain:create': {
     args: [

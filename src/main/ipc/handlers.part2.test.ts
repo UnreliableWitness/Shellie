@@ -1520,17 +1520,22 @@ describe('handlers: the brain at setup', () => {
     await hx.terminals.killAllForTask(t.id);
   });
 
-  it('a task without a work item gets no brain, also when its connection project has one', async () => {
+  it("a task without a work item gets its connection project's brain (#359)", async () => {
     const { b, c, calls, create, hx } = await brainSetup();
-    await b.add({ connectionId: c.id, project: 'Shellie' });
+    const brain = await b.add({ connectionId: c.id, project: 'Shellie' });
     const { t, state, md } = await create({
       workItem: null,
       name: 'Loose task',
     });
-    expect(md).not.toContain('## Context');
-    expect(state?.steps.map((s) => s.def.kind)).not.toContain('brain');
-    expect(calls.at(-1)!.flags).not.toContain('--add-dir');
-    expect(await hx.h['brain:forTask'](t.id)).toBeNull();
+    expect(md).toContain(
+      `## Context: Acme\nThe project's brain is at ${brain.path}.`,
+    );
+    expect(state?.steps.find((s) => s.def.kind === 'brain')).toMatchObject({
+      status: 'done',
+    });
+    expect(calls.at(-1)!.flags).toContain('--add-dir');
+    expect(t.setup.summary?.brain).toBe('Acme');
+    expect((await hx.h['brain:forTask'](t.id))?.id).toBe(brain.id);
     await hx.terminals.killAllForTask(t.id);
   });
 

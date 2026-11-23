@@ -683,6 +683,32 @@ describe('NewTaskScreen', () => {
     expect(line('Opens')).not.toHaveTextContent('Shell');
   });
 
+  it("names the project's brain on the Blank card (#359)", async () => {
+    const { calls } = installFakeApi({
+      ...pickerApi,
+      'brain:forNewTask': (cid, project) =>
+        cid === 'c1' && project === null ? 'IML HUB brain' : null,
+    });
+    useStore.setState({
+      repos: [{ ...webshop, connectionId: 'c1' }],
+      connections: [conn],
+    });
+    render(<NewTaskScreen />);
+    await userEvent.click(screen.getByRole('tab', { name: 'Blank' }));
+    await userEvent.type(screen.getByLabelText('Task name'), 'workshop 4');
+    const card = await screen.findByRole('region', {
+      name: 'This task will…',
+    });
+    await waitFor(() =>
+      expect(
+        within(card)
+          .getByText('Brain', { selector: '.task-summary-label' })
+          .closest('li'),
+      ).toHaveTextContent('IML HUB brain'),
+    );
+    expect(calls.some((c) => c.channel === 'brain:forNewTask')).toBe(true);
+  });
+
   describe('follows the active project (#225)', () => {
     const dxp = { ...webshop, id: 'rA', name: 'dxp-web', connectionId: 'c1' };
     const iml = { ...webshop, id: 'rB', name: 'iml-hub', connectionId: 'c2' };

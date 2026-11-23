@@ -540,8 +540,23 @@ describe('brain handlers', () => {
     expect(await h['brain:forTask']('t4')).toBeNull();
     const d = await h['brain:create']({ ...NEW, project: 'Default' });
     expect((await h['brain:forTask']('t4'))?.id).toBe(d.id);
-    // No work item: no brain, also when the connection's project has one.
-    expect(await h['brain:forTask']('t2')).toBeNull();
+    // No work item: the connection's project, as for a blank task with a repo (#359).
+    expect((await h['brain:forTask']('t2'))?.id).toBe(d.id);
+  });
+
+  it("forNewTask names the brain a task being made gets, the connection's without a project", async () => {
+    expect(await h['brain:forNewTask']('c1', null)).toBeNull();
+    await h['brain:create'](NEW);
+    const d = await h['brain:create']({
+      ...NEW,
+      name: 'Hub',
+      project: 'Default',
+    });
+    expect(await h['brain:forNewTask']('c1', 'Acme')).toBe('Acme');
+    expect(await h['brain:forNewTask']('c1', null)).toBe('Hub');
+    expect(await h['brain:forNewTask'](null, 'Acme')).toBeNull();
+    await h['brain:update'](d.id, { options: { contextInTaskMd: false } });
+    expect(await h['brain:forNewTask']('c1', null)).toBeNull();
   });
 
   it('sources lists the brain sources with their captured state', async () => {
