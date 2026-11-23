@@ -56,6 +56,9 @@ The header was also the title bar (#49). Now:
 
 ## Known gaps
 
+- The review fixes made after that look (the bands under the tab row, the free stretch of the row, the row's
+  colour on Windows) were not looked at in the running app; tests cover the order and the stretch being there.
+
 - **Windows was not run.** The strip and the tab row's right padding come from the rules Focus mode used on
   Windows, but pages under the strip, and the palette and menus near the window controls, were never seen there.
 - Dragging the window, the traffic lights themselves and full screen were not tried by hand: the check read styles
