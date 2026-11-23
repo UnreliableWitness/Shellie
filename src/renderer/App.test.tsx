@@ -106,7 +106,9 @@ describe('App', () => {
   it('loads repos and tasks on start and shows notices pushed from main', async () => {
     const { calls, emit } = installFakeApi();
     render(<App />);
-    expect(screen.getByText('Shellie')).toBeInTheDocument();
+    expect(
+      screen.getByRole('navigation', { name: 'Tasks' }),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(calls.map((c) => c.channel).sort()).toEqual([
         'attention:get',
@@ -198,6 +200,35 @@ describe('App', () => {
     expect(
       screen.getByText(/Connect Azure DevOps in Settings/),
     ).toBeInTheDocument();
+  });
+});
+
+describe('without a header bar', () => {
+  it('has no banner and no breadcrumb; a page gets an empty title strip and a task its tab row', () => {
+    installFakeApi();
+    useStore.setState({
+      screen: { kind: 'home' },
+      tasks: [],
+      selectedTaskId: null,
+    });
+    const { container, unmount } = render(<Shell />);
+    expect(container.querySelector('header.headerbar')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull();
+    expect(container.querySelector('.titlestrip')).not.toBeNull();
+    unmount();
+    useStore.setState({
+      screen: { kind: 'task' },
+      tasks: [{ ...task, status: 'ready' }],
+      selectedTaskId: task.id,
+    });
+    const shown = render(<Shell />);
+    expect(shown.container.querySelector('.taskbar')).not.toBeNull();
+    expect(shown.container.querySelector('.titlestrip')).toBeNull();
+    useStore.setState({
+      screen: { kind: 'home' },
+      tasks: [],
+      selectedTaskId: null,
+    });
   });
 });
 
@@ -351,11 +382,6 @@ describe('full pages', () => {
     const content = expectFullPage();
     expect(
       within(content).getByRole('heading', { name: 'Finish task' }),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByText(
-        /Bug 48213 Broken checkout/,
-      ),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Keep task' }));
     expect(useStore.getState().screen).toEqual({ kind: 'task' });

@@ -1,3 +1,4 @@
+import { ChevronLeft16Regular } from '@fluentui/react-icons';
 import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
   DreamDiffLine,
@@ -257,6 +258,15 @@ function Review({
       <PageHeader
         inline
         title={`What ${repoName}’s sessions taught`}
+        before={
+          <button
+            type="button"
+            className="btn btn-subtle btn-sm"
+            onClick={() => useStore.getState().go({ kind: 'dreams' })}
+          >
+            <ChevronLeft16Regular aria-hidden="true" /> Dreams
+          </button>
+        }
         commands={
           <>
             <span className="muted small">{`${kept} of ${proposals.length} kept`}</span>

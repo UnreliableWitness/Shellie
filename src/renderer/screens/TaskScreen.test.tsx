@@ -161,7 +161,7 @@ beforeEach(() =>
 );
 
 describe('TaskScreen', () => {
-  it('shows the task in the breadcrumb, git state and the terminal tabs', async () => {
+  it('shows the task in the nav, its git state in the task menu, and the terminal tabs', async () => {
     installFakeApi({
       'repos:config': () => config,
       'tasks:gitSummary': () => ({
@@ -178,10 +178,8 @@ describe('TaskScreen', () => {
     });
     render(<Shell />);
     expect(
-      within(screen.getByRole('banner')).getByText(
-        'User Story 48213 Checkout: allow saving a delivery address',
-      ),
-    ).toBeInTheDocument();
+      document.querySelector('.navrow[data-current="true"]'),
+    ).toHaveTextContent('48213Checkout: allow saving a delivery address');
     // The git state is in the task menu.
     await userEvent.click(
       await screen.findByRole('button', { name: 'Task menu' }),
@@ -495,8 +493,8 @@ describe('TaskScreen', () => {
     expect(screen.getByTestId('term-c1')).toBeInTheDocument();
     act(() => useStore.setState({ selectedTaskId: 'b' }));
     expect(
-      within(screen.getByRole('banner')).getByText('Bug 2 Second task'),
-    ).toBeInTheDocument();
+      document.querySelector('.navrow[data-current="true"]'),
+    ).toHaveTextContent('2Second task');
     expect(screen.getByTestId('term-c2')).toHaveAttribute(
       'data-active',
       'true',
@@ -1262,23 +1260,21 @@ describe('tabs and focus', () => {
     ).toBeVisible();
   });
 
-  it('shows the header and nav with Focus on and no task selected', () => {
+  it('shows the nav with Focus on and no task selected', () => {
     setup();
     useStore.setState({ tasks: [], selectedTaskId: null, focus: true });
     render(<Shell />);
-    expect(document.querySelector('header.headerbar')).not.toBeNull();
     expect(
       screen.getByRole('navigation', { name: 'Tasks' }),
     ).toBeInTheDocument();
   });
 
   it.each(['done', 'setup-failed'] as const)(
-    'shows the header with Focus on and a %s task',
+    'shows the nav with Focus on and a %s task',
     (status) => {
       setup({ status, terminals: [] });
       useStore.setState({ focus: true });
       render(<Shell />);
-      expect(document.querySelector('header.headerbar')).not.toBeNull();
       expect(
         screen.getByRole('navigation', { name: 'Tasks' }),
       ).toBeInTheDocument();
@@ -1290,7 +1286,6 @@ describe('tabs and focus', () => {
     useStore.setState({ focus: true });
     render(<Shell />);
     const tabs = await screen.findByRole('tablist', { name: 'Terminals' });
-    expect(document.querySelector('header.headerbar')).not.toBeNull();
     expect(tabs.querySelector('.tabrow-brand')).toBeNull();
     const row = tabs.closest<HTMLElement>('.taskbar')!;
     expect(
@@ -1408,6 +1403,7 @@ describe('the quiet task bar', () => {
         'Show docs',
         'Open in editor',
         'Open folder',
+        'Copy worktree path',
         'Focus mode',
         'Switch environment',
         'Scan for other repos',
@@ -1526,6 +1522,48 @@ describe('the quiet task bar', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.getByRole('button', { name: 'Task menu' })).toHaveFocus();
+  });
+
+  it('keeps the tab row at the very top, above the environment band, with a strip left free to drag the window by', async () => {
+    setup({ environment: 'uat' });
+    const { container } = render(<Shell />);
+    await screen.findByTestId('term-c1');
+    const layer = container.querySelector('.task-layer:not([hidden])')!;
+    // The window controls are drawn over the top right: only the tab row keeps clear of them.
+    expect(layer.firstElementChild).toHaveClass('taskbar');
+    const band = within(layer as HTMLElement).getByText(/UAT/, {
+      selector: '.env-band *, .env-band',
+    });
+    expect(
+      layer.querySelector('.taskbar')!.compareDocumentPosition(band) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(layer.querySelector('.taskbar > .taskbar-grip')).not.toBeNull();
+  });
+
+  it('copies the worktree path and opens the work item from the task menu', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const url = 'https://dev.azure.com/acme/Shellie/_workitems/edit/48213';
+    const { calls } = setup(
+      { workItem: { ...task.workItem!, url } },
+      { 'shell:openExternal': () => undefined },
+    );
+    render(<Shell />);
+    await userEvent.click(await taskMenuItem('Copy worktree path'));
+    expect(writeText).toHaveBeenCalledWith(
+      '/src/webshop.worktrees/48213-save-delivery-address',
+    );
+    await userEvent.click(
+      await taskMenuItem('Open User Story 48213 in Azure DevOps'),
+    );
+    expect(calls).toContainEqual({
+      channel: 'shell:openExternal',
+      args: [url],
+    });
   });
 
   it('finishes from the task menu in Focus, where there is no nav', async () => {

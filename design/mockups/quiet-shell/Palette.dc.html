@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The palette</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0;background:#090b10}
+button{font:inherit;cursor:pointer}
+a{color:#f0a443}a:hover{color:#f6e7c8}
+</style>
+</helmet>
+<div style="position: relative; width: 100%; height: 800px; background: #090b10; color: #c9cfdd; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+  <div aria-hidden="true" style="display: flex; flex-wrap: wrap; height: 800px; opacity: 0.35">
+    <div style="flex: 1 0 220px; max-width: 240px; height: 800px; box-sizing: border-box; background: #0c0e14; border-right: 1px solid #1d2230; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+      <div style="height: 30px; margin-bottom: 10px; border: 1px solid #1d2230; border-radius: 6px"></div>
+      <div style="height: 32px; padding: 0 8px; display: flex; align-items: center">Home</div>
+      <div style="margin: 14px 8px 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase">Tasks</div>
+      <div style="height: 32px; padding: 0 8px; display: flex; align-items: center; background: #151a26; border-radius: 6px">412 Fix login redirect</div>
+      <div style="height: 32px; padding: 0 8px; display: flex; align-items: center">398 Export invoices as CSV</div>
+      <div style="height: 32px; padding: 0 8px; display: flex; align-items: center">377 Rate table per customer</div>
+    </div>
+    <div style="flex: 999 1 560px; min-width: 0; height: 800px; display: flex; flex-direction: column">
+      <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-bottom: 1px solid #1d2230">
+        <span>claude</span><span>shell</span><span>dev</span>
+      </div>
+      <div style="padding: 20px 24px; font-family: 'JetBrains Mono', monospace; line-height: 1.7">
+        <div>&gt; the redirect after login loses the return url, find out why</div>
+        <div style="margin-top: 12px">14 tests pass. The redirect now keeps the return url.</div>
+      </div>
+    </div>
+  </div>
+  <div role="dialog" aria-label="Go to or run" style="position: absolute; top: 96px; left: 50%; transform: translateX(-50%); width: min(600px, calc(100% - 32px)); box-sizing: border-box; background: #0c0e14; border: 1px solid #2a3145; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); overflow: hidden">
+    <div style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-bottom: 1px solid #1d2230">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path></svg>
+      <label for="palette-q" style="position: absolute; left: -9999px">Go to or run</label>
+      <input id="palette-q" type="text" value="" placeholder="Go to a place, a task, or run a command" style="flex-grow: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #f6e7c8; font: inherit; font-size: 15px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">Esc</span>
+    </div>
+    <div style="padding: 8px; display: flex; flex-direction: column; gap: 1px">
+      <div style="margin: 6px 8px 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8b93a7">This task</div>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: #151a26; border: 0; border-radius: 6px; color: #f6e7c8; text-align: left">
+        <span style="flex-grow: 1">Show changes</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">3 files</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Show usage and cost</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">Ctrl 0</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Add to brain</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">Ctrl Shift B</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Open in editor</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Finish task</span>
+      </button>
+      <div style="margin: 12px 8px 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8b93a7">Go to</div>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Sprint</span><span style="font-size: 12px; color: #8b93a7">pick work items</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Dreams</span><span style="font-size: 12px; color: #f0a443">1 to review</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Brain: Shellie</span><span style="font-size: 12px; color: #f0a443">2 to read</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Task 398: Export invoices as CSV</span>
+      </button>
+      <button style="display: flex; align-items: center; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+        <span style="flex-grow: 1">Settings</span>
+      </button>
+    </div>
+    <div style="display: flex; gap: 16px; padding: 10px 18px; border-top: 1px solid #1d2230; font-size: 11px; color: #8b93a7">
+      <span>Up and Down to move</span><span>Enter to open</span><span>Type to filter everything</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

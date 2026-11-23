@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Working in a task</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0;background:#090b10}
+button{font:inherit;cursor:pointer}
+a{color:#f0a443}a:hover{color:#f6e7c8}
+</style>
+</helmet>
+<div style="width: 100%; height: 800px; display: flex; flex-wrap: wrap; background: #090b10; color: #c9cfdd; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+  <nav aria-label="Tasks" style="flex: 1 0 220px; max-width: 240px; height: 800px; box-sizing: border-box; background: #0c0e14; border-right: 1px solid #1d2230; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+    <button style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; margin-bottom: 10px; background: #090b10; border: 1px solid #1d2230; border-radius: 6px; color: #8b93a7; text-align: left">
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path></svg>
+      <span style="flex-grow: 1">Go to or run</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px">Ctrl Shift P</span>
+    </button>
+    <button style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 7.5 8 3l5.5 4.5V13h-4V9.5h-3V13h-4z"></path></svg>
+      <span>Home</span>
+    </button>
+    <div style="margin: 14px 8px 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8b93a7">Tasks</div>
+    <button aria-current="page" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; background: #151a26; border: 0; border-radius: 6px; color: #f6e7c8; text-align: left">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">412</span>
+      <span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Fix login redirect</span>
+    </button>
+    <button style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">398</span>
+      <span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Export invoices as CSV</span>
+      <span role="img" aria-label="Waits on you" style="width: 6px; height: 6px; border-radius: 50%; background: #f0a443"></span>
+    </button>
+    <button style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #c9cfdd; text-align: left">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b93a7">377</span>
+      <span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Rate table per customer</span>
+    </button>
+    <button style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #8b93a7; text-align: left">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"></path></svg>
+      <span>New task</span>
+    </button>
+  </nav>
+  <main style="flex: 999 1 560px; min-width: 0; height: 800px; display: flex; flex-direction: column">
+    <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px; border-bottom: 1px solid #1d2230">
+      <button aria-current="true" style="height: 26px; padding: 0 12px; background: #151a26; border: 0; border-radius: 5px; color: #f6e7c8">claude</button>
+      <button style="height: 26px; padding: 0 12px; background: transparent; border: 0; border-radius: 5px; color: #8b93a7">shell</button>
+      <button style="height: 26px; padding: 0 12px; background: transparent; border: 0; border-radius: 5px; color: #8b93a7">dev</button>
+      <button aria-label="New terminal" style="width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: 5px; color: #8b93a7">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"></path></svg>
+      </button>
+      <div style="flex-grow: 1"></div>
+      <button aria-label="AI cost of this task, open usage" style="height: 26px; padding: 0 10px; background: transparent; border: 0; border-radius: 5px; color: #8b93a7; font-family: 'JetBrains Mono', monospace; font-size: 12px">€ 1.84</button>
+      <button aria-label="Task menu" style="width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: 5px; color: #8b93a7">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"></circle><circle cx="8" cy="8" r="1.2"></circle><circle cx="12.5" cy="8" r="1.2"></circle></svg>
+      </button>
+    </div>
+    <div style="flex-grow: 1; padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; color: #c9cfdd; overflow: hidden">
+      <div style="color: #8b93a7">~/work/shellie-412 on feat/412-login-redirect</div>
+      <div><span style="color: #f0a443">&gt;</span> the redirect after login loses the return url, find out why</div>
+      <div style="margin-top: 12px">The return url is dropped in <span style="color: #f6e7c8">src/auth/callback.ts</span>: the state</div>
+      <div>parameter is read before it is decoded, so the lookup misses.</div>
+      <div style="margin-top: 12px; color: #8b93a7">Edit src/auth/callback.ts</div>
+      <div style="color: #8b93a7">Run npm test -- auth</div>
+      <div style="margin-top: 12px">14 tests pass. The redirect now keeps the return url.</div>
+      <div style="margin-top: 12px"><span style="color: #f0a443">&gt;</span> <span style="display: inline-block; width: 8px; height: 15px; background: #f6e7c8; vertical-align: text-bottom"></span></div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

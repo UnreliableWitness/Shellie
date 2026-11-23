@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { api } from './api';
 import { CommandPalette } from './components/CommandPalette';
-import { HeaderBar } from './components/HeaderBar';
 import { Notices } from './components/Notices';
 import { PlaceCommands } from './components/PlaceCommands';
 import { TaskNav } from './components/TaskNav';
@@ -100,7 +99,10 @@ function Page() {
   }
 }
 
-/** Header, nav and the current page. Focus hides the header and nav for a ready task. */
+/**
+ * The nav and the current page; Focus hides the nav for a ready task. There is no header bar: a task's tab row is
+ * the window's title bar, and a page gets an empty strip where the window controls need one (shell.css).
+ */
 export function Shell() {
   const inFocus = useStore(
     (s) =>
@@ -109,14 +111,19 @@ export function Shell() {
       s.tasks.find((t) => t.id === s.selectedTaskId)?.status === 'ready',
   );
   const navCollapsed = useStore((s) => s.navCollapsed);
+  // A task with terminals shows its tab row at the top; every other page has nothing there.
+  const taskBar = useStore((s) => {
+    if (s.screen.kind !== 'task') return false;
+    const status = s.tasks.find((t) => t.id === s.selectedTaskId)?.status;
+    return status === 'ready' || status === 'finishing';
+  });
   useShortcuts();
   return (
-    // In focus the task's tab row is the top bar, so it takes over as the title bar (shell.css).
     <div className={inFocus ? 'app in-focus' : 'app'}>
-      {!inFocus && <HeaderBar />}
       <div className="shell">
         {(!inFocus || navCollapsed) && <TaskNav />}
         <main className="content">
+          {!taskBar && <div className="titlestrip" />}
           <Page />
           <TaskTerminals />
         </main>
