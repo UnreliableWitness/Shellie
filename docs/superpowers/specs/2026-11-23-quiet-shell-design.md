@@ -73,10 +73,10 @@ nothing over IPC at open time.
 
 Some of what `when` needs is fetched per component today: whether the task has a brain (`hooks/useBrains.ts`, and an
 IPC call on the key press in `useShortcuts.ts`), whether Clean worktree applies (`CleanWorktreeButton.tsx`), the
-editor list (`OpenInEditor.tsx`), the join offer (`brain/JoinCard.tsx`). These are loaded when a task is selected or
-the app starts, as the task bar and nav do today, and kept in the store; never at palette open. Until a value has
-loaded, the command that depends on it is absent. No new polling: each is read once per task selection (or once per
-app start for the editor list and join offer) and on the events that already refresh it.
+editor list (`OpenInEditor.tsx`), the `.shellie.yml` run entries. Those commands are contributed by the component
+that already holds the data, for as long as it is mounted, and withdrawn when it unmounts. So nothing is fetched
+because the palette opened, no new cache or polling is added, and a command whose data has not loaded is absent.
+When step 2 removes a control, its component keeps running as a contributor or its data moves to the task menu.
 
 Commands to register (the builder adds any existing action this list misses; none may be dropped):
 
@@ -84,8 +84,7 @@ Commands to register (the builder adds any existing action this list misses; non
   (only when the task has a brain), Add to brain (opens the task's Brain tab on its Add composer; only when the task
   has a brain), New terminal: one command per kind in `NewTerminalMenu` (Claude Code, Shell, Copilot, OpenCode, Brain
   terminal), one per Run entry of `.shellie.yml`, Open in editor, Open folder, Switch to terminal N, Focus mode,
-  Clean worktree (when the button would show today), Scan for repos, Add worktree, Switch environment: one command
-  per environment (see the task bar), Finish task, Discard task.
+  Clean worktree (when the button would show today), Scan for repos, Add worktree, Switch environment (opens the environment menu; see the task bar), Finish task, Discard task.
 - **Go to:** Home, Sprint, Week, Project, Dreams, one per brain of the active project, Settings, New task, Secrets,
   Done tasks (opens the nav's Done list), and one per connection when there are two or more ("Switch to project X").
 - **Tasks:** one per open task of the active project ("Task 398: Export invoices as CSV").
@@ -130,7 +129,7 @@ Left to right: terminal tabs, any opened view tabs, "+", then at the right the c
   and Discard task. Shortcuts are shown at the right of their items.
 - **Environment** in the task menu is the switcher the chip is today (`secrets/EnvironmentChip.tsx`): the same
   environments, the same confirmation for UAT and Production, shown wherever the chip shows today. The palette's
-  Switch environment commands go through the same confirmation.
+  Switch environment command opens that same menu.
 - **Gone from the row:** the environment chip (its switching moves to the task menu; the UAT/Prod band stays and is
   the warning), the branch and git text,
   the Open in editor split button, the Focus toggle, the separate Clean worktree button.
