@@ -33,9 +33,12 @@ export function useContributeCommands(
   }, [source, commands]);
 }
 
-/** Group order, and within a group the order given. */
+/** Group order, and within a group the order given, with the commands marked `last` after the rest. */
 function ordered(commands: Command[]): Command[] {
-  return GROUP_ORDER.flatMap((g) => commands.filter((c) => c.group === g));
+  return GROUP_ORDER.flatMap((g) => {
+    const group = commands.filter((c) => c.group === g);
+    return [...group.filter((c) => !c.last), ...group.filter((c) => c.last)];
+  });
 }
 
 /** Every command a mounted component offers. */

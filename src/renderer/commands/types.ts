@@ -31,5 +31,7 @@ export type Command = {
   note?: string;
   /** `accent` for a note that says something waits for the user. */
   noteTone?: 'accent';
+  /** Sorts after the rest of its group, whoever offers it: the ways out of a task (Finish, Discard). */
+  last?: boolean;
   run(): void;
 };

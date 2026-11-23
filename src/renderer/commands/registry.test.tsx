@@ -39,6 +39,17 @@ describe('the command registry', () => {
     expect(ids()).not.toContain('a');
   });
 
+  it('keeps a command marked last at the end of its group', () => {
+    render(
+      <>
+        <Offer source="a" commands={[{ ...cmd('end'), last: true }]} />
+        <Offer source="b" commands={[cmd('later')]} />
+      </>,
+    );
+    const task = ids().filter((id) => id === 'end' || id === 'later');
+    expect(task).toEqual(['later', 'end']);
+  });
+
   it('orders by group whatever was offered first', () => {
     render(
       <>

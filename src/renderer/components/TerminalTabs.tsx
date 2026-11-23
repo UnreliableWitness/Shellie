@@ -479,12 +479,14 @@ export const TerminalTabs = memo(function TerminalTabs({
         id: 'task.finish',
         title: 'Finish task',
         group: 'task',
+        last: true,
         run: () => go({ kind: 'finish', taskId: id }),
       },
       {
         id: 'task.discard',
         title: 'Discard task',
         group: 'task',
+        last: true,
         run: () => askDiscard(id),
       },
     ];
