@@ -194,6 +194,13 @@ export type Store = {
   /** Opens a brain's Read view on a page, long read or letter. */
   openInBrain(brainId: string, path: string): void;
   tabByTask: Record<string, string>;
+  /**
+   * The view tabs (Usage, Docs, Changes, Brain) open in each task's tab row, in the order they were opened. They
+   * are not always there: one opens when it is asked for and stays until it is closed. Kept for the session.
+   */
+  shownTabsByTask: Record<string, string[]>;
+  /** Closes a view tab; when it was the one showing, the first terminal shows instead. */
+  closeTab(taskId: string, tab: string): void;
   /** A document a terminal link asked the Docs tab to open; the nonce makes repeats count. */
   docTarget: Record<
     string,
@@ -279,9 +286,26 @@ function showTab(
   tab: string,
   also: Partial<Store> = {},
 ): void {
-  set({ tabByTask: { ...get().tabByTask, [taskId]: tab }, ...also });
+  set({
+    tabByTask: { ...get().tabByTask, [taskId]: tab },
+    ...shownWith(get(), taskId, tab),
+    ...also,
+  });
   get().select(taskId);
   get().go({ kind: 'task' });
+}
+
+/** The store patch that puts a view tab in the task's tab row; nothing for a terminal or a tab already there. */
+function shownWith(
+  s: Pick<Store, 'shownTabsByTask'>,
+  taskId: string,
+  tab: string,
+): Partial<Store> {
+  const shown = s.shownTabsByTask[taskId] ?? [];
+  if (!FIXED_TABS.has(tab) || shown.includes(tab)) return {};
+  return {
+    shownTabsByTask: { ...s.shownTabsByTask, [taskId]: [...shown, tab] },
+  };
 }
 
 /** Pages that are a step, not a place: Back never returns to them. */
@@ -328,6 +352,7 @@ export const useStore = create<Store>((set, get) => ({
   openInBrain: (brainId, path) =>
     get().go({ kind: 'brain', brainId, open: { path, n: ++openSeq } }),
   tabByTask: {},
+  shownTabsByTask: {},
   docTarget: {},
   reviewByTask: {},
   viewsByTask: {},
@@ -419,7 +444,23 @@ export const useStore = create<Store>((set, get) => ({
   setTab: (taskId, tab) => {
     if (tab === USAGE_TAB && get().activeTab(taskId) !== USAGE_TAB)
       track('usage.opened', { via: 'tab' });
-    set({ tabByTask: { ...get().tabByTask, [taskId]: tab } });
+    set({
+      tabByTask: { ...get().tabByTask, [taskId]: tab },
+      ...shownWith(get(), taskId, tab),
+    });
+  },
+  closeTab: (taskId, tab) => {
+    const { [taskId]: selected, ...others } = get().tabByTask;
+    set({
+      shownTabsByTask: {
+        ...get().shownTabsByTask,
+        [taskId]: (get().shownTabsByTask[taskId] ?? []).filter(
+          (t) => t !== tab,
+        ),
+      },
+      // Without a choice, activeTab falls back to the first terminal.
+      ...(selected === tab ? { tabByTask: others } : {}),
+    });
   },
   activeTab: (taskId) => {
     const task = get().tasks.find((t) => t.id === taskId);

@@ -139,8 +139,11 @@ export function EnvironmentConfirm({
 export function EnvironmentChip({
   task,
   offers = true,
+  headless = false,
 }: {
   task: TaskView;
+  /** No chip: the menu and the confirm open from the Switch environment command, under the task bar's right end. */
+  headless?: boolean;
   /** Whether the switch is also offered as a command: only for the task on screen. */
   offers?: boolean;
 }) {
@@ -151,6 +154,9 @@ export function EnvironmentChip({
   const [info, setInfo] = useState<EnvironmentInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  // Without the chip: where the menu opens (the task bar's right end), and what had the focus before it did.
+  const anchor = useRef<HTMLSpanElement>(null);
+  const before = useRef<HTMLElement | null>(null);
   const pop = useRef<HTMLDivElement>(null);
   const env = task.environment;
   const label = ENVIRONMENT_LABEL[env];
@@ -159,7 +165,7 @@ export function EnvironmentChip({
     setMenuOpen(false);
     setAsking(null);
     setAt(null);
-    if (refocus) trigger.current?.focus();
+    if (refocus) (trigger.current ?? before.current)?.focus();
   };
 
   useEffect(() => {
@@ -185,7 +191,12 @@ export function EnvironmentChip({
 
   const open = () => {
     if (at) return close(false);
-    const r = trigger.current?.getBoundingClientRect();
+    // A switch under way must end before the next one is chosen.
+    if (busy) return;
+    before.current = document.activeElement as HTMLElement | null;
+    const r = (
+      trigger.current ?? anchor.current?.closest('.taskbar')
+    )?.getBoundingClientRect();
     setAt({
       right: r ? window.innerWidth - r.right : 8,
       top: r ? r.bottom + 2 : 40,
@@ -266,21 +277,24 @@ export function EnvironmentChip({
 
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className={`btn btn-sm env-chip env-chip-${env}`}
-        aria-label={`Secrets environment: ${label}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        title="Which environment's secrets this task's tabs get"
-        disabled={task.status !== 'ready' || busy}
-        onClick={open}
-      >
-        <Shield16Regular aria-hidden="true" />
-        {label}
-        <ChevronDown12Regular aria-hidden="true" />
-      </button>
+      {headless && <span ref={anchor} hidden />}
+      {!headless && (
+        <button
+          ref={trigger}
+          type="button"
+          className={`btn btn-sm env-chip env-chip-${env}`}
+          aria-label={`Secrets environment: ${label}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          title="Which environment's secrets this task's tabs get"
+          disabled={task.status !== 'ready' || busy}
+          onClick={open}
+        >
+          <Shield16Regular aria-hidden="true" />
+          {label}
+          <ChevronDown12Regular aria-hidden="true" />
+        </button>
+      )}
       {at && menuOpen && (
         <div
           ref={pop}

@@ -129,6 +129,9 @@ const config = {
 
 beforeEach(() =>
   useStore.setState({
+    // The view tabs open on demand; these tests are about what they show, so they start open. Docs and Changes
+    // show for a task with git, Brain for one with a brain. "The quiet task bar" below starts with none.
+    shownTabsByTask: { a: ['usage', 'docs', 'changes', 'brain'] },
     repos: [
       {
         id: 'r1',
@@ -179,7 +182,12 @@ describe('TaskScreen', () => {
         'User Story 48213 Checkout: allow saving a delivery address',
       ),
     ).toBeInTheDocument();
+    // The git state is in the task menu.
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Task menu' }),
+    );
     expect(await screen.findByText(AHEAD_CHANGED)).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
     expect(screen.getByRole('tab', { name: /Claude Code/ })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -236,7 +244,7 @@ describe('TaskScreen', () => {
       }),
     });
     render(<Shell />);
-    await userEvent.click(await screen.findByRole('button', { name: 'dev' }));
+    await userEvent.click(await runEntry('Run dev'));
     await waitFor(() =>
       expect(calls.find((c) => c.channel === 'terminals:open')?.args).toEqual([
         'a',
@@ -278,8 +286,13 @@ describe('TaskScreen', () => {
   });
 
   it('offers Claude Code, a shell, Copilot CLI and OpenCode, and works from the keyboard', async () => {
+    // No run entries here: they would follow the terminal kinds in the menu.
+    invalidateRepoConfig();
     const { calls } = installFakeApi({
-      'repos:config': () => config,
+      'repos:config': () => ({
+        ...config,
+        config: { ...config.config, run: {} },
+      }),
       'terminals:open': (_id, def) => ({ id: 'n3', ...def }),
     });
     render(<Shell />);
@@ -307,6 +320,7 @@ describe('TaskScreen', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.getByRole('button', { name: 'New terminal' })).toHaveFocus();
+    invalidateRepoConfig();
   });
 
   it('keeps the + button outside the scrolling tab row, so it stays in view (#215)', async () => {
@@ -380,7 +394,7 @@ describe('TaskScreen', () => {
     expect(screen.queryByRole('tab', { name: /b\.html/ })).toBeNull();
   });
 
-  it('opens the editor and the Finish page from the task row', async () => {
+  it('opens the folder from the task menu and the Finish page from the task row', async () => {
     const { calls } = installFakeApi({
       'repos:config': () => config,
       'tasks:gitSummary': () => ({
@@ -394,9 +408,7 @@ describe('TaskScreen', () => {
       'editor:showFolder': () => undefined,
     });
     render(<Shell />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Open folder' }),
-    );
+    await userEvent.click(await taskMenuItem('Open folder'));
     await waitFor(() =>
       expect(calls.some((c) => c.channel === 'editor:showFolder')).toBe(true),
     );
@@ -536,7 +548,7 @@ describe('TaskScreen', () => {
     expect(screen.getByRole('region', { name: 'AI usage' })).toBeVisible();
   });
 
-  it('disables Open folder when the worktree is missing and hides Finish unless ready', async () => {
+  it('offers no Open folder when the worktree is missing, and no task menu unless ready', async () => {
     installFakeApi({
       'repos:config': () => config,
       'tasks:gitSummary': () => ({
@@ -549,14 +561,16 @@ describe('TaskScreen', () => {
     });
     useStore.setState({ tasks: [{ ...task, worktreeMissing: true }] });
     const { unmount } = render(<Shell />);
+    await taskMenuItem('Finish task');
+    expect(screen.queryByRole('menuitem', { name: 'Open folder' })).toBeNull();
     expect(
-      await screen.findByRole('button', { name: 'Open folder' }),
-    ).toBeDisabled();
+      screen.queryByRole('menuitem', { name: 'Open in editor' }),
+    ).toBeNull();
     unmount();
     useStore.setState({ tasks: [{ ...task, status: 'finishing' }] });
     render(<Shell />);
     expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Open folder' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Task menu' })).toBeNull();
   });
 
   it('shows an Open setup panel instead of the terminals for a setup-failed task', async () => {
@@ -572,6 +586,22 @@ describe('TaskScreen', () => {
     });
   });
 });
+
+/** Opens the task menu and gives the item with this name. */
+const taskMenuItem = async (name: string | RegExp) => {
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Task menu' }),
+  );
+  return screen.findByRole('menuitem', { name });
+};
+
+/** Opens the new terminal menu and gives the run entry with this name. */
+const runEntry = async (name: string) => {
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'New terminal' }),
+  );
+  return screen.findByRole('menuitem', { name });
+};
 
 function setup(
   over: Partial<TaskView> = {},
@@ -609,16 +639,16 @@ describe('tabs and focus', () => {
     useStore.setState({ focus: false, navCollapsed: false, tabByTask: {} });
   });
 
-  it('pins Usage first, before the terminals', async () => {
+  it('puts the opened views after the terminals', async () => {
     setup();
     render(<Shell />);
     const tabs = await screen.findAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual([
+      'Claude Code',
+      'zsh',
       expect.stringContaining('Usage'),
       expect.stringContaining('Docs'),
       expect.stringContaining('Changes'),
-      'Claude Code',
-      'zsh',
     ]);
   });
 
@@ -797,7 +827,7 @@ describe('tabs and focus', () => {
     );
   });
 
-  it('offers Finish task once: in the nav, in the rail, or in the tab row in Focus (#95)', async () => {
+  it('offers Finish task as a button once: in the nav or in the rail; in Focus without them it is in the task menu (#95)', async () => {
     setup();
     render(<Shell />);
     await screen.findByTestId('term-c1');
@@ -805,18 +835,12 @@ describe('tabs and focus', () => {
     const nav = () => screen.queryByRole('navigation', { name: 'Tasks' });
     expect(finish()).toHaveLength(1);
     expect(nav()).toContainElement(finish()[0]);
-    // Focus hides the nav, so the tab row takes Finish, as a primary button.
+    // Focus hides the nav: no button, the task menu has it.
     fireEvent.keyDown(window, FOCUS_KEYS);
     expect(nav()).toBeNull();
-    expect(finish()).toHaveLength(1);
-    expect(finish()[0]).toHaveClass('btn-primary');
-    expect(
-      within(
-        screen
-          .getByRole('tablist', { name: 'Terminals' })
-          .closest<HTMLElement>('.taskbar')!,
-      ).getByRole('button', { name: 'Finish task' }),
-    ).toBe(finish()[0]);
+    expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
+    expect(await taskMenuItem('Finish task')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
     // Focus with the rail: the rail has it.
     act(() => useStore.setState({ navCollapsed: true }));
     expect(finish()).toHaveLength(1);
@@ -1291,11 +1315,9 @@ describe('tabs and focus', () => {
     render(<Shell />);
     const tabs = await screen.findByRole('tablist', { name: 'Terminals' });
     expect(tabs.querySelector('.tabrow-brand')).not.toBeNull();
-    expect(
-      within(tabs.closest<HTMLElement>('.taskbar')!).getByRole('button', {
-        name: 'Exit focus',
-      }),
-    ).toBeVisible();
+    // The way out of Focus is the task menu (and the shortcut).
+    await userEvent.click(await taskMenuItem(/Focus mode/));
+    expect(useStore.getState().focus).toBe(false);
   });
 
   it('toggles Focus with the shortcut when no task is selected', () => {
@@ -1332,6 +1354,190 @@ describe('tabs and focus', () => {
       );
     }
     expect(mounts.count).toBe(0);
+  });
+});
+
+describe('the quiet task bar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useStore.setState({
+      focus: false,
+      navCollapsed: false,
+      tabByTask: {},
+      shownTabsByTask: {},
+    });
+  });
+  // The task bar's own tabs: an opened view (Changes, Usage) has pivots of its own.
+  const tabNames = () =>
+    within(screen.getByRole('tablist', { name: 'Terminals' }))
+      .getAllByRole('tab')
+      .map((t) => t.textContent?.trim());
+  const openMenu = async () =>
+    userEvent.click(await screen.findByRole('button', { name: 'Task menu' }));
+
+  it('shows the terminals and little else', async () => {
+    setup();
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    for (const name of ['Open folder', 'Open in an editor', 'Focus'])
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Development/ })).toBeNull();
+    expect(screen.queryByText('dev')).toBeNull();
+    expect(screen.getByRole('button', { name: /AI cost/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Task menu' }),
+    ).toBeInTheDocument();
+  });
+
+  it('lists what the bar used to show in the task menu, under where the task is', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
+    const menu = screen.getByRole('menu', { name: 'Task menu' });
+    expect(menu).toHaveTextContent('feature/48213-save-delivery-address');
+    expect(menu).toHaveTextContent('Development');
+    await waitFor(() =>
+      expect(
+        within(menu)
+          .getAllByRole('menuitem')
+          .map((i) => i.textContent?.replace(/(Ctrl|Cmd)\+.*$/, '').trim()),
+      ).toEqual([
+        'Show changes',
+        'Show usage and cost',
+        'Show docs',
+        'Open in editor',
+        'Open folder',
+        'Focus mode',
+        'Switch environment',
+        'Scan for other repos',
+        'Add a worktree',
+        'Finish task',
+        'Discard task',
+      ]),
+    );
+  });
+
+  it('opens a view as a tab after the terminals, and closing it goes back to a terminal', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /Show changes/ }),
+    );
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
+    expect(screen.getByRole('tab', { name: /Changes/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close Changes' }),
+    );
+    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    expect(screen.getByTestId('term-c1')).toHaveAttribute(
+      'data-active',
+      'true',
+    );
+  });
+
+  it('keeps an opened view tab while another tab is selected', async () => {
+    setup();
+    render(<Shell />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /AI cost/ }),
+    );
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Usage']);
+    await userEvent.click(screen.getByRole('tab', { name: 'zsh' }));
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Usage']);
+  });
+
+  it('offers the run entries in the new terminal menu', async () => {
+    const { calls } = setup(
+      {},
+      {
+        'terminals:open': () => ({
+          id: 'r9',
+          kind: 'run' as const,
+          label: 'dev',
+        }),
+      },
+    );
+    render(<Shell />);
+    await screen.findByTestId('term-c1');
+    await userEvent.click(screen.getByRole('button', { name: 'New terminal' }));
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Run dev' }),
+    );
+    expect(calls).toContainEqual({
+      channel: 'terminals:open',
+      args: ['a', { kind: 'run', label: 'dev', command: 'npm run dev' }],
+    });
+  });
+
+  it('switches environment from the task menu, through the same menu as before', async () => {
+    setup(
+      {},
+      {
+        'tasks:environmentInfo': () => {
+          const each = <T,>(v: T) => ({
+            development: v,
+            test: v,
+            uat: v,
+            production: v,
+          });
+          return {
+            values: each({ have: 0, of: 0 }),
+            tabs: [],
+            keys: each([] as string[]),
+            overrides: each([] as { profile: string; names: string[] }[]),
+            productionMinutes: 30,
+          };
+        },
+      },
+    );
+    render(<Shell />);
+    await openMenu();
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Switch environment' }),
+    );
+    expect(
+      await screen.findByRole('menuitemradio', { name: /Production/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('closes the task menu when its task leaves the screen', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
+    expect(screen.getByRole('menu', { name: 'Task menu' })).toBeInTheDocument();
+    act(() => useStore.getState().go({ kind: 'home' }));
+    expect(screen.queryByRole('menu', { name: 'Task menu' })).toBeNull();
+  });
+
+  it('gives the focus back to the task menu button after the environment menu closes', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Switch environment' }),
+    );
+    await screen.findByRole('menu', { name: 'Secrets for this task' });
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Task menu' })).toHaveFocus();
+  });
+
+  it('finishes from the task menu in Focus, where there is no nav', async () => {
+    setup();
+    useStore.setState({ focus: true });
+    render(<Shell />);
+    await openMenu();
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Finish task' }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'finish', taskId: 'a' });
+    useStore.setState({ focus: false });
   });
 });
 
@@ -1486,14 +1692,8 @@ describe('TaskScreen workspaces', () => {
       'terminals:open': (_t, def) => ({ id: 'n1', ...def }),
     });
     render(<Shell />);
-    expect(await screen.findByText('Run api')).toBeInTheDocument();
-    expect(screen.getByText('Run webshop')).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Run serve in api' }),
-    );
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Run dev in webshop' }),
-    );
+    await userEvent.click(await runEntry('Run serve in api'));
+    await userEvent.click(await runEntry('Run dev in webshop'));
     await waitFor(() =>
       expect(
         calls.filter((c) => c.channel === 'terminals:open').map((c) => c.args),
@@ -1539,8 +1739,9 @@ describe('TaskScreen workspaces', () => {
       'terminals:open': (_t, def) => ({ id: 'n1', ...def }),
     });
     render(<Shell />);
-    await userEvent.click(await screen.findByRole('button', { name: 'serve' }));
-    expect(screen.queryByRole('button', { name: 'dev' })).toBeNull();
+    const serve = await runEntry('Run serve');
+    expect(screen.queryByRole('menuitem', { name: 'Run dev' })).toBeNull();
+    await userEvent.click(serve);
     await waitFor(() =>
       expect(calls.find((c) => c.channel === 'terminals:open')?.args).toEqual([
         'a',

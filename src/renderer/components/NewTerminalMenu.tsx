@@ -2,6 +2,7 @@ import { Add16Regular } from '@fluentui/react-icons';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { RepoMark } from './RepoMark';
 import type { NewTerminal } from '../../shared/types';
+import type { Command } from '../commands/types';
 
 /** What the + menu can open; the shell is named after the platform's shell by main. */
 export const NEW_TERMINALS: {
@@ -23,9 +24,12 @@ export function NewTerminalMenu({
   disabled,
   workspaces = [],
   brain,
+  runs = [],
   onOpen,
   onOpenBrain,
 }: {
+  /** The repo's run entries, as the commands their owner offers: listed under the terminal kinds. */
+  runs?: Command[];
   disabled?: boolean;
   /** With more than one, choosing a terminal type asks for the repo to open it in. */
   workspaces?: { id: string; name: string; color?: number | null }[];
@@ -162,6 +166,25 @@ export function NewTerminalMenu({
               <span className="small muted">{brain.name}</span>
             </button>
           )}
+          {!choosing && runs.length > 0 && (
+            <div className="menu-sep" role="separator" />
+          )}
+          {!choosing &&
+            runs.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="menu-item"
+                onClick={() => {
+                  close(false);
+                  c.run();
+                }}
+              >
+                <span className="menu-title">{c.title}</span>
+              </button>
+            ))}
         </div>
       )}
     </>

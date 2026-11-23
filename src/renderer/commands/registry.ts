@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store';
 import { globalCommands } from './global';
 import { type Command, GROUP_ORDER } from './types';
@@ -63,6 +64,27 @@ function ordered(commands: Command[]): Command[] {
 /** Every command a mounted component offers. */
 export function contributed(): Command[] {
   return inSourceOrder(useSources.getState());
+}
+
+/**
+ * The offered commands whose id starts with `prefix`; none for null. It re-renders its caller only when that set
+ * changes, so a component on the terminal's render path can list a few commands without following every offer.
+ */
+export function useContributedWith(prefix: string | null): Command[] {
+  return useSources(
+    useShallow((s) =>
+      prefix === null
+        ? NONE
+        : inSourceOrder(s).filter((c) => c.id.startsWith(prefix)),
+    ),
+  );
+}
+const NONE: Command[] = [];
+
+/** What mounted components offer, following the offers only (not the store): for a menu built from them. */
+export function useContributed(): Command[] {
+  const offered = useSources();
+  return useMemo(() => inSourceOrder(offered), [offered]);
 }
 
 /** Every command there is right now: the store's own, then what components offer, by group. */

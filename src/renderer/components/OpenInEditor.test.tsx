@@ -1,6 +1,7 @@
 // src/renderer/components/OpenInEditor.test.tsx
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { allCommands } from '../commands/registry';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { OpenInEditor } from './OpenInEditor';
 
@@ -29,6 +30,64 @@ const openMenu = async () =>
   );
 
 describe('OpenInEditor', () => {
+  const offered = () =>
+    allCommands()
+      .filter((c) => c.id.startsWith('task.editor') || c.id === 'task.folder')
+      .map((c) => c.title);
+
+  it('without buttons, offers the editors, the solutions and the folder as commands', async () => {
+    const { calls } = installFakeApi(
+      options({ solutions: ['A.sln', 'tools/B.sln'] }),
+    );
+    const { container } = render(<OpenInEditor taskId="t1" headless />);
+    expect(container).toBeEmptyDOMElement();
+    await waitFor(() =>
+      expect(offered()).toEqual([
+        'Open in editor',
+        'Open in VS Code',
+        'Open A.sln',
+        'Open B.sln',
+        'Open folder',
+      ]),
+    );
+    allCommands()
+      .find((c) => c.title === 'Open B.sln')
+      ?.run();
+    expect(sent(calls, 'editor:openFolder')).toEqual([
+      ['t1', undefined, { editorId: 'visualstudio', solution: 'tools/B.sln' }],
+    ]);
+  });
+
+  it('without an editor, the command leads to Settings instead of opening nothing', async () => {
+    const { calls } = installFakeApi(options({ editors: [], chosen: null }));
+    render(<OpenInEditor taskId="t1" headless />);
+    await waitFor(() =>
+      expect(offered()).toEqual([
+        'No editor found: choose one in Settings',
+        'Open folder',
+      ]),
+    );
+    allCommands()
+      .find((c) => c.id === 'task.editor')
+      ?.run();
+    expect(sent(calls, 'editor:openFolder')).toEqual([]);
+  });
+
+  it('looks for editors again when asked to (the task menu opened)', async () => {
+    const { calls } = installFakeApi(options());
+    const { rerender } = render(<OpenInEditor taskId="t1" headless />);
+    await waitFor(() =>
+      expect(sent(calls, 'editor:options')).toEqual([['t1', undefined, false]]),
+    );
+    rerender(<OpenInEditor taskId="t1" headless refresh={1} />);
+    await waitFor(() =>
+      expect(sent(calls, 'editor:options')).toEqual([
+        ['t1', undefined, false],
+        ['t1', undefined, true],
+      ]),
+    );
+  });
+
   it('opens the task folder in the file manager (#73)', async () => {
     const { calls } = installFakeApi(options());
     render(<OpenInEditor taskId="t1" workspaceId="w2" />);

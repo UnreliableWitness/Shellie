@@ -10,7 +10,14 @@ import { useStore } from '../../store';
  * In the task bar, only while this task's copied env files still hold keys Shellie now stores: rewrites them
  * without the keys and starts the task's secret tabs again. Nothing otherwise.
  */
-export function CleanWorktreeButton({ task }: { task: TaskView }) {
+export function CleanWorktreeButton({
+  task,
+  headless = false,
+}: {
+  task: TaskView;
+  /** No button: only offers its command (the task menu and the palette show it). */
+  headless?: boolean;
+}) {
   const notify = useStore((s) => s.notify);
   const [repoIds, setRepoIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -47,6 +54,8 @@ export function CleanWorktreeButton({ task }: { task: TaskView }) {
   }, [check]);
 
   const clean = async () => {
+    // The command can be run again while the first clean is under way.
+    if (busy) return;
     setBusy(true);
     // Main sends secrets.worktreesCleaned.
     for (const repoId of repoIds)
@@ -77,7 +86,7 @@ export function CleanWorktreeButton({ task }: { task: TaskView }) {
     [shows],
   );
   useContributeCommands('task.cleanWorktree', commands);
-  if (!shows) return null;
+  if (!shows || headless) return null;
   return (
     <button
       type="button"

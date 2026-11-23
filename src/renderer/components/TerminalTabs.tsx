@@ -1,15 +1,10 @@
 import {
-  Branch16Regular,
   Brain16Regular,
   BranchCompare16Regular,
-  CheckmarkCircle16Regular,
-  Delete16Regular,
   Dismiss12Regular,
   Warning16Regular,
   DataPie16Regular,
   Document16Regular,
-  FullScreenMaximize16Regular,
-  FullScreenMinimize16Regular,
   Globe16Regular,
 } from '@fluentui/react-icons';
 import {
@@ -20,8 +15,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useContributeCommands } from '../commands/registry';
-import type { Command } from '../commands/types';
+import {
+  useContributeCommands,
+  useContributedWith,
+} from '../commands/registry';
+import { shortcutLabel } from '../commands/shortcut';
+import type { Command, Shortcut } from '../commands/types';
 import { useShallow } from 'zustand/react/shallow';
 import type { Events } from '../../shared/ipc';
 import { brainTaskId } from '../../shared/brain';
@@ -60,13 +59,14 @@ import { ChangesTab } from './review/ChangesTab';
 import { DiscardBar } from './DiscardBar';
 import { NEW_TERMINALS, NewTerminalMenu } from './NewTerminalMenu';
 import { TerminalView } from './TerminalView';
-import { IconButton, MindMark, modKey } from './ui';
+import { MindMark, modKey } from './ui';
 import { UsagePanel } from './UsagePanel';
 import { EnvironmentBand } from './secrets/EnvironmentBand';
 import { RunApproveBar } from './secrets/RunApproveBar';
 import { EnvironmentChip } from './secrets/EnvironmentChip';
 import { CleanWorktreeButton } from './secrets/CleanWorktreeButton';
 import { ENVIRONMENT_LABEL } from '../../shared/secrets';
+import { TaskBarMenu } from './TaskBarMenu';
 import { TaskMenu, WorkspaceChips } from './WorkspaceChips';
 
 const SCAN_MS = 120000;
@@ -104,6 +104,35 @@ function useUnseen<K extends 'docs:changed' | 'usage:changed'>(
 }
 
 const NO_VIEWS: HtmlView[] = [];
+const NO_TABS: string[] = [];
+
+/** The view tabs: what each shows as, and the word for "something new" in its name. */
+const VIEW_TABS: Record<
+  string,
+  { label: string; icon: ReactNode; newWord?: string; shortcut?: Shortcut }
+> = {
+  [USAGE_TAB]: {
+    label: 'Usage',
+    icon: <DataPie16Regular aria-hidden="true" />,
+    newWord: 'new usage',
+    shortcut: { code: 'Digit0' },
+  },
+  [DOCS_TAB]: {
+    label: 'Docs',
+    icon: <Document16Regular aria-hidden="true" />,
+    newWord: 'changed',
+    shortcut: { code: 'KeyD', shift: true },
+  },
+  [CHANGES_TAB]: {
+    label: 'Changes',
+    icon: <BranchCompare16Regular aria-hidden="true" />,
+  },
+  [BRAIN_TAB]: {
+    label: 'Brain',
+    icon: <Brain16Regular aria-hidden="true" />,
+    shortcut: { code: 'KeyB', shift: true },
+  },
+};
 
 /** Tasks whose brain terminal was opened for `openBrainTerminalOnStart` in this app session: once per task. */
 export const brainTerminalOpenedOnStart = new Set<string>();
@@ -111,10 +140,11 @@ export const brainTerminalOpenedOnStart = new Set<string>();
 const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) ?? p;
 
 /**
- * One repo's `.shellie.yml` run entries. A single-repo task shows them as before (run in the task's folder); with
- * several repos each group is named after its repo and runs in that repo's worktree.
+ * One repo's `.shellie.yml` run entries, offered as commands: the new terminal menu and the palette list them. A
+ * single-repo task runs them in the task's folder; with several repos each is named after its repo and runs in that
+ * repo's worktree. Renders nothing.
  */
-function RunChips({
+function RunCommands({
   workspace,
   index,
   offers,
@@ -135,7 +165,6 @@ function RunChips({
 }) {
   const config = useRepoConfig(workspace.repoId);
   const run = config?.config.run;
-  const entries = Object.entries(run ?? {});
   const latest = useRef(onOpen);
   useEffect(() => {
     latest.current = onOpen;
@@ -159,31 +188,7 @@ function RunChips({
     [offers, disabled, run, index, grouped, repoName, workspace.id],
   );
   useContributeCommands(`task.run.${index}`, commands);
-  if (entries.length === 0) return null;
-  return (
-    <span className="tabrow-run">
-      <span className="small muted">{grouped ? `Run ${repoName}` : 'Run'}</span>
-      {entries.map(([name, command]) => (
-        <button
-          key={name}
-          type="button"
-          className="btn btn-sm chip"
-          aria-label={grouped ? `Run ${name} in ${repoName}` : undefined}
-          onClick={() =>
-            onOpen({
-              kind: 'run',
-              label: name,
-              command,
-              ...(grouped ? { workspaceId: workspace.id } : {}),
-            })
-          }
-          disabled={disabled}
-        >
-          {name}
-        </button>
-      ))}
-    </span>
-  );
+  return null;
 }
 
 /** The task's AI cost; opens the Usage tab. */
@@ -208,6 +213,7 @@ function CostButton({ taskId }: { taskId: string }) {
 function ClosableTab({
   selected,
   label,
+  ariaLabel,
   title,
   onSelect,
   onClose,
@@ -216,6 +222,8 @@ function ClosableTab({
   selected: boolean;
   /** Names the close button: "Close <label>". */
   label: string;
+  /** The tab's own name when its text alone does not say it all (a count, something new). */
+  ariaLabel?: string;
   title?: string;
   onSelect: () => void;
   onClose: () => void;
@@ -227,6 +235,7 @@ function ClosableTab({
         type="button"
         role="tab"
         aria-selected={selected}
+        aria-label={ariaLabel}
         className="pivot"
         title={title}
         onClick={onSelect}
@@ -260,8 +269,6 @@ export const TerminalTabs = memo(function TerminalTabs({
   visible?: boolean;
 }) {
   const notify = useStore((s) => s.notify);
-  const go = useStore((s) => s.go);
-  const askDiscard = useStore((s) => s.askDiscard);
   const discarding = useStore((s) => s.discardTaskId === task.id);
   const repos = useStore((s) => s.repos);
   // A task without a repo (#225) has a scratch folder with no git: no Docs, Changes, branch or run entries.
@@ -304,7 +311,6 @@ export const TerminalTabs = memo(function TerminalTabs({
   );
   const hasGit = ready && !task.worktreeMissing && !noRepo;
   const toggleFocus = useStore((s) => s.toggleFocus);
-  const navCollapsed = useStore((s) => s.navCollapsed);
   const views = useStore((s) => s.viewsByTask[task.id]) ?? NO_VIEWS;
   const closeView = useStore((s) => s.closeView);
   const docsUnseen = useUnseen(
@@ -532,6 +538,41 @@ export const TerminalTabs = memo(function TerminalTabs({
       ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [active, task.terminals.length]);
 
+  // A view tab is in the row once opened, and while it is the one showing (Usage for a task without terminals).
+  const shownTabs = useStore((s) => s.shownTabsByTask[task.id]) ?? NO_TABS;
+  const closeTab = useStore((s) => s.closeTab);
+  const canShow: Record<string, boolean> = {
+    [USAGE_TAB]: true,
+    [DOCS_TAB]: hasGit,
+    [CHANGES_TAB]: hasGit,
+    [BRAIN_TAB]: brainShown,
+  };
+  const viewTabs = [
+    ...shownTabs,
+    ...(active in VIEW_TABS && !shownTabs.includes(active) ? [active] : []),
+  ].filter((t) => canShow[t]);
+  // Only the run entries, and only for the task on screen: every other offer leaves this row alone.
+  const runs = useContributedWith(offers ? 'task.run.' : null);
+  // How often the task menu was opened: the editors are looked for again each time (#94).
+  const [menuOpens, setMenuOpens] = useState(0);
+  // Where the task is, for the top of the task menu.
+  const where = noRepo
+    ? ['No repo']
+    : [
+        home.branch,
+        ...(git
+          ? [
+              `${UP}${git.ahead}${git.behind ? ` ${DOWN}${git.behind}` : ''} ${DOT} ${git.files.length ? `${git.files.length}${DELTA}` : 'clean'}`,
+            ]
+          : []),
+        ENVIRONMENT_LABEL[task.environment],
+      ];
+  // A closed view with something new shows it on its item in the task menu.
+  const dots = {
+    'task.usage': unseen && !viewTabs.includes(USAGE_TAB),
+    'task.docs': docsUnseen && !viewTabs.includes(DOCS_TAB),
+  };
+
   const closeTerminal = (id: string) =>
     tryInvoke(() => api().invoke('terminals:kill', id), notify);
 
@@ -555,68 +596,6 @@ export const TerminalTabs = memo(function TerminalTabs({
                 <MindMark size={14} />
                 <span className="mono">{task.workItem?.id ?? task.name}</span>
               </span>
-            )}
-            <button
-              type="button"
-              role="tab"
-              aria-selected={active === USAGE_TAB}
-              aria-label={unseen ? 'Usage, new usage' : 'Usage'}
-              className="pivot"
-              onClick={() => setTab(task.id, USAGE_TAB)}
-            >
-              <DataPie16Regular aria-hidden="true" />
-              Usage
-              {unseen && <span className="tab-new" aria-hidden="true" />}
-            </button>
-            {hasGit && (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={active === DOCS_TAB}
-                aria-label={docsUnseen ? 'Docs, changed' : 'Docs'}
-                className="pivot"
-                title={`Docs (${modKey}+Shift+D)`}
-                onClick={() => setTab(task.id, DOCS_TAB)}
-              >
-                <Document16Regular aria-hidden="true" />
-                Docs
-                {docsUnseen && <span className="tab-new" aria-hidden="true" />}
-              </button>
-            )}
-            {hasGit && (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={active === CHANGES_TAB}
-                aria-label={
-                  changeCount ? `Changes, ${changeCount} files` : 'Changes'
-                }
-                className="pivot"
-                onClick={() => setTab(task.id, CHANGES_TAB)}
-              >
-                <BranchCompare16Regular aria-hidden="true" />
-                Changes
-                {changeCount ? (
-                  <span className="pivot-count">{changeCount}</span>
-                ) : null}
-              </button>
-            )}
-            {brainShown && (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={active === BRAIN_TAB}
-                aria-label="Brain"
-                className="pivot"
-                title={`Brain (${modKey}+Shift+B)`}
-                onClick={() => {
-                  if (active !== BRAIN_TAB) trackBrain('tab');
-                  setTab(task.id, BRAIN_TAB);
-                }}
-              >
-                <Brain16Regular aria-hidden="true" />
-                Brain
-              </button>
             )}
             {task.terminals.map((t) => (
               <ClosableTab
@@ -659,87 +638,98 @@ export const TerminalTabs = memo(function TerminalTabs({
                 {`${brain?.name ?? 'Brain'} brain`}
               </ClosableTab>
             )}
-            {runFrom.map((w, i) => (
-              <RunChips
-                key={w.id}
-                workspace={w}
-                index={i}
-                offers={offers}
-                repoName={repoName(w)}
-                grouped={runFrom.length > 1}
-                disabled={task.worktreeMissing}
-                onOpen={(def) => void open(def)}
-              />
-            ))}
+            {/* The views open on demand (the task menu, the palette, a shortcut) and stay until closed. */}
+            {viewTabs.map((tab) => {
+              const v = VIEW_TABS[tab];
+              const isNew =
+                (tab === USAGE_TAB && unseen) ||
+                (tab === DOCS_TAB && docsUnseen);
+              const count = tab === CHANGES_TAB ? changeCount : 0;
+              return (
+                <ClosableTab
+                  key={tab}
+                  selected={active === tab}
+                  label={v.label}
+                  ariaLabel={
+                    isNew
+                      ? `${v.label}, ${v.newWord}`
+                      : count
+                        ? `${v.label}, ${count} files`
+                        : v.label
+                  }
+                  title={
+                    v.shortcut && shortcutLabel(v.shortcut, modKey)
+                      ? `${v.label} (${shortcutLabel(v.shortcut, modKey)})`
+                      : undefined
+                  }
+                  onSelect={() => {
+                    if (tab === BRAIN_TAB && active !== BRAIN_TAB)
+                      trackBrain('tab');
+                    setTab(task.id, tab);
+                  }}
+                  onClose={() => closeTab(task.id, tab)}
+                >
+                  {v.icon}
+                  {v.label}
+                  {count ? <span className="pivot-count">{count}</span> : null}
+                  {isNew && <span className="tab-new" aria-hidden="true" />}
+                </ClosableTab>
+              );
+            })}
           </div>
           {/* Outside the scrolling row, so it never scrolls out of sight (#215). */}
           <NewTerminalMenu
             disabled={task.worktreeMissing}
             workspaces={workspaces}
             brain={brain ? { id: brain.id, name: brain.name } : undefined}
+            runs={runs}
             onOpen={(def) => void open(def)}
             onOpenBrain={() => void openBrainTerminal()}
           />
         </div>
         <div className="taskbar-right">
-          {ready && !noRepo && <EnvironmentChip task={task} offers={visible} />}
-          {ready && visible && !noRepo && <CleanWorktreeButton task={task} />}
           <WorkspaceChips task={task} />
-          {noRepo ? (
-            <span className="small muted">No repo</span>
-          ) : (
-            <span className="mono taskbar-git" title={home.branch}>
-              <Branch16Regular aria-hidden="true" />
-              <span className="taskbar-branch">{home.branch}</span>
-              {git &&
-                ` ${UP}${git.ahead}${git.behind ? ` ${DOWN}${git.behind}` : ''} ${DOT} ${git.files.length ? `${git.files.length}${DELTA}` : 'clean'}`}
-            </span>
-          )}
           <CostButton taskId={task.id} />
+          {/* Its place in the row is where the environment menu opens. */}
+          {ready && !noRepo && (
+            <EnvironmentChip task={task} offers={visible} headless />
+          )}
           {ready && (
-            <>
-              <OpenInEditor
-                taskId={task.id}
-                disabled={task.worktreeMissing}
-                visible={visible}
-              />
-              {/* Finish lives under the task in the nav (#95); only Focus without the rail has no nav. */}
-              {inFocus && !navCollapsed && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  aria-label="Finish task"
-                  title="Finish task: check changes, push, book time, clean up"
-                  onClick={() => go({ kind: 'finish', taskId: task.id })}
-                >
-                  <CheckmarkCircle16Regular aria-hidden="true" />
-                  Finish
-                </button>
-              )}
-              {inFocus && !navCollapsed && (
-                <IconButton
-                  label="Discard task"
-                  onClick={() => askDiscard(task.id)}
-                >
-                  <Delete16Regular />
-                </IconButton>
-              )}
-              {!noRepo && <TaskMenu task={task} offers={visible} />}
-              <IconButton
-                label={inFocus ? 'Exit focus' : 'Focus'}
-                shortcut={`${modKey}+Shift+F`}
-                onClick={toggleFocus}
-              >
-                {inFocus ? (
-                  <FullScreenMinimize16Regular />
-                ) : (
-                  <FullScreenMaximize16Regular />
-                )}
-              </IconButton>
-            </>
+            <TaskBarMenu
+              where={where}
+              dots={dots}
+              visible={visible}
+              onOpen={() => setMenuOpens((n) => n + 1)}
+            />
           )}
         </div>
       </div>
+      {/* No buttons of their own any more: they offer the task menu and the palette their commands. */}
+      {runFrom.map((w, i) => (
+        <RunCommands
+          key={w.id}
+          workspace={w}
+          index={i}
+          offers={offers}
+          repoName={repoName(w)}
+          grouped={runFrom.length > 1}
+          disabled={task.worktreeMissing}
+          onOpen={(def) => void open(def)}
+        />
+      ))}
+      {ready && visible && !noRepo && (
+        <CleanWorktreeButton task={task} headless />
+      )}
+      {ready && (
+        <OpenInEditor
+          taskId={task.id}
+          disabled={task.worktreeMissing}
+          visible={visible}
+          headless
+          refresh={menuOpens}
+        />
+      )}
+      {ready && !noRepo && <TaskMenu task={task} offers={visible} headless />}
       {discarding && ready && <DiscardBar task={task} />}
       {task.mainCheckoutEdits.map((e) => (
         <div key={e.repoPath} role="status" className="ws-warning">
