@@ -178,11 +178,8 @@ describe('TaskScreen', () => {
     });
     render(<Shell />);
     expect(
-      within(screen.getByRole('navigation', { name: 'Tasks' })).getByRole(
-        'button',
-        { name: /48213 Checkout: allow saving a delivery address/ },
-      ),
-    ).toHaveAttribute('aria-current', 'page');
+      document.querySelector('.navrow[data-current="true"]'),
+    ).toHaveTextContent('48213Checkout: allow saving a delivery address');
     // The git state is in the task menu.
     await userEvent.click(
       await screen.findByRole('button', { name: 'Task menu' }),
@@ -496,11 +493,8 @@ describe('TaskScreen', () => {
     expect(screen.getByTestId('term-c1')).toBeInTheDocument();
     act(() => useStore.setState({ selectedTaskId: 'b' }));
     expect(
-      within(screen.getByRole('navigation', { name: 'Tasks' })).getByRole(
-        'button',
-        { name: /2 Second task/ },
-      ),
-    ).toHaveAttribute('aria-current', 'page');
+      document.querySelector('.navrow[data-current="true"]'),
+    ).toHaveTextContent('2Second task');
     expect(screen.getByTestId('term-c2')).toHaveAttribute(
       'data-active',
       'true',
@@ -1266,23 +1260,21 @@ describe('tabs and focus', () => {
     ).toBeVisible();
   });
 
-  it('shows the header and nav with Focus on and no task selected', () => {
+  it('shows the nav with Focus on and no task selected', () => {
     setup();
     useStore.setState({ tasks: [], selectedTaskId: null, focus: true });
     render(<Shell />);
-    expect(document.querySelector('header.headerbar')).not.toBeNull();
     expect(
       screen.getByRole('navigation', { name: 'Tasks' }),
     ).toBeInTheDocument();
   });
 
   it.each(['done', 'setup-failed'] as const)(
-    'shows the header with Focus on and a %s task',
+    'shows the nav with Focus on and a %s task',
     (status) => {
       setup({ status, terminals: [] });
       useStore.setState({ focus: true });
       render(<Shell />);
-      expect(document.querySelector('header.headerbar')).not.toBeNull();
       expect(
         screen.getByRole('navigation', { name: 'Tasks' }),
       ).toBeInTheDocument();
@@ -1294,7 +1286,6 @@ describe('tabs and focus', () => {
     useStore.setState({ focus: true });
     render(<Shell />);
     const tabs = await screen.findByRole('tablist', { name: 'Terminals' });
-    expect(document.querySelector('header.headerbar')).not.toBeNull();
     expect(tabs.querySelector('.tabrow-brand')).toBeNull();
     const row = tabs.closest<HTMLElement>('.taskbar')!;
     expect(
@@ -1412,6 +1403,7 @@ describe('the quiet task bar', () => {
         'Show docs',
         'Open in editor',
         'Open folder',
+        'Copy worktree path',
         'Focus mode',
         'Switch environment',
         'Scan for other repos',

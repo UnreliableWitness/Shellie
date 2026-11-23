@@ -106,7 +106,9 @@ describe('App', () => {
   it('loads repos and tasks on start and shows notices pushed from main', async () => {
     const { calls, emit } = installFakeApi();
     render(<App />);
-    expect(screen.getByText('Shellie')).toBeInTheDocument();
+    expect(
+      screen.getByRole('navigation', { name: 'Tasks' }),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(calls.map((c) => c.channel).sort()).toEqual([
         'attention:get',
@@ -210,7 +212,7 @@ describe('without a header bar', () => {
       selectedTaskId: null,
     });
     const { container, unmount } = render(<Shell />);
-    expect(screen.queryByRole('banner', { name: '' })).toBeNull();
+    expect(container.querySelector('header.headerbar')).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull();
     expect(container.querySelector('.titlestrip')).not.toBeNull();
     unmount();

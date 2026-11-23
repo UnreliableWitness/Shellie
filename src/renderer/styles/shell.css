@@ -1,4 +1,4 @@
-/* Shell: 40 px header, 240 px left nav (48 px rail), the page in the rest. */
+/* Shell: 240 px left nav (48 px rail), the page in the rest. */
 .app {
   height: 100%;
   display: flex;
@@ -17,17 +17,6 @@
   background: var(--bg-page);
   /* The Usage panel stacks on this width, not the viewport's (see usage.css). */
   container-type: inline-size;
-}
-
-.headerbar {
-  height: 40px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px 0 12px;
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--line);
 }
 
 /*
@@ -102,10 +91,6 @@
 :root[data-titlebar='inset'] .taskbar,
 :root[data-titlebar='overlay'] .taskbar {
   height: 40px;
-}
-.headerbar .btn-primary {
-  height: 28px;
-  margin-right: 4px;
 }
 .breadcrumb {
   display: flex;
