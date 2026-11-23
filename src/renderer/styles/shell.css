@@ -931,7 +931,8 @@ button.navmark:hover {
   margin: 4px 0;
   background: var(--line);
 }
-.taskmenu-item {
+/* Over .menu-item's column (app.css, loaded later). */
+.menu-item.taskmenu-item {
   flex-direction: row;
   align-items: center;
   gap: 12px;
