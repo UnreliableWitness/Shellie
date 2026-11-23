@@ -371,3 +371,48 @@
 .home-reading-title {
   font-weight: 500;
 }
+
+/* Places: one button per destination, with a line of state under its name. */
+.home-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+.home-place {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text);
+  text-align: left;
+}
+.home-place:hover {
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+}
+.home-place b {
+  font-size: 14px;
+}
+.home-place-waits {
+  color: var(--amber);
+}
+/* The quiet links under the bands. */
+.home-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 4px 2px 0;
+}
+.home-more button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+.home-more button:hover {
+  color: var(--text);
+}

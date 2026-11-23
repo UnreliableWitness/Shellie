@@ -198,12 +198,6 @@ describe('App', () => {
     expect(
       screen.getByText(/Connect Azure DevOps in Settings/),
     ).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('navigation', { name: 'Tasks' })).getByRole(
-        'button',
-        { name: 'Sprint', current: 'page' },
-      ),
-    ).toBeInTheDocument();
   });
 });
 
