@@ -1506,6 +1506,28 @@ describe('the quiet task bar', () => {
     ).toBeInTheDocument();
   });
 
+  it('closes the task menu when its task leaves the screen', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
+    expect(screen.getByRole('menu', { name: 'Task menu' })).toBeInTheDocument();
+    act(() => useStore.getState().go({ kind: 'home' }));
+    expect(screen.queryByRole('menu', { name: 'Task menu' })).toBeNull();
+  });
+
+  it('gives the focus back to the task menu button after the environment menu closes', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Switch environment' }),
+    );
+    await screen.findByRole('menu', { name: 'Secrets for this task' });
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Task menu' })).toHaveFocus();
+  });
+
   it('finishes from the task menu in Focus, where there is no nav', async () => {
     setup();
     useStore.setState({ focus: true });

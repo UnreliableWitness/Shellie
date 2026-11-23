@@ -1,5 +1,5 @@
 import { MoreHorizontal16Regular } from '@fluentui/react-icons';
-import { Fragment, useCallback, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useContributed } from '../commands/registry';
 import { shortcutLabel } from '../commands/shortcut';
 import type { Command } from '../commands/types';
@@ -27,7 +27,13 @@ const FOCUS_SHORTCUT = { code: 'KeyF', shift: true };
 export function TaskBarMenu({
   where,
   dots = {},
+  visible = true,
+  onOpen,
 }: {
+  /** False while its task is kept mounted behind another page: the menu closes, it is not that page's. */
+  visible?: boolean;
+  /** Called each time the menu opens. */
+  onOpen?: () => void;
   /** The lines of the block at the top: branch, git state, environment. */
   where: string[];
   /** Command ids that carry a "new" dot: a view with something unseen whose tab is closed. */
@@ -36,6 +42,14 @@ export function TaskBarMenu({
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
+  useEffect(() => {
+    if (!visible) setOpen(false);
+  }, [visible]);
+  // An item gives the focus back to the button before it runs, so what it opens can return it there.
+  const done = useCallback(() => {
+    setOpen(false);
+    anchor?.focus();
+  }, [anchor]);
   return (
     <>
       <button
@@ -46,12 +60,20 @@ export function TaskBarMenu({
         title="Task menu"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) onOpen?.();
+          setOpen(!open);
+        }}
       >
         <MoreHorizontal16Regular aria-hidden="true" />
       </button>
-      <PopupMenu label="Task menu" anchor={anchor} open={open} onClose={close}>
-        {open && <Items where={where} dots={dots} close={close} />}
+      <PopupMenu
+        label="Task menu"
+        anchor={anchor}
+        open={open && visible}
+        onClose={close}
+      >
+        {open && visible && <Items where={where} dots={dots} close={done} />}
       </PopupMenu>
     </>
   );
@@ -85,8 +107,8 @@ function Items({
   return (
     <>
       <div className="taskmenu-where mono small muted">
-        {where.map((line) => (
-          <div key={line}>{line}</div>
+        {where.map((line, i) => (
+          <div key={i}>{line}</div>
         ))}
       </div>
       {sections.map((commands) => (

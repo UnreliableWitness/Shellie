@@ -15,7 +15,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useContributeCommands, useContributed } from '../commands/registry';
+import {
+  useContributeCommands,
+  useContributedWith,
+} from '../commands/registry';
 import { shortcutLabel } from '../commands/shortcut';
 import type { Command, Shortcut } from '../commands/types';
 import { useShallow } from 'zustand/react/shallow';
@@ -548,11 +551,10 @@ export const TerminalTabs = memo(function TerminalTabs({
     ...shownTabs,
     ...(active in VIEW_TABS && !shownTabs.includes(active) ? [active] : []),
   ].filter((t) => canShow[t]);
-  const offered = useContributed();
-  const runs = useMemo(
-    () => (offers ? offered.filter((c) => c.id.startsWith('task.run.')) : []),
-    [offers, offered],
-  );
+  // Only the run entries, and only for the task on screen: every other offer leaves this row alone.
+  const runs = useContributedWith(offers ? 'task.run.' : null);
+  // How often the task menu was opened: the editors are looked for again each time (#94).
+  const [menuOpens, setMenuOpens] = useState(0);
   // Where the task is, for the top of the task menu.
   const where = noRepo
     ? ['No repo']
@@ -660,7 +662,11 @@ export const TerminalTabs = memo(function TerminalTabs({
                       ? `${v.label} (${shortcutLabel(v.shortcut, modKey)})`
                       : undefined
                   }
-                  onSelect={() => setTab(task.id, tab)}
+                  onSelect={() => {
+                    if (tab === BRAIN_TAB && active !== BRAIN_TAB)
+                      trackBrain('tab');
+                    setTab(task.id, tab);
+                  }}
                   onClose={() => closeTab(task.id, tab)}
                 >
                   {v.icon}
@@ -684,7 +690,18 @@ export const TerminalTabs = memo(function TerminalTabs({
         <div className="taskbar-right">
           <WorkspaceChips task={task} />
           <CostButton taskId={task.id} />
-          {ready && <TaskBarMenu where={where} dots={dots} />}
+          {/* Its place in the row is where the environment menu opens. */}
+          {ready && !noRepo && (
+            <EnvironmentChip task={task} offers={visible} headless />
+          )}
+          {ready && (
+            <TaskBarMenu
+              where={where}
+              dots={dots}
+              visible={visible}
+              onOpen={() => setMenuOpens((n) => n + 1)}
+            />
+          )}
         </div>
       </div>
       {/* No buttons of their own any more: they offer the task menu and the palette their commands. */}
@@ -700,9 +717,6 @@ export const TerminalTabs = memo(function TerminalTabs({
           onOpen={(def) => void open(def)}
         />
       ))}
-      {ready && !noRepo && (
-        <EnvironmentChip task={task} offers={visible} headless />
-      )}
       {ready && visible && !noRepo && (
         <CleanWorktreeButton task={task} headless />
       )}
@@ -712,6 +726,7 @@ export const TerminalTabs = memo(function TerminalTabs({
           disabled={task.worktreeMissing}
           visible={visible}
           headless
+          refresh={menuOpens}
         />
       )}
       {ready && !noRepo && <TaskMenu task={task} offers={visible} headless />}

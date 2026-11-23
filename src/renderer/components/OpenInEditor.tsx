@@ -25,7 +25,10 @@ export function OpenInEditor({
   disabled,
   visible = true,
   headless = false,
+  refresh = 0,
 }: {
+  /** Another number looks for the editors again: the task menu passes how often it was opened (#94). */
+  refresh?: number;
   /** No buttons: only offers its commands (the task menu and the palette show them). */
   headless?: boolean;
   taskId: string;
@@ -48,7 +51,7 @@ export function OpenInEditor({
     let live = true;
     void api()
       // Opening the menu detects again, so an editor installed since shows up (#94).
-      .invoke('editor:options', taskId, workspaceId, opens > 0)
+      .invoke('editor:options', taskId, workspaceId, opens + refresh > 0)
       .then((o) => {
         if (live) setOpts(o);
       })
@@ -56,7 +59,7 @@ export function OpenInEditor({
     return () => {
       live = false;
     };
-  }, [taskId, workspaceId, visible, opens]);
+  }, [taskId, workspaceId, visible, opens, refresh]);
 
   const open = (o: { editorId?: EditorId; solution?: string } = {}) => {
     setMenu(false);
@@ -75,39 +78,57 @@ export function OpenInEditor({
   };
 
   // The task's own row offers its folder and editors as commands; a repo's row in a multi-repo task does not.
-  const latest = useRef({ open, showFolder });
+  const settings = () => go({ kind: 'settings' });
+  const latest = useRef({ open, showFolder, settings });
   useEffect(() => {
-    latest.current = { open, showFolder };
+    latest.current = { open, showFolder, settings };
   });
   const offers = visible && !disabled && workspaceId === undefined;
-  const commands = useMemo<Command[]>(
-    () =>
-      !offers
-        ? []
-        : [
-            {
-              id: 'task.editor',
-              title: 'Open in editor',
-              group: 'task',
-              run: () => latest.current.open(),
-            },
-            ...(opts?.editors ?? [])
-              .filter((e) => e.id !== opts?.chosen)
-              .map((e): Command => ({
-                id: `task.editor.${e.id}`,
-                title: `Open in ${e.label}`,
-                group: 'task',
-                run: () => latest.current.open({ editorId: e.id }),
-              })),
-            {
-              id: 'task.folder',
-              title: 'Open folder',
-              group: 'task',
-              run: () => latest.current.showFolder(),
-            },
-          ],
-    [offers, opts],
-  );
+  const commands = useMemo<Command[]>(() => {
+    if (!offers) return [];
+    const others = (opts?.editors ?? []).filter((e) => e.id !== opts?.chosen);
+    // As in the menu: Visual Studio's solutions whenever it is installed and there is a choice of them (#94).
+    const slns =
+      opts?.editors.some((e) => e.id === 'visualstudio') &&
+      opts.solutions.length > 1
+        ? opts.solutions
+        : [];
+    return [
+      // Before the editors are known the command opens with whichever is chosen; with none, it says so.
+      opts && !opts.chosen
+        ? {
+            id: 'task.editor',
+            title: 'No editor found: choose one in Settings',
+            group: 'task',
+            run: () => latest.current.settings(),
+          }
+        : {
+            id: 'task.editor',
+            title: 'Open in editor',
+            group: 'task',
+            run: () => latest.current.open(),
+          },
+      ...others.map((e): Command => ({
+        id: `task.editor.${e.id}`,
+        title: `Open in ${e.label}`,
+        group: 'task',
+        run: () => latest.current.open({ editorId: e.id }),
+      })),
+      ...slns.map((sln, i): Command => ({
+        id: `task.editor.solution.${i}`,
+        title: `Open ${fileName(sln)}`,
+        group: 'task',
+        run: () =>
+          latest.current.open({ editorId: 'visualstudio', solution: sln }),
+      })),
+      {
+        id: 'task.folder',
+        title: 'Open folder',
+        group: 'task',
+        run: () => latest.current.showFolder(),
+      },
+    ];
+  }, [offers, opts]);
   useContributeCommands('task.editor', commands);
 
   const chosen = opts?.chosen ?? null;

@@ -30,6 +30,11 @@ with two or more repos). Everything else it showed is in the task menu, the pale
   the data they already loaded. The environment menu and its UAT / Production confirm open under the right end of
   the task bar.
 - A view with something new (Usage, Docs) shows its dot on the tab when open and on its task menu item when closed.
+- The editor commands cover what the editor menu did: the other editors, Visual Studio's solutions, and "No editor
+  found: choose one in Settings" when there is none. Opening the task menu looks for editors again (#94).
+- The tab row follows only the run entries of the task on screen (`useContributedWith`), so other offers (the nav,
+  another task, a changed file count) do not re-render the terminals. The task menu closes when its task leaves
+  the screen.
 
 ## Verified
 
@@ -44,5 +49,10 @@ with two or more repos). Everything else it showed is in the task menu, the pale
   Clean worktree, several repos). They are covered by tests only.
 - Usage's "new" dot no longer shows in the tab row while its tab is closed: it is on the task menu item, and the
   "..." button itself carries no dot (spec). So new usage is not visible until the menu is opened.
+- On a task without terminals the Usage tab cannot be closed (it is what shows); its close button does nothing.
+- When the worktree goes missing while Docs or Changes shows, the view is blank until another tab is chosen (as
+  before, but Usage is no longer in the row to click).
+- After a task menu item runs, focus is on the "..." button, not back in the terminal.
+- The task menu builds its own Focus mode item, a copy of the palette's.
 - "Add to brain" is still Show brain.
 - The palette's Switch environment opens the environment menu at the right end of the task bar, not by the palette.

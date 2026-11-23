@@ -54,6 +54,8 @@ export function CleanWorktreeButton({
   }, [check]);
 
   const clean = async () => {
+    // The command can be run again while the first clean is under way.
+    if (busy) return;
     setBusy(true);
     // Main sends secrets.worktreesCleaned.
     for (const repoId of repoIds)
