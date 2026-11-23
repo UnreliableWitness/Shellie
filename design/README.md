@@ -33,3 +33,14 @@ Visual language (sub-project 6 replaces the mockups' greys): space-black ground 
 `#0c0e14` panels), `#1d2230` hairlines, amber `#f0a443` as the one accent, cream `#f6e7c8` for highlights. Instrument
 motifs: the Mind dial mark, ring gauges, bracketed values, tick rules and small spaced-out labels. IBM Plex Sans for UI,
 JetBrains Mono for code, ids, paths and money, both bundled with the app (no font downloads).
+
+**Quiet shell** (2026-11-23), canvas "Shellie Quiet Shell": https://claude.ai/artifact/WwAVSXyXiLq69UNZcWeskr. Snapshot in
+`mockups/quiet-shell/`, same format, with its own `canvas.json`; spec `docs/superpowers/specs/2026-11-23-quiet-shell-design.md`.
+The mockups show layout and wording in the instrument palette above; the app was built with its own tokens.
+
+| File | Screen |
+|---|---|
+| `quiet-shell/Main.dc.html` | 1. Working: the nav (palette field, Home, tasks), the tab row with cost and the task menu, the terminal |
+| `quiet-shell/Palette.dc.html` | 2. The palette: this task's actions and the places, by typing |
+| `quiet-shell/Attention.dc.html` | 3. For you at the foot of the nav, a view opened as a tab, the task menu open |
+| `quiet-shell/Home.dc.html` | 4. Home as the hub: what waits, Places, quiet links |

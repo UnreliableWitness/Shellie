@@ -1,0 +1,18 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-23T12:00:00Z" },
+  "title": "Shellie Quiet Shell",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 800, "title": "1. Working: the terminal and little else", "expand": "fill" },
+    "Palette.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 800, "title": "2. The palette: everything by typing", "expand": "fill" },
+    "Attention.dc.html": { "x": 0, "y": 920, "w": 1280, "h": 800, "title": "3. Things appear when they need you, or when asked", "expand": "fill" },
+    "Home.dc.html": { "x": 1360, "y": 920, "w": 1280, "h": 800, "title": "4. Home as the hub", "expand": "fill" }
+  },
+  "order": ["Main.dc.html", "Palette.dc.html", "Attention.dc.html", "Home.dc.html"],
+  "notes": {
+    "heading": { "x": 0, "y": -300, "text": "Shellie: quiet shell", "kind": "title1", "maxW": 2640 }
+  },
+  "designSystems": []
+}
