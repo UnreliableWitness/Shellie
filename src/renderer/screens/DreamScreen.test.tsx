@@ -199,6 +199,15 @@ beforeEach(() => {
 });
 
 describe('DreamScreen', () => {
+  it('has a way back to Dreams in its head, now that no breadcrumb leads there', async () => {
+    fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Dreams' }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
+  });
+
   it('shows the head: title, meta, kept count and the two actions', async () => {
     fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);

@@ -17,6 +17,7 @@ Where its contents went:
   cost per tool is on the Usage tab.
 - **The environment crumb** for UAT and Production: the environment band, which was already there.
 - **Page names:** each page's own heading.
+- **The Dreams crumb above a dream result:** a "Dreams" back button in that page's head.
 
 ## The window's title bar
 
@@ -55,6 +56,5 @@ The header was also the title bar (#49). Now:
 - Dragging the window, the traffic lights themselves and full screen were not tried by hand: the check read styles
   and screenshots, which do not show the window frame.
 - On macOS a page without a `PageHeader` can be dragged only by the nav's top.
-- A dream result has no "Dreams" crumb to go back by; its own Back and the palette do that. The sprint's name is
-  no longer shown outside the Sprint page.
+- The sprint's name is no longer shown outside the Sprint page and Home's Sprint tile.
 - On Windows pages do not gain the header's 40 px: the strip takes it.
