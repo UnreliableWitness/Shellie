@@ -42,6 +42,23 @@
 .doc-md th {
   background: var(--bg-card);
 }
+.doc-md blockquote {
+  margin: 12px 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+.doc-md blockquote > :first-child {
+  margin-top: 0;
+}
+.doc-md blockquote > :last-child {
+  margin-bottom: 0;
+}
+.doc-md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 20px 0;
+}
 .doc-md img {
   max-width: 100%;
 }

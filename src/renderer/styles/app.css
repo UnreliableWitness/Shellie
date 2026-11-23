@@ -13,6 +13,15 @@
 * {
   box-sizing: border-box;
 }
+/*
+ * Every scrolling pane: a thumb in the theme's ink on a clear track, instead of the system's grey gutter. Colour
+ * only (inherited), so macOS keeps its overlay bars and Windows its width. Monaco and xterm draw their own.
+ */
+:root {
+  scrollbar-color: var(--scroll-thumb) transparent;
+  /* Native checkboxes, radios, sliders and progress bars in the accent, not the system's blue. */
+  accent-color: var(--accent);
+}
 html,
 body,
 #root {
@@ -199,7 +208,9 @@ h3 {
 }
 
 /* Fields */
-.field {
+/* `.input` is the same field under the name the Docs filter, the secret editor and the key/value rows use. */
+.field,
+.input {
   height: 32px;
   background: var(--bg-page);
   color: var(--text);
@@ -208,12 +219,18 @@ h3 {
   padding: 0 8px;
   min-width: 0;
 }
-.field:hover {
+.field:hover,
+.input:hover {
   border-color: var(--focus-ring);
 }
-.field:focus {
+.field:focus,
+.input:focus {
   outline: none;
   border-color: var(--accent);
+}
+.field::placeholder,
+.input::placeholder {
+  color: var(--muted);
 }
 select.field {
   background: var(--bg-card);
@@ -226,6 +243,32 @@ select.field {
 .checkbox input {
   accent-color: var(--accent);
   margin: 0;
+}
+/* A slider: the system's track is near white on the dark page, so both parts are drawn here. */
+input[type='range'] {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+input[type='range']:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 fieldset.group {
   border: 0;

@@ -78,7 +78,8 @@
   gap: 2px;
 }
 .review-scope [aria-pressed='true'] {
-  background: var(--bg-selected);
+  background: var(--accent-bg);
+  border-color: var(--accent);
 }
 .review-scope-hint {
   padding: 6px 12px;
