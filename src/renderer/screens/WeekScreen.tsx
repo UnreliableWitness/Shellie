@@ -2,11 +2,10 @@ import {
   ChevronLeft16Regular,
   ChevronRight16Regular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { errorMessage } from '../../shared/errors';
-import type { WeekTime } from '../../shared/time';
+import { useState } from 'react';
 import { api } from '../api';
 import { PageHeader } from '../components/ui';
+import { useLiveQuery } from '../hooks/useLiveQuery';
 
 /** Time changes arrive every ~10 s while an agent runs; the table refetches at most this often. */
 const TIME_REFRESH_MS = 5_000;
@@ -53,46 +52,16 @@ function Hours({ seconds }: { seconds: number }) {
   );
 }
 
-type Load =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ok'; week: WeekTime };
-
 /** Every task worked on in a week, across all projects, with its time per day: for filling in timesheets. */
 export function WeekScreen() {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
-  const [load, setLoad] = useState<Load>({ status: 'loading' });
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thisWeek = mondayOf(new Date());
-
-  const fetchWeek = useCallback(async () => {
-    try {
-      const week = await api().invoke('time:week', weekStart);
-      setLoad({ status: 'ok', week });
-    } catch (e) {
-      setLoad({ status: 'error', message: errorMessage(e) });
-    }
-  }, [weekStart]);
-
-  useEffect(() => {
-    setLoad({ status: 'loading' });
-    void fetchWeek();
-  }, [fetchWeek]);
-
-  useEffect(() => {
-    const off = api().on('time:changed', () => {
-      if (timer.current) return;
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        void fetchWeek();
-      }, TIME_REFRESH_MS);
-    });
-    return () => {
-      off();
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-    };
-  }, [fetchWeek]);
+  const { value: week, error } = useLiveQuery(
+    () => api().invoke('time:week', weekStart),
+    (refetch) => api().on('time:changed', refetch),
+    [weekStart],
+    { throttleMs: TIME_REFRESH_MS },
+  );
 
   const first = dateOf(weekStart);
   const last = dateOf(weekStart, 6);
@@ -137,13 +106,13 @@ export function WeekScreen() {
         }
       />
       <div className="week-body">
-        {load.status === 'loading' ? (
-          <div className="empty">Loading...</div>
-        ) : load.status === 'error' ? (
+        {!week && error ? (
           <div className="empty" role="alert">
-            <p>Could not load the week: {load.message}</p>
+            <p>Could not load the week</p>
           </div>
-        ) : load.week.rows.length === 0 ? (
+        ) : !week ? (
+          <div className="empty">Loading...</div>
+        ) : week.rows.length === 0 ? (
           <div className="empty">No time measured in this week.</div>
         ) : (
           <>
@@ -161,7 +130,7 @@ export function WeekScreen() {
                 </tr>
               </thead>
               <tbody>
-                {load.week.rows.map((r) => (
+                {week.rows.map((r) => (
                   <tr key={r.taskId}>
                     <td>
                       {r.workItem && (
@@ -182,10 +151,10 @@ export function WeekScreen() {
                 <tr>
                   <td>Total</td>
                   <td />
-                  {load.week.dayTotals.map((s, i) => (
+                  {week.dayTotals.map((s, i) => (
                     <Hours key={i} seconds={s} />
                   ))}
-                  <Hours seconds={load.week.totalSeconds} />
+                  <Hours seconds={week.totalSeconds} />
                 </tr>
               </tfoot>
             </table>
