@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { activeWorkspaces } from '../../../shared/workspaces';
 import type { TaskView } from '../../../shared/types';
 import { useLatest } from '../../hooks/useLatest';
@@ -8,20 +8,15 @@ import type { Command } from '../../commands/types';
 import { useStore } from '../../store';
 
 /**
- * In the task bar, only while this task's copied env files still hold keys Shellie now stores: rewrites them
- * without the keys and starts the task's secret tabs again. Nothing otherwise.
+ * Offers "Clean worktree" (the task menu and the palette list it), only while this task's copied env files still
+ * hold keys Shellie now stores: it rewrites them without the keys and starts the task's secret tabs again. Renders
+ * nothing.
  */
-export function CleanWorktreeButton({
-  task,
-  headless = false,
-}: {
-  task: TaskView;
-  /** No button: only offers its command (the task menu and the palette show it). */
-  headless?: boolean;
-}) {
+export function CleanWorktreeCommand({ task }: { task: TaskView }) {
   const notify = useStore((s) => s.notify);
   const [repoIds, setRepoIds] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  // A clean under way: the command can be run again before it ends.
+  const busy = useRef(false);
   const wanted = [...new Set(activeWorkspaces(task).map((w) => w.repoId))];
   const wantedKey = wanted.join(',');
 
@@ -55,18 +50,17 @@ export function CleanWorktreeButton({
   }, [check]);
 
   const clean = async () => {
-    // The command can be run again while the first clean is under way.
-    if (busy) return;
-    setBusy(true);
+    if (busy.current) return;
+    busy.current = true;
     // Main sends secrets.worktreesCleaned.
     for (const repoId of repoIds)
       await tryInvoke(
         () => api().invoke('secrets:cleanWorktrees', repoId, task.id),
         notify,
       );
-    setBusy(false);
+    busy.current = false;
   };
-  // Offered as a command for as long as the button shows.
+  // Offered for as long as there is something to clean.
   const latest = useLatest(clean);
   const shows = repoIds.length > 0;
   const commands = useMemo<Command[]>(
@@ -84,16 +78,5 @@ export function CleanWorktreeButton({
     [shows],
   );
   useContributeCommands('task.cleanWorktree', commands);
-  if (!shows || headless) return null;
-  return (
-    <button
-      type="button"
-      className="btn btn-sm"
-      disabled={busy}
-      title="Remove the stored keys from this worktree's copied env files and restart the tabs that use them"
-      onClick={() => void clean()}
-    >
-      Clean worktree
-    </button>
-  );
+  return null;
 }

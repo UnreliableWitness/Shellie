@@ -51,8 +51,6 @@ import type { Command } from '../commands/types';
 import { PALETTE_SHORTCUT } from '../hooks/useShortcuts';
 import { listTasks } from '../taskList';
 import { type TaskMark, rowTitle, taskMark } from '../taskMark';
-
-export { listTasks };
 import { track } from '../telemetry';
 import { clampNavWidth, NAV_WIDTH } from '../uiPrefs';
 import { attentionLabel } from './AttentionDot';
@@ -381,7 +379,6 @@ function NavItem({
   label,
   current,
   rail,
-  note,
   dot = false,
   onClick,
 }: {
@@ -391,28 +388,25 @@ function NavItem({
   rail: boolean;
   /** A dot whose reason the label already gives (a For you line). */
   dot?: boolean;
-  /** Something waits behind this item: a dot, with these words for a screen reader and the tooltip. */
-  note?: string;
   onClick: () => void;
 }) {
-  const named = note ? `${label}, ${note}` : label;
   return (
     <button
       type="button"
       className="navitem"
       aria-current={current ? 'page' : undefined}
-      aria-label={rail || note ? named : undefined}
-      title={rail ? named : note}
+      aria-label={rail ? label : undefined}
+      title={rail ? label : undefined}
       onClick={onClick}
     >
       {icon}
       {!rail && <span>{label}</span>}
-      {(note || dot) && <span className="navitem-dot" aria-hidden="true" />}
+      {dot && <span className="navitem-dot" aria-hidden="true" />}
     </button>
   );
 }
 
-/** The project tile; with more than one connection it opens a project switcher. */
+/** The project switcher: the active project's tile, which opens a menu of the projects. */
 function ProjectTile({ rail }: { rail: boolean }) {
   const connections = useStore((s) => s.connections);
   const connection = useStore(activeConnection);
@@ -463,26 +457,17 @@ function ProjectTile({ rail }: { rail: boolean }) {
     else if (e.key === 'End') move(-1);
     else if (e.key === 'Tab') setOpen(false);
   };
-  const name = connection?.project ?? 'No project';
+  // Rendered only with two or more projects, so there is always an active one.
+  const name = connection?.project ?? '';
   const avatar = (
     <span
       className="avatar"
       aria-hidden="true"
-      style={{
-        background: connection ? avatarColor(name) : 'var(--bg-selected)',
-        color: connection ? undefined : 'var(--muted)',
-      }}
+      style={{ background: avatarColor(name) }}
     >
-      {connection ? name.charAt(0).toUpperCase() : '?'}
+      {name.charAt(0).toUpperCase()}
     </span>
   );
-  if (connections.length < 2)
-    return (
-      <div className="projecttile" title={name}>
-        {avatar}
-        {!rail && <span className="projecttile-name">{name}</span>}
-      </div>
-    );
   return (
     <div className="projecttile-wrap" ref={wrap}>
       <button
@@ -745,7 +730,7 @@ export function TaskNav() {
                 onClick={() => go({ kind: 'dreams' })}
               />
             )}
-            <DreamNavStatus rail={rail} onlyRunning />
+            <DreamNavStatus rail={rail} />
             {reads.length > 0 && (
               <NavItem
                 icon={<Brain20Regular aria-hidden="true" />}

@@ -110,50 +110,6 @@
 :root[data-titlebar='overlay'] .taskbar {
   height: 40px;
 }
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
-.crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: var(--radius);
-  background: none;
-  color: var(--muted);
-  min-width: 0;
-}
-.crumb:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.crumb[aria-current='page'] {
-  color: var(--text);
-}
-.crumb-home {
-  color: var(--text);
-  font-weight: 600;
-}
-.crumb-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.crumb-sep {
-  color: var(--disabled);
-  font-size: 16px;
-}
-.crumb-task {
-  position: relative;
-  display: inline-flex;
-  min-width: 0;
-}
 .mindmark {
   flex: none;
 }
@@ -743,21 +699,13 @@ button.navmark:hover {
   color: var(--muted);
   white-space: nowrap;
 }
-.tabrow-run {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
-}
 .chip {
   font-family: var(--font-code);
   font-weight: 400;
   font-size: 12px;
   height: 22px;
 }
-/* The commands never shrink: the tab row gives way (it clips), and the queries below drop the least needed text first. */
+/* The commands never shrink: the tab row gives way (it clips). */
 .taskbar-right {
   flex: 1 0 auto;
   display: flex;
@@ -765,53 +713,15 @@ button.navmark:hover {
   justify-content: flex-end;
   gap: 4px;
 }
-.taskbar-right > :not(.taskbar-git) {
+.taskbar-right > * {
   flex: none;
 }
 .taskbar-right .ibtn {
   width: 28px;
   height: 28px;
 }
-.taskbar-git {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-  margin-right: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.taskbar-git svg {
-  flex: none;
-}
-.taskbar-branch {
-  min-width: 0;
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .taskbar-cost {
   color: var(--text);
-}
-@container (max-width: 900px) {
-  .taskbar-branch {
-    display: none;
-  }
-  .taskbar .open-in-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-@container (max-width: 760px) {
-  .taskbar-git {
-    display: none;
-  }
 }
 .task-layer {
   flex: 1;

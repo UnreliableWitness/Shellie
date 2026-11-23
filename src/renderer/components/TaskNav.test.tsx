@@ -18,7 +18,8 @@ import { withResults } from '../test-helpers/dreamFixtures';
 import { installFakeApi } from '../test-helpers/fakeApi';
 import { readingBrain, readingRead } from '../test-helpers/readingFixture';
 import { type PrPulse, type PulseSnapshot } from '../../shared/pulse';
-import { listTasks, TaskNav } from './TaskNav';
+import { listTasks } from '../taskList';
+import { TaskNav } from './TaskNav';
 
 const repos: Repo[] = [
   {

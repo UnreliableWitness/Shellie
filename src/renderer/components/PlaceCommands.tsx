@@ -3,7 +3,7 @@ import { useContributeCommands } from '../commands/registry';
 import type { BrainView } from '../../shared/brain';
 import type { Command } from '../commands/types';
 import { useProjectBrains } from '../hooks/useProjectBrains';
-import { activeConnection, useStore } from '../store';
+import { useStore } from '../store';
 import { waitingCount } from './dreams/dreamWords';
 import { useDreamsState } from './dreams/useDreams';
 

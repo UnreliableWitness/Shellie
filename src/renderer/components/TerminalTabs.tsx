@@ -55,7 +55,7 @@ import {
   repoColor,
   type WorkspaceView,
 } from '../../shared/workspaces';
-import { OpenInEditor } from './OpenInEditor';
+import { EditorCommands } from './EditorCommands';
 import { ChangesTab } from './review/ChangesTab';
 import { DiscardBar } from './DiscardBar';
 import { NEW_TERMINALS, NewTerminalMenu } from './NewTerminalMenu';
@@ -64,11 +64,11 @@ import { MindMark, modKey } from './ui';
 import { UsagePanel } from './UsagePanel';
 import { EnvironmentBand } from './secrets/EnvironmentBand';
 import { RunApproveBar } from './secrets/RunApproveBar';
-import { EnvironmentChip } from './secrets/EnvironmentChip';
-import { CleanWorktreeButton } from './secrets/CleanWorktreeButton';
+import { EnvironmentMenu } from './secrets/EnvironmentMenu';
+import { CleanWorktreeCommand } from './secrets/CleanWorktreeCommand';
 import { ENVIRONMENT_LABEL } from '../../shared/secrets';
 import { TaskBarMenu } from './TaskBarMenu';
-import { TaskMenu, WorkspaceChips } from './WorkspaceChips';
+import { WorkspaceCommands, WorkspaceChips } from './WorkspaceChips';
 
 const SCAN_MS = 120000;
 const MARKDOWN = /\.(md|markdown)$/i;
@@ -730,9 +730,7 @@ export const TerminalTabs = memo(function TerminalTabs({
           <WorkspaceChips task={task} />
           <CostButton taskId={task.id} />
           {/* Its place in the row is where the environment menu opens. */}
-          {ready && !noRepo && (
-            <EnvironmentChip task={task} offers={visible} headless />
-          )}
+          {ready && !noRepo && <EnvironmentMenu task={task} offers={visible} />}
           {ready && (
             <TaskBarMenu
               where={where}
@@ -763,19 +761,16 @@ export const TerminalTabs = memo(function TerminalTabs({
           onOpen={(def) => void open(def)}
         />
       ))}
-      {ready && visible && !noRepo && (
-        <CleanWorktreeButton task={task} headless />
-      )}
+      {ready && visible && !noRepo && <CleanWorktreeCommand task={task} />}
       {ready && (
-        <OpenInEditor
+        <EditorCommands
           taskId={task.id}
           disabled={task.worktreeMissing}
           visible={visible}
-          headless
           refresh={menuOpens}
         />
       )}
-      {ready && !noRepo && <TaskMenu task={task} offers={visible} headless />}
+      {ready && !noRepo && <WorkspaceCommands task={task} offers={visible} />}
       {discarding && ready && <DiscardBar task={task} />}
       {task.mainCheckoutEdits.map((e) => (
         <div key={e.repoPath} role="status" className="ws-warning">

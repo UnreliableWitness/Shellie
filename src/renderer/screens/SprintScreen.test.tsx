@@ -159,7 +159,6 @@ beforeEach(() => {
     notices: [],
     selectedTaskId: null,
     previous: null,
-    sprintName: null,
     screen: { kind: 'sprint' },
   });
 });

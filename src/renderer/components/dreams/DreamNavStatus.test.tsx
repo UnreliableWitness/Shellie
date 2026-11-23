@@ -23,43 +23,32 @@ const running = (): DreamView =>
   });
 
 describe('DreamNavStatus', () => {
-  it('shows nothing in the nav unless a dream runs, when asked for only that', async () => {
-    const { calls } = installFakeApi({ 'dream:get': () => viewOf() });
-    activateProject();
-    const { unmount } = render(<DreamNavStatus rail={false} onlyRunning />);
-    await waitFor(() =>
-      expect(calls.some((c) => c.channel === 'dream:get')).toBe(true),
-    );
-    expect(screen.queryByRole('button')).toBeNull();
-    unmount();
-  });
-
   it.each([
-    [viewOf({ settings: defaultDreaming() }), 'Dreams off'],
-    [viewOf(), 'Dreams on · zai/glm-5.3'],
+    ['off', viewOf({ settings: defaultDreaming() })],
+    ['on', viewOf()],
     [
+      'on without a limit',
       viewOf({ settings: settings({ limit: { kind: 'none' } }) }),
-      'Dreams on · no limit · zai/glm-5.3',
     ],
-  ])('shows the line %#', async (view, text) => {
-    installFakeApi({ 'dream:get': () => view });
-    render(<DreamNavStatus rail={false} />);
-    expect(await screen.findByText(text)).toBeInTheDocument();
-  });
-
-  it('opens Dreams on click', async () => {
-    installFakeApi({ 'dream:get': () => viewOf() });
-    render(<DreamNavStatus rail={false} />);
-    await userEvent.click(await screen.findByRole('button'));
-    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
-  });
+  ])(
+    'shows nothing while dreaming is %s and no dream runs',
+    async (_state, view) => {
+      const { calls } = installFakeApi({ 'dream:get': () => view });
+      activateProject();
+      const { container } = render(<DreamNavStatus rail={false} />);
+      await waitFor(() =>
+        expect(calls.some((c) => c.channel === 'dream:get')).toBe(true),
+      );
+      expect(container).toBeEmptyDOMElement();
+    },
+  );
 
   it('is an icon button named by the full line in the rail', async () => {
-    installFakeApi({ 'dream:get': () => viewOf() });
+    installFakeApi({ 'dream:get': () => running() });
     render(<DreamNavStatus rail />);
-    expect(
-      await screen.findByRole('button', { name: 'Dreams on · zai/glm-5.3' }),
-    ).toBeInTheDocument();
+    const line = await screen.findByRole('button', { name: /^Dreaming about/ });
+    expect(line).toHaveAttribute('title', line.getAttribute('aria-label'));
+    expect(line).toHaveTextContent('');
   });
 
   it('while running opens the panel with the step, and Stop this dream calls dream:stop', async () => {
@@ -115,8 +104,8 @@ describe('DreamNavStatus', () => {
 });
 
 describe('dreams of another project', () => {
-  it('shows nothing of a dream that runs for another project: the plain line, no panel, no Stop', async () => {
-    installFakeApi({
+  it('shows nothing of a dream that runs for another project', async () => {
+    const { calls } = installFakeApi({
       'dream:get': () =>
         viewOf({
           settings: settings({ enabled: true }),
@@ -124,14 +113,11 @@ describe('dreams of another project', () => {
           running: null,
         }),
     });
-    render(<DreamNavStatus rail={false} />);
-    const line = await screen.findByRole('button', { name: /Dreams on/ });
-    expect(line).not.toHaveAttribute('aria-haspopup');
-    await userEvent.click(line);
-    expect(
-      screen.queryByRole('button', { name: 'Stop this dream' }),
-    ).toBeNull();
-    expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
+    const { container } = render(<DreamNavStatus rail={false} />);
+    await waitFor(() =>
+      expect(calls.some((c) => c.channel === 'dream:get')).toBe(true),
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('without a project there is no status line', async () => {
