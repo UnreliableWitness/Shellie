@@ -26,6 +26,8 @@ import {
 
 /** How long a hidden terminal gathers output before writing it in one go (#236). */
 const HIDDEN_WRITE_MS = 100;
+/** How long the terminal's box must keep its size and scale before the terminal is refitted to it. */
+const REFIT_SETTLE_MS = 100;
 
 export function TerminalView({
   terminalId,
@@ -225,20 +227,32 @@ export function TerminalView({
         .invoke('terminals:write', terminalId, data)
         .catch(() => undefined);
     });
-    const observer = new ResizeObserver(() => sendSize.current());
-    // Moved to a screen with other scaling: the WebGL renderer is dropped and loaded again after the refit, instead of
-    // rebuilding its canvas and glyph atlas mid-move, which froze the window on Windows (#315).
+    // A window that is moved or resized reports a new size every frame, and a screen with other scaling a new scale
+    // factor. Each refit resizes the pty, and a full-screen program (OpenCode) then repaints its whole screen, so
+    // following every frame floods the terminal until the window hangs. The terminal is refitted once, when the
+    // layout has been still for REFIT_SETTLE_MS.
+    let settle: ReturnType<typeof setTimeout> | null = null;
+    let reloadWebgl = false;
+    const refitSoon = () => {
+      if (settle) clearTimeout(settle);
+      settle = setTimeout(() => {
+        settle = null;
+        // The renderer first: its cells are not the size of the DOM renderer's, and the fit counts in cells.
+        const reloaded = reloadWebgl && shown && opened && !webgl;
+        reloadWebgl = false;
+        if (reloaded) webgl = loadWebgl(t);
+        sendSize.current();
+        if (reloaded) t.refresh(0, t.rows - 1);
+      }, REFIT_SETTLE_MS);
+    };
+    const observer = new ResizeObserver(refitSoon);
+    // Moved to a screen with other scaling: the WebGL renderer is dropped at once and loaded again after the refit,
+    // instead of rebuilding its canvas and glyph atlas for every change of the move (#315).
     const offScale = onScaleChange(() => {
       webgl?.dispose();
       webgl = null;
-      requestAnimationFrame(() => {
-        if (!live) return;
-        sendSize.current();
-        if (shown && opened && !webgl) {
-          webgl = loadWebgl(t);
-          t.refresh(0, t.rows - 1);
-        }
-      });
+      reloadWebgl = true;
+      refitSoon();
     });
     // Open once the ConPTY build is known. Output written before that is buffered by xterm.
     void windowsBuild().then((build) => {
@@ -263,6 +277,7 @@ export function TerminalView({
     return () => {
       live = false;
       if (pendingTimer) clearTimeout(pendingTimer);
+      if (settle) clearTimeout(settle);
       observer.disconnect();
       offScale();
       onData.dispose();

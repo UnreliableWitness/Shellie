@@ -19,6 +19,7 @@ import {
   powerMonitor,
   protocol,
   safeStorage,
+  screen,
   shell,
 } from 'electron';
 import started from 'electron-squirrel-startup';
@@ -173,6 +174,7 @@ import {
 } from './main/diagnostics/stallWatchdog';
 import { startLocalCrashDumps } from './main/diagnostics/crashDumps';
 import { rendererMemoryMb, startHealthReports } from './main/telemetry/health';
+import { RecentCount } from './main/telemetry/recent';
 import { reportLoggedErrors } from './main/telemetry/loggedErrors';
 import { hello, sendRecords } from './main/costServer/client';
 import { phoneFiles, type PhoneFiles } from './main/reader/build';
@@ -242,12 +244,20 @@ function sampleRendererHeap(): void {
       rendererHeapPending = false;
     });
 }
-/** What was open and how large the renderer was, for `window.unresponsive` and `window.responsive`. */
+/** What led up to a hang: the window's resizes and scale changes and the terminals' output, over the last 30 seconds. */
+const RECENT_MS = 30_000;
+const windowResizes = new RecentCount(RECENT_MS);
+const scaleChanges = new RecentCount(RECENT_MS);
+const terminalOutput = new RecentCount(RECENT_MS);
+/** What was open, how large the renderer was and what led up to it, for `window.unresponsive` and `window.responsive`. */
 function hangMeasurements(): Record<string, number> {
   try {
     return {
       rendererMemoryMb: rendererMemoryMb(app.getAppMetrics()),
       terminals: terminals.ids().length,
+      windowResizes30s: windowResizes.total(),
+      scaleChanges30s: scaleChanges.total(),
+      terminalOutputKb30s: Math.round(terminalOutput.total() / 1024),
       ...(rendererHeap === undefined
         ? {}
         : { rendererHeapMb: Math.round(rendererHeap / 1024 / 1024) }),
@@ -476,6 +486,22 @@ function createWindow(): BrowserWindow {
     onWindowFocus(false);
     if (mainWindow === win) mainWindow = null;
   });
+  // Counted for `window.unresponsive`: a hang while the window is moved between screens says what the window did.
+  let scale = 0;
+  const noteScale = () => {
+    try {
+      const now = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+      if (scale && now !== scale) scaleChanges.add();
+      scale = now;
+    } catch {
+      // Counting never gets in the way of the window.
+    }
+  };
+  win.on('resize', () => {
+    windowResizes.add();
+    noteScale();
+  });
+  win.on('move', noteScale);
   // A hung renderer (or a main process too busy to answer it): sent at once, in case the user kills the app.
   let hungAt: number | null = null;
   win.on('unresponsive', () => {
@@ -1543,6 +1569,7 @@ async function boot(): Promise<void> {
     );
     terminals.on('exit', () => void copilot.poll());
     terminals.on('data', (id) => agentTimer.output(id));
+    terminals.on('data', (_id, data) => terminalOutput.add(data.length));
     terminals.on('exit', (id) => agentTimer.close(id));
     terminals.on('data', (id, data) => attention.data(id, data));
     terminals.on('exit', (id) => attention.exit(id));
