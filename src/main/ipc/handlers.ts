@@ -137,7 +137,13 @@ import { stateCategory } from '../../shared/home';
 import { billableEurByTask, homeStats } from '../home/homeStats';
 import { DocsWatcher } from '../docs/DocsWatcher';
 import { GitDirWatcher } from '../review/GitDirWatcher';
-import { type AgentsDetected, apmTargetsOfList } from '../../shared/agents';
+import {
+  AGENT_IDS,
+  type AgentId,
+  type AgentsDetected,
+  apmTargetsOfList,
+} from '../../shared/agents';
+import { tabsWithAgent } from '../../shared/terminals';
 import {
   detectAgents,
   opencodeModels,
@@ -1913,19 +1919,24 @@ export function createHandlers(s: Services): Handlers {
         await stopTab(def.id);
   };
 
+  /** A new tab of an agent; Claude's gets a session id of its own, so Restart resumes it. */
+  const agentTerminal = (agent: AgentId): TerminalDef =>
+    agent === 'claude'
+      ? {
+          id: randomUUID(),
+          kind: 'claude',
+          label: 'Claude Code',
+          sessionId: randomUUID(),
+        }
+      : agent === 'copilot'
+        ? { id: randomUUID(), kind: 'copilot', label: 'Copilot CLI' }
+        : { id: randomUUID(), kind: 'opencode', label: 'OpenCode' };
+
   const initialTerminals = (task: Task): TerminalDef[] => {
     const defs: TerminalDef[] = [];
-    if (task.setup.startClaude)
-      defs.push({
-        id: randomUUID(),
-        kind: 'claude',
-        label: 'Claude Code',
-        sessionId: randomUUID(),
-      });
-    if (task.setup.openCopilot)
-      defs.push({ id: randomUUID(), kind: 'copilot', label: 'Copilot CLI' });
-    if (task.setup.openOpencode)
-      defs.push({ id: randomUUID(), kind: 'opencode', label: 'OpenCode' });
+    if (task.setup.startClaude) defs.push(agentTerminal('claude'));
+    if (task.setup.openCopilot) defs.push(agentTerminal('copilot'));
+    if (task.setup.openOpencode) defs.push(agentTerminal('opencode'));
     if (task.setup.openShell)
       defs.push({
         id: randomUUID(),
@@ -1973,15 +1984,20 @@ export function createHandlers(s: Services): Handlers {
   /**
    * The tabs a reopened task gets back: those it had at Finish, or for tasks finished before that was kept, the
    * ones setup opens. A Claude tab without a session id continues the folder's latest session when there is one.
+   * A Reopen that named an agent (`reopenAgent`) gets that agent in place of the agent tabs the task had.
    */
   const restoredTerminals = (task: Task): TerminalDef[] => {
-    const defs =
+    const had =
       task.closedTerminals.length > 0
         ? withoutSetupTab(task.closedTerminals)
         : initialTerminals(task).map((d): TerminalDef => {
             const { sessionId: _, ...rest } = d as TerminalDef;
             return rest;
           });
+    const agent = task.reopenAgent;
+    const defs = agent
+      ? tabsWithAgent(had, agent, () => agentTerminal(agent))
+      : had;
     return defs.map((d) =>
       d.kind === 'claude' &&
       !d.sessionId &&
@@ -2046,6 +2062,7 @@ export function createHandlers(s: Services): Handlers {
   const endReopen = (taskId: string, patch: Partial<Task>) =>
     mutateTask(taskId, (t) => {
       Object.assign(t, patch, { reopen: null });
+      delete t.reopenAgent;
       for (const w of t.extraWorkspaces) w.reopen = null;
     });
 
@@ -4101,7 +4118,9 @@ export function createHandlers(s: Services): Handlers {
       prDrafts.skip(taskId, workspaceId),
     'prDrafts:edit': async (taskId, workspaceId, text) =>
       prDrafts.edit(taskId, workspaceId, text),
-    'tasks:reopen': async (taskId) => {
+    'tasks:reopen': async (taskId, agent) => {
+      if (agent !== undefined && !AGENT_IDS.includes(agent))
+        throw new Error(`Unknown agent: ${String(agent)}`);
       claim(taskId, ['done'], 'reopen');
       let setup = false;
       try {
@@ -4152,10 +4171,13 @@ export function createHandlers(s: Services): Handlers {
           await patchTask(taskId, { pendingCleanup: [] });
         if (restores.size === 0) {
           // Every worktree was kept: back to ready with the tabs it had.
-          const defs =
+          const had =
             task.terminals.length > 0
               ? withoutSetupTab(task.terminals)
               : restoredTerminals(task);
+          const defs = agent
+            ? tabsWithAgent(had, agent, () => agentTerminal(agent))
+            : had;
           await patchTask(taskId, {
             status: 'ready',
             finishedAt: null,
@@ -4171,6 +4193,8 @@ export function createHandlers(s: Services): Handlers {
           t.status = 'setting-up';
           t.terminals = [];
           t.openPeriods = withOpenPeriod(task);
+          if (agent) t.reopenAgent = agent;
+          else delete t.reopenAgent;
           t.reopen = restores.get(HOME_ID) ?? null;
           for (const w of t.extraWorkspaces)
             w.reopen = restores.get(w.id) ?? null;

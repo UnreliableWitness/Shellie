@@ -246,6 +246,33 @@ describe('DoneTaskPage', () => {
     expect(useStore.getState().selectedTaskId).toBe(task.id);
   });
 
+  it('Reopen with an agent picked from the menu asks for that agent', async () => {
+    const found = { found: true, version: '1', path: '/x' };
+    const { calls } = installFakeApi({
+      'workItems:get': () => null,
+      'tasks:reopen': () => ({ setup: false }),
+      'agents:detect': () => ({
+        checkedAt: '',
+        agents: { claude: found, copilot: found, opencode: found },
+        shell: { label: 'zsh' },
+      }),
+    });
+    useStore.setState({ tasks: [task], screen: { kind: 'task' } });
+    render(<DoneTaskPage task={task} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: /^Choose the agent for/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'GitHub Copilot CLI' }),
+    );
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'tasks:reopen')?.args).toEqual([
+        task.id,
+        'copilot',
+      ]),
+    );
+  });
+
   it('shows why Reopen failed and stays on the Done page', async () => {
     installFakeApi({
       'workItems:get': () => null,

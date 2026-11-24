@@ -861,6 +861,51 @@ describe('handlers: reopen a finished task', () => {
     await hx.terminals.killAllForTask(hx.t.id);
   });
 
+  it('reopens a kept task with a chosen agent in place of its agent tabs', async () => {
+    const hx = await finished({ removeWorktree: false, deleteBranch: false });
+    expect(await hx.h['tasks:reopen'](hx.t.id, 'copilot')).toEqual({
+      setup: false,
+    });
+    const task = hx.store.state.tasks[0];
+    expect(task.terminals.map((d) => d.kind)).toEqual(['copilot', 'shell']);
+    // The shell is the tab it had; nothing of the choice stays on the task.
+    const shell = hx.before.find((d) => d.kind === 'shell')!;
+    expect(task.terminals[1].id).toBe(shell.id);
+    expect(task.reopenAgent).toBeUndefined();
+    await hx.terminals.killAllForTask(hx.t.id);
+  });
+
+  it('reopens with the agent the task already had by resuming its tab', async () => {
+    const hx = await finished({ removeWorktree: false, deleteBranch: false });
+    await hx.h['tasks:reopen'](hx.t.id, 'claude');
+    expect(hx.store.state.tasks[0].terminals.map((d) => d.id)).toEqual(
+      hx.before.map((d) => d.id),
+    );
+    await hx.terminals.killAllForTask(hx.t.id);
+  });
+
+  it('a reopen that makes the worktree again opens the chosen agent after setup', async () => {
+    const hx = await finished({ removeWorktree: true, deleteBranch: false });
+    const done = hx.setupDone();
+    expect(await hx.h['tasks:reopen'](hx.t.id, 'opencode')).toEqual({
+      setup: true,
+    });
+    await done;
+    const task = hx.store.state.tasks[0];
+    expect(task.status).toBe('ready');
+    expect(task.terminals.map((d) => d.kind)).toEqual(['opencode', 'shell']);
+    expect(task.reopenAgent).toBeUndefined();
+    await hx.terminals.killAllForTask(hx.t.id);
+  });
+
+  it('refuses a reopen with an agent it does not know', async () => {
+    const hx = await finished({ removeWorktree: false, deleteBranch: false });
+    await expect(
+      hx.h['tasks:reopen'](hx.t.id, 'gemini' as never),
+    ).rejects.toThrow('Unknown agent');
+    expect(hx.store.state.tasks[0].status).toBe('done');
+  });
+
   it('reopening a task from before time tracking keeps creation to finish as its first period', async () => {
     const hx = await finished({ removeWorktree: false, deleteBranch: false });
     await hx.store.update((st) => {

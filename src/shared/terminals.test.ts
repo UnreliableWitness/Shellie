@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { setupTabsFrom } from './terminals';
+import { setupTabsFrom, tabsWithAgent } from './terminals';
 import { AppSettingsSchema, defaultSettings } from './usage';
 
 describe('default terminals', () => {
@@ -47,5 +47,37 @@ describe('default terminals', () => {
       openCopilot: false,
       openOpencode: true,
     });
+  });
+});
+
+describe('tabsWithAgent', () => {
+  const tab = (kind: string, id = kind) => ({ kind, id });
+  const make = () => tab('copilot', 'new');
+
+  it('puts the agent where the first agent tab was and drops the other agents', () => {
+    expect(
+      tabsWithAgent(
+        [tab('run'), tab('claude'), tab('opencode'), tab('shell')],
+        'copilot',
+        make,
+      ),
+    ).toEqual([tab('run'), tab('copilot', 'new'), tab('shell')]);
+  });
+
+  it("keeps the agent's own tabs, so their sessions resume", () => {
+    expect(
+      tabsWithAgent(
+        [tab('claude', 'a'), tab('copilot', 'mine'), tab('shell')],
+        'copilot',
+        make,
+      ),
+    ).toEqual([tab('copilot', 'mine'), tab('shell')]);
+  });
+
+  it('puts the agent first when the task had no agent tab', () => {
+    expect(tabsWithAgent([tab('shell')], 'copilot', make)).toEqual([
+      tab('copilot', 'new'),
+      tab('shell'),
+    ]);
   });
 });
