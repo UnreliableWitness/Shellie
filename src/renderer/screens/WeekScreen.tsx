@@ -8,6 +8,7 @@ import { api } from '../api';
 import { PageHeader } from '../components/ui';
 import { useLiveQuery } from '../hooks/useLiveQuery';
 import { useStore } from '../store';
+import { readWeekAsWorked, writeWeekAsWorked } from '../uiPrefs';
 import { dayBlocks, scaleHours, taskSlots } from '../weekColumns';
 
 /** Time changes arrive every ~10 s while an agent runs; the page refetches at most this often. */
@@ -90,20 +91,23 @@ function TaskName({ row }: { row: WeekRow }) {
 
 /**
  * The week as seven columns, Monday to Sunday, on a scale of hours worked (not of the clock): each day's work is
- * stacked from the top as cards, one per task per stretch, in the order worked and as tall as the time it took.
- * The scale is ten hours, or as many as the longest day needs. Under the columns, the tasks with their week totals.
+ * stacked from the top as cards, as tall as the time it took: one per task with its day's total, or (`asWorked`)
+ * one per task per stretch, in the order worked. The scale is ten hours, or as many as the longest day needs.
+ * Under the columns, the tasks with their week totals.
  */
 function WeekColumns({
   weekStart,
   rows,
   dayTotals,
+  asWorked,
 }: {
   weekStart: string;
   rows: WeekRow[];
   dayTotals: number[];
+  asWorked: boolean;
 }) {
   const notify = useStore((s) => s.notify);
-  const blocks = useMemo(() => dayBlocks(rows), [rows]);
+  const blocks = useMemo(() => dayBlocks(rows, !asWorked), [rows, asWorked]);
   const slots = useMemo(() => taskSlots(rows), [rows]);
   const byId = useMemo(() => new Map(rows.map((r) => [r.taskId, r])), [rows]);
   const scale = scaleHours(dayTotals);
@@ -275,6 +279,11 @@ function WeekColumns({
 export function WeekScreen() {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const thisWeek = mondayOf(new Date());
+  const [asWorked, setAsWorked] = useState(readWeekAsWorked);
+  const show = (worked: boolean) => {
+    setAsWorked(worked);
+    writeWeekAsWorked(worked);
+  };
   const { value: week, error } = useLiveQuery(
     () => api().invoke('time:week', weekStart),
     (refetch) => api().on('time:changed', refetch),
@@ -303,6 +312,24 @@ export function WeekScreen() {
         inline
         commands={
           <>
+            <div className="week-mode" role="group" aria-label="Cards">
+              <button
+                type="button"
+                aria-pressed={!asWorked}
+                title="One card per task a day, with the day's total"
+                onClick={() => show(false)}
+              >
+                Per task
+              </button>
+              <button
+                type="button"
+                aria-pressed={asWorked}
+                title="A card for each stretch of work, in the order worked"
+                onClick={() => show(true)}
+              >
+                As worked
+              </button>
+            </div>
             <button
               type="button"
               className="btn"
@@ -348,6 +375,7 @@ export function WeekScreen() {
               weekStart={weekStart}
               rows={week.rows}
               dayTotals={week.dayTotals}
+              asWorked={asWorked}
             />
             <p className="muted week-note">
               Time in Shellie and agent time, overlap counted once, in hours
