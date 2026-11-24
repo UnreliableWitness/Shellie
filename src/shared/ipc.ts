@@ -84,7 +84,7 @@ import type {
   Workspace,
 } from './types';
 import type { AppSettings, Rate, ReceiverStatus, TaskUsage } from './usage';
-import type { AgentsDetected } from './agents';
+import type { AgentId, AgentsDetected } from './agents';
 import type { RepoInspection } from './repoInspection';
 import type { EditorChoice, EditorId, EditorOptions } from './editors';
 import type { RendererTelemetry } from './telemetry';
@@ -474,8 +474,14 @@ export type Channels = {
     args: [taskId: string];
     result: FinishRowResult[] | null;
   };
-  /** Brings a finished task back: `setup` is true when its worktree is being made again (Setup page). */
-  'tasks:reopen': { args: [taskId: string]; result: { setup: boolean } };
+  /**
+   * Brings a finished task back: `setup` is true when its worktree is being made again (Setup page). An `agent`
+   * makes that agent the task's only agent tab instead of the agent tabs it had.
+   */
+  'tasks:reopen': {
+    args: [taskId: string, agent?: AgentId];
+    result: { setup: boolean };
+  };
   /** Retries a done task's leftover worktree folders now (#115); true when nothing is left. */
   'tasks:retryCleanup': { args: [taskId: string]; result: boolean };
   'tasks:finish': {

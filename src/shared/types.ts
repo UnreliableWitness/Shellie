@@ -199,6 +199,8 @@ export const TaskSchema = z.object({
   pullRequest: PullRequestRefSchema.nullable().default(null),
   /** The terminal tabs when the task was finished, so Reopen can bring them (and Claude's sessions) back. */
   closedTerminals: z.array(TerminalDefSchema).default([]),
+  /** The agent a running Reopen was asked for instead of the task's own agent tabs; absent otherwise. */
+  reopenAgent: z.enum(['claude', 'copilot', 'opencode']).optional(),
   /**
    * Set while a finished task's worktree is being made again. `from` is where the branch comes back from:
    * null when the local branch still exists, else a ref or commit to make it from.

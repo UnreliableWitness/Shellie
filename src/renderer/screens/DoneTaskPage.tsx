@@ -1,5 +1,6 @@
 import { ArrowUndo16Regular } from '@fluentui/react-icons';
 import { type ReactNode, useEffect, useState } from 'react';
+import type { AgentId } from '../../shared/agents';
 import type { PullRequestRef, TaskSummary, TaskView } from '../../shared/types';
 import {
   hasNoRepo,
@@ -7,6 +8,7 @@ import {
   type WorkspaceView,
 } from '../../shared/workspaces';
 import { api, tryInvoke } from '../api';
+import { StartAgentMenu } from '../components/StartAgentMenu';
 import { TaskTypeIcon } from '../components/TaskTypeIcon';
 import { PageHeader, StateDot } from '../components/ui';
 import { envTextClass } from '../components/secrets/environment';
@@ -238,10 +240,13 @@ export function DoneTaskPage({ task }: { task: TaskView }) {
   const select = useStore((s) => s.select);
   const openTask = useStore((s) => s.openTask);
   const [reopening, setReopening] = useState(false);
-  const reopen = async () => {
+  const reopen = async (agent?: AgentId) => {
     setReopening(true);
     const r = await tryInvoke(
-      () => api().invoke('tasks:reopen', task.id),
+      () =>
+        agent
+          ? api().invoke('tasks:reopen', task.id, agent)
+          : api().invoke('tasks:reopen', task.id),
       notify,
     );
     setReopening(false);
@@ -303,16 +308,25 @@ export function DoneTaskPage({ task }: { task: TaskView }) {
         commands={
           // A task without a repo has no worktree or branch to come back to (#225).
           !noRepo && (
-            <button
-              type="button"
+            <StartAgentMenu
+              label={wi?.title ?? task.name}
               className="btn"
               disabled={reopening}
-              title="Back to work on this task: its worktree, terminals and Claude sessions"
-              onClick={() => void reopen()}
+              verb="Reopen"
+              markDefaults={false}
+              onPick={(agent) => void reopen(agent)}
             >
-              <ArrowUndo16Regular aria-hidden="true" />
-              {reopening ? 'Reopening' : 'Reopen'}
-            </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={reopening}
+                title="Back to work on this task: its worktree, terminals and Claude sessions"
+                onClick={() => void reopen()}
+              >
+                <ArrowUndo16Regular aria-hidden="true" />
+                {reopening ? 'Reopening' : 'Reopen'}
+              </button>
+            </StartAgentMenu>
           )
         }
         after={

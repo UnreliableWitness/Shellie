@@ -14,6 +14,8 @@ export function StartAgentMenu({
   label,
   className,
   disabled,
+  verb = 'Start',
+  markDefaults = true,
   onPick,
   children,
 }: {
@@ -21,6 +23,10 @@ export function StartAgentMenu({
   label: string;
   className: string;
   disabled?: boolean;
+  /** What the main button does, for the chevron's hint and the menu's name: Start, or Reopen. */
+  verb?: string;
+  /** Marks the agents ticked in Settings as "(default)": what the main button starts. Off where it does not. */
+  markDefaults?: boolean;
   onPick: (agent: AgentId) => void;
   /** The Start button. */
   children: ReactNode;
@@ -62,7 +68,7 @@ export function StartAgentMenu({
         type="button"
         className={className}
         aria-label={`Choose the agent for ${label}`}
-        title="Start with another agent"
+        title={`${verb} with another agent`}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
@@ -70,7 +76,12 @@ export function StartAgentMenu({
       >
         <ChevronDown12Regular aria-hidden="true" />
       </button>
-      <PopupMenu label="Start with" anchor={anchor} open={open} onClose={close}>
+      <PopupMenu
+        label={`${verb} with`}
+        anchor={anchor}
+        open={open}
+        onClose={close}
+      >
         {found !== null &&
           agents.map((id) => (
             <button
@@ -85,7 +96,7 @@ export function StartAgentMenu({
               }}
             >
               <span className="menu-title">
-                {defaults?.[id]
+                {markDefaults && defaults?.[id]
                   ? `${AGENT_LABELS[id]} (default)`
                   : AGENT_LABELS[id]}
               </span>
