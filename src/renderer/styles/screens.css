@@ -627,6 +627,39 @@
   font-size: 16px;
   font-weight: 600;
 }
+/* Per task or as worked: two joined buttons, the chosen one washed in the accent. */
+.week-mode {
+  display: inline-flex;
+  margin-right: 8px;
+}
+.week-mode button {
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--text-muted);
+  font: inherit;
+  height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.week-mode button:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.week-mode button:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-left: -1px;
+}
+.week-mode button[aria-pressed='true'] {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--text);
+  position: relative;
+}
+.week-mode button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  position: relative;
+}
 .week-chart {
   background: var(--bg-card);
   border: 1px solid var(--line);

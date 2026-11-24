@@ -105,6 +105,68 @@ describe('WeekScreen', () => {
     expect(screen.getByText('3.25 h')).toBeInTheDocument();
   });
 
+  it("shows one card per task a day with the day's total, and each stretch on its own when asked", async () => {
+    localStorage.clear();
+    const base = week('2026-11-16');
+    const interleaved = (): WeekTime => ({
+      ...base,
+      rows: [
+        {
+          ...base.rows[0],
+          perDay: [9000, 2700, 0, 0, 0, 0, 0],
+          stretches: [
+            [
+              { start: 100, seconds: 7200 },
+              { start: 300, seconds: 1800 },
+            ],
+            ...base.rows[0].stretches.slice(1),
+          ],
+          totalSeconds: 11_700,
+        },
+        {
+          ...base.rows[1],
+          perDay: [3600, 1800, 0, 0, 0, 0, 0],
+          stretches: [
+            [{ start: 200, seconds: 3600 }],
+            ...base.rows[1].stretches.slice(1),
+          ],
+          totalSeconds: 5400,
+        },
+      ],
+      dayTotals: [12_600, 4500, 0, 0, 0, 0, 0],
+      totalSeconds: 17_100,
+    });
+    installFakeApi({ 'time:week': interleaved });
+    const user = userEvent.setup();
+    const { unmount } = render(<WeekScreen />);
+    await screen.findByRole('group', { name: /^Monday 16/ });
+    expect(screen.getByRole('button', { name: 'Per task' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(cards(/^Monday 16/)).toEqual([
+      '2.5 h12 Save a delivery address',
+      '1 hSpike',
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'As worked' }));
+    expect(cards(/^Monday 16/)).toEqual([
+      '2 h12 Save a delivery address',
+      '1 hSpike',
+      '0.5 h12 Save a delivery address',
+    ]);
+
+    // The choice is remembered for the next time the page opens.
+    unmount();
+    render(<WeekScreen />);
+    await screen.findByRole('group', { name: /^Monday 16/ });
+    expect(screen.getByRole('button', { name: 'As worked' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    localStorage.clear();
+  });
+
   it('makes a card as tall as its time, on a scale of ten hours', async () => {
     installFakeApi({ 'time:week': week });
     render(<WeekScreen />);

@@ -39,6 +39,20 @@ describe('dayBlocks', () => {
     ]);
   });
 
+  it("makes one block per task of all its day's stretches, where it was first worked on", () => {
+    const rows = [
+      row('a', [
+        [0, 900, 3600],
+        [0, 1500, 1800],
+      ]),
+      row('b', [[0, 1200, 600]]),
+    ];
+    expect(dayBlocks(rows, true)[0]).toEqual([
+      { taskId: 'a', seconds: 5400 },
+      { taskId: 'b', seconds: 600 },
+    ]);
+  });
+
   it('joins stretches of one task that follow each other into one block', () => {
     const rows = [
       row('a', [

@@ -11,9 +11,10 @@ const BASE_HOURS = 10;
 
 /**
  * Per day, Monday to Sunday, the blocks of its column from the top: every task's stretches in the order they began,
- * a task's stretches that follow each other joined into one block.
+ * a task's stretches that follow each other joined into one block. With `perTask`, all of a task's stretches of a
+ * day are one block, where the task was first worked on that day: one block per task, its day's total.
  */
-export function dayBlocks(rows: WeekRow[]): DayBlock[][] {
+export function dayBlocks(rows: WeekRow[], perTask = false): DayBlock[][] {
   return Array.from({ length: 7 }, (_, day) => {
     const stretches = rows
       .flatMap((r) =>
@@ -22,7 +23,9 @@ export function dayBlocks(rows: WeekRow[]): DayBlock[][] {
       .sort((a, b) => a.start - b.start || (a.taskId < b.taskId ? -1 : 1));
     const blocks: DayBlock[] = [];
     for (const s of stretches) {
-      const last = blocks[blocks.length - 1];
+      const last = perTask
+        ? blocks.find((b) => b.taskId === s.taskId)
+        : blocks[blocks.length - 1];
       if (last?.taskId === s.taskId) last.seconds += s.seconds;
       else blocks.push({ taskId: s.taskId, seconds: s.seconds });
     }
