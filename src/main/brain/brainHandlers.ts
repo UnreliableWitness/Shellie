@@ -73,7 +73,12 @@ import { readBook } from './book';
 import { PENDING } from './bookPass';
 import { listConflicts, readConflicts, saveConflicts } from './conflicts';
 import { pageRows, relevantPages, searchBrain, taskWords } from './browse';
-import { brainForTask, withoutContext } from './context';
+import {
+  connectionProject,
+  contextBrain,
+  taskBrainOf,
+  withoutContext,
+} from './context';
 import { withBrainGit } from './gitMutex';
 import { brainHealth } from './health';
 import { rebuildIndex } from './indexPage';
@@ -537,14 +542,7 @@ export function createBrainHandlers(
     if (!sharing) throw new Error('This brain is not shared');
     return { ...b, sharing };
   };
-  /** A connection that was removed has no project. */
-  const connectionProject = (id: string): string | null => {
-    try {
-      return d.connections.get(id).project;
-    } catch {
-      return null;
-    }
-  };
+  const projectOf = (id: string) => connectionProject(d.connections, id);
   /** Health costs git calls, a ledger scan and reading every source: only for `brain:get`. */
   const view = async (b: Brain, withHealth = false): Promise<BrainView> => {
     const jobs = d.runner.jobs(b.id);
@@ -696,22 +694,17 @@ export function createBrainHandlers(
     'brain:get': async (id) => view(brainOf(id), true),
     'brain:forTask': async (taskId) => {
       const task = d.task(taskId);
-      const connectionId = taskConnectionId(task, d.repos());
-      if (!connectionId) return null;
-      // The work item's own project; the connection's for refs from before it was stored and without a work item.
-      const project = task.workItem?.project ?? connectionProject(connectionId);
-      const b = brainForTask(d.brains, connectionId, project);
+      const b = taskBrainOf(
+        d.brains,
+        taskConnectionId(task, d.repos()),
+        task.workItem?.project,
+        projectOf,
+      );
       return b ? view(b) : null;
     },
-    'brain:forNewTask': async (connectionId, project) => {
-      if (!connectionId) return null;
-      const b = brainForTask(
-        d.brains,
-        connectionId,
-        project || connectionProject(connectionId),
-      );
-      return b?.options.contextInTaskMd ? b.name : null;
-    },
+    'brain:forNewTask': async (connectionId, project) =>
+      contextBrain(taskBrainOf(d.brains, connectionId, project, projectOf))
+        ?.name ?? null,
     'brain:create': async (input) => {
       const name = input.name.trim();
       if (!name) throw new Error('A brain needs a name');

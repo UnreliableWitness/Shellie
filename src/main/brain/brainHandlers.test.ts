@@ -544,6 +544,14 @@ describe('brain handlers', () => {
     expect((await h['brain:forTask']('t2'))?.id).toBe(d.id);
   });
 
+  it("forTask uses the connection's project for a work item stored with an empty project (#370)", async () => {
+    tasks = [
+      { id: 't5', connectionId: 'c1', repoId: 'r1', workItem: { project: '' } },
+    ] as unknown as Task[];
+    const d = await h['brain:create']({ ...NEW, project: 'Default' });
+    expect((await h['brain:forTask']('t5'))?.id).toBe(d.id);
+  });
+
   it("forNewTask names the brain a task being made gets, the connection's without a project", async () => {
     expect(await h['brain:forNewTask']('c1', null)).toBeNull();
     await h['brain:create'](NEW);

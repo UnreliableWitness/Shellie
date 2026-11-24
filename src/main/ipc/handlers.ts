@@ -238,7 +238,9 @@ import { mirrorAuthFor } from '../brain/wikiAccess';
 import {
   appendContext,
   appendLog,
-  brainForTask,
+  connectionProject,
+  contextBrain,
+  taskBrainOf,
   withoutContext,
   closeLine,
   contextSection,
@@ -1022,28 +1024,25 @@ export function createHandlers(s: Services): Handlers {
    * The brain a new task's summary names: by the work item's project when it is known, else the connection's
    * (no network).
    */
+  const projectOf = (id: string) => connectionProject(s.connections, id);
   const summaryBrain = (
     connectionId: string | null,
     workItem: WorkItemRef | null,
-  ): string | null => {
-    const project =
-      workItem?.project ||
-      (connectionId ? s.connections.find(connectionId)?.project : null);
-    const b = brainForTask(brain.store, connectionId, project ?? null);
-    return b?.options.contextInTaskMd ? b.name : null;
-  };
+  ): string | null =>
+    contextBrain(
+      taskBrainOf(brain.store, connectionId, workItem?.project, projectOf),
+    )?.name ?? null;
   /**
    * The brain of a task's work item project (else its connection's: for refs from before the project was stored,
    * and for a task without a work item, #225 #359), from what is stored; no network.
    */
-  const taskBrain = (task: Task): Brain | null => {
-    const connectionId = taskConnectionId(task, s.repos.list());
-    if (!connectionId) return null;
-    const project =
-      task.workItem?.project || s.connections.find(connectionId)?.project;
-    if (project === undefined) return null;
-    return brainForTask(brain.store, connectionId, project);
-  };
+  const taskBrain = (task: Task): Brain | null =>
+    taskBrainOf(
+      brain.store,
+      taskConnectionId(task, s.repos.list()),
+      task.workItem?.project,
+      projectOf,
+    );
 
   /** Finished tasks' worktree folders a process still held at Finish, retried until they are gone (#115). */
   const cleanup = new WorktreeCleanup({
@@ -2131,15 +2130,15 @@ export function createHandlers(s: Services): Handlers {
       await mutateTask(task.id, (t) => {
         if (t.workItem) t.workItem.project = learned;
       });
-    const project =
-      (typeof learned === 'string' && learned) ||
-      task.workItem?.project ||
-      s.connections.find(connectionId)?.project;
-    if (project === undefined) return undefined;
-    const b = brainForTask(brain.store, connectionId, project);
-    return b?.options.contextInTaskMd
-      ? { id: b.id, name: b.name, path: b.path }
-      : undefined;
+    const b = contextBrain(
+      taskBrainOf(
+        brain.store,
+        connectionId,
+        (typeof learned === 'string' && learned) || task.workItem?.project,
+        projectOf,
+      ),
+    );
+    return b ? { id: b.id, name: b.name, path: b.path } : undefined;
   };
 
   const opencodeSessionTurns = (task: Task) =>
