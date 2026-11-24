@@ -86,6 +86,9 @@ describe('gitOperation', () => {
     );
     expect(gitOperation(['stash', 'push', '-u'])).toBe('stash push');
     expect(gitOperation(['branch', '-D', 'customer-x'])).toBe('branch');
+    expect(gitOperation(['branch', '--show-current'])).toBe(
+      'branch show-current',
+    );
     expect(gitOperation(['/weird/path'])).toBe('other');
     expect(gitOperation([])).toBe('other');
   });

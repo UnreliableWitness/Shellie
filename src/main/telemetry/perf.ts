@@ -101,6 +101,9 @@ export function gitOperation(args: readonly string[]): string {
   const sub = args[i];
   if (sub === undefined || !word.test(sub)) return 'other';
   const next = args[i + 1];
+  // Asked of any folder a task or a session log names, gone or not; kept apart from `branch -D`.
+  if (sub === 'branch' && next === '--show-current')
+    return 'branch show-current';
   return WITH_ACTION.has(sub) && next !== undefined && word.test(next)
     ? `${sub} ${next}`
     : sub;

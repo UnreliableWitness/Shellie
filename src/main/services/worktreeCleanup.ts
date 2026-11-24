@@ -213,6 +213,10 @@ export class WorktreeCleanup {
         error: left.error,
         code: left.code,
       };
+      // Local log only: tells a held folder (EBUSY, in-use) from other failures when the counts look odd.
+      console.warn(
+        `[cleanup] attempt ${next.attempts} left ${p.worktreePath} (${next.code}): ${next.error}`,
+      );
       if (!p.notified && this.now() - Date.parse(p.since) >= GIVE_UP_MS) {
         next.notified = true;
         this.d.event(

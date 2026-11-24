@@ -28,10 +28,29 @@ import {
 } from '../test-helpers/gitRepo';
 import { GitAuthError, GitClient, GitError } from './GitClient';
 import { extraHeaderEnv } from './gitAuth';
+import { NoopTelemetry } from '../telemetry/AppInsightsClient';
+import { perf } from '../telemetry/perf';
 
 const client = new GitClient();
 
 afterAll(cleanupTempRepos);
+
+/** The `git.ms` samples recorded since the last call, as [op, outcome, count]. */
+function gitSamples(): [string, string, number][] {
+  const out: [string, string, number][] = [];
+  perf.report({
+    ...NoopTelemetry,
+    metric: (name, _value, props, measurements) => {
+      if (name === 'git.ms')
+        out.push([
+          String(props!.op),
+          String(props!.outcome),
+          measurements!.count,
+        ]);
+    },
+  });
+  return out;
+}
 
 describe('GitClient', () => {
   it('returns toplevel and commonDir in native path form', async () => {
@@ -105,6 +124,35 @@ describe('GitClient', () => {
     );
     expect(waits).toEqual([]);
     spy.mockRestore();
+  });
+
+  it('worktreeRemove counts one git.ms sample per call, not per retry', async () => {
+    const c = new GitClient(async () => undefined);
+    let calls = 0;
+    const spy = vi.spyOn(c, 'run').mockImplementation(async (_cwd, args) => {
+      if (++calls <= 2)
+        throw new GitError(args, 'error: Permission denied', 128);
+      return '';
+    });
+    gitSamples();
+    await c.worktreeRemove('/repo', '/w', true);
+    expect(gitSamples()).toEqual([['worktree remove', 'ok', 1]]);
+
+    spy.mockImplementation(async (_cwd, args) => {
+      throw new GitError(args, 'error: Permission denied', 128);
+    });
+    await expect(c.worktreeRemove('/repo', '/w', true)).rejects.toThrow();
+    expect(gitSamples()).toEqual([['worktree remove', 'failed', 1]]);
+    spy.mockRestore();
+  });
+
+  it('currentBranch on a missing folder records no failed git.ms', async () => {
+    const repo = makeRepo();
+    gitSamples();
+    expect(await client.currentBranch(path.join(repo, 'gone'))).toBeNull();
+    expect(gitSamples()).toEqual([['branch show-current', 'ok', 1]]);
+    expect(await client.currentBranch(repo)).toBe('main');
+    expect(gitSamples()).toEqual([['branch show-current', 'ok', 1]]);
   });
 
   it('finds the toplevel and returns null outside a repo', async () => {
