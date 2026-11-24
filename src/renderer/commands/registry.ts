@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store';
-import { focusCommand, globalCommands } from './global';
+import { focusCommand, globalCommands, placeShortcutCommands } from './global';
 import { type Command, GROUP_ORDER } from './types';
 
 /**
@@ -88,11 +88,17 @@ export function useContributed(): Command[] {
 }
 
 /**
- * The commands a key press can run: what components offer, then Focus mode. The shortcut handler asks on every key
- * with the mod key down (every Ctrl+C in a shell), so this builds nothing: no task list, no places.
+ * The commands a key press can run: what components offer, then the places with a key and Focus mode. The first
+ * with the pressed key runs, so a task's own command wins from a place (its Brain tab from the project's brain).
+ * The shortcut handler asks on every key with the mod key down (every Ctrl+C in a shell), so this builds nothing:
+ * no task list, and the places are a fixed list.
  */
 export function shortcutCommands(): Command[] {
-  return [...contributed(), focusCommand()].filter((c) => c.shortcut);
+  return [
+    ...contributed().filter((c) => c.shortcut),
+    ...placeShortcutCommands(),
+    focusCommand(),
+  ];
 }
 
 /** Every command there is right now: the store's own, then what components offer, by group. */

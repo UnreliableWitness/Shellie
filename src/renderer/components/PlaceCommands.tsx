@@ -1,5 +1,9 @@
 import { useMemo } from 'react';
-import { useContributeCommands } from '../commands/registry';
+import { BRAIN_SHORTCUT, DREAMS_SHORTCUT } from '../commands/global';
+import {
+  useContributeCommands,
+  useContributedWith,
+} from '../commands/registry';
 import type { BrainView } from '../../shared/brain';
 import type { Command } from '../commands/types';
 import { useProjectBrains } from '../hooks/useProjectBrains';
@@ -20,6 +24,8 @@ export function usePlaceCommands(
   const { view, project } = useDreamsState();
   const dreams = project !== null;
   const waiting = view ? waitingCount(view) : 0;
+  // A task with a Brain tab has the brain's key for that tab; the place shows no key it would not get.
+  const taskHasKey = useContributedWith('task.brain').length > 0;
   const brainKey = brains
     .map((b) => `${b.id}\n${b.name}\n${toRead.has(b.id) ? 1 : 0}`)
     .join('\n');
@@ -31,6 +37,7 @@ export function usePlaceCommands(
               id: 'goto.dreams',
               title: 'Dreams',
               group: 'goto' as const,
+              shortcut: DREAMS_SHORTCUT,
               ...(waiting > 0
                 ? { note: `${waiting} to review`, noteTone: 'accent' as const }
                 : {}),
@@ -42,6 +49,8 @@ export function usePlaceCommands(
         id: `goto.brain.${i}`,
         title: `Brain: ${brain.name}`,
         group: 'goto',
+        // The first brain has the key: a project seldom has a second.
+        ...(i === 0 && !taskHasKey ? { shortcut: BRAIN_SHORTCUT } : {}),
         ...(toRead.has(brain.id)
           ? { note: 'something to read', noteTone: 'accent' as const }
           : {}),
@@ -49,7 +58,7 @@ export function usePlaceCommands(
       })),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- brainKey stands for the brains and what waits in them
-    [brainKey, dreams, waiting, go],
+    [brainKey, dreams, waiting, taskHasKey, go],
   );
   useContributeCommands('places', commands);
 }

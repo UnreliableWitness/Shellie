@@ -85,6 +85,38 @@ describe('useShortcuts', () => {
     expect(useStore.getState().focus).toBe(true);
   });
 
+  it.each([
+    ['KeyH', 'home'],
+    ['KeyS', 'sprint'],
+    ['KeyW', 'week'],
+    ['KeyN', 'new-task'],
+  ])('goes to a place on Mod+Shift+%s (%s)', (code, kind) => {
+    useStore.setState({ screen: { kind: 'settings' } });
+    render(<Host />);
+    expect(press(code, true)).toBe(true);
+    expect(useStore.getState().screen).toEqual({ kind });
+    // Without Shift the key is the shell's: Ctrl+S, Ctrl+W.
+    useStore.setState({ screen: { kind: 'settings' } });
+    expect(press(code)).toBe(false);
+    expect(useStore.getState().screen).toEqual({ kind: 'settings' });
+  });
+
+  it("lets a task's command win from a place with the same key", () => {
+    const run = vi.fn();
+    const tab: Command = {
+      id: 'task.something',
+      title: 'Something of the task',
+      group: 'task',
+      shortcut: { code: 'KeyS', shift: true },
+      run,
+    };
+    useStore.setState({ screen: { kind: 'task' } });
+    render(<Host commands={[tab]} />);
+    press('KeyS', true);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().screen).toEqual({ kind: 'task' });
+  });
+
   it('runs no other shortcut while the palette is open', () => {
     const run = vi.fn();
     const one: Command = {

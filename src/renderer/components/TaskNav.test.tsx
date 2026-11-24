@@ -448,6 +448,11 @@ describe('brains', () => {
       ['goto.brain.0', 'Brain: Acme', 'something to read', 'accent'],
       ['goto.brain.1', 'Brain: Globex', undefined, undefined],
     ]);
+    // The first brain has the key (Mod+Shift+B), unless a task's Brain tab has it.
+    expect(brains.map((c) => c.shortcut)).toEqual([
+      { code: 'KeyB', shift: true },
+      undefined,
+    ]);
     act(() => brains[1].run());
     expect(useStore.getState().screen).toEqual({
       kind: 'brain',

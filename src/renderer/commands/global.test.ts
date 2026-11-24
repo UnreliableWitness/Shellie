@@ -33,6 +33,29 @@ describe('globalCommands', () => {
     });
   });
 
+  it('gives the big places a key with Shift, each its own', () => {
+    const keyed = commands().filter((c) => c.shortcut);
+    expect(
+      Object.fromEntries(keyed.map((c) => [c.id, c.shortcut!.code])),
+    ).toEqual({
+      'goto.home': 'KeyH',
+      'goto.sprint': 'KeyS',
+      'goto.week': 'KeyW',
+      'goto.newTask': 'KeyN',
+      'app.focus': 'KeyF',
+    });
+    expect(keyed.every((c) => c.shortcut!.shift)).toBe(true);
+    // Not the keys taken elsewhere: the palette (P), a task's Docs (D), Brain and the project's brain (B), Dreams (M).
+    const codes = [
+      ...keyed.map((c) => c.shortcut!.code),
+      'KeyP',
+      'KeyD',
+      'KeyB',
+      'KeyM',
+    ];
+    expect(new Set(codes).size).toBe(codes.length);
+  });
+
   it('offers the places', () => {
     expect(ids()).toEqual(
       expect.arrayContaining([
