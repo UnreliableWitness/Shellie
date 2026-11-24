@@ -156,7 +156,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 - GitHub release notes requests (What's new) as dependencies, target `api.github.com`.
 - Timing summaries, every 10 minutes and on quit, as aggregated metrics (one item per operation and outcome, holding the count, sum, min and max of its samples; in Logs, `customMetrics` columns `valueCount`, `valueSum`, `valueMin`, `valueMax`). Properties `op` and `outcome` (`ok`, `failed`, `timeout`):
   - `ipc.ms`: every call from the renderer to main, `op` the channel (`tasks:create`, `review:diff`, ...).
-  - `git.ms`: every git command Shellie runs, `op` the subcommand and, for `worktree`, `stash`, `remote`, `submodule`, `lfs` and `notes`, its action (`status`, `worktree add`); never arguments, paths or refs.
+  - `git.ms`: every git command Shellie runs, `op` the subcommand and, for `worktree`, `stash`, `remote`, `submodule`, `lfs` and `notes`, its action (`status`, `worktree add`); never arguments, paths or refs. `branch --show-current` is `branch show-current` (since 2026-11-24; before, it was counted in `branch` with `branch -D`), and it is `ok` when the folder it asks about is gone. `worktree remove` is one sample per removal, however many times it retried a folder Windows still held (before 2026-11-24, one per try: up to eight failures for one held folder).
   - `usage.receive.ms`: every post to the usage receiver from Claude Code (and the attention and `shellie run` routes), `op` the route (`/v1/logs`, `/v1/metrics`, `/v1/attention`, `/v1/run`, `other`); a refused post is `failed` with the status in `op` (`/v1/logs 400`): AI usage that was not priced.
 
 ## Never sent

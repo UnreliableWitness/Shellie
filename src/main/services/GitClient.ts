@@ -167,8 +167,14 @@ export class GitClient {
   async run(
     cwd: string,
     args: string[],
-    opts: { timeoutMs?: number; env?: Record<string, string> } = {},
+    opts: {
+      timeoutMs?: number;
+      env?: Record<string, string>;
+      /** false: the caller records `git.ms` itself, once for all its attempts. */
+      timed?: boolean;
+    } = {},
   ): Promise<string> {
+    if (opts.timed === false) return this.runGit(cwd, args, opts);
     return perf.time('git.ms', gitOperation(args), () =>
       this.runGit(cwd, args, opts),
     );
@@ -391,8 +397,17 @@ export class GitClient {
 
   /** The checked-out branch, or null when detached. */
   async currentBranch(cwd: string): Promise<string | null> {
+    const args = ['branch', '--show-current'];
     try {
-      return (await this.run(cwd, ['branch', '--show-current'])).trim() || null;
+      return await perf.time('git.ms', gitOperation(args), async () => {
+        try {
+          return (await this.run(cwd, args, { timed: false })).trim() || null;
+        } catch (e) {
+          // A worktree that is gone has no branch; that answer is not a failure of git.
+          if (!(await pathExists(cwd))) return null;
+          throw e;
+        }
+      });
     } catch {
       return null;
     }
@@ -497,20 +512,23 @@ export class GitClient {
     force: boolean,
   ): Promise<void> {
     // Just-killed terminals can hold the folder for a moment on Windows; retry those failures only.
+    // One `git.ms` sample for all the tries: a held folder is one failure, not eight.
+    const args = [
+      '-c',
+      'core.longpaths=true',
+      'worktree',
+      'remove',
+      ...(force ? ['--force'] : []),
+      worktreePath,
+    ];
     try {
-      await withRetry(
-        () =>
-          this.run(cwd, [
-            '-c',
-            'core.longpaths=true',
-            'worktree',
-            'remove',
-            ...(force ? ['--force'] : []),
-            worktreePath,
-          ]),
-        (e) => e instanceof GitError && FOLDER_IN_USE.test(e.stderr),
-        this.wait,
-        REMOVE_WAITS,
+      await perf.time('git.ms', gitOperation(args), () =>
+        withRetry(
+          () => this.run(cwd, args, { timed: false }),
+          (e) => e instanceof GitError && FOLDER_IN_USE.test(e.stderr),
+          this.wait,
+          REMOVE_WAITS,
+        ),
       );
     } catch (e) {
       if (!force || !(await this.isOwnLeftover(cwd, worktreePath))) throw e;
