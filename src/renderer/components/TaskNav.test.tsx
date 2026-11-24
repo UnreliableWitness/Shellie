@@ -1068,21 +1068,26 @@ describe('TaskNav collapsed rail', () => {
   it('keeps the icons in the list order', async () => {
     await setup();
     expect(
-      [...document.querySelectorAll('.railrow[aria-label^="9t"]')].map((e) =>
-        e.getAttribute('aria-label'),
+      [...document.querySelectorAll('.railrow[aria-label^="9t"]')].map(
+        (e) => e.getAttribute('aria-label')!.split(',')[0],
       ),
     ).toEqual([1, 2, 3, 4, 5, 6].map((n) => `9t${n} Title${n}`));
   });
 
-  it('titles an icon with the id and title, plus what its mark means', async () => {
+  it('names an icon by the id and title plus what its mark means, and shows the same in its fly-out', async () => {
     await setup();
-    expect(icon(/Title1/).getAttribute('title')).toMatch(
-      /^9t1 Title1 · CI failing: PR build/,
+    expect(icon(/Title1/).getAttribute('aria-label')).toMatch(
+      /^9t1 Title1, CI failing: PR build/,
     );
-    expect(icon(/Title5/).getAttribute('title')).toBe(
-      '9t5 Title5 · Merged: finish this task',
+    expect(icon(/Title5/)).toHaveAccessibleName(
+      '9t5 Title5, Merged: finish this task',
     );
-    expect(icon(/Title6/).getAttribute('title')).toBe('9t6 Title6');
+    expect(icon(/Title6/)).toHaveAccessibleName('9t6 Title6');
+    expect(icon(/Title5/)).not.toHaveAttribute('title');
+    await userEvent.hover(icon(/Title5/));
+    expect(document.querySelector('.rail-fly')).toHaveTextContent(
+      '9t5Title5Merged: finish this task',
+    );
   });
 
   it('shows a setting-up task its own dot, not a stale pulse, and a failed setup in red', async () => {
@@ -1106,9 +1111,10 @@ describe('TaskNav collapsed rail', () => {
     expect(document.querySelector('.rail-dot-amber')).toBeNull();
   });
 
-  it('shows one Finish and one Discard for a current task that is merged', async () => {
+  it('shows one Finish and one Discard in the fly-out of a current task that is merged', async () => {
     await setup('t5');
-    expect(screen.getAllByRole('button', { name: /Finish/ })).toHaveLength(1);
+    await userEvent.hover(icon(/Title5/));
+    expect(screen.getAllByRole('button', { name: /^Finish/ })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: /Discard/ })).toHaveLength(1);
   });
 });
@@ -1481,7 +1487,7 @@ describe('TaskNav task actions (#95)', () => {
     expect(useStore.getState().screen).toEqual({ kind: 'task' });
   });
 
-  it('has Discard task under Finish in the collapsed rail, with a tooltip (#124)', async () => {
+  it('folds a rail task open on hover: its name, Finish and Discard, and folds it again on leaving', async () => {
     useStore.setState({
       selectedTaskId: 'a',
       screen: { kind: 'task' },
@@ -1489,21 +1495,59 @@ describe('TaskNav task actions (#95)', () => {
       discardTaskId: null,
     });
     render(<TaskNav />);
-    const discard = screen.getByRole('button', { name: 'Discard task' });
+    // Nothing of Finish or Discard shows until a task is pointed at, the current one included.
+    expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discard task' })).toBeNull();
+    const row = document.querySelector<HTMLElement>(
+      '.railrow[aria-current="true"]',
+    )!;
+    expect(row).not.toHaveAttribute('title');
+    await userEvent.hover(row);
+    const fly = document.querySelector<HTMLElement>('.rail-fly')!;
+    expect(fly.textContent).not.toBe('');
+    const discard = within(fly).getByRole('button', { name: 'Discard task' });
     expect(discard).toHaveAttribute('title', 'Discard task');
-    const finish = screen.getByRole('button', { name: 'Finish task' });
-    expect(finish.nextElementSibling).toBe(discard);
+    expect(
+      within(fly).getByRole('button', { name: 'Finish task' })
+        .nextElementSibling,
+    ).toBe(discard);
     await userEvent.click(discard);
     expect(useStore.getState().discardTaskId).toBe('a');
+    expect(document.querySelector('.rail-fly')).toBeNull();
+
+    await userEvent.hover(row);
+    expect(document.querySelector('.rail-fly')).not.toBeNull();
+    await userEvent.unhover(row);
+    expect(document.querySelector('.rail-fly')).toBeNull();
   });
 
-  it('keeps New task and Finish task in the collapsed rail', async () => {
+  it('opens the fly-out for the keyboard too, and Escape folds it', async () => {
     useStore.setState({
       selectedTaskId: 'a',
       screen: { kind: 'task' },
       navCollapsed: true,
     });
     render(<TaskNav />);
+    const row = document.querySelector<HTMLElement>(
+      '.railrow[aria-current="true"]',
+    )!;
+    act(() => row.focus());
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Finish task' })).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(document.querySelector('.rail-fly')).toBeNull();
+  });
+
+  it("keeps New task in the collapsed rail, and Finish in a task's fly-out", async () => {
+    useStore.setState({
+      selectedTaskId: 'a',
+      screen: { kind: 'task' },
+      navCollapsed: true,
+    });
+    render(<TaskNav />);
+    await userEvent.hover(
+      document.querySelector<HTMLElement>('.railrow[aria-current="true"]')!,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Finish task' }));
     expect(useStore.getState().screen).toEqual({ kind: 'finish', taskId: 'a' });
     const add = screen.getByRole('button', { name: 'New task' });

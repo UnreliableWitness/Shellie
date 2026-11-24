@@ -373,33 +373,12 @@ button.navmark:hover {
 .navmark-merged {
   color: var(--green);
 }
-.railrow.rail-discard {
-  background: var(--bg-selected);
-  color: var(--muted);
-}
-.ibtn.nav-discard:hover:not(:disabled),
-.railrow.rail-discard:hover {
+.ibtn.nav-discard:hover:not(:disabled) {
   color: var(--red);
 }
 .rail-new {
   color: var(--link);
   margin-top: 4px;
-}
-.railrow.rail-finish {
-  background: var(--bg-selected);
-}
-.rail-finish-mark {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.rail-finish:hover .rail-finish-mark {
-  background: var(--accent-hover);
 }
 .nav-empty {
   padding: 4px 16px;
@@ -523,6 +502,56 @@ button.navmark:hover {
 }
 .railrow[aria-current='true'] {
   background: var(--bg-selected);
+}
+/* A rail task folded open to the right, over the page: its name, its mark's words, Finish and Discard. It starts
+   at the rail's edge with no gap, so the pointer moves from the icon onto it. */
+.rail-fly {
+  position: fixed;
+  z-index: 20;
+  height: 36px;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  box-shadow: var(--shadow-2);
+  font-size: 13px;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+  animation: rail-fold 120ms ease-out;
+}
+/* The shadow may spill on three sides; the left edge stays cut at the rail. */
+@keyframes rail-fold {
+  from {
+    clip-path: inset(-12px 100% -12px 0);
+  }
+  to {
+    clip-path: inset(-12px -12px -12px 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-fly {
+    animation: none;
+  }
+}
+.rail-fly-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.rail-fly-name .navrow-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-fly-mark {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
 }
 .rail-dot {
   position: absolute;
