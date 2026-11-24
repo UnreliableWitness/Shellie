@@ -141,3 +141,34 @@ export function brainForTask(
   if (!connectionId || !project) return null;
   return brains.forProject(connectionId, project)[0] ?? null;
 }
+
+/** A connection's project; a connection that was removed has none. */
+export function connectionProject(
+  connections: { get(id: string): { project: string } },
+  id: string,
+): string | null {
+  try {
+    return connections.get(id).project;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The brain of a task: of the work item's project, else the connection's (refs from before the project was stored,
+ * a task without a work item, an empty stored project; #225 #359 #370).
+ */
+export function taskBrainOf(
+  brains: BrainStore,
+  connectionId: string | null,
+  project: string | null | undefined,
+  projectOf: (connectionId: string) => string | null,
+): Brain | null {
+  if (!connectionId) return null;
+  return brainForTask(brains, connectionId, project || projectOf(connectionId));
+}
+
+/** The brain only when its context goes into task.md. */
+export function contextBrain(b: Brain | null): Brain | null {
+  return b?.options.contextInTaskMd ? b : null;
+}

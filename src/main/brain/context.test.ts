@@ -9,8 +9,13 @@ import {
   appendLog,
   CONTEXT_MAX_LINES,
   closeLine,
+  connectionProject,
+  contextBrain,
   contextSection,
+  taskBrainOf,
 } from './context';
+import type { BrainStore } from './BrainStore';
+import type { Brain } from '../../shared/brain';
 import { scaffoldBrain } from './scaffold';
 import { acquireLock, releaseLock } from './state';
 
@@ -30,6 +35,44 @@ describe('brain context', () => {
     expect(s).toContain('- p149');
     expect(s).not.toContain('- p150');
     expect(s.trim().endsWith('… 10 more in index.md')).toBe(true);
+  });
+
+  describe('taskBrainOf (#370)', () => {
+    const acme = { id: 'a', options: { contextInTaskMd: true } } as Brain;
+    const hub = { id: 'h', options: { contextInTaskMd: false } } as Brain;
+    const brains = {
+      forProject: (c: string, p: string) =>
+        c === 'c1' ? ({ Acme: [acme], Hub: [hub] }[p] ?? []) : [],
+    } as unknown as BrainStore;
+    const connections = {
+      get: (id: string) => {
+        if (id !== 'c1') throw new Error('No connection');
+        return { project: 'Hub' };
+      },
+    };
+    const projectOf = (id: string) => connectionProject(connections, id);
+
+    it('an explicit project wins over the connection one', () => {
+      expect(taskBrainOf(brains, 'c1', 'Acme', projectOf)).toBe(acme);
+    });
+
+    it("an empty or missing project falls back to the connection's", () => {
+      expect(taskBrainOf(brains, 'c1', '', projectOf)).toBe(hub);
+      expect(taskBrainOf(brains, 'c1', null, projectOf)).toBe(hub);
+      expect(taskBrainOf(brains, 'c1', undefined, projectOf)).toBe(hub);
+    });
+
+    it('a removed connection or no connection gives no brain', () => {
+      expect(connectionProject(connections, 'gone')).toBeNull();
+      expect(taskBrainOf(brains, 'gone', null, projectOf)).toBeNull();
+      expect(taskBrainOf(brains, null, 'Acme', projectOf)).toBeNull();
+    });
+
+    it('contextBrain keeps only a brain whose context goes into task.md', () => {
+      expect(contextBrain(acme)).toBe(acme);
+      expect(contextBrain(hub)).toBeNull();
+      expect(contextBrain(null)).toBeNull();
+    });
   });
 
   it('contextSection keeps a short index whole, without a cut marker', () => {
