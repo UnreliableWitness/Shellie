@@ -151,3 +151,19 @@ export function writePushChoice(
 ): void {
   writeFlag(pushKey(repoId), value, storage);
 }
+
+const WEEK_AS_WORKED_KEY = 'shellie.ui.week.asWorked';
+
+/** Whether the Week page shows a day's cards as worked (one per stretch) instead of one per task; false until chosen. */
+export function readWeekAsWorked(
+  storage: Storage | undefined = local(),
+): boolean {
+  return readFlag(WEEK_AS_WORKED_KEY, storage);
+}
+
+export function writeWeekAsWorked(
+  value: boolean,
+  storage: Storage | undefined = local(),
+): void {
+  writeFlag(WEEK_AS_WORKED_KEY, value, storage);
+}
