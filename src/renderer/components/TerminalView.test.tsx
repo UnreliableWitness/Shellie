@@ -544,6 +544,8 @@ describe('TerminalView on a screen with other scaling (#315)', () => {
     return xterm.terminals[xterm.terminals.length - 1];
   };
   const frame = () => new Promise((r) => requestAnimationFrame(r));
+  /** Longer than the wait for the layout to settle. */
+  const settled = () => new Promise((r) => setTimeout(r, 200));
 
   it('drops the WebGL renderer, refits, then loads it again', async () => {
     installFakeApi({
@@ -571,7 +573,7 @@ describe('TerminalView on a screen with other scaling (#315)', () => {
       xterm.scale[0].changed();
       expect(xterm.webgl[0].dispose).toHaveBeenCalledTimes(1);
       expect(xterm.webgl).toHaveLength(1);
-      await frame();
+      await settled();
       expect(xterm.fits).toBeGreaterThan(fits);
       expect(xterm.webgl).toHaveLength(2);
       expect(refresh).toHaveBeenCalledTimes(1);
@@ -593,7 +595,105 @@ describe('TerminalView on a screen with other scaling (#315)', () => {
     render(<TerminalView terminalId="t1" taskId="a" active={false} />);
     await opened();
     xterm.scale[0].changed();
-    await frame();
+    await settled();
     expect(xterm.webgl).toHaveLength(0);
+  });
+});
+
+describe('TerminalView while the window is moved or resized', () => {
+  const boxed = () => {
+    const width = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(800);
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(600);
+    return () => {
+      width.mockRestore();
+      height.mockRestore();
+    };
+  };
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const api = () =>
+    installFakeApi({
+      'terminals:buffer': () => '',
+      'terminals:isRunning': () => true,
+      'terminals:resize': () => undefined,
+    });
+
+  it('refits once after a burst of size changes, not once per change', async () => {
+    const observed: (() => void)[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(changed: () => void) {
+          observed.push(changed);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const unbox = boxed();
+    try {
+      api();
+      render(<TerminalView terminalId="t1" taskId="a" active />);
+      await wait(50);
+      const fits = xterm.fits;
+      // A window dragged by its edge reports a new size every frame.
+      for (let i = 0; i < 20; i++) {
+        observed[0]();
+        await wait(5);
+      }
+      expect(xterm.fits).toBe(fits);
+      await wait(200);
+      expect(xterm.fits).toBe(fits + 1);
+    } finally {
+      unbox();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('loads the WebGL renderer once after a burst of scale changes', async () => {
+    const unbox = boxed();
+    try {
+      api();
+      xterm.webgl.length = 0;
+      xterm.scale.length = 0;
+      render(<TerminalView terminalId="t1" taskId="a" active />);
+      await wait(50);
+      expect(xterm.webgl).toHaveLength(1);
+      const fits = xterm.fits;
+      // A window straddling two screens can flip between their scale factors.
+      for (let i = 0; i < 20; i++) {
+        xterm.scale[0].changed();
+        await wait(5);
+      }
+      expect(xterm.webgl).toHaveLength(1);
+      expect(xterm.fits).toBe(fits);
+      await wait(200);
+      expect(xterm.webgl).toHaveLength(2);
+      expect(xterm.fits).toBe(fits + 1);
+    } finally {
+      unbox();
+    }
+  });
+
+  it('does not refit after the view is gone', async () => {
+    const unbox = boxed();
+    try {
+      api();
+      xterm.scale.length = 0;
+      const { unmount } = render(
+        <TerminalView terminalId="t1" taskId="a" active />,
+      );
+      await wait(50);
+      xterm.scale[0].changed();
+      unmount();
+      const fits = xterm.fits;
+      await wait(200);
+      expect(xterm.fits).toBe(fits);
+    } finally {
+      unbox();
+    }
   });
 });

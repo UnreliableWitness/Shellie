@@ -796,6 +796,8 @@ button.navmark:hover {
   flex: 1 1 auto;
   min-height: 0;
   isolation: isolate;
+  /* Until it is refitted, a terminal in a box that shrank is larger than the box: cut off, never a page scrollbar. */
+  overflow: hidden;
 }
 .term-exit {
   position: absolute;
