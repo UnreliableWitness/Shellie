@@ -4,11 +4,9 @@ import {
   Brain20Regular,
   CheckmarkCircle12Filled,
   CheckmarkCircle16Regular,
-  CheckmarkCircle20Regular,
   ChevronDown12Regular,
   ChevronRight12Regular,
   Delete16Regular,
-  Delete20Regular,
   Document16Regular,
   Home20Regular,
   WeatherMoon20Regular,
@@ -17,7 +15,6 @@ import {
   Search16Regular,
 } from '@fluentui/react-icons';
 import {
-  Fragment,
   type KeyboardEvent,
   type ReactNode,
   useEffect,
@@ -258,6 +255,12 @@ const railName = (task: TaskView) =>
 
 const RAIL_DOT = { broken: 'red', busy: 'accent', waits: 'amber' } as const;
 
+/**
+ * A task in the rail: its type icon, and while the pointer or the keyboard is on it, the row folded open to the
+ * right over the page: the task's name, what its mark tells, and Finish and Discard for a task that is ready.
+ * The fly-out is part of the row, so the pointer can move onto it; it replaces a tooltip, which could not hold
+ * the buttons.
+ */
 function RailRow({
   task,
   signal,
@@ -267,30 +270,94 @@ function RailRow({
 }) {
   const current = useIsCurrent(task.id);
   const openTask = useStore((s) => s.openTask);
+  const go = useStore((s) => s.go);
+  const askDiscard = useStore((s) => s.askDiscard);
+  const onItsFinish = useStore((s) => s.screen.kind === 'finish') && current;
   const mark = useMark(task, signal);
   const name = railName(task);
+  // Where the fly-out goes (the row's place in the window: the list scrolls and clips), or null while folded.
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const item = useRef<HTMLDivElement>(null);
+  const open = () => {
+    const r = item.current?.getBoundingClientRect();
+    if (r) setAt({ top: r.top, left: r.right });
+  };
+  const close = () => setAt(null);
+  const act = (fn: () => void) => () => {
+    close();
+    fn();
+  };
   return (
-    <button
-      type="button"
-      className="railrow"
-      aria-label={name}
-      title={mark ? `${name} · ${mark.label}` : name}
-      aria-current={current ? 'true' : undefined}
-      onClick={() => openTask(task.id)}
+    <div
+      ref={item}
+      className="railitem"
+      onMouseEnter={open}
+      onMouseLeave={close}
+      onFocus={open}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) close();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') close();
+      }}
     >
-      <TypeIcon task={task} />
-      {mark &&
-        (mark.kind === 'merged' ? (
-          <span className="rail-check" aria-hidden="true">
-            <CheckmarkCircle12Filled />
+      <button
+        type="button"
+        className="railrow"
+        aria-label={mark ? `${name}, ${mark.label}` : name}
+        aria-current={current ? 'true' : undefined}
+        onClick={act(() => openTask(task.id))}
+      >
+        <TypeIcon task={task} />
+        {mark &&
+          (mark.kind === 'merged' ? (
+            <span className="rail-check" aria-hidden="true">
+              <CheckmarkCircle12Filled />
+            </span>
+          ) : (
+            <span
+              className={`rail-dot rail-dot-${RAIL_DOT[mark.kind]}`}
+              aria-hidden="true"
+            />
+          ))}
+      </button>
+      {at && (
+        <div className="rail-fly" style={at}>
+          {/* The name again, for the eye: the row's button already names the task. */}
+          <span className="rail-fly-name" aria-hidden="true">
+            {task.workItem && (
+              <span className="navrow-id">{task.workItem.id}</span>
+            )}
+            <span className="navrow-title">
+              {task.workItem?.title ?? task.name}
+            </span>
           </span>
-        ) : (
-          <span
-            className={`rail-dot rail-dot-${RAIL_DOT[mark.kind]}`}
-            aria-hidden="true"
-          />
-        ))}
-    </button>
+          {mark && <span className="rail-fly-mark">{mark.label}</span>}
+          {task.status === 'ready' && !onItsFinish && (
+            <span className="navrow-actions">
+              <button
+                type="button"
+                className="ibtn navrow-finish"
+                aria-label="Finish task"
+                title={FINISH_TITLE}
+                onClick={act(() => go({ kind: 'finish', taskId: task.id }))}
+              >
+                <CheckmarkCircle16Regular aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="ibtn nav-discard"
+                aria-label={DISCARD_LABEL}
+                title={DISCARD_LABEL}
+                onClick={act(() => askDiscard(task.id))}
+              >
+                <Delete16Regular aria-hidden="true" />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -303,42 +370,6 @@ function useShowsFinish(task: TaskView) {
 
 const FINISH_TITLE = 'Finish task: check changes, push, book time, clean up';
 const DISCARD_LABEL = 'Discard task';
-
-/** The rail's Finish: a filled square under the current task's icon. */
-function RailFinish({ task }: { task: TaskView }) {
-  const go = useStore((s) => s.go);
-  if (!useShowsFinish(task)) return null;
-  return (
-    <button
-      type="button"
-      className="railrow rail-finish"
-      aria-label="Finish task"
-      title={FINISH_TITLE}
-      onClick={() => go({ kind: 'finish', taskId: task.id })}
-    >
-      <span className="rail-finish-mark">
-        <CheckmarkCircle20Regular aria-hidden="true" />
-      </span>
-    </button>
-  );
-}
-
-/** The rail's Discard, under its Finish (#124). */
-function RailDiscard({ task }: { task: TaskView }) {
-  const askDiscard = useStore((s) => s.askDiscard);
-  if (!useShowsFinish(task)) return null;
-  return (
-    <button
-      type="button"
-      className="railrow rail-discard"
-      aria-label={DISCARD_LABEL}
-      title={DISCARD_LABEL}
-      onClick={() => askDiscard(task.id)}
-    >
-      <Delete20Regular aria-hidden="true" />
-    </button>
-  );
-}
 
 /** Tasks section header with New task on its right; in the rail a + icon heads the task icons. */
 function TasksHead({ rail }: { rail: boolean }) {
@@ -671,11 +702,7 @@ export function TaskNav() {
           <TasksHead rail={rail} />
           {open.map((t) =>
             rail ? (
-              <Fragment key={t.id}>
-                <RailRow task={t} signal={signal(t)} />
-                <RailFinish task={t} />
-                <RailDiscard task={t} />
-              </Fragment>
+              <RailRow key={t.id} task={t} signal={signal(t)} />
             ) : (
               <Row
                 key={t.id}

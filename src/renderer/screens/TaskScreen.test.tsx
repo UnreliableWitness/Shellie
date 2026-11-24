@@ -825,7 +825,7 @@ describe('tabs and focus', () => {
     );
   });
 
-  it('offers Finish task as a button once: in the nav or in the rail; in Focus without them it is in the task menu (#95)', async () => {
+  it("offers Finish task as a button once: in the nav or in the rail task's fly-out; in Focus without them it is in the task menu (#95)", async () => {
     setup();
     render(<Shell />);
     await screen.findByTestId('term-c1');
@@ -839,8 +839,12 @@ describe('tabs and focus', () => {
     expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
     expect(await taskMenuItem('Finish task')).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
-    // Focus with the rail: the rail has it.
+    // Focus with the rail: the task's icon folds open with it on hover.
     act(() => useStore.setState({ navCollapsed: true }));
+    expect(screen.queryByRole('button', { name: 'Finish task' })).toBeNull();
+    await userEvent.hover(
+      document.querySelector<HTMLElement>('.railrow[aria-current="true"]')!,
+    );
     expect(finish()).toHaveLength(1);
     expect(nav()).toContainElement(finish()[0]);
     await userEvent.click(finish()[0]);
