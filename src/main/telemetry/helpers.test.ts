@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Handlers } from '../../shared/ipc';
+import { TokenUnavailableError } from '../services/ConnectionStore';
 import { NoopTelemetry, type Telemetry } from './AppInsightsClient';
 import {
   adoOperation,
@@ -127,6 +128,26 @@ describe('trackHandlerFailures', () => {
     expect(await wrapped['repos:list']()).toEqual([]);
     expect(calls).toHaveLength(1);
     expect(calls[0][2]).toEqual({ source: 'ipc', channel: 'repos:add' });
+  });
+
+  it('adds why a stored token could not be read', async () => {
+    const { t, calls } = recorder();
+    const wrapped = trackHandlerFailures(
+      {
+        'workItems:types': async () => {
+          throw new TokenUnavailableError('Stored token could not be read', {
+            cause: new Error('bad key'),
+          });
+        },
+      } as unknown as Handlers,
+      t,
+    );
+    await expect(wrapped['workItems:types']('c')).rejects.toThrow();
+    expect(calls[0][2]).toEqual({
+      source: 'ipc',
+      channel: 'workItems:types',
+      reason: 'Error: bad key',
+    });
   });
 
   it('times every call under its channel', async () => {

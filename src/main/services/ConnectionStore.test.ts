@@ -6,6 +6,7 @@ import {
   ConnectionStore,
   normalizeOrganizationUrl,
   organizationSlug,
+  TokenUnavailableError,
 } from './ConnectionStore';
 import { fakeCrypto } from '../test-helpers/fakeCrypto';
 
@@ -364,6 +365,42 @@ describe('ConnectionStore', () => {
     });
     await broken.load();
     await expect(broken.token(c.id)).rejects.toThrow(/could not be decrypted/);
+  });
+
+  it('keeps why a decrypt failed, never the token, and stops trying until the token is saved again', async () => {
+    const f = file();
+    const store = new ConnectionStore(f, fakeCrypto());
+    await store.load();
+    const c = await store.save({
+      organizationUrl: 'https://dev.azure.com/o',
+      project: 'P',
+      pat: 'secret-pat',
+    });
+    let decrypts = 0;
+    const broken = new ConnectionStore(f, {
+      ...fakeCrypto(),
+      decrypt: async () => {
+        decrypts++;
+        throw new TypeError('Error while decrypting the ciphertext');
+      },
+    });
+    await broken.load();
+    const e = await broken.token(c.id).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(TokenUnavailableError);
+    const err = e as TokenUnavailableError;
+    expect(err.reason).toBe('TypeError: Error while decrypting the ciphertext');
+    expect(err.cause).toBeInstanceOf(TypeError);
+    expect(JSON.stringify([err.message, err.reason])).not.toMatch(/secret-pat/);
+    await expect(broken.token(c.id)).rejects.toBe(err);
+    expect(decrypts).toBe(1);
+    await broken.save({
+      id: c.id,
+      organizationUrl: 'https://dev.azure.com/o',
+      project: 'P',
+      pat: 'new-pat',
+    });
+    await expect(broken.token(c.id)).rejects.toThrow(/could not be decrypted/);
+    expect(decrypts).toBe(2);
   });
 
   it('keeps a stored record with an invalid organization URL but never serves its token', async () => {

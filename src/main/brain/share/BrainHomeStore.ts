@@ -102,9 +102,10 @@ export class BrainHomeStore {
       return await this.crypto.decrypt(
         Buffer.from(h.tokenCiphertext, 'base64'),
       );
-    } catch {
+    } catch (e) {
       throw new TokenUnavailableError(
         'Stored token could not be decrypted; enter it again',
+        { cause: e },
       );
     }
   }

@@ -802,6 +802,46 @@ describe('handlers: sprint, types and live work items', () => {
     expect(await hx.h['workItems:types'](c.id)).toEqual(types);
     expect(hx.server.requests.length).toBe(before);
   });
+  it('stops decrypting a token that failed to decrypt until it is saved again', async () => {
+    const plain = fakeCrypto();
+    let broken = false;
+    let decrypts = 0;
+    const hx = await harness({
+      ...plain,
+      decrypt: async (b) => {
+        decrypts++;
+        if (broken) throw new Error('keychain changed');
+        return plain.decrypt(b);
+      },
+    });
+    const c = await save(hx);
+    broken = true;
+    decrypts = 0;
+    const before = hx.server.requests.length;
+    await expect(hx.h['workItems:types'](c.id)).rejects.toThrow(
+      /could not be decrypted/,
+    );
+    await expect(hx.h['workItems:types'](c.id)).rejects.toThrow(
+      /could not be decrypted/,
+    );
+    expect(decrypts).toBe(1);
+    expect(hx.server.requests.length).toBe(before);
+    expect((await hx.h['connections:list']())[0].status).toBe('unauthorized');
+    broken = false;
+    await hx.h['connections:save']({
+      id: c.id,
+      organizationUrl: `${hx.server.url}/unreliablewitness`,
+      project: 'Shellie',
+      pat: 'p',
+    });
+    hx.server.route(
+      'GET',
+      '/unreliablewitness/Shellie/_apis/wit/workitemtypes',
+      { body: { value: [] } },
+    );
+    expect(await hx.h['workItems:types'](c.id)).toEqual([]);
+    expect(decrypts).toBe(2);
+  });
   it('gets one work item live, or null when it is gone', async () => {
     const hx = await harness();
     const c = await save(hx);

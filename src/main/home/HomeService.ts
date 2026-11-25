@@ -8,6 +8,7 @@ import {
 } from '../../shared/home';
 import type { Connection, SprintIteration } from '../../shared/types';
 import { AdoError, type AdoClient } from '../services/AdoClient';
+import { TokenUnavailableError } from '../services/ConnectionStore';
 import { JsonFileStore } from '../usage/JsonFileStore';
 import { toHomePr } from './homePr';
 import { errorMessage } from '../../shared/errors';
@@ -49,6 +50,8 @@ export type HomeDeps = {
 export type HomeFailureKind =
   | 'unauthorized'
   | 'unreachable'
+  /** The stored token could not be read (decrypted); it has to be entered again. */
+  | 'token'
   | 'timeout'
   | 'step';
 
@@ -155,7 +158,9 @@ export class HomeService {
       return fail(
         e instanceof AdoError && e.kind === 'unauthorized'
           ? 'unauthorized'
-          : 'unreachable',
+          : e instanceof TokenUnavailableError
+            ? 'token'
+            : 'unreachable',
         errorMessage(e),
       );
     }

@@ -30,7 +30,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 | `app.started` | splash on/off; counts of repos, open tasks, connections; whether the usage receiver listens; boot step timings (see Performance) |
 | `app.quit` | session length in minutes |
 | `home.refreshed` | the Home page's data was rebuilt; number of connections, number that failed; duration in ms |
-| `home.failed` | a connection failed in a Home rebuild; `kind` (`unauthorized`, `unreachable`, `timeout`, `step`) |
+| `home.failed` | a connection failed in a Home rebuild; `kind` (`unauthorized`, `unreachable`, `token`: the stored token could not be decrypted (since 2026-11-25, #380; before, it was `unreachable`), `timeout`, `step`) |
 | `home.clicked` | a click on Home; `band` (`task`, `up-next`, `review`, `team-review`, `my-pr`, `sprint`, `stats-period`, `budget-month`, `budget-settings`, `reading` (a brain's name in the Reading band), `place-sprint`, `place-week`, `place-dreams`, `place-brain`, `place-cost` (a Places tile; never a name)) |
 | `project.open` | the Project page was opened; `from` (`switcher`: a project picked in the switcher, `home`: Home's chips and quiet link, `palette`: the command palette; `nav` and `crumb` until 2026-11-23, when the nav item and the header went) |
 | `project.graph` | a click in the Project page's repositories graph; `target` (`node`: a repository, opening its settings, `edge`: a line, listing the tasks it stands for) |
@@ -139,7 +139,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 - Uncaught exceptions in the main process (monitored only: Electron's own handling is unchanged) and unhandled promise rejections.
 - Renderer `window.onerror` and `unhandledrejection`. Chromium's harmless "ResizeObserver loop …" notice is filtered out and not reported.
 - A failed boot (the splash or the "Shellie could not start" dialog).
-- Every IPC call that fails (error type, message, stack and the channel name such as `tasks:create`; never the arguments).
+- Every IPC call that fails (error type, message, stack and the channel name such as `tasks:create`; never the arguments). A `TokenUnavailableError` for a stored token that could not be decrypted also carries `reason`: the decrypt error's type and message (at most 200 characters; never the token or its ciphertext). Such a token is not decrypted again until it is saved again, so the same error is reported once per connection and launch, not once per call (since 2026-11-25, #380).
 - An unexpected setup failure.
 - A terminal whose program could not be spawned (`source: terminal`, the tab's kind; the message is scrubbed like every other).
 - Every warning or error notice shown in the app (`notice` event: level and message).

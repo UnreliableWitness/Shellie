@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Connection, SprintItem } from '../../shared/types';
 import { AdoError, type RawHomePr } from '../services/AdoClient';
+import { TokenUnavailableError } from '../services/ConnectionStore';
 import { HomeService, type HomeClient, type HomeDeps } from './HomeService';
 
 const conn = (id: string): Connection => ({
@@ -315,6 +316,21 @@ describe('HomeService', () => {
       'unreachable',
     ]);
     expect(built[0].failed).toBe(3);
+  });
+
+  it('reports a token that cannot be read as kind token, not unreachable', async () => {
+    const { home, built } = service([conn('a')], {
+      a: fakeClient({
+        me: async () => {
+          throw new TokenUnavailableError(
+            'Stored token could not be decrypted; enter it again',
+          );
+        },
+      }),
+    });
+    const c = (await home.refresh()).connections[0];
+    expect(built[0].failures).toEqual([{ kind: 'token' }]);
+    expect(c.error).toMatch(/enter it again/);
   });
 
   it('times out a connection that hangs', async () => {
