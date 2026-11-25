@@ -18,9 +18,17 @@ export interface TokenCrypto {
 }
 
 export class TokenUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
+  /** Why the cause failed (its type and message, for telemetry); never the token or its ciphertext. */
+  readonly reason?: string;
+
+  constructor(message: string, opts?: { cause?: unknown }) {
+    super(message, opts);
     this.name = 'TokenUnavailableError';
+    if (opts?.cause !== undefined) {
+      const c = opts.cause;
+      this.reason =
+        c instanceof Error ? `${c.name}: ${c.message}`.slice(0, 200) : typeof c;
+    }
   }
 }
 
@@ -84,6 +92,8 @@ export class ConnectionStore {
   private readonly store: JsonFileStore<ConnectionsFile>;
   /** Ids whose stored organization URL no longer passes validation; never used for requests. */
   private readonly invalidUrls = new Set<string>();
+  /** Ids whose token failed to decrypt this session; not tried again until the token is saved again. */
+  private readonly undecryptable = new Map<string, TokenUnavailableError>();
 
   constructor(
     filePath: string,
@@ -118,6 +128,7 @@ export class ConnectionStore {
     const result = await this.store.load();
     if (result.recovered) return result;
     this.invalidUrls.clear();
+    this.undecryptable.clear();
     for (const c of this.current.connections) {
       try {
         c.organizationUrl = this.normalizeUrl(c.organizationUrl);
@@ -179,6 +190,7 @@ export class ConnectionStore {
       else f.connections.push(record);
     });
     this.invalidUrls.delete(record.id);
+    this.undecryptable.delete(record.id);
     return strip(record);
   }
 
@@ -204,6 +216,7 @@ export class ConnectionStore {
       f.connections = f.connections.filter((c) => c.id !== id);
     });
     this.invalidUrls.delete(id);
+    this.undecryptable.delete(id);
   }
 
   async setStatus(
@@ -229,14 +242,19 @@ export class ConnectionStore {
       throw new TokenUnavailableError(
         'This connection has an invalid organization URL; remove it and add it again',
       );
+    const failed = this.undecryptable.get(id);
+    if (failed) throw failed;
     try {
       return await this.crypto.decrypt(
         Buffer.from(c.tokenCiphertext, 'base64'),
       );
-    } catch {
-      throw new TokenUnavailableError(
+    } catch (e) {
+      const err = new TokenUnavailableError(
         'Stored token could not be decrypted; enter it again',
+        { cause: e },
       );
+      this.undecryptable.set(id, err);
+      throw err;
     }
   }
 

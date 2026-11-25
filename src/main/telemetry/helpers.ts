@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Handlers } from '../../shared/ipc';
 import { RendererTelemetrySchema } from '../../shared/telemetry';
+import { TokenUnavailableError } from '../services/ConnectionStore';
 import type { Telemetry } from './AppInsightsClient';
 import { perf, type PerfStats } from './perf';
 
@@ -152,7 +153,12 @@ export function trackHandlerFailures(
         return result;
       } catch (e) {
         stats.record('ipc.ms', channel, performance.now() - t0, 'failed');
-        telemetry.exception(e, { source: 'ipc', channel });
+        telemetry.exception(
+          e,
+          e instanceof TokenUnavailableError && e.reason
+            ? { source: 'ipc', channel, reason: e.reason }
+            : { source: 'ipc', channel },
+        );
         throw e;
       }
     };
