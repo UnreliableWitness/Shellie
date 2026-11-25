@@ -217,6 +217,7 @@ function ClosableTab({
   label,
   ariaLabel,
   title,
+  pinned = false,
   onSelect,
   onClose,
   children,
@@ -227,6 +228,8 @@ function ClosableTab({
   /** The tab's own name when its text alone does not say it all (a count, something new). */
   ariaLabel?: string;
   title?: string;
+  /** Always in the row (Changes, #386): no close button, middle click does nothing. */
+  pinned?: boolean;
   onSelect: () => void;
   onClose: () => void;
   children: ReactNode;
@@ -242,20 +245,22 @@ function ClosableTab({
         title={title}
         onClick={onSelect}
         onAuxClick={(e) => {
-          if (e.button === 1) onClose();
+          if (e.button === 1 && !pinned) onClose();
         }}
       >
         {children}
       </button>
-      <button
-        type="button"
-        className="term-tab-close"
-        aria-label={`Close ${label}`}
-        title={`Close ${label}`}
-        onClick={onClose}
-      >
-        <Dismiss12Regular aria-hidden="true" />
-      </button>
+      {!pinned && (
+        <button
+          type="button"
+          className="term-tab-close"
+          aria-label={`Close ${label}`}
+          title={`Close ${label}`}
+          onClick={onClose}
+        >
+          <Dismiss12Regular aria-hidden="true" />
+        </button>
+      )}
     </span>
   );
 }
@@ -577,6 +582,7 @@ export const TerminalTabs = memo(function TerminalTabs({
   }, [active, task.terminals.length]);
 
   // A view tab is in the row once opened, and while it is the one showing (Usage for a task without terminals).
+  // Changes is always there, first, for a task with git (#386).
   const shownTabs = useStore((s) => s.shownTabsByTask[task.id]) ?? NO_TABS;
   const closeTab = useStore((s) => s.closeTab);
   const canShow: Record<string, boolean> = {
@@ -586,8 +592,11 @@ export const TerminalTabs = memo(function TerminalTabs({
     [BRAIN_TAB]: brainShown,
   };
   const viewTabs = [
-    ...shownTabs,
-    ...(active in VIEW_TABS && !shownTabs.includes(active) ? [active] : []),
+    ...new Set([
+      CHANGES_TAB,
+      ...shownTabs,
+      ...(active in VIEW_TABS ? [active] : []),
+    ]),
   ].filter((t) => canShow[t]);
   // Only the run entries, and only for the task on screen: every other offer leaves this row alone.
   const runs = useContributedWith(offers ? 'task.run.' : null);
@@ -675,7 +684,7 @@ export const TerminalTabs = memo(function TerminalTabs({
                 {`${brain?.name ?? 'Brain'} brain`}
               </ClosableTab>
             )}
-            {/* The views open on demand (the task menu, the palette, a shortcut) and stay until closed. */}
+            {/* The views open on demand (the task menu, the palette, a shortcut) and stay until closed; Changes stays. */}
             {viewTabs.map((tab) => {
               const v = VIEW_TABS[tab];
               const isNew =
@@ -687,6 +696,7 @@ export const TerminalTabs = memo(function TerminalTabs({
                   key={tab}
                   selected={active === tab}
                   label={v.label}
+                  pinned={tab === CHANGES_TAB}
                   ariaLabel={
                     isNew
                       ? `${v.label}, ${v.newWord}`
