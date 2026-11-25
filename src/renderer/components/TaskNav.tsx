@@ -9,6 +9,7 @@ import {
   Delete16Regular,
   Document16Regular,
   Home20Regular,
+  Open16Regular,
   WeatherMoon20Regular,
   PanelLeftContract20Regular,
   PanelLeftExpand20Regular,
@@ -29,7 +30,7 @@ import {
 } from '../../shared/pulse';
 import type { Repo, TaskStatus, TaskView } from '../../shared/types';
 import { activeHome, activeWorkspaces } from '../../shared/workspaces';
-import { api } from '../api';
+import { api, tryInvoke } from '../api';
 import { statusText } from '../connectionStatus';
 import { eur, plural } from '../format';
 import { JoinCard } from './brain/JoinCard';
@@ -225,6 +226,7 @@ function Row({
       {mark && !hasFinish && <Mark task={task} mark={mark} prUrl={prUrl} />}
       {hasFinish && (
         <span className="navrow-actions">
+          <OpenWorkItem task={task} />
           <button
             type="button"
             className="ibtn navrow-finish"
@@ -335,6 +337,7 @@ function RailRow({
           {mark && <span className="rail-fly-mark">{mark.label}</span>}
           {task.status === 'ready' && !onItsFinish && (
             <span className="navrow-actions">
+              <OpenWorkItem task={task} onOpen={close} />
               <button
                 type="button"
                 className="ibtn navrow-finish"
@@ -358,6 +361,36 @@ function RailRow({
         </div>
       )}
     </div>
+  );
+}
+
+/** Opens the task's work item in the browser, before Finish and Discard; nothing for a task without one. */
+function OpenWorkItem({
+  task,
+  onOpen,
+}: {
+  task: TaskView;
+  onOpen?: () => void;
+}) {
+  const url = task.workItem?.url;
+  if (!url) return null;
+  const label = `Open ${task.workItem!.id} in Azure DevOps`;
+  return (
+    <button
+      type="button"
+      className="ibtn navrow-workitem"
+      aria-label={label}
+      title={label}
+      onClick={() => {
+        onOpen?.();
+        void tryInvoke(
+          () => api().invoke('shell:openExternal', url),
+          useStore.getState().notify,
+        );
+      }}
+    >
+      <Open16Regular aria-hidden="true" />
+    </button>
   );
 }
 
