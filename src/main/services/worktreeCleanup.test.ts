@@ -28,11 +28,16 @@ function fakeGit() {
   const folders = new Set<string>();
   const branches = new Set<string>();
   const held = new Map<string, Error>();
+  const worktrees: { path: string; branch: string | null }[] = [];
+  /** Branches git refuses to delete, with the error, until a remove takes the worktree. */
+  const blocked = new Map<string, { path: string; error: Error }>();
   const calls: string[] = [];
   return {
     folders,
     branches,
     held,
+    worktrees,
+    blocked,
     calls,
     exists: async (p: string) => folders.has(p),
     git: {
@@ -41,13 +46,17 @@ function fakeGit() {
         const e = held.get(p);
         if (e) throw e;
         folders.delete(p);
+        for (const [b, x] of blocked) if (x.path === p) blocked.delete(b);
       },
       worktreePrune: async () => {
         calls.push('prune');
       },
+      worktreeList: async () => worktrees,
       branchExists: async (_repo: string, b: string) => branches.has(b),
       deleteBranch: async (_repo: string, b: string) => {
         calls.push(`branch -D ${b}`);
+        const x = blocked.get(b);
+        if (x) throw x.error;
         branches.delete(b);
       },
     },
@@ -76,7 +85,17 @@ describe('cleanupErrorCode', () => {
     ).toBe('git');
     expect(cleanupErrorCode(new Error('x'))).toBe('other');
   });
+  it('tells a branch a worktree still has from other git failures (#379)', () => {
+    expect(cleanupErrorCode(usedByWorktree('/wt'))).toBe('branch-in-use');
+  });
 });
+
+const usedByWorktree = (p: string) =>
+  new GitError(
+    ['branch', '-D', 'feature/x'],
+    `error: cannot delete branch 'feature/x' used by worktree at '${p}'`,
+    1,
+  );
 
 describe('removeWorkspace', () => {
   const ws = {
@@ -142,6 +161,49 @@ describe('removeWorkspace', () => {
     });
     expect(left).toBeNull();
     expect(f.branches.has('feature/x')).toBe(false);
+  });
+
+  it('removes its own worktree again when that one still holds the branch (#379)', async () => {
+    const f = fakeGit();
+    f.branches.add('feature/x');
+    f.worktrees.push(
+      { path: '/repo', branch: 'main' },
+      { path: '/wt', branch: 'feature/x' },
+    );
+    f.blocked.set('feature/x', { path: '/wt', error: usedByWorktree('/wt') });
+    const left = await removeWorkspace(f.git, ws, {
+      exists: f.exists,
+      now: () => T0,
+    });
+    expect(left).toBeNull();
+    expect(f.calls).toEqual([
+      'prune',
+      'branch -D feature/x',
+      'remove /wt',
+      'prune',
+      'branch -D feature/x',
+    ]);
+    expect(f.branches.has('feature/x')).toBe(false);
+  });
+
+  it('never touches another worktree that holds the branch, and says branch-in-use (#379)', async () => {
+    const f = fakeGit();
+    f.branches.add('feature/x');
+    f.worktrees.push(
+      { path: '/repo', branch: 'main' },
+      { path: '/other', branch: 'feature/x' },
+    );
+    f.blocked.set('feature/x', {
+      path: '/other',
+      error: usedByWorktree('/other'),
+    });
+    const left = await removeWorkspace(f.git, ws, {
+      exists: f.exists,
+      now: () => T0,
+    });
+    expect(left).toMatchObject({ code: 'branch-in-use' });
+    expect(f.calls).toEqual(['prune', 'branch -D feature/x']);
+    expect(f.branches.has('feature/x')).toBe(true);
   });
 
   it('still deletes uncommitted files and unpushed commits: the user chose that at Finish or Discard (#244)', async () => {
