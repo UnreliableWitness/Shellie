@@ -18,8 +18,15 @@ import { FOLDER_IN_USE, GitError, type GitClient } from './GitClient';
 
 export type CleanupGit = Pick<
   GitClient,
-  'worktreeRemove' | 'worktreePrune' | 'deleteBranch' | 'branchExists'
+  | 'worktreeRemove'
+  | 'worktreePrune'
+  | 'deleteBranch'
+  | 'branchExists'
+  | 'worktreeList'
 >;
+
+/** Git's refusal to delete a branch a registered worktree still has checked out. */
+const BRANCH_IN_USE = /used by worktree|checked out at/i;
 
 /** After this long the retries go on, but the user hears about it once. */
 export const GIVE_UP_MS = 24 * 60 * 60 * 1000;
@@ -27,11 +34,16 @@ export const GIVE_UP_MS = 24 * 60 * 60 * 1000;
 /** How often main retries what is left (and once shortly after launch). */
 export const RETRY_EVERY_MS = 3 * 60 * 1000;
 
-/** A short code for telemetry and the Done page: the fs code (EPERM, EBUSY...), else in-use, git or other. */
+/**
+ * A short code for telemetry and the Done page: the fs code (EPERM, EBUSY...), else in-use, branch-in-use,
+ * git or other.
+ */
 export function cleanupErrorCode(e: unknown): string {
   for (let x = e, depth = 0; x && depth < 5; depth++) {
-    if (x instanceof GitError)
-      return FOLDER_IN_USE.test(x.stderr) ? 'in-use' : 'git';
+    if (x instanceof GitError) {
+      if (FOLDER_IN_USE.test(x.stderr)) return 'in-use';
+      return BRANCH_IN_USE.test(x.stderr) ? 'branch-in-use' : 'git';
+    }
     const code = (x as { code?: unknown }).code;
     if (typeof code === 'string' && /^E[A-Z]+$/.test(code)) return code;
     x = (x as { cause?: unknown }).cause;
@@ -71,14 +83,34 @@ export async function removeWorkspace(
     }
   }
   if (t.branch === null) return null;
+  const branch = t.branch;
   try {
     // A deleted folder leaves a stale registration that blocks branch deletion.
     await git.worktreePrune(t.repoPath);
-    if (await git.branchExists(t.repoPath, t.branch))
-      await git.deleteBranch(t.repoPath, t.branch);
+    if (await git.branchExists(t.repoPath, branch))
+      await git.deleteBranch(t.repoPath, branch);
     return null;
   } catch (e) {
-    return left(e);
+    if (!(e instanceof GitError) || !BRANCH_IN_USE.test(e.stderr))
+      return left(e);
+    // Prune keeps a registration whose folder is still there (half-removed on Windows) or that git lists
+    // under another path form, and that registration still holds the branch (#379).
+    const holder = (await git.worktreeList(t.repoPath).catch(() => [])).find(
+      (w) => w.branch === branch,
+    );
+    console.warn(
+      `[cleanup] branch ${branch} held by ${holder?.path ?? 'an unlisted worktree'}; ${t.worktreePath} ${(await exists(t.worktreePath)) ? 'exists' : 'is gone'}`,
+    );
+    // Any other worktree may be a reopened or live task: never touch it.
+    if (!holder || !samePath(holder.path, t.worktreePath)) return left(e);
+    try {
+      await git.worktreeRemove(t.repoPath, holder.path, true);
+      await git.worktreePrune(t.repoPath);
+      await git.deleteBranch(t.repoPath, branch);
+      return null;
+    } catch (again) {
+      return left(again);
+    }
   }
 }
 
