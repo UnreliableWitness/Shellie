@@ -150,6 +150,7 @@ This is separate from the AI usage capture (the OTLP receiver on 127.0.0.1:4319 
 
 - `app.started` measurements: settings load, telemetry init, task/connection load, usage store load, IPC setup, usage receiver start, main window load (`windowMs`), boot to window ready (`readyMs`, also sent as metric `app.startup.readyMs`) and process start to window shown (`visibleMs`, includes the splash).
 - Metric `setup.step.<kind>` per setup step in ms (`setup.step.worktree` is worktree creation), with the step status.
+- Metrics `setup.copy.files` and `setup.copy.bytes`: how many files and bytes a finished copy step copied from its `copy` entries (agent config files not counted).
 - `setup.finished` duration.
 - Azure DevOps requests as dependencies: method and API route with ids and project names replaced (`GET _apis/wit/workitems/{id}`), host (`dev.azure.com` or `visualstudio.com`), duration, status code, success.
 - Cost server requests as dependencies: method and path (`POST /api/v1/records`, never the query), target `cost-server` (never the server's address), duration, status code, success.

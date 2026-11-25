@@ -441,6 +441,32 @@ describe('SetupRunner', () => {
     ).toBe(false);
     expect(existsSync(path.join(p.worktreePath, 'hosts'))).toBe(false);
   });
+
+  it('logs the files, bytes and time of each copied entry', async () => {
+    const repo = makeRepo();
+    mkdirSync(path.join(repo, 'local', 'sub'), { recursive: true });
+    writeFileSync(path.join(repo, 'local', 'a.txt'), 'x'.repeat(10));
+    writeFileSync(path.join(repo, 'local', 'b.txt'), 'x'.repeat(20));
+    writeFileSync(path.join(repo, 'local', 'sub', 'c.txt'), 'x'.repeat(30));
+    const p = plan(repo, { copy: ['local'] });
+    const { events, onEvent } = collect();
+    await runner.run(p, { onEvent, startTerminals: async () => {} });
+    const lines = events.flatMap((e) => (e.type === 'log' ? [e.line] : []));
+    expect(lines).toContainEqual(
+      expect.stringMatching(/^copied local \(3 files, 60 B, \d+ ms\)$/),
+    );
+    expect(
+      readFileSync(path.join(p.worktreePath, 'local', 'sub', 'c.txt'), 'utf8'),
+    ).toBe('x'.repeat(30));
+    const copyIndex = planSteps(p).findIndex((s) => s.kind === 'copy');
+    const done = events.find(
+      (e) => e.type === 'step' && e.index === copyIndex && e.status === 'done',
+    );
+    expect(done && done.type === 'step' && done.copied).toEqual({
+      files: 3,
+      bytes: 60,
+    });
+  });
 });
 
 describe('SetupRunner: copied env files without stored secrets', () => {

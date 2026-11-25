@@ -284,6 +284,27 @@ async function stripCopied(
   log(`left stored secrets out of ${path.basename(target)}`);
 }
 
+/** Counts the files and bytes of a copied file or folder; symlinks are counted, never followed. */
+async function treeSize(
+  target: string,
+): Promise<{ files: number; bytes: number }> {
+  const stat = await fs.lstat(target);
+  if (!stat.isDirectory()) return { files: 1, bytes: stat.size };
+  const total = { files: 0, bytes: 0 };
+  for (const name of await fs.readdir(target)) {
+    const s = await treeSize(path.join(target, name));
+    total.files += s.files;
+    total.bytes += s.bytes;
+  }
+  return total;
+}
+
+function formatBytes(n: number): string {
+  if (n < 1000) return `${n} B`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)} kB`;
+  return `${Math.round(n / 1_000_000)} MB`;
+}
+
 export function insideDir(base: string, rel: string): string | null {
   const target = path.resolve(base, rel);
   return isInside(base, target) ? target : null;
@@ -328,6 +349,7 @@ export class SetupRunner {
           index,
           status: out && out.warn ? 'warn' : 'done',
           ...(out && out.detail ? { detail: out.detail } : {}),
+          ...(out && out.copied ? { copied: out.copied } : {}),
           ms: Date.now() - started,
         });
       } catch (e) {
@@ -354,7 +376,11 @@ export class SetupRunner {
     plan: SetupPlan,
     hooks: SetupHooks,
     log: (l: string) => void,
-  ): Promise<{ detail?: string; warn?: boolean } | void> {
+  ): Promise<{
+    detail?: string;
+    warn?: boolean;
+    copied?: { files: number; bytes: number };
+  } | void> {
     if (step.workspaceId !== undefined) {
       const x = plan.extraRestores?.find(
         (r) => r.workspaceId === step.workspaceId,
@@ -506,8 +532,9 @@ export class SetupRunner {
     copy: string[],
     log: (l: string) => void,
     agentConfig = false,
-  ): Promise<void> {
+  ): Promise<{ copied: { files: number; bytes: number } }> {
     const names = w.repoId ? this.strippedNames(w.repoId) : [];
+    const copied = { files: 0, bytes: 0 };
     for (const rel of copy) {
       const src = insideDir(w.repoPath, rel);
       const dest = insideDir(w.worktreePath, rel);
@@ -519,13 +546,21 @@ export class SetupRunner {
         log(`skipped ${rel} (not present in ${path.basename(w.repoPath)})`);
         continue;
       }
+      const started = Date.now();
       await fs.cp(src, dest, {
         recursive: true,
       });
-      log(`copied ${rel}`);
       if (names.length > 0) await stripCopied(w.worktreePath, dest, names, log);
+      const ms = Date.now() - started;
+      const size = await treeSize(dest);
+      copied.files += size.files;
+      copied.bytes += size.bytes;
+      log(
+        `copied ${rel} (${size.files} ${size.files === 1 ? 'file' : 'files'}, ${formatBytes(size.bytes)}, ${ms} ms)`,
+      );
     }
     if (agentConfig) await this.copyAgentConfigFiles(w, log);
+    return { copied };
   }
 
   /**

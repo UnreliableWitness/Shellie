@@ -510,6 +510,8 @@ export type SetupEvent =
       status: SetupStepStatus;
       detail?: string;
       ms?: number;
+      /** A finished copy step: the files and bytes its `copy` entries held (agent config files not counted). */
+      copied?: { files: number; bytes: number };
       /** A failed step whose git command could not sign in to its remote. */
       auth?: GitAuthHint;
     }

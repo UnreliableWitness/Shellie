@@ -2408,6 +2408,10 @@ export function createHandlers(s: Services): Handlers {
                 status: e.status,
               },
             );
+          if (e.type === 'step' && e.copied) {
+            tel.metric('setup.copy.files', e.copied.files);
+            tel.metric('setup.copy.bytes', e.copied.bytes);
+          }
           // Hold back 'finished' until the task status is persisted, so listeners never see a stale status.
           if (e.type === 'finished') finishedEvent = e;
           else s.broadcast('setup', e);
