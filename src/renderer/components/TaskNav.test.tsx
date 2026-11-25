@@ -1543,6 +1543,86 @@ describe('TaskNav task actions (#95)', () => {
     expect(document.querySelector('.rail-fly')).toBeNull();
   });
 
+  const URL_6748 = 'https://dev.azure.com/o/p/_workitems/edit/6748';
+  const withWorkItem = (navCollapsed: boolean) => {
+    const { calls } = installFakeApi();
+    useStore.setState({
+      tasks: [
+        {
+          ...tasks[0],
+          workItem: {
+            ...tasks[0].workItem!,
+            id: '6748',
+            title: 'Webshop user migration',
+            url: URL_6748,
+          },
+        },
+        { ...tasks[1], name: 'deploy', status: 'ready' },
+      ],
+      selectedTaskId: 'a',
+      screen: { kind: 'task' },
+      navCollapsed,
+    });
+    return calls;
+  };
+
+  it('opens the current task’s work item in the browser from a button before Finish (#384)', async () => {
+    const calls = withWorkItem(false);
+    render(<TaskNav />);
+    const open = screen.getByRole('button', {
+      name: 'Open 6748 in Azure DevOps',
+    });
+    expect(open).toHaveAttribute('title', 'Open 6748 in Azure DevOps');
+    expect(open.nextElementSibling).toBe(
+      screen.getByRole('button', { name: 'Finish task' }),
+    );
+    await userEvent.click(open);
+    expect(calls).toContainEqual({
+      channel: 'shell:openExternal',
+      args: [URL_6748],
+    });
+    expect(useStore.getState().screen).toEqual({ kind: 'task' });
+  });
+
+  it('has no work item button for a task without one (#384)', async () => {
+    withWorkItem(false);
+    useStore.setState({ selectedTaskId: 'b' });
+    render(<TaskNav />);
+    expect(
+      screen.getByRole('button', { name: 'Finish task' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /in Azure DevOps/ }),
+    ).toBeNull();
+  });
+
+  it('opens the work item from the rail fly-out too (#384)', async () => {
+    const calls = withWorkItem(true);
+    render(<TaskNav />);
+    await userEvent.hover(
+      document.querySelector<HTMLElement>('.railrow[aria-current="true"]')!,
+    );
+    const fly = document.querySelector<HTMLElement>('.rail-fly')!;
+    await userEvent.click(
+      within(fly).getByRole('button', { name: 'Open 6748 in Azure DevOps' }),
+    );
+    expect(calls).toContainEqual({
+      channel: 'shell:openExternal',
+      args: [URL_6748],
+    });
+    expect(document.querySelector('.rail-fly')).toBeNull();
+    act(() => useStore.setState({ selectedTaskId: 'b' }));
+    await userEvent.hover(
+      document.querySelector<HTMLElement>('.railrow[aria-current="true"]')!,
+    );
+    expect(
+      within(document.querySelector<HTMLElement>('.rail-fly')!).queryByRole(
+        'button',
+        { name: /in Azure DevOps/ },
+      ),
+    ).toBeNull();
+  });
+
   it("keeps New task in the collapsed rail, and Finish in a task's fly-out", async () => {
     useStore.setState({
       selectedTaskId: 'a',

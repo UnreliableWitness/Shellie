@@ -326,7 +326,7 @@ button.projecttile:hover {
 .nav-new[aria-current='page'] {
   background: var(--bg-selected);
 }
-/* Finish and Discard inside the current task's row: quiet icons, so the row keeps its height. */
+/* Open work item, Finish and Discard inside the current task's row: quiet icons, so the row keeps its height. */
 .navrow-actions {
   display: inline-flex;
   flex: none;
@@ -336,6 +336,7 @@ button.projecttile:hover {
   height: 24px;
   color: var(--muted);
 }
+.navrow-actions .navrow-workitem:hover,
 .navrow-actions .navrow-finish:hover {
   color: var(--text);
 }
