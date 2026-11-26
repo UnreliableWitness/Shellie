@@ -9,6 +9,8 @@ of the nav (`2026-11-23-quiet-shell-nav-home.md`, `2026-11-23-quiet-shell-no-hea
 - **A line per brain** of the active project is back in the nav, between Home (and the project switcher) and the
   tasks, with a dot while the brain has something to read. The For you line "Something to read in ..." is gone:
   the dot says it. Home's brain tiles, the palette and Mod+Shift+B are as they were.
+- **Sprint** is back as a line in the nav, above the brains (asked a little later in the same session). Its key,
+  Home's tile and the palette are as they were.
 - **Settings** is back as a line at the foot of the nav (a gear in the rail).
 - **Switching project keeps the page.** Picking a project in the switcher or the palette used to open that
   project's page every time. Now Home, Sprint, Week, Dreams, the Project page, Settings and Secrets stay on screen
@@ -42,7 +44,7 @@ The switcher still shows only with two or more projects.
 
 ## Known gaps
 
-- Windows was not run.
+- Windows was not run, and the Sprint line was added after the look in the running app (a test covers it).
 - The dot on a brain line was not seen in the running app (the scratch brain had nothing to read); tests cover it.
 - With several brains and a long task list the nav has less room for tasks, as before the quiet shell.
 - Home's chips still open the Project page of the project clicked: there the page is what was asked for.

@@ -1,6 +1,7 @@
 import {
   Add16Regular,
   Add20Regular,
+  ArrowSprint20Regular,
   Brain20Regular,
   CheckmarkCircle12Filled,
   CheckmarkCircle16Regular,
@@ -732,6 +733,13 @@ export function TaskNav() {
       />
       {/* One project needs no switcher; Home and the palette go to its page. */}
       {connections.length > 1 && <ProjectTile rail={rail} />}
+      <NavItem
+        icon={<ArrowSprint20Regular aria-hidden="true" />}
+        label="Sprint"
+        rail={rail}
+        current={screen.kind === 'sprint'}
+        onClick={() => go({ kind: 'sprint' })}
+      />
       {/* A brain is a place the day goes through: one line each, with a dot while it has something to read. */}
       {brains.map((b) => (
         <NavItem
