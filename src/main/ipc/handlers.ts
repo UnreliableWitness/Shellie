@@ -261,7 +261,13 @@ import {
   opencodeSessionTurns as opencodeTaskTurns,
 } from '../sessions/taskSessions';
 import { askTab } from '../prDraft/askTab';
-import { pickTab, tabVerdict, type TabCandidate } from '../prDraft/pickTab';
+import {
+  pickSendTab,
+  pickTab,
+  tabVerdict,
+  type TabCandidate,
+} from '../prDraft/pickTab';
+import { sendAnswer } from '../brain/sendAnswer';
 import {
   PrDrafts,
   type HeadlessResult,
@@ -2872,24 +2878,20 @@ export function createHandlers(s: Services): Handlers {
   };
 
   let prRequestCount = 0;
+  type AgentTab = TabCandidate & {
+    cwd: string;
+    transcript: string | null;
+    opencodeSession: string | null;
+  };
   /**
-   * The task's agent tab to ask for a PR draft, and how to ask it; else why none. A tab qualifies when it runs, is
-   * not paused, its session has an agent turn from the last hour, and it waits at an empty prompt (pickTab).
+   * The task's Claude Code and OpenCode tabs that run and are not paused, each with its folder, its session and when
+   * its agent last answered: what picking a tab to type into starts from (the PR draft, a brain's answer). None
+   * without tab activity (tests).
    */
-  const prPick = async (
-    taskId: string,
-    workspaceId: string,
-  ): Promise<PickResult> => {
-    const task = taskById(taskId);
+  const agentTabs = async (task: Task): Promise<AgentTab[]> => {
     const activity = s.tabActivity;
-    if (!activity) return { reason: 'no-tab' };
-    const prWs = workspaceById(task, workspaceId);
+    if (!activity) return [];
     const since = Date.parse(task.createdAt) || 0;
-    type Found = TabCandidate & {
-      cwd: string;
-      transcript: string | null;
-      opencodeSession: string | null;
-    };
     // The cheap checks first: only a tab that runs and is not paused has its session read, all at once.
     const tabs = task.terminals.filter(
       (def) =>
@@ -2897,8 +2899,8 @@ export function createHandlers(s: Services): Handlers {
         s.terminals.isRunning(def.id) &&
         !leakWatch.isPaused(def.id),
     );
-    const found: Found[] = await Promise.all(
-      tabs.map(async (def): Promise<Found> => {
+    return Promise.all(
+      tabs.map(async (def): Promise<AgentTab> => {
         const kind = def.kind as 'claude' | 'opencode';
         const cwd = workspaceById(
           task,
@@ -2934,6 +2936,49 @@ export function createHandlers(s: Services): Handlers {
         };
       }),
     );
+  };
+
+  /** Hands a brain's answer to the task's agent tab (sendAnswer): only a tab that waits at an empty prompt is typed into. */
+  const sendBrainAnswer = (taskId: string, question: string, answer: string) =>
+    sendAnswer(
+      {
+        pick: async () =>
+          pickSendTab(await agentTabs(taskById(taskId)), Date.now()),
+        nextFile: async (cwd) => {
+          for (let n = 1; ; n++) {
+            const rel = `.shellie/brain-answer-${n}.md`;
+            const taken = await fs.access(path.join(cwd, rel)).then(
+              () => true,
+              () => false,
+            );
+            if (!taken) return rel;
+          }
+        },
+        write: async (abs, text) => {
+          await fs.mkdir(path.dirname(abs), { recursive: true });
+          await fs.writeFile(abs, text);
+        },
+        type: (id, data) => s.terminals.write(id, data),
+      },
+      question,
+      answer,
+    );
+
+  /**
+   * The task's agent tab to ask for a PR draft, and how to ask it; else why none. A tab qualifies when it runs, is
+   * not paused, its session has an agent turn from the last hour, and it waits at an empty prompt (pickTab).
+   */
+  const prPick = async (
+    taskId: string,
+    workspaceId: string,
+  ): Promise<PickResult> => {
+    const task = taskById(taskId);
+    const activity = s.tabActivity;
+    if (!activity) return { reason: 'no-tab' };
+    const prWs = workspaceById(task, workspaceId);
+    const since = Date.parse(task.createdAt) || 0;
+    type Found = AgentTab;
+    const found = await agentTabs(task);
     const picked = pickTab(found, Date.now());
     if ('reason' in picked) return picked;
     const tab = picked.tab as Found;
@@ -4117,6 +4162,8 @@ export function createHandlers(s: Services): Handlers {
       taskById(taskId);
       return cleanup.retryTask(taskId);
     },
+    'brain:sendAnswer': async (taskId, question, answer) =>
+      sendBrainAnswer(taskId, question, answer),
     'prDrafts:get': async (taskId) => prDrafts.get(taskId),
     'prDrafts:write': (taskId, workspaceId) =>
       prDrafts.write(taskId, workspaceId),
