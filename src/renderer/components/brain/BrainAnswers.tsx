@@ -113,8 +113,8 @@ export function BrainAnswers({
   };
 
   return (
-    <div className="brain-answers">
-      <div className="brain-answers-bar">
+    <div className="brain-qas">
+      <div className="brain-qas-bar">
         <button
           type="button"
           className="link small"
@@ -128,11 +128,11 @@ export function BrainAnswers({
           ? citedPaths(e.answer.answer).filter(exists)
           : [];
         return (
-          <section key={e.id} className="brain-answer">
-            <p className="brain-answer-asked muted small">You asked</p>
-            <h2 className="brain-answer-question">{e.question}</h2>
+          <section key={e.id} className="brain-qa">
+            <p className="brain-qa-asked muted small">You asked</p>
+            <h2 className="brain-qa-question">{e.question}</h2>
             {e.status === 'running' && (
-              <p className="brain-answer-running" role="status">
+              <p className="brain-qa-running" role="status">
                 <span>
                   Reading the brain… <Elapsed startedAt={e.startedAt} />
                 </span>
@@ -146,9 +146,9 @@ export function BrainAnswers({
               </p>
             )}
             {e.status === 'failed' && (
-              <div className="brain-answer-failed">
+              <div className="brain-qa-failed">
                 <p role="alert">{e.error}</p>
-                <div className="brain-answer-actions">
+                <div className="brain-qa-actions">
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -170,9 +170,9 @@ export function BrainAnswers({
               </div>
             )}
             {e.status === 'done' && e.answer && (
-              <div className="brain-answer-cols">
-                <div className="brain-answer-main">
-                  <div className="brain-doc brain-answer-text">
+              <div className="brain-qa-cols">
+                <div className="brain-qa-main">
+                  <div className="brain-doc brain-qa-text">
                     <MarkdownView
                       asset={asset}
                       path="index.md"
@@ -182,7 +182,7 @@ export function BrainAnswers({
                       idPrefix={`${e.id}-`}
                     />
                   </div>
-                  <div className="brain-answer-actions">
+                  <div className="brain-qa-actions">
                     {hasAgentTab && (
                       <button
                         type="button"
@@ -214,7 +214,7 @@ export function BrainAnswers({
                       {sendNote[e.id]}
                     </p>
                   )}
-                  <p className="brain-answer-foot muted small">
+                  <p className="brain-qa-foot muted small">
                     {[
                       `Took ${Math.round(e.answer.durationMs / 1000)} s`,
                       ...(e.answer.costEur === null
@@ -225,7 +225,7 @@ export function BrainAnswers({
                   </p>
                 </div>
                 {cited.length > 0 && (
-                  <aside className="brain-answer-sources">
+                  <aside className="brain-qa-sources">
                     <h3 id={`${e.id}-from`}>Where this comes from</h3>
                     <ul aria-labelledby={`${e.id}-from`}>
                       {cited.map((p) => {
@@ -235,7 +235,7 @@ export function BrainAnswers({
                           <li key={p}>
                             <button
                               type="button"
-                              className="brain-card brain-answer-source"
+                              className="brain-card brain-qa-source"
                               title={p}
                               onClick={() => onOpen(p, undefined)}
                             >
@@ -262,7 +262,7 @@ export function BrainAnswers({
         );
       })}
       {!running && thread.length > 0 && (
-        <form className="brain-ask brain-answer-follow" onSubmit={submit}>
+        <form className="brain-qa-follow" onSubmit={submit}>
           <input
             className="field"
             aria-label="Follow-up question"

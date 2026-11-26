@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { BRAIN_JOB_TITLE } from '../../shared/brain';
 import { ASK_CAP_MESSAGE } from '../../shared/brainAsk';
@@ -7,8 +10,10 @@ import {
   askOpencodeArgs,
   askOpencodePermission,
   BrainAsks,
+  opencodeRulePatterns,
   type BrainAsksDeps,
 } from './ask';
+import { brainOpencodePermission } from './templates';
 
 const claudeOut = (result: string, id: string) =>
   JSON.stringify({
@@ -54,6 +59,7 @@ function asks(over: Partial<BrainAsksDeps> = {}) {
     now: () => clock,
     heldReason: () => 'The skills are out of date',
     costOf: () => 0.03,
+    rulePatterns: async () => ({ edit: [], bash: [] }),
     ...over,
   });
 }
@@ -88,12 +94,56 @@ describe('the ask flags', () => {
     expect(again[again.indexOf('--tools') + 1]).toBe('Read,Glob,Grep');
   });
 
-  it('denies every edit and command on OpenCode', () => {
-    expect(askOpencodePermission()).toEqual({
-      edit: { '*': 'deny' },
-      bash: { '*': 'deny' },
-      webfetch: 'deny',
+  it("denies every edit and command on OpenCode, the brain's own allowed git commands too", () => {
+    const p = askOpencodePermission();
+    expect(p.webfetch).toBe('deny');
+    expect(p.edit['*']).toBe('deny');
+    expect(p.bash['*']).toBe('deny');
+    // A rule in the brain's opencode.json for a narrower pattern would win over '*': each is denied by name.
+    for (const pattern of Object.keys(brainOpencodePermission().bash))
+      expect(p.bash[pattern]).toBe('deny');
+    for (const pattern of Object.keys(brainOpencodePermission().edit))
+      expect(p.edit[pattern]).toBe('deny');
+    expect(new Set(Object.values(p.bash))).toEqual(new Set(['deny']));
+    expect(new Set(Object.values(p.edit))).toEqual(new Set(['deny']));
+  });
+
+  it("denies the patterns the brain's own opencode.json names as well", () => {
+    const p = askOpencodePermission({
+      edit: ['wiki/**'],
+      bash: ['npm run *', 'git diff*'],
     });
+    expect(p.edit['wiki/**']).toBe('deny');
+    expect(p.bash['npm run *']).toBe('deny');
+    expect(p.bash['git diff*']).toBe('deny');
+  });
+
+  it("reads the rule patterns of a brain's opencode.json, and none from a missing or broken one", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'brain-ask-'));
+    expect(await opencodeRulePatterns(dir)).toEqual({ edit: [], bash: [] });
+    await writeFile(path.join(dir, 'opencode.json'), '{ not json');
+    expect(await opencodeRulePatterns(dir)).toEqual({ edit: [], bash: [] });
+    await writeFile(
+      path.join(dir, 'opencode.json'),
+      JSON.stringify({
+        permission: {
+          edit: { '*': 'allow', 'wiki/**': 'allow' },
+          bash: { 'npm run *': 'allow' },
+          webfetch: 'deny',
+        },
+      }),
+    );
+    expect(await opencodeRulePatterns(dir)).toEqual({
+      edit: ['*', 'wiki/**'],
+      bash: ['npm run *'],
+    });
+    // A whole tool set with one word has no patterns to name.
+    await writeFile(
+      path.join(dir, 'opencode.json'),
+      JSON.stringify({ permission: { edit: 'allow', bash: 'allow' } }),
+    );
+    expect(await opencodeRulePatterns(dir)).toEqual({ edit: [], bash: [] });
+    await rm(dir, { recursive: true, force: true });
   });
 
   it('runs the ask command on OpenCode under a job title', () => {
@@ -153,15 +203,24 @@ describe('BrainAsks', () => {
           part: { type: 'text', text: 'An answer' },
         }),
       ].join('\n');
-    const a = asks({ agent: () => 'opencode', opencodeModel: () => 'p/m' });
+    const a = asks({
+      agent: () => 'opencode',
+      opencodeModel: () => 'p/m',
+      rulePatterns: async () => ({ edit: [], bash: ['make *'] }),
+    });
     await a.ask('t1', 'b1', 'Why? (ctx)', 's1');
     const c = calls[0];
     expect(c.cmd.command).toBe('opencode');
     expect(c.cmd.args).toEqual(askOpencodeArgs('p/m', 's1'));
     expect(c.input).toBe('Why? (ctx)');
     expect(JSON.parse(c.env?.OPENCODE_CONFIG_CONTENT ?? '{}')).toEqual({
-      permission: askOpencodePermission(),
+      permission: askOpencodePermission({ edit: [], bash: ['make *'] }),
     });
+    expect(
+      JSON.parse(c.env?.OPENCODE_CONFIG_CONTENT ?? '{}').permission.bash[
+        'make *'
+      ],
+    ).toBe('deny');
     expect(c.env?.SHELLIE_BRAIN_ID).toBe('b1');
   });
 

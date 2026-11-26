@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import {
   askPrompt,
   BRAIN_JOB_TITLE,
@@ -13,6 +15,7 @@ import {
 import { claudeResultWithSession, programMissing } from '../services/prSummary';
 import { opencodeFailure, opencodeInput, type BrainJobDeps } from './jobs';
 import { opencodeResultWithSession } from './opencodeResult';
+import { brainOpencodePermission } from './templates';
 
 /** The only tools an ask run has on Claude Code: it can read the brain and nothing else. */
 const ASK_TOOLS = 'Read,Glob,Grep';
@@ -57,13 +60,48 @@ export function askOpencodeArgs(
   ];
 }
 
-/** Stricter than the brain's own rules (which allow edits and five git commands): a question only reads. */
-export function askOpencodePermission(): {
+export type RulePatterns = { edit: string[]; bash: string[] };
+
+/**
+ * A question's rules on OpenCode: nothing is edited and no command runs. OpenCode merges this with the brain's own
+ * `opencode.json`, where a rule for a narrower pattern (`git status*`: allow) wins over `*`, so every pattern the
+ * brain's rules name is denied by name too: Shellie's own (brainOpencodePermission) and `own`, the ones found in the
+ * brain's file. Verified on OpenCode 1.19.3: with `*` alone `git status` still ran; `tools: false` changes nothing.
+ */
+export function askOpencodePermission(
+  own: RulePatterns = { edit: [], bash: [] },
+): {
   edit: Record<string, 'deny'>;
   bash: Record<string, 'deny'>;
   webfetch: 'deny';
 } {
-  return { edit: { '*': 'deny' }, bash: { '*': 'deny' }, webfetch: 'deny' };
+  const brain = brainOpencodePermission();
+  const denied = (patterns: string[]): Record<string, 'deny'> =>
+    Object.fromEntries(['*', ...patterns].map((p) => [p, 'deny' as const]));
+  return {
+    edit: denied([...Object.keys(brain.edit), ...own.edit]),
+    bash: denied([...Object.keys(brain.bash), ...own.bash]),
+    webfetch: 'deny',
+  };
+}
+
+/** The edit and bash patterns the brain's own `opencode.json` has rules for; none when it is missing or unreadable. */
+export async function opencodeRulePatterns(
+  brainDir: string,
+): Promise<RulePatterns> {
+  const keys = (v: unknown) =>
+    v && typeof v === 'object' ? Object.keys(v as object) : [];
+  try {
+    const file = JSON.parse(
+      await fs.readFile(path.join(brainDir, 'opencode.json'), 'utf8'),
+    ) as { permission?: { edit?: unknown; bash?: unknown } };
+    return {
+      edit: keys(file.permission?.edit),
+      bash: keys(file.permission?.bash),
+    };
+  } catch {
+    return { edit: [], bash: [] };
+  }
 }
 
 export type BrainAsksDeps = Pick<
@@ -88,6 +126,8 @@ export type BrainAsksDeps = Pick<
     sessionId: string | null,
     since: number,
   ) => number | null;
+  /** The patterns the brain's own OpenCode rules name (opencodeRulePatterns); tests pass their own. */
+  rulePatterns?: (brainDir: string) => Promise<RulePatterns>;
 };
 
 /**
@@ -133,7 +173,9 @@ export class BrainAsks {
               env: {
                 ...d.env(brainId),
                 OPENCODE_CONFIG_CONTENT: JSON.stringify({
-                  permission: askOpencodePermission(),
+                  permission: askOpencodePermission(
+                    await (d.rulePatterns ?? opencodeRulePatterns)(cwd),
+                  ),
                 }),
               },
             },

@@ -186,7 +186,7 @@ export function BrainTab({
                 </button>
               )}
             </div>
-            <form className="brain-ask brain-guide-ask" onSubmit={submit}>
+            <form className="brain-guide-ask" onSubmit={submit}>
               <input
                 className="field"
                 aria-label="Question for the brain"
