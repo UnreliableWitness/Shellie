@@ -75,6 +75,8 @@ describe('brain handlers', () => {
   let openAgents: (string | undefined)[];
   let pages: AdoWikiPage[];
   let tasks: Task[];
+  let asked: unknown[][];
+  let stopped: string[];
   let h: ReturnType<typeof createBrainHandlers>;
   let deps: BrainHandlerDeps;
 
@@ -114,6 +116,8 @@ describe('brain handlers', () => {
     openAgents = [];
     pages = [];
     tasks = [];
+    asked = [];
+    stopped = [];
     deps = {
       brains,
       git,
@@ -129,6 +133,15 @@ describe('brain handlers', () => {
         held: () => false,
         release: (id) => {
           released.push(id);
+        },
+      },
+      asks: {
+        ask: async (...args) => {
+          asked.push(args);
+          return { ok: false, refused: 'cap', message: 'cap' };
+        },
+        stop: (key) => {
+          stopped.push(key);
         },
       },
       terminals: {
@@ -463,6 +476,40 @@ describe('brain handlers', () => {
         },
       ],
     ]);
+  });
+
+  it('asks the brain from a task with the work item as context, and stops it', async () => {
+    const v = await h['brain:create'](NEW);
+    tasks = [
+      {
+        id: 't9',
+        name: 'invoice-export',
+        workItem: {
+          id: '412',
+          project: 'Acme',
+          title: 'Export invoices as CSV',
+        },
+      },
+      { id: 't10', name: 'spike', workItem: null },
+    ] as unknown as Task[];
+    expect(await h['brain:ask'](v.id, 't9', 'Who\nknows?', null)).toEqual({
+      ok: false,
+      refused: 'cap',
+      message: 'cap',
+    });
+    await h['brain:ask'](v.id, 't10', 'Why?', 's1');
+    expect(asked).toEqual([
+      [
+        't9',
+        v.id,
+        'Who knows? (Asked from the task for work item 412: Export invoices as CSV.)',
+        null,
+      ],
+      ['t10', v.id, 'Why? (Asked from the task "spike".)', 's1'],
+    ]);
+    await expect(h['brain:ask']('nope', 't9', 'Why?', null)).rejects.toThrow();
+    await h['brain:askStop']('t9');
+    expect(stopped).toEqual(['t9']);
   });
 
   it('serves pages, search, relevance and opening a source', async () => {

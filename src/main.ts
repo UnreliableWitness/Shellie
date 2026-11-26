@@ -25,15 +25,24 @@ import {
 import started from 'electron-squirrel-startup';
 import iconUrl from '../assets/icon/png/256.png?inline';
 import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
-import { BRAIN_HOME_CONNECTION_ID, parseJoinLink } from './shared/brainShare';
+import {
+  BRAIN_HOME_CONNECTION_ID,
+  NEWER_SHELLIE,
+  parseJoinLink,
+} from './shared/brainShare';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { capturedSessionIds } from './main/brain/state';
 import { BrainStore } from './main/brain/BrainStore';
-import { BrainJobRunner, brainJobEnv } from './main/brain/jobs';
-import { ledgerToday } from './main/brain/health';
+import {
+  BrainJobRunner,
+  brainJobEnv,
+  type BrainJobDeps,
+} from './main/brain/jobs';
+import { BrainAsks } from './main/brain/ask';
+import { brainCostSince, ledgerToday } from './main/brain/health';
 import { jobTelemetry } from './main/brain/brainTelemetry';
 import { broadcastEvent, jobEvents } from './main/brain/brainEvents';
 import { createRasterizer } from './main/brain/convert/raster';
@@ -1148,7 +1157,8 @@ async function boot(): Promise<void> {
       event: (name, props) => telemetry.event(name, props),
     });
     const stopSyncListener = onBrainGitIdle((dir) => brainSync.afterGit(dir));
-    const brainRunner = new BrainJobRunner({
+    // What a job and a question from a task share: how the brain's agent is run, and when it may not be.
+    const brainRunDeps = {
       platform,
       run: (cmd, o) => ptyHost.run(cmd, o),
       env: (id) => brainJobEnv(id, brainEnv(id)),
@@ -1167,6 +1177,33 @@ async function boot(): Promise<void> {
             (b.options.agent !== 'opencode' || opencodeReady(b)))
         );
       },
+    } satisfies Pick<
+      BrainJobDeps,
+      | 'platform'
+      | 'run'
+      | 'env'
+      | 'tokensToday'
+      | 'cap'
+      | 'brainDir'
+      | 'model'
+      | 'agent'
+      | 'opencodeModel'
+      | 'ready'
+    >;
+    const brainAsks = new BrainAsks({
+      ...brainRunDeps,
+      now: () => Date.now(),
+      heldReason: (id) => {
+        const b = brains.get(id);
+        return b && shellieOutdated(b)
+          ? NEWER_SHELLIE
+          : "The brain's skills are out of date. Update them on the brain's page first.";
+      },
+      costOf: (id, _sessionId, since) =>
+        brainCostSince(ledgerStore.all(), id, since),
+    });
+    const brainRunner = new BrainJobRunner({
+      ...brainRunDeps,
       commit: async (id, message, job) => {
         const b = brainOf(id);
         // Before the commit, so what a long read was written from is part of it.
@@ -1327,6 +1364,7 @@ async function boot(): Promise<void> {
         store: brains,
         home: brainHome,
         runner: brainRunner,
+        asks: brainAsks,
         ledgerToday: brainToday,
         userData,
         installId: installIdHere,

@@ -189,3 +189,19 @@ export function ledgerToday(
   }
   return { tokens, costEur };
 }
+
+/** What the brain's requests cost from `since` (epoch ms) on; null while the ledger has no priced record of them. */
+export function brainCostSince(
+  records: CostRecord[],
+  brainId: string,
+  since: number,
+): number | null {
+  let costEur: number | null = null;
+  for (const r of records) {
+    if (r.attribution.level !== 'brain' || r.attribution.brainId !== brainId)
+      continue;
+    if (r.costEur === null || new Date(r.at).getTime() < since) continue;
+    costEur = (costEur ?? 0) + r.costEur;
+  }
+  return costEur;
+}

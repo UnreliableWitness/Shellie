@@ -307,6 +307,7 @@ export type Services = {
     userData: string;
     installId?: string;
     sync?: BrainHandlerDeps['sync'];
+    asks?: BrainHandlerDeps['asks'];
     takePendingJoin?: BrainHandlerDeps['takePendingJoin'];
   };
   /** What needs the developer's attention (main); absent in tests. */
@@ -1024,6 +1025,7 @@ export function createHandlers(s: Services): Handlers {
     remember: (values) => s.rememberSensitive?.(values),
     event: (n, p) => tel.event(n, p),
     sync: brain.sync,
+    asks: brain.asks,
     takePendingJoin: brain.takePendingJoin,
   });
   /**
