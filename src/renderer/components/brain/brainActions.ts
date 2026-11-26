@@ -22,6 +22,17 @@ export type BrainAction =
   | 'tab'
   | 'terminal'
   | 'capture-option'
+  /**
+   * A task's Brain tab: a question asked (typed, a suggestion, a follow-up) or stopped, an answer sent to the task's
+   * agent or copied, the brain terminal opened from the tab's foot.
+   */
+  | 'ask-typed'
+  | 'ask-suggested'
+  | 'ask-follow-up'
+  | 'ask-stop'
+  | 'ask-send'
+  | 'ask-copy'
+  | 'terminal-from-tab'
   /** The Brain page's terminal closed (killed). */
   | 'close-terminal'
   /** Mark verified on a wiki page; a source removed; a value scrubbed. */

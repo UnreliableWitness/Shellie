@@ -259,6 +259,64 @@ describe('handlers: finish with a pull request', () => {
     expect(hx.store.state.tasks[0].status).toBe('done');
   });
 
+  it("writes the answer in the agent tab's folder and types one line, or says why not", async () => {
+    const hx = await prHarness();
+    await hx.store.update((st) => {
+      st.tasks[0].terminals.push({
+        id: 'c1',
+        kind: 'claude',
+        label: 'Claude Code',
+      });
+    });
+    const typed: [string, string][] = [];
+    const noted: [string, string][] = [];
+    hx.services.onTerminalInput = (id, data) => {
+      noted.push([id, data]);
+    };
+    let view = { state: 'done' as const, typed: false, quietFor: 60_000 };
+    hx.services.tabActivity = {
+      view: () => view,
+      onState: () => () => undefined,
+    };
+    hx.services.terminals.isRunning = () => true;
+    hx.services.terminals.write = (id: string, data: string) => {
+      typed.push([id, data]);
+    };
+
+    expect(
+      await hx.h['brain:sendAnswer'](
+        hx.t.id,
+        'What was decided?',
+        'Semicolons.',
+      ),
+    ).toEqual({ ok: true, terminalId: 'c1' });
+    const file = path.join(hx.t.worktreePath, '.shellie', 'brain-answer-1.md');
+    expect(readFileSync(file, 'utf8')).toContain('Semicolons.');
+    // The typed line counts as text in the prompt: the next pick must not type over it.
+    expect(noted).toEqual([['c1', typed[0]?.[1]]]);
+    expect(typed).toEqual([
+      [
+        'c1',
+        'Read .shellie/brain-answer-1.md: what the project\'s brain says about "What was decided?"',
+      ],
+    ]);
+
+    await hx.h['brain:sendAnswer'](hx.t.id, 'Again?', 'Yes.');
+    expect(
+      existsSync(path.join(hx.t.worktreePath, '.shellie', 'brain-answer-2.md')),
+    ).toBe(true);
+
+    view = { ...view, typed: true };
+    expect(await hx.h['brain:sendAnswer'](hx.t.id, 'Q', 'A')).toEqual({
+      ok: false,
+      reason: 'typing',
+    });
+    expect(typed).toHaveLength(2);
+    expect(
+      existsSync(path.join(hx.t.worktreePath, '.shellie', 'brain-answer-3.md')),
+    ).toBe(false);
+  });
+
   describe('prDrafts:write (headless)', () => {
     const result = (text: string) =>
       JSON.stringify({

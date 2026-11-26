@@ -32,6 +32,7 @@ export const BrainOptionsSchema = z.object({
   /** Its long reads, letters and what they cite go to the person's phone reading site, encrypted (src/main/reader). */
   sendToPhone: z.boolean().default(false),
   dailyTokenCap: z.number().int().positive().default(500_000),
+  /** Unused since 2026-11-26 (the brain terminal never opens by itself; the Brain tab is in a task's row instead). Kept so stored brains still parse. */
   openBrainTerminalOnStart: z.boolean().default(false),
   model: BrainModelSchema.default('sonnet'),
   /** The coding agent that runs the brain's jobs. */

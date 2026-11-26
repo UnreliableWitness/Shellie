@@ -19,6 +19,7 @@ import type {
   SourcePictures,
   SourceType,
 } from './brain';
+import type { AskOutcome } from './brainAsk';
 import type {
   BrainHome,
   BrainHomeInput,
@@ -728,6 +729,31 @@ export type Channels = {
     args: [brainId: string, taskId: string];
     result: string[];
   };
+  /**
+   * Asks the brain from a task: a headless, read-only run of the brain's agent, outside the job queue. `resume`
+   * continues that session (a follow-up). A refusal (the daily cap, held jobs) and a failed, timed-out or stopped run
+   * resolve with `ok: false`; one question per task at a time.
+   */
+  'brain:ask': {
+    args: [
+      brainId: string,
+      taskId: string,
+      question: string,
+      resume: string | null,
+    ];
+    result: AskOutcome;
+  };
+  /** Stops the task's running question; nothing when none runs. */
+  'brain:askStop': { args: [taskId: string]; result: void };
+  /**
+   * Hands a brain's answer to the task's agent: written to `.shellie/brain-answer-<n>.md` in the agent tab's folder,
+   * and one line naming it typed into the tab's prompt, not sent. Only into a running, unpaused agent tab that waits
+   * at an empty prompt; else the reason, and nothing is written or typed.
+   */
+  'brain:sendAnswer': {
+    args: [taskId: string, question: string, answer: string];
+    result: SendAnswerResult;
+  };
   /** Opens a file under sources/ (an original, a picture) with the system. */
   'brain:openSource': { args: [brainId: string, path: string]; result: void };
   /** A source's pictures with their status (`sources/wiki`: the mirror's attachments); none is zero counts. */
@@ -1022,6 +1048,10 @@ export type Channels = {
 };
 
 /** Push events from main to the renderer. */
+export type SendAnswerResult =
+  | { ok: true; terminalId: string }
+  | { ok: false; reason: 'none' | 'busy' | 'typing' };
+
 export type Events = {
   setup: SetupEvent;
   'terminal:data': { id: string; data: string };

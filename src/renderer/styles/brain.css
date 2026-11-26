@@ -658,6 +658,255 @@
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-1);
 }
+/* A task's Brain tab as a guide: one centred column, a head, then the three steps. An open page takes the full width. */
+.brain-tab {
+  overflow: auto;
+}
+.brain-tab-col {
+  flex: none;
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 12px 32px;
+}
+.brain-tab-col.is-page {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  padding: 0;
+}
+.brain-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.brain-guide[hidden] {
+  display: none;
+}
+.brain-guide-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brain-guide-head h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+}
+.brain-guide-head p {
+  margin: 0;
+}
+.brain-guide-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+.brain-step-label {
+  font-size: 12px;
+  line-height: 18px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-guide-lead {
+  max-width: 640px;
+}
+.brain-guide-about {
+  color: var(--text);
+}
+.brain-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.brain-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+.brain-guide-ask {
+  background: var(--bg-card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  padding: 8px;
+}
+.brain-guide-ask .field {
+  height: 36px;
+  font-size: 15px;
+  background: transparent;
+  border-color: transparent;
+}
+.brain-guide-try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.brain-guide-chip {
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.brain-guide-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.brain-guide-chip:disabled {
+  color: var(--disabled);
+  cursor: default;
+}
+.brain-guide-note {
+  margin: 0;
+}
+.brain-guide-all summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.brain-guide-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  padding: 16px 20px;
+}
+.brain-guide-add-text {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.brain-guide-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.brain-guide-foot {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+/* A task's Brain tab: what it asked its brain, each question with its answer, then a follow-up. */
+.brain-qas {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.brain-qas-bar {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+.brain-qa {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.brain-qa-asked {
+  margin: 0;
+}
+.brain-qa-question {
+  margin: -8px 0 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.brain-qa-running {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+.brain-qa-failed p {
+  margin: 0 0 8px;
+  color: var(--red);
+}
+.brain-qa-cols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.brain-qa-main {
+  flex: 999 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.brain-qa-main > p {
+  margin: 0;
+}
+.brain-qa-text {
+  flex: none;
+  overflow: visible;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 0;
+}
+.brain-qa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.brain-qa-sources {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.brain-qa-sources h3,
+.brain-step-head h3 {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-qa-sources ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brain-qa-source {
+  width: 100%;
+}
+.brain-qa-follow,
+.brain-guide-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brain-qa-follow .field,
+.brain-guide-ask .field {
+  flex: 1;
+  min-width: 0;
+}
+.brain-qa-follow {
+  max-width: 640px;
+}
 .brain-takeaways p {
   margin: 4px 0 0;
   white-space: pre-wrap;

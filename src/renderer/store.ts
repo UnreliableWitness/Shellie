@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
+import type { AskRefusal, BrainAnswer } from '../shared/brainAsk';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { ReadingBrain } from '../shared/reading';
 import type { AppSettings } from '../shared/usage';
@@ -39,6 +40,21 @@ export const BRAIN_TAB = 'brain';
 const VIEW_PREFIX = 'view:';
 /** Tabs that are not a terminal: always valid. */
 const FIXED_TABS = new Set([USAGE_TAB, DOCS_TAB, CHANGES_TAB, BRAIN_TAB]);
+
+/** One question a task asked its brain, and what came back. */
+export type AskExchange = {
+  id: string;
+  /** As the person typed it, without the task's context sentence. */
+  question: string;
+  status: 'running' | 'done' | 'failed';
+  startedAt: number;
+  answer: BrainAnswer | null;
+  error: string | null;
+  refused: AskRefusal | null;
+};
+/** How a question was asked, for the count of each. */
+export type AskVia = 'typed' | 'suggested' | 'follow-up';
+let askSeq = 0;
 
 /** Values from IPC are plain JSON, so equal JSON means nothing changed. */
 const sameJson = (a: unknown, b: unknown) =>
@@ -199,6 +215,32 @@ export type Store = {
   shownTabsByTask: Record<string, string[]>;
   /** Closes a view tab; when it was the one showing, the first terminal shows instead. */
   closeTab(taskId: string, tab: string): void;
+  /** The view tabs put in a task's row without being asked for (showTabOnce), so a closed one is not put back. */
+  shownOnceByTask: Record<string, string[]>;
+  /**
+   * Puts a view tab in the task's tab row without selecting it, once per task for the session: the Brain tab of a
+   * task with a brain is there from the start. Closed, it stays closed until it is opened again.
+   */
+  showTabOnce(taskId: string, tab: string): void;
+  /**
+   * What each task asked its brain from the Brain tab, oldest first. Here and not in the tab, so an answer lands
+   * while another task or tab is showing. Kept for the session.
+   */
+  brainAsksByTask: Record<string, AskExchange[]>;
+  /** Whether the task's Brain tab shows its answers instead of its start. */
+  brainAskOpenByTask: Record<string, boolean>;
+  /**
+   * Asks the task's brain and shows the answers: a follow-up continues the session of the last answer. Nothing for
+   * an empty question or while one runs. Never rejects: a failure is kept on the exchange.
+   */
+  askBrain(
+    taskId: string,
+    brainId: string,
+    question: string,
+    via: AskVia,
+  ): Promise<void>;
+  stopBrainAsk(taskId: string): void;
+  setBrainAskOpen(taskId: string, open: boolean): void;
   /** A document a terminal link asked the Docs tab to open; the nonce makes repeats count. */
   docTarget: Record<
     string,
@@ -429,9 +471,16 @@ export const useStore = create<Store>((set, get) => ({
     // No auto-select: the app opens on Home and only the user picks a task.
     const selected = get().selectedTaskId;
     const stillThere = tasks.some((t) => t.id === selected);
+    const ids = new Set(tasks.map((t) => t.id));
+    const kept = <T>(by: Record<string, T>) =>
+      Object.keys(by).every((id) => ids.has(id))
+        ? by
+        : Object.fromEntries(Object.entries(by).filter(([id]) => ids.has(id)));
     set({
       tasks: keepUnchanged(get().tasks, tasks),
       selectedTaskId: stillThere ? selected : null,
+      brainAsksByTask: kept(get().brainAsksByTask),
+      brainAskOpenByTask: kept(get().brainAskOpenByTask),
     });
   },
   notify: (level, message) => {
@@ -463,6 +512,74 @@ export const useStore = create<Store>((set, get) => ({
       ...(selected === tab ? { tabByTask: others } : {}),
     });
   },
+  shownOnceByTask: {},
+  showTabOnce: (taskId, tab) => {
+    const once = get().shownOnceByTask[taskId] ?? [];
+    if (once.includes(tab)) return;
+    set({
+      shownOnceByTask: { ...get().shownOnceByTask, [taskId]: [...once, tab] },
+      ...shownWith(get(), taskId, tab),
+    });
+  },
+  brainAsksByTask: {},
+  brainAskOpenByTask: {},
+  askBrain: async (taskId, brainId, question, via) => {
+    const q = question.trim();
+    const before = get().brainAsksByTask[taskId] ?? [];
+    if (!q || before.some((e) => e.status === 'running')) return;
+    track('brain.screen.action', { action: `ask-${via}` });
+    const id = `ask${++askSeq}`;
+    const resume =
+      before.findLast((e) => e.answer?.sessionId)?.answer?.sessionId ?? null;
+    const patch = (over: Partial<AskExchange>) =>
+      set((s) => {
+        const thread = s.brainAsksByTask[taskId];
+        // The task went away while the agent read: nothing to fill in.
+        if (!thread?.some((e) => e.id === id)) return {};
+        return {
+          brainAsksByTask: {
+            ...s.brainAsksByTask,
+            [taskId]: thread.map((e) => (e.id === id ? { ...e, ...over } : e)),
+          },
+        };
+      });
+    set((s) => ({
+      brainAsksByTask: {
+        ...s.brainAsksByTask,
+        [taskId]: [
+          ...before,
+          {
+            id,
+            question: q,
+            status: 'running',
+            startedAt: Date.now(),
+            answer: null,
+            error: null,
+            refused: null,
+          },
+        ],
+      },
+      brainAskOpenByTask: { ...s.brainAskOpenByTask, [taskId]: true },
+    }));
+    try {
+      const out = await api().invoke('brain:ask', brainId, taskId, q, resume);
+      if (out.ok) patch({ status: 'done', answer: out.answer });
+      else
+        patch({ status: 'failed', error: out.message, refused: out.refused });
+    } catch (e) {
+      patch({ status: 'failed', error: (e as Error).message });
+    }
+  },
+  stopBrainAsk: (taskId) => {
+    track('brain.screen.action', { action: 'ask-stop' });
+    void api()
+      .invoke('brain:askStop', taskId)
+      .catch(() => undefined);
+  },
+  setBrainAskOpen: (taskId, open) =>
+    set((s) => ({
+      brainAskOpenByTask: { ...s.brainAskOpenByTask, [taskId]: open },
+    })),
   activeTab: (taskId) => {
     const task = get().tasks.find((t) => t.id === taskId);
     const want = get().tabByTask[taskId];

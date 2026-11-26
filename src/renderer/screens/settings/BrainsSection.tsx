@@ -70,10 +70,6 @@ const TOGGLES: {
     key: 'sendToPhone',
     label: 'Send long reads and letters to my phone',
   },
-  {
-    key: 'openBrainTerminalOnStart',
-    label: 'Open the brain terminal when a task starts',
-  },
 ];
 
 /** The section a deep link ("+ New brain" on the project page) opens with this form focused. */

@@ -24,6 +24,7 @@ import {
   writeReady,
   writeTarget,
 } from '../../shared/brain';
+import { askWithContext } from '../../shared/brainAsk';
 import type { Events, Handlers } from '../../shared/ipc';
 import type { TelemetryProps } from '../../shared/telemetry';
 import type { Connection, Repo, Task } from '../../shared/types';
@@ -62,6 +63,7 @@ import { joinLink, NEWER_SHELLIE } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
 import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
+import type { BrainAsks } from './ask';
 import type { createBrainTerminals } from './brainTerminal';
 import {
   imagesBucket,
@@ -168,6 +170,8 @@ export type BrainChannels =
   | 'brain:write'
   | 'brain:search'
   | 'brain:relevant'
+  | 'brain:ask'
+  | 'brain:askStop'
   | 'brain:openSource'
   | 'brain:pictures'
   | 'brain:acceptDrop';
@@ -184,6 +188,8 @@ export type BrainHandlerDeps = {
   rasterize?: Rasterize;
   git: GitClient;
   runner: BrainRunner;
+  /** Questions from a task's Brain tab (BrainAsks); absent in tests that ask none. */
+  asks?: Pick<BrainAsks, 'ask' | 'stop'>;
   /** The brain's Claude terminal (main); absent in tests that do not open one. */
   terminals?: Pick<ReturnType<typeof createBrainTerminals>, 'open' | 'kill'>;
   mirrorAuth: (connectionId: string, gitUrl: string) => MirrorAuth;
@@ -1176,6 +1182,23 @@ export function createBrainHandlers(
           withoutContext(taskMd).split(/\r?\n/).slice(0, 200).join('\n'),
         );
       return relevantPages(await pageRows(b.path), taskWords(texts));
+    },
+    'brain:ask': async (id, taskId, question, resume) => {
+      brainOf(id);
+      if (!d.asks) throw new Error('Asking a brain is not available');
+      const task = d.task(taskId);
+      return d.asks.ask(
+        taskId,
+        id,
+        askWithContext(question, {
+          workItemId: task.workItem?.id ?? null,
+          title: task.workItem?.title || task.name,
+        }),
+        resume,
+      );
+    },
+    'brain:askStop': async (taskId) => {
+      d.asks?.stop(taskId);
     },
     'brain:openSource': async (id, rel) => {
       const b = brainOf(id);

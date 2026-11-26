@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { pickTab, RECENT_MS, type TabCandidate } from './pickTab';
+import {
+  pickSendTab,
+  pickTab,
+  RECENT_MS,
+  sendVerdict,
+  type TabCandidate,
+} from './pickTab';
 
 const NOW = 10 * RECENT_MS;
 const tab = (o: Partial<TabCandidate> & { id: string }): TabCandidate => ({
@@ -117,5 +123,63 @@ describe('pickTab', () => {
         NOW,
       ),
     ).toEqual({ reason: 'busy' });
+  });
+});
+
+describe('sendVerdict and pickSendTab', () => {
+  it('never types into a paused tab or one that does not run', () => {
+    expect(sendVerdict(tab({ id: 'a', paused: true }), NOW)).toBe('none');
+    expect(sendVerdict(tab({ id: 'a', running: false }), NOW)).toBe('none');
+  });
+
+  it('takes an idle, quiet tab whatever its age, and one without a turn yet', () => {
+    expect(
+      sendVerdict(tab({ id: 'a', lastAgentTurnAt: NOW - 2 * RECENT_MS }), NOW),
+    ).toBe('ok');
+    expect(sendVerdict(tab({ id: 'a', lastAgentTurnAt: null }), NOW)).toBe(
+      'ok',
+    );
+  });
+
+  it('refuses a tab with unsent text, a working agent or fresh output', () => {
+    expect(
+      sendVerdict(tab({ id: 'a', activity: act({ typed: true }) }), NOW),
+    ).toBe('typing');
+    expect(
+      sendVerdict(tab({ id: 'a', activity: act({ state: 'working' }) }), NOW),
+    ).toBe('busy');
+    expect(
+      sendVerdict(tab({ id: 'a', activity: act({ quietFor: 100 }) }), NOW),
+    ).toBe('busy');
+    expect(sendVerdict(tab({ id: 'a', activity: null }), NOW)).toBe('busy');
+  });
+
+  it('picks the tab with the latest agent turn; one without turns is oldest', () => {
+    const picked = pickSendTab(
+      [
+        tab({ id: 'none', lastAgentTurnAt: null }),
+        tab({ id: 'old', lastAgentTurnAt: NOW - 5000 }),
+        tab({ id: 'new', lastAgentTurnAt: NOW - 1000 }),
+        tab({
+          id: 'busy',
+          lastAgentTurnAt: NOW,
+          activity: act({ state: 'working' }),
+        }),
+      ],
+      NOW,
+    );
+    expect(picked).toEqual({ tab: expect.objectContaining({ id: 'new' }) });
+  });
+
+  it('says why no tab can take it: unsent text, then busy, then none', () => {
+    const typing = tab({ id: 't', activity: act({ typed: true }) });
+    const busy = tab({ id: 'b', activity: act({ state: 'working' }) });
+    const paused = tab({ id: 'p', paused: true });
+    expect(pickSendTab([paused, busy, typing], NOW)).toEqual({
+      reason: 'typing',
+    });
+    expect(pickSendTab([paused, busy], NOW)).toEqual({ reason: 'busy' });
+    expect(pickSendTab([paused], NOW)).toEqual({ reason: 'none' });
+    expect(pickSendTab([], NOW)).toEqual({ reason: 'none' });
   });
 });

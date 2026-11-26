@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CostRecord } from '../../shared/ledger';
 import { GitClient } from '../services/GitClient';
-import { brainHealth, ledgerToday } from './health';
+import { brainCostSince, brainHealth, ledgerToday } from './health';
 import { scaffoldBrain } from './scaffold';
 import { addSource } from './sources';
 import { updateConflicts } from './conflicts';
@@ -283,6 +283,30 @@ describe('ledgerToday', () => {
       },
       ...over,
     }) as CostRecord;
+
+  it("sums the brain's euros since a moment, and gives null when the ledger has none", () => {
+    const since = new Date('2026-11-03T09:59:00').getTime();
+    const b2 = {
+      level: 'brain',
+      brainId: 'b2',
+      organization: 'o',
+      project: 'p',
+    } as const;
+    expect(
+      brainCostSince(
+        [
+          rec({}),
+          rec({ id: 'r2', at: '2026-11-03T10:05:00', costEur: 0.5 }),
+          rec({ id: 'r3', at: '2026-11-03T09:00:00' }),
+          rec({ id: 'r4', attribution: b2 }),
+        ],
+        'b1',
+        since,
+      ),
+    ).toBe(0.75);
+    expect(brainCostSince([rec({ costEur: null })], 'b1', since)).toBeNull();
+    expect(brainCostSince([], 'b1', since)).toBeNull();
+  });
 
   it("sums the brain's tokens and euros of today's local date", () => {
     const now = new Date('2026-11-03T15:00:00');

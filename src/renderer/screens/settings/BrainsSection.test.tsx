@@ -179,6 +179,10 @@ describe('BrainsForConnection', () => {
     const user = userEvent.setup();
     expect(await screen.findByText('/data/brains/b1')).toBeInTheDocument();
     expect(screen.getByText('No wiki')).toBeInTheDocument();
+    // The brain terminal never opens by itself any more: its switch is gone.
+    expect(
+      screen.queryByLabelText('Open the brain terminal when a task starts'),
+    ).toBeNull();
     await user.click(
       screen.getByLabelText(
         'Run /sync after a wiki refresh that changed pages',
