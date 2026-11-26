@@ -1,17 +1,29 @@
 /**
- * Pure helpers of a dream's OpenCode runs: waiting on a run that was stopped, telling why a run failed in a fixed
- * phrase, finding the run's session, and naming the task a report's evidence points at.
+ * A dream's OpenCode runs: the one call every run is (`dreamCall`), waiting on a run that was stopped, telling why a
+ * run failed in a fixed phrase, finding the run's session, and naming the task a report's evidence points at.
  */
 
 import { withTimeout } from '../async';
 import { opencodeResultWithSession } from '../brain/opencodeResult';
-import { programMissing } from '../services/prSummary';
+import type { Platform } from '../platform/Platform';
+import { programMissing, type runWithInput } from '../services/prSummary';
 import type { TaskSessions } from './material';
+import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
+
+/** How long a stopped run may take to end before its folders are removed or rebuilt anyway. */
+export const RUN_GRACE_MS = 10_000;
 
 /** A dream failed for this reason: a fixed phrase, never session text, a path or a program's output. */
 export class DreamFailed extends Error {
   constructor(readonly reason: string) {
     super(reason);
+  }
+}
+
+/** The run was stopped through its signal. */
+export class DreamStopped extends Error {
+  constructor() {
+    super('stopped');
   }
 }
 
@@ -66,6 +78,69 @@ export function sessionOf(stdout: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * One OpenCode run of a dream in its worktree, as every dream run is made: the dream's arguments and title, the
+ * dream's environment (applied last: spawning spreads process.env, then the env given, then the command's own), the
+ * prompt on stdin. Returns the models other than `model` that answered (empty: the model rule held). Throws
+ * `DreamStopped` when `signal` aborted (after giving the process `RUN_GRACE_MS` to end), `DreamFailed` with a fixed
+ * phrase for any other failure of the run.
+ */
+export async function dreamCall(
+  d: {
+    platform: Pick<Platform, 'opencodeCommand'>;
+    /** It MUST kill the process when `signal` aborts (`runWithInput` does). */
+    run: typeof runWithInput;
+    sessionModels: (sessionId: string) => string[];
+  },
+  o: {
+    model: string;
+    what: 'propose' | 'check' | 'adjust';
+    project: string;
+    worktree: string;
+    dataDir: string;
+    /** The check run: edits only in the data folder. */
+    readOnlyWorktree?: boolean;
+    prompt: string;
+    timeoutMs: number;
+    signal: AbortSignal;
+  },
+): Promise<string[]> {
+  const cmd = d.platform.opencodeCommand(
+    undefined,
+    dreamArgs(o.model, o.what, o.project),
+  );
+  const env = dreamEnv(cmd.env ?? {}, {
+    model: o.model,
+    worktree: o.worktree,
+    dataDir: o.dataDir,
+    readOnlyWorktree: o.readOnlyWorktree === true,
+  });
+  const running = d.run(
+    { ...cmd, env },
+    {
+      cwd: o.worktree,
+      input: o.prompt,
+      timeoutMs: o.timeoutMs,
+      env,
+      signal: o.signal,
+    },
+  );
+  let stdout: string;
+  try {
+    stdout = await abortable(running, o.signal);
+  } catch (e) {
+    if (o.signal.aborted) {
+      // Stopped: give the process time to end before its folders go or are rebuilt.
+      await settledWithin(running, RUN_GRACE_MS);
+      throw new DreamStopped();
+    }
+    throw new DreamFailed(runReason(e, o.timeoutMs));
+  }
+  if (o.signal.aborted) throw new DreamStopped();
+  const session = sessionOf(stdout);
+  return otherModels(session ? d.sessionModels(session) : [], o.model);
 }
 
 /** The task a report names: by id (or its digest file, `tasks/<id>.md`), else by label, else the name as given. */

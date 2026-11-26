@@ -2,12 +2,14 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  DreamAdjustment,
   DreamFileDiff,
   DreamProposal,
   DreamResult,
   DreamView,
 } from '../../shared/dreams';
 import type { TaskView } from '../../shared/types';
+import { allCommands } from '../commands/registry';
 import { useStore } from '../store';
 import { emptyState, result, viewOf } from '../test-helpers/dreamFixtures';
 import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
@@ -170,6 +172,9 @@ function fakeMain(r: DreamResult | null, extra: FakeHandlers = {}) {
   };
 }
 
+const openCommand = () =>
+  allCommands().find((c) => c.id === 'dream.openAsTask');
+
 const callsOf = (
   calls: { channel: string; args: unknown[] }[],
   channel: string,
@@ -208,7 +213,7 @@ describe('DreamScreen', () => {
     expect(useStore.getState().screen).toEqual({ kind: 'dreams' });
   });
 
-  it('shows the head: title, meta, kept count and the two actions', async () => {
+  it('shows the head: title, meta and kept count, without Change with an agent', async () => {
     fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);
     expect(
@@ -223,8 +228,8 @@ describe('DreamScreen', () => {
     expect(screen.getByText('dream/2026-11-20-1')).toBeInTheDocument();
     expect(screen.getByText('2 of 2 kept')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Change with an agent' }),
-    ).toBeEnabled();
+      screen.queryByRole('button', { name: 'Change with an agent' }),
+    ).toBeNull();
   });
 
   it('chooses the first proposal that is not dropped on open', async () => {
@@ -386,9 +391,6 @@ describe('DreamScreen', () => {
     await userEvent.click(drop);
     expect(callsOf(calls, 'dream:drop')).toEqual([['r1', 'p1', true]]);
     expect(await screen.findByText('1 of 2 kept')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Change with an agent' }),
-    ).toBeEnabled();
     expect(rowButton('Migrations')).toHaveTextContent('Dropped');
     const undo = within(list()).getByRole('button', { name: /^Undo/ });
     await userEvent.click(undo);
@@ -446,23 +448,24 @@ describe('DreamScreen', () => {
     expect(drop).toBeEnabled();
   });
 
-  it('disables Open as a task when every proposal is dropped', async () => {
+  it('does not offer Open this dream as a task when every proposal is dropped', async () => {
     const r = twoProposals();
     for (const p of r.proposals) p.dropped = true;
     fakeMain(r);
     render(<DreamScreen repoId="r1" />);
-    expect(
-      await screen.findByRole('button', { name: 'Change with an agent' }),
-    ).toBeDisabled();
-    expect(screen.getByText('0 of 2 kept')).toBeInTheDocument();
+    expect(await screen.findByText('0 of 2 kept')).toBeInTheDocument();
+    expect(openCommand()).toBeUndefined();
   });
 
-  it('opens as a task: New task with the repo, the branch, the dream and its name', async () => {
+  it('opens as a task from the palette: New task with the repo, the branch, the dream and its name', async () => {
     const { calls } = fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Change with an agent' }),
-    );
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(openCommand()).toMatchObject({
+      title: 'Open this dream as a task',
+      group: 'tasks',
+    });
+    act(() => openCommand()!.run());
     await waitFor(() =>
       expect(useStore.getState().screen).toEqual({
         kind: 'new-task',
@@ -491,9 +494,8 @@ describe('DreamScreen', () => {
     });
     fakeMain(twoProposals());
     render(<DreamScreen repoId="r1" />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Change with an agent' }),
-    );
+    await screen.findByRole('list', { name: 'Proposals' });
+    act(() => openCommand()!.run());
     await waitFor(() =>
       expect(useStore.getState().screen).toMatchObject({
         kind: 'new-task',
@@ -509,9 +511,8 @@ describe('DreamScreen', () => {
       },
     });
     render(<DreamScreen repoId="r1" />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Change with an agent' }),
-    );
+    await screen.findByRole('list', { name: 'Proposals' });
+    act(() => openCommand()!.run());
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The dream could not be opened as a task',
     );
@@ -706,7 +707,7 @@ describe('DreamScreen: what to do with a dream', () => {
     render(<DreamScreen repoId="r1" />);
     expect(
       await screen.findByText(
-        /Shellie proposes these changes to this repo’s skills and rules, from your past sessions\. Drop what you don’t want, then create a pull request\./,
+        /Shellie proposes these changes to this repo’s skills and rules, from your past sessions\. Drop what you don’t want, ask for a change where one is nearly right, then create a pull request\./,
       ),
     ).toBeInTheDocument();
     const create = await screen.findByRole('button', {
@@ -833,6 +834,433 @@ describe('DreamScreen: what to do with a dream', () => {
     expect(
       screen.getByRole('button', { name: 'Create pull request' }),
     ).toBeDisabled();
+  });
+});
+
+describe('DreamScreen: asking for a change', () => {
+  const box = () =>
+    screen.getByRole('textbox', { name: 'Ask for a change to this proposal' });
+  const foot = () => screen.getByRole('group', { name: 'Ask for a change' });
+  const adjustment = (
+    ask: string,
+    note: string,
+    over: Partial<DreamAdjustment> = {},
+  ): DreamAdjustment => ({
+    ask,
+    at: '2026-11-26T10:00:00',
+    note,
+    changed: true,
+    reverted: [],
+    before: { commit: 'b'.repeat(40), files: [], title: 'Old', why: 'Old' },
+    ...over,
+  });
+  const withP1 = (
+    over: Partial<DreamProposal>,
+    res: Partial<DreamResult> = {},
+  ) => {
+    const r = twoProposals(res);
+    r.proposals[0] = { ...r.proposals[0], ...over };
+    return r;
+  };
+  /** Selects an element's text as a drag would, and lets the page hear of it before anything else happens. */
+  const selectText = async (el: HTMLElement) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  const running = (proposalId: string, ask = 'make it shorter') => ({
+    adjusting: { proposalId, ask, startedAt: 1 },
+  });
+
+  it('sends the trimmed ask with Enter, and empties the box', async () => {
+    const { calls } = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(box()).toHaveAttribute(
+      'placeholder',
+      'Ask for a change to this proposal',
+    );
+    await userEvent.type(box(), '  make it shorter  {Enter}');
+    expect(callsOf(calls, 'dream:adjust')).toEqual([
+      ['r1', 'p1', 'make it shorter'],
+    ]);
+    await waitFor(() => expect(box()).toHaveValue(''));
+  });
+
+  it('makes a new line with Shift+Enter, and sends with the Ask button', async () => {
+    const { calls } = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    await userEvent.type(box(), 'one{Shift>}{Enter}{/Shift}two');
+    expect(callsOf(calls, 'dream:adjust')).toEqual([]);
+    expect(box()).toHaveValue('one\ntwo');
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
+    expect(callsOf(calls, 'dream:adjust')).toEqual([['r1', 'p1', 'one\ntwo']]);
+  });
+
+  it('cannot send an empty ask', async () => {
+    const { calls } = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    await userEvent.type(box(), '   {Enter}');
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    expect(callsOf(calls, 'dream:adjust')).toEqual([]);
+  });
+
+  it('sends the text selected in the pane as the quote; Escape and the chip’s button remove it', async () => {
+    const { calls } = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    const why = await screen.findByText(
+      'In three tasks the agent generated a migration.',
+    );
+    const select = () => selectText(why);
+    const chip = 'About: “In three tasks the agent generated a migration.”';
+    await select();
+    act(() => box().focus());
+    expect(screen.getByText(chip)).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByText(chip)).toBeNull();
+
+    act(() => box().blur());
+    await select();
+    act(() => box().focus());
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Remove the selected text from the ask',
+      }),
+    );
+    expect(screen.queryByText(chip)).toBeNull();
+    expect(box()).toHaveFocus();
+
+    act(() => box().blur());
+    await select();
+    act(() => box().focus());
+    window.getSelection()!.removeAllRanges();
+    await userEvent.type(box(), 'say why{Enter}');
+    expect(callsOf(calls, 'dream:adjust')).toEqual([
+      [
+        'r1',
+        'p1',
+        'say why',
+        'In three tasks the agent generated a migration.',
+      ],
+    ]);
+    await waitFor(() => expect(screen.queryByText(chip)).toBeNull());
+  });
+
+  it('cuts a long quote, and takes no quote from outside the pane', async () => {
+    const long = 'x'.repeat(700);
+    fakeMain(withP1({ why: long }));
+    render(<DreamScreen repoId="r1" />);
+    await selectText(await screen.findByText(long));
+    act(() => box().focus());
+    expect(screen.getByText(`About: “${'x'.repeat(600)}”`)).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+
+    act(() => box().blur());
+    await selectText(screen.getByText('dream/2026-11-20-1'));
+    act(() => box().focus());
+    expect(screen.queryByText(/^About:/)).toBeNull();
+    window.getSelection()!.removeAllRanges();
+  });
+
+  it('keeps the ask and says why when main refuses it', async () => {
+    fakeMain(twoProposals(), {
+      'dream:adjust': () => {
+        throw new Error('A change is already being made');
+      },
+    });
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    await userEvent.type(box(), 'make it shorter{Enter}');
+    expect(await within(foot()).findByRole('alert')).toHaveTextContent(
+      'A change is already being made',
+    );
+    expect(box()).toHaveValue('make it shorter');
+  });
+
+  it('keeps what was typed while another proposal is read', async () => {
+    fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    await userEvent.type(box(), 'half an ask');
+    await userEvent.click(rowButton('Skill release-notes'));
+    expect(box()).toHaveValue('');
+    await userEvent.click(rowButton('Migrations'));
+    expect(box()).toHaveValue('half an ask');
+  });
+
+  it('shows the run under way: Working on, Stop, the other boxes and Create pull request off', async () => {
+    const { calls } = fakeMain(twoProposals(running('p1')));
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(
+      within(foot()).getByText('Working on: “make it shorter”'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', {
+        name: 'Ask for a change to this proposal',
+      }),
+    ).toBeNull();
+    expect(
+      within(rowButton('Migrations')).getByRole('img', {
+        name: 'A change is being made',
+      }),
+    ).toBeInTheDocument();
+    expect(within(rowButton('Skill release-notes')).queryByRole('img')).toBe(
+      null,
+    );
+    const sentence =
+      'A change to “Migrations are written by hand, never generated” is being made';
+    const create = screen.getByRole('button', { name: 'Create pull request' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(create).toBeDisabled();
+    expect(create).toHaveAttribute('title', sentence);
+    expect(
+      screen.getByRole('button', { name: 'Drop this proposal' }),
+    ).toBeDisabled();
+    expect(openCommand()).toBeUndefined();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(callsOf(calls, 'dream:adjustStop')).toEqual([['r1']]);
+
+    await userEvent.click(rowButton('Skill release-notes'));
+    expect(box()).toBeDisabled();
+    expect(box()).toHaveAccessibleDescription(sentence);
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    expect(within(foot()).getByText(sentence)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+
+  it('says what the ask came to and puts the focus back in the box when the run ends', async () => {
+    const m = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    await userEvent.type(box(), 'make it shorter{Enter}');
+    m.set(twoProposals(running('p1')));
+    const working = await screen.findByText('Working on: “make it shorter”');
+    expect(working).toHaveFocus();
+    expect(within(foot()).getByRole('status')).toHaveTextContent('');
+
+    m.set(
+      withP1({
+        title: 'Migrations are written by hand',
+        commit: 'd'.repeat(40),
+        adjustments: [adjustment('make it shorter', 'Cut the second example.')],
+      }),
+    );
+    await waitFor(() =>
+      expect(within(foot()).getByRole('status')).toHaveTextContent(
+        'Changed: Cut the second example.',
+      ),
+    );
+    expect(box()).toHaveFocus();
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: 'Migrations are written by hand',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Create pull request' }),
+    ).toBeEnabled();
+  });
+
+  it('shows the asks as asked and answered, with Undo on the newest that changed something', async () => {
+    const { calls } = fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', 'Cut the second example.', {
+            quote: 'the second example',
+            reverted: ['src/app.ts', 'package.json'],
+          }),
+          adjustment('why this folder?', 'It is where the rules live.', {
+            changed: false,
+            before: undefined,
+          }),
+        ],
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    const asks = within(foot())
+      .getAllByRole('listitem')
+      .map((li) => li.textContent);
+    expect(asks).toEqual([
+      'You: make it shorterAbout: “the second example”Changed: Cut the second example.UndoLeft as they were: src/app.ts, package.json',
+      'You: why this folder?Answer: It is where the rules live.',
+    ]);
+    expect(screen.queryByRole('button', { name: /^Earlier asks/ })).toBeNull();
+    expect(rowButton('Migrations')).toHaveTextContent(
+      'New rule · seen in 2 tasks · changed',
+    );
+    expect(rowButton('Skill release-notes')).not.toHaveTextContent('changed');
+
+    await userEvent.click(within(foot()).getByRole('button', { name: 'Undo' }));
+    expect(callsOf(calls, 'dream:adjustUndo')).toEqual([['r1', 'p1']]);
+    await waitFor(() => expect(box()).toHaveFocus());
+    expect(within(foot()).getByRole('status')).toHaveTextContent(
+      'The change was taken back',
+    );
+  });
+
+  it('has no Undo when no ask changed the proposal, and none is pressed while a run is under way', async () => {
+    const answer = adjustment('why?', 'Because.', {
+      changed: false,
+      before: undefined,
+    });
+    const m = fakeMain(withP1({ adjustments: [answer] }));
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(within(foot()).queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(rowButton('Migrations')).not.toHaveTextContent('changed');
+    m.set(
+      withP1(
+        { adjustments: [adjustment('shorter', 'Done.'), answer] },
+        running('p2'),
+      ),
+    );
+    expect(
+      await within(foot()).findByRole('button', { name: 'Undo' }),
+    ).toBeDisabled();
+  });
+
+  it('shows the last three asks, and the rest behind Earlier asks (n)', async () => {
+    fakeMain(
+      withP1({
+        adjustments: [1, 2, 3, 4, 5].map((n) =>
+          adjustment(`ask ${n}`, `note ${n}`, {
+            at: `2026-11-26T10:0${n}:00`,
+          }),
+        ),
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    const shown = () =>
+      within(foot())
+        .getAllByRole('listitem')
+        .map((li) => li.querySelector('p')!.textContent);
+    expect(shown()).toEqual(['You: ask 3', 'You: ask 4', 'You: ask 5']);
+    // Only the newest change can be taken back.
+    expect(
+      within(foot()).getAllByRole('button', { name: 'Undo' }),
+    ).toHaveLength(1);
+    const earlier = screen.getByRole('button', { name: 'Earlier asks (2)' });
+    expect(earlier).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(earlier);
+    expect(earlier).toHaveAttribute('aria-expanded', 'true');
+    expect(shown()).toEqual([
+      'You: ask 1',
+      'You: ask 2',
+      'You: ask 3',
+      'You: ask 4',
+      'You: ask 5',
+    ]);
+  });
+
+  it('shows a failed ask with its phrase; Try again puts the ask and its quote back', async () => {
+    fakeMain(
+      twoProposals({
+        adjustFailed: {
+          proposalId: 'p1',
+          ask: 'make it shorter',
+          quote: 'the second example',
+          reason: 'The agent changed nothing',
+        },
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(
+      within(foot()).getByText(
+        'Could not make the change: The agent changed nothing',
+      ),
+    ).toBeInTheDocument();
+    expect(box()).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(box()).toHaveValue('make it shorter');
+    expect(box()).toHaveFocus();
+    expect(screen.getByText('About: “the second example”')).toBeInTheDocument();
+
+    // The failure is the other proposal's: nothing about it here.
+    await userEvent.click(rowButton('Skill release-notes'));
+    expect(screen.queryByText(/Could not make the change/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('says a run that failed when it ends', async () => {
+    const m = fakeMain(twoProposals(running('p1')));
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByText('Working on: “make it shorter”');
+    m.set(
+      twoProposals({
+        adjustFailed: {
+          proposalId: 'p1',
+          ask: 'make it shorter',
+          reason: 'Stopped',
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(within(foot()).getByRole('status')).toHaveTextContent(
+        'Could not make the change: Stopped',
+      ),
+    );
+    expect(box()).toHaveFocus();
+  });
+
+  it('switches the box off for a dropped proposal', async () => {
+    fakeMain(withP1({ dropped: true }));
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    await userEvent.click(rowButton('Migrations'));
+    expect(box()).toBeDisabled();
+    expect(box()).toHaveAccessibleDescription(
+      'Take the proposal back to change it',
+    );
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+  });
+
+  it('fetches the changes again when an ask gave the chosen proposal a new commit, and shows the last ones meanwhile', async () => {
+    let release = () => {};
+    let late = false;
+    const m = fakeMain(twoProposals(), {
+      'dream:diff': (_repoId, id) =>
+        late
+          ? new Promise<DreamFileDiff[]>((resolve) => {
+              release = () =>
+                resolve([{ ...diffs.p1[0], path: '.apm/new.md' }]);
+            })
+          : (diffs[id] ?? []),
+    });
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByText('- old line');
+    late = true;
+    m.set(
+      withP1({
+        commit: 'd'.repeat(40),
+        adjustments: [adjustment('rename it', 'Renamed.')],
+      }),
+    );
+    await waitFor(() =>
+      expect(callsOf(m.calls, 'dream:diff')).toEqual([
+        ['r1', 'p1'],
+        ['r1', 'p1'],
+      ]),
+    );
+    expect(
+      screen.getByText('.apm/instructions/database.instructions.md'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Loading the changes/)).toBeNull();
+    await act(async () => release());
+    expect(await screen.findByText('.apm/new.md')).toBeInTheDocument();
+    expect(
+      screen.queryByText('.apm/instructions/database.instructions.md'),
+    ).toBeNull();
   });
 });
 

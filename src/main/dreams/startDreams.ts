@@ -191,6 +191,10 @@ export async function toProjects(
   });
 }
 
+/** What the page says of an ask whose run a quit ended. */
+export const ASK_LEFT_BY_QUIT =
+  'Shellie was closed while the change was being made';
+
 export async function startDreams(
   d: Pick<
     DreamSchedulerDeps,
@@ -219,6 +223,12 @@ export async function startDreams(
     },
 ) {
   await d.store.load();
+  // A run of `dream:adjust` does not outlive the app: the next ask rebuilds the worktree it may have left changed.
+  await d.store
+    .clearLeftAsks(ASK_LEFT_BY_QUIT)
+    .catch((e: unknown) =>
+      console.error('[dreams] an ask left by a quit was not cleared', e),
+    );
   await toProjects(d.settings, d.store, d.repos()).catch((e: unknown) =>
     console.error('[dreams] the dream settings were not moved to projects', e),
   );

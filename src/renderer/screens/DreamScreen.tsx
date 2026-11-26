@@ -1,5 +1,13 @@
 import { ChevronLeft16Regular } from '@fluentui/react-icons';
-import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   DreamDiffLine,
   DreamEvidence,
@@ -23,9 +31,17 @@ import {
 } from '../components/dreams/dreamWords';
 import { spacedNumber } from '../components/dreams/folders';
 import { useDreamsState } from '../components/dreams/useDreams';
+import {
+  AskBox,
+  adjustingSentence,
+  NO_DRAFT,
+  type AskDraft,
+} from '../components/dreams/AskBox';
 import { DreamsLoading } from '../components/dreams/DreamsLoading';
 import { DiffView } from '../components/review/DiffView';
 import { ConfirmBar, PageHeader } from '../components/ui';
+import { useContributeCommands } from '../commands/registry';
+import type { Command } from '../commands/types';
 import { plural } from '../format';
 import { useStore } from '../store';
 
@@ -40,7 +56,7 @@ const WHO_CAPTION: Record<DreamEvidence['who'], string> = {
 
 /**
  * One repo's dream result, for review (spec section 8): the proposals, each with where it comes from and what it
- * changes; drop some, open the rest as a task or discard the dream. Every count comes from the view main holds.
+ * changes; drop some, ask for a change to one, send the rest as a pull request or discard the dream. Every count comes from the view main holds.
  */
 export function DreamScreen({ repoId }: { repoId: string }) {
   const { view, failed, retry } = useDreamsState();
@@ -131,15 +147,28 @@ function Review({
       setPendingDrop(null);
   }, [pendingDrop, proposals]);
 
-  // Each proposal's changes, fetched once and kept: a Drop, an Undo or a call under way re-renders none of them.
+  // Each proposal's changes, fetched once per commit and kept: a Drop, an Undo or a call under way re-renders none
+  // of them, and an ask that changed the proposal (a new commit) fetches them again.
   const [diffs, setDiffs] = useState<Record<string, DiffState>>({});
   const asked = useRef(new Set<string>());
+  // The key each proposal's changes are wanted under now: an answer for an older commit is kept, not shown.
+  const wanted = useRef(new Map<string, string>());
   const chosenPid = chosen?.id ?? null;
   const diffKey = chosen
     ? `${result.repoId}/${result.id}/${chosen.id}/${chosen.commit}`
     : null;
   useEffect(() => {
-    if (!chosenPid || !diffKey || asked.current.has(diffKey)) return;
+    if (!chosenPid || !diffKey) return;
+    wanted.current.set(chosenPid, diffKey);
+    if (asked.current.has(diffKey)) {
+      // Fetched before (an Undo went back to this commit): it is the one to show again.
+      setDiffs((d) =>
+        d[diffKey] && d[`shown/${chosenPid}`] !== d[diffKey]
+          ? { ...d, [`shown/${chosenPid}`]: d[diffKey] }
+          : d,
+      );
+      return;
+    }
     asked.current.add(diffKey);
     // Kept by its key whenever it comes, also once another proposal is chosen.
     void api()
@@ -148,8 +177,32 @@ function Review({
         (files): DiffState => ({ files }),
         (e: unknown): DiffState => ({ error: errorMessage(e) }),
       )
-      .then((state) => setDiffs((d) => ({ ...d, [diffKey]: state })));
+      .then((state) =>
+        setDiffs((d) => ({
+          ...d,
+          [diffKey]: state,
+          // Until the new commit's changes are here the last ones stay on screen: nothing blinks.
+          ...(wanted.current.get(chosenPid) === diffKey
+            ? { [`shown/${chosenPid}`]: state }
+            : {}),
+        })),
+      );
   }, [chosenPid, diffKey, result.repoId]);
+
+  // What is being written in each proposal's box, kept while another proposal is read.
+  const [drafts, setDrafts] = useState<Record<string, AskDraft>>({});
+  const setDraft = useCallback(
+    (update: (d: AskDraft) => AskDraft) => {
+      if (chosenPid === null) return;
+      setDrafts((ds) => ({
+        ...ds,
+        [chosenPid]: update(ds[chosenPid] ?? NO_DRAFT),
+      }));
+    },
+    [chosenPid],
+  );
+  // The ask being worked on (one per result): what it changes must not change under it.
+  const adjusting = adjustingSentence(result);
 
   const call = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -173,7 +226,8 @@ function Review({
       setError(errorMessage(e));
     }
   };
-  const dropping = (p: DreamProposal) => closing || pendingDrop?.id === p.id;
+  const dropping = (p: DreamProposal) =>
+    closing || adjusting !== null || pendingDrop?.id === p.id;
 
   const openAsTask = () =>
     call('open', async () => {
@@ -192,6 +246,28 @@ function Review({
         },
       });
     });
+
+  // The old way to change a proposal, kept in the palette: a task on the dream's branch.
+  const openNow = useRef(openAsTask);
+  useEffect(() => {
+    openNow.current = openAsTask;
+  });
+  const canOpen = kept > 0 && !closing && adjusting === null;
+  const commands = useMemo<Command[]>(
+    () =>
+      canOpen
+        ? [
+            {
+              id: 'dream.openAsTask',
+              title: 'Open this dream as a task',
+              group: 'tasks',
+              run: () => void openNow.current(),
+            },
+          ]
+        : [],
+    [canOpen],
+  );
+  useContributeCommands('dream', commands);
 
   /** Create pull request (or Push branch): the dream closes when it worked; a secret finding asks first. */
   const send = (pushAnyway: boolean) => {
@@ -280,17 +356,11 @@ function Review({
             </button>
             <button
               type="button"
-              className="btn"
-              disabled={kept === 0 || closing}
-              title="Makes a task on the dream's branch. Its agent is told what the dream proposed, so you can ask it to change a proposal."
-              onClick={() => void openAsTask()}
-            >
-              Change with an agent
-            </button>
-            <button
-              type="button"
               className="btn btn-primary"
-              disabled={kept === 0 || closing || target === null}
+              disabled={
+                kept === 0 || closing || target === null || adjusting !== null
+              }
+              title={adjusting ?? undefined}
               onClick={() => void send(false)}
             >
               {busy === 'pr'
@@ -310,7 +380,8 @@ function Review({
       </div>
       <p className="dream-review-note">
         Shellie proposes these changes to this repo&rsquo;s skills and rules,
-        from your past sessions. Drop what you don&rsquo;t want, then{' '}
+        from your past sessions. Drop what you don&rsquo;t want, ask for a
+        change where one is nearly right, then{' '}
         {target && !target.available
           ? 'push the branch'
           : 'create a pull request'}
@@ -377,6 +448,13 @@ function Review({
                     </span>
                     <span className="muted small">{proposalLine(p)}</span>
                   </span>
+                  {result.adjusting?.proposalId === p.id && (
+                    <span
+                      className="dot dream-proposal-dot"
+                      role="img"
+                      aria-label="A change is being made"
+                    />
+                  )}
                 </button>
                 {p.dropped && (
                   <button
@@ -399,9 +477,15 @@ function Review({
             key={chosen.id}
             result={result}
             proposal={chosen}
-            diff={diffKey ? (diffs[diffKey] ?? null) : null}
+            diff={
+              diffKey
+                ? (diffs[diffKey] ?? diffs[`shown/${chosen.id}`] ?? null)
+                : null
+            }
             busy={dropping(chosen)}
             onDrop={(dropped) => void drop(chosen, dropped)}
+            draft={drafts[chosen.id] ?? NO_DRAFT}
+            onDraft={setDraft}
           />
         )}
       </div>
@@ -415,18 +499,27 @@ function Detail({
   diff,
   busy,
   onDrop,
+  draft,
+  onDraft,
 }: {
   result: DreamResult;
   proposal: DreamProposal;
   diff: DiffState | null;
   busy: boolean;
   onDrop: (dropped: boolean) => void;
+  draft: AskDraft;
+  onDraft: (update: (d: AskDraft) => AskDraft) => void;
 }) {
   const tasks = useStore((s) => s.tasks);
   const openTask = useStore((s) => s.openTask);
   const id = useId();
+  const pane = useRef<HTMLElement>(null);
   return (
-    <section aria-labelledby={`${id}-title`} className="dream-detail">
+    <section
+      ref={pane}
+      aria-labelledby={`${id}-title`}
+      className="dream-detail"
+    >
       <div className="dream-detail-head">
         <div className="dream-detail-claim">
           <span className="muted small">{KIND_LABEL[p.kind]}</span>
@@ -489,9 +582,17 @@ function Detail({
           repoId={result.repoId}
           dreamId={result.id}
           proposalId={p.id}
+          commit={p.commit}
           diff={diff}
         />
       </section>
+      <AskBox
+        result={result}
+        proposal={p}
+        draft={draft}
+        onDraft={onDraft}
+        scope={pane}
+      />
     </section>
   );
 }
@@ -501,11 +602,14 @@ const Changes = memo(function Changes({
   repoId,
   dreamId,
   proposalId,
+  commit,
   diff,
 }: {
   repoId: string;
   dreamId: string;
   proposalId: string;
+  /** The proposal's commit: a file open in the full diff is read again when an ask changed it. */
+  commit: string;
   diff: DiffState | null;
 }) {
   const [full, setFull] = useState<{
@@ -530,7 +634,7 @@ const Changes = memo(function Changes({
     return () => {
       live = false;
     };
-  }, [fullPath, repoId, proposalId]);
+  }, [fullPath, repoId, proposalId, commit]);
   const open = useCallback(
     (path: string) => setFull({ path, texts: null, error: null }),
     [],
@@ -575,7 +679,7 @@ const Changes = memo(function Changes({
         ) : (
           <div className="dream-fulldiff">
             <DiffView
-              uriKey={`dream/${repoId}/${dreamId}/${proposalId}/${full.path}`}
+              uriKey={`dream/${repoId}/${dreamId}/${proposalId}/${commit}/${full.path}`}
               before={t.before}
               after={t.after}
               // A new file has nothing on the left: inline shows it over the full width.

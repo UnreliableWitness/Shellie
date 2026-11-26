@@ -284,6 +284,21 @@ describe('proposalLine', () => {
     expect(proposalLine(p(['t1']))).toBe('Changed skill · seen in 1 task');
     expect(proposalLine(p([]))).toBe('Changed skill');
   });
+  it('says changed once an ask changed the proposal, not for an answer', () => {
+    const ask = (changed: boolean) => ({
+      ask: 'a',
+      at: '2026-11-26T10:00:00',
+      note: 'n',
+      changed,
+      reverted: [],
+    });
+    expect(proposalLine({ ...p(['t1']), adjustments: [ask(true)] })).toBe(
+      'Changed skill · seen in 1 task · changed',
+    );
+    expect(proposalLine({ ...p([]), adjustments: [ask(false)] })).toBe(
+      'Changed skill',
+    );
+  });
   it('says Dropped for a dropped one', () => {
     expect(proposalLine(p(['t1'], true))).toBe('Dropped');
   });

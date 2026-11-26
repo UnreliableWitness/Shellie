@@ -263,6 +263,152 @@ export async function commitFiles(
   return (await git.run(worktree, [...c, 'rev-parse', 'HEAD'])).trim();
 }
 
+/** The body of every dream commit. */
+export const COMMIT_BODY =
+  'Proposed by a Shellie dream. Review before merging.';
+
+/**
+ * A proposal's commit made again with what the worktree now holds at `paths` (a path that is gone is removed): the
+ * new commit's parent is `commit`'s parent and its tree is `commit`'s tree with those paths as they now are, so
+ * nothing else of the worktree goes in. Built in a temporary index at `index` (removed afterwards) with
+ * `commit-tree`: the worktree, its index and its branch stay as they were, and the new commit is on no branch (the
+ * caller keeps it reachable). `same` when the paths hold what the commit already has, `empty` when the new commit
+ * would change nothing against its parent.
+ */
+export async function remadeCommit(
+  git: Git,
+  worktree: string,
+  o: {
+    commit: string;
+    paths: string[];
+    index: string;
+    subject: string;
+    body: string;
+    config: string[];
+  },
+): Promise<{ commit: string; files: string[] } | 'same' | 'empty'> {
+  const c = configFlags([
+    ...o.config,
+    ...(await authorConfig(git, worktree, o.config)),
+  ]);
+  const opts = {
+    env: { GIT_INDEX_FILE: o.index },
+    timeoutMs: CHANGES_DIFF_TIMEOUT_MS,
+  };
+  const sha = async (rev: string) =>
+    (await git.run(worktree, [...c, 'rev-parse', '--verify', rev])).trim();
+  const list = `${o.index}.paths`;
+  try {
+    const parent = await sha(`${o.commit}^`);
+    await git.run(worktree, [...c, 'read-tree', o.commit], opts);
+    const present: string[] = [];
+    const gone: string[] = [];
+    for (const p of o.paths)
+      ((await fs.lstat(path.join(worktree, p)).catch(() => null))
+        ? present
+        : gone
+      ).push(p);
+    for (const [paths, args] of [
+      [present, ['add', '-f']],
+      [gone, ['rm', '-q', '-r', '--cached', '--ignore-unmatch']],
+    ] as const) {
+      if (paths.length === 0) continue;
+      // From a file, NUL-separated: no command line grows with the number of paths.
+      await fs.writeFile(list, paths.map((p) => `${p}\0`).join(''));
+      await git.run(
+        worktree,
+        [
+          ...c,
+          '--literal-pathspecs',
+          ...args,
+          `--pathspec-from-file=${list}`,
+          '--pathspec-file-nul',
+        ],
+        opts,
+      );
+    }
+    const tree = (await git.run(worktree, [...c, 'write-tree'], opts)).trim();
+    if (tree === (await sha(`${o.commit}^{tree}`))) return 'same';
+    if (tree === (await sha(`${parent}^{tree}`))) return 'empty';
+    const commit = (
+      await git.run(worktree, [
+        ...c,
+        'commit-tree',
+        tree,
+        '-p',
+        parent,
+        '-m',
+        o.subject,
+        ...(o.body.trim() ? ['-m', o.body] : []),
+      ])
+    ).trim();
+    const files = (
+      await git.run(worktree, [
+        ...c,
+        'diff-tree',
+        '-r',
+        '-z',
+        '--no-renames',
+        '--no-commit-id',
+        '--name-only',
+        commit,
+      ])
+    )
+      .split('\0')
+      .filter((f) => f !== '');
+    return { commit, files };
+  } finally {
+    await fs.rm(o.index, { force: true });
+    await fs.rm(`${o.index}.lock`, { force: true });
+    await fs.rm(list, { force: true });
+  }
+}
+
+/** Where the commits a dream's proposals had are kept reachable while the dream is open: one ref per commit. */
+const keptRefs = (dreamId: string): string => `refs/shellie/dreams/${dreamId}/`;
+
+/**
+ * Keeps `commits` of the dream reachable (no gc removes them, no branch shows them): a ref each, in the repo. An
+ * asked-for change replaces a proposal's commit, and Undo and the diff still read the ones of before.
+ */
+export async function keepCommits(
+  git: Git,
+  repoPath: string,
+  dreamId: string,
+  commits: string[],
+  config: string[],
+): Promise<void> {
+  for (const sha of commits)
+    await git.run(repoPath, [
+      ...configFlags(config),
+      'update-ref',
+      `${keptRefs(dreamId)}${sha}`,
+      sha,
+    ]);
+}
+
+/** Removes the refs of `keepCommits`: the dream closed. Throws when git fails. */
+export async function forgetCommits(
+  git: Git,
+  repoPath: string,
+  dreamId: string,
+  config: string[],
+): Promise<void> {
+  const c = configFlags(config);
+  const refs = (
+    await git.run(repoPath, [
+      ...c,
+      'for-each-ref',
+      '--format=%(refname)',
+      keptRefs(dreamId),
+    ])
+  )
+    .split('\n')
+    .filter((r) => r.startsWith(keptRefs(dreamId)));
+  for (const ref of refs)
+    await git.run(repoPath, [...c, 'update-ref', '-d', ref]);
+}
+
 const SUBJECT_MAX = 72;
 const PREFIX = 'dream: ';
 

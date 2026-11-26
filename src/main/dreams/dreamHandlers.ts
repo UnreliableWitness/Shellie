@@ -15,7 +15,10 @@ import {
   DreamRepoSchema,
   widens,
   type DreamingSettings,
+  type DreamAdjustment,
   type DreamProposal,
+  DREAM_ASK_MAX,
+  DREAM_QUOTE_MAX,
   type DreamResult,
   type DreamUsage,
   type DreamView,
@@ -36,15 +39,30 @@ import type { DreamStore } from './DreamStore';
 import { DREAM_READ_TIMEOUT_MS, proposalDiff, proposalFile } from './dreamDiff';
 import {
   authorConfig,
+  changedPaths,
+  COMMIT_BODY,
+  commitSubject,
   DREAM_TEST_PREFIX,
+  forgetCommits,
+  keepCommits,
+  remadeCommit,
   removeDream,
   unattendedConfig,
 } from './dreamGit';
-import { sessionOf } from './dreamRun';
+import {
+  dreamCall,
+  DreamFailed,
+  DreamStopped,
+  RUN_GRACE_MS,
+  sessionOf,
+  settledWithin,
+} from './dreamRun';
 import { enabledProps, sendSafely, type DreamEvent } from './dreamTelemetry';
 import { hasPrice } from './limit';
 import type { OpencodeModelList } from './models';
 import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
+import { adjustPrompt } from './prompts';
+import { splitAllowed } from './report';
 import type { DreamScheduler } from './scheduler';
 
 export const DREAM_TEST_TIMEOUT_MS = 2 * 60_000;
@@ -58,6 +76,41 @@ const TEST_FAILED = 'The test could not be run';
 const MISMATCH = "The dream's record does not match its folder";
 const SETTINGS_FAILED = 'The dream settings could not be saved';
 const DIFF_FAILED = 'The changes could not be read';
+
+/** An ask's run (`dream:adjust`) ends after this: a change to one proposal, not a dream. */
+export const DREAM_ADJUST_TIMEOUT_MS = 10 * 60_000;
+/** The fixed phrases of an ask: refusals of the call, and the reasons in `result.adjustFailed`. */
+export const ASK = {
+  running: 'A change is already being made',
+  busy: 'A change is being made: stop it or wait for it first',
+  gone: "This dream's files are gone: it can be sent or discarded, not changed",
+  empty: 'Type what should change',
+  long: 'The ask is too long: at most 4 000 characters',
+  dropped: 'Take the proposal back to change it',
+  untested: 'Test the dreaming model first',
+  notSetUp: 'This repo is not set up to dream',
+  start: 'The change could not be started',
+  stopped: 'It was stopped',
+  nothing: 'The agent changed nothing',
+  emptied: 'The change would leave the proposal empty: drop it instead',
+  wrongModel: 'Another model answered',
+  apply: 'The change does not fit with the other proposals',
+  finish: 'Shellie could not finish the change',
+  noUndo: 'This proposal has no change to take back',
+  undo: 'The change could not be taken back',
+} as const;
+/** The note of an ask whose run left none. */
+const NO_NOTE = 'No note';
+const TITLE_MAX = 200;
+const WHY_MAX = 1000;
+const NOTE_MAX = 1000;
+/** `adjust.json` is three short texts: a larger file is not read. */
+const NOTE_FILE_MAX = 64 * 1024;
+/** At most this many put-back paths are kept with an ask, each cut to `REVERTED_PATH_MAX` characters. */
+const REVERTED_MAX = 50;
+const REVERTED_PATH_MAX = 300;
+/** How long Discard waits for a stopped ask to end: the run's own grace and the rebuild after it. */
+const ASK_STOP_MS = RUN_GRACE_MS + 10_000;
 /** A full commit id (SHA-1 or SHA-256): never an option or a revision expression. */
 const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** A dream's id as the runner makes it (`<YYYY-MM-DD>-<n>`); its branch is `dream/<id>`. */
@@ -192,7 +245,7 @@ export type DreamHandlerDeps = {
   /** Sends `dream:changed`. */
   broadcast: () => void;
   now?: () => number;
-  /** `dream.enabled`, `dream.switched_off`, `dream.test`, `dream.result` (`docs/telemetry.md`); none when absent. */
+  /** `dream.enabled`, `dream.switched_off`, `dream.test`, `dream.result`, `dream.adjust` (`docs/telemetry.md`); none when absent. */
   event?: DreamEvent;
 };
 
@@ -211,6 +264,9 @@ export function noDreams(): DreamApi {
       'dream:now': no,
       'dream:stop': no,
       'dream:drop': no,
+      'dream:adjust': no,
+      'dream:adjustStop': no,
+      'dream:adjustUndo': no,
       'dream:discard': no,
       'dream:openAsTask': no,
       'dream:leaveBranch': no,
@@ -393,6 +449,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     gone?: Repo,
   ) => {
     const repo = gone ?? repoOf(r.repoId);
+    const config = unattendedConfig(path.join(dir, 'hooks'));
+    // The commits an ask replaced were kept for the open dream only. Never fails the removal.
+    if (repo && (await pathExists(repo.path)))
+      await forgetCommits(d.git, repo.path, r.id, config).catch((e: unknown) =>
+        console.error('[dreams] a dream’s kept commits were not forgotten', e),
+      );
     const failure = repo
       ? await removeDream(
           d.git,
@@ -402,7 +464,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             worktree: r.worktreePath,
             branch: branch ? r.branch : null,
           },
-          unattendedConfig(path.join(dir, 'hooks')),
+          config,
         )
       : await tried(dir);
     // Inside the folder as the runner makes it; removed on its own should a result say otherwise.
@@ -500,7 +562,13 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     }
     try {
       await d.git.run(wt, [...c, 'reset', '-q', '--hard', r.baseSha]);
-      await d.git.run(wt, [...c, 'cherry-pick', ...kept.map((p) => p.commit)]);
+      // Nothing kept (every proposal dropped while an ask ran): the base alone.
+      if (kept.length > 0)
+        await d.git.run(wt, [
+          ...c,
+          'cherry-pick',
+          ...kept.map((p) => p.commit),
+        ]);
     } catch {
       await d.git
         .run(wt, [...c, 'cherry-pick', '--abort'])
@@ -512,6 +580,298 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         );
       throw refuse(failed);
     }
+  };
+
+  // ── asking for a change to a proposal ──
+
+  /** An ask being worked on, by repo: one per result at a time. Set and cleared in the chain. */
+  type Ask = {
+    dreamId: string;
+    proposalId: string;
+    ask: string;
+    quote?: string;
+    project: string;
+    model: string;
+    /** The folders the run may change, as the settings said when it started. */
+    folders: string[];
+    stop: AbortController;
+    /** Settles once the run ended and the result says what came of it. */
+    done: Promise<void>;
+  };
+  const asks = new Map<string, Ask>();
+  type RunEnd = { others: string[] } | { failed: string; stopped: boolean };
+
+  /** The folders a dream of the repo may change as the settings say now; none for a repo that does not dream. */
+  const foldersOf = (repo: Repo): string[] => {
+    if (repo.connectionId === null) return [];
+    const r = dreamingOf(d.settings.get().dreaming, repo.connectionId).repos[
+      repo.id
+    ];
+    return r?.on ? r.folders : [];
+  };
+
+  /**
+   * The dream's worktree as the base plus `kept`, with nothing uncommitted left: every untracked and ignored file
+   * removed (first: one in the way of a commit would stop the rebuild), then `rebuild`. Only for a worktree
+   * `checked` found live.
+   */
+  const cleaned = async (
+    r: DreamResult,
+    kept: DreamProposal[],
+    failed: string,
+  ) => {
+    const hooks = path.join(path.dirname(r.worktreePath), 'hooks');
+    await d.git
+      .run(r.worktreePath, [
+        ...configFlags(unattendedConfig(hooks)),
+        'clean',
+        '-q',
+        '-f',
+        '-d',
+        '-x',
+      ])
+      .catch((e: unknown) => {
+        console.error('[dreams] the dream worktree could not be cleaned', e);
+        throw refuse(failed);
+      });
+    await rebuild(r, kept, failed);
+  };
+
+  const keptOf = (r: DreamResult) => r.proposals.filter((p) => !p.dropped);
+
+  /**
+   * What the run left in `adjust.json`, each text only when it is a non-empty string within its bound (the note is
+   * cut instead); the file is removed. Model text: bounded, never run or parsed further.
+   */
+  const readNote = async (dataDir: string) => {
+    const file = path.join(dataDir, 'adjust.json');
+    const none = { title: null, why: null, note: null };
+    try {
+      const st = await fs.lstat(file);
+      if (!st.isFile() || st.size > NOTE_FILE_MAX) return none;
+      const raw: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+      if (raw === null || typeof raw !== 'object') return none;
+      const text = (key: string): string | null => {
+        const v = (raw as Record<string, unknown>)[key];
+        return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+      };
+      const title = text('title')?.replace(/\s+/g, ' ') ?? null;
+      const why = text('why');
+      const note = text('note');
+      return {
+        title: title !== null && title.length <= TITLE_MAX ? title : null,
+        why: why !== null && why.length <= WHY_MAX ? why : null,
+        note:
+          note !== null && note.length > NOTE_MAX
+            ? `${note.slice(0, NOTE_MAX - 1)}…`
+            : note,
+      };
+    } catch {
+      return none;
+    } finally {
+      await fs.rm(file, { force: true }).catch(() => undefined);
+    }
+  };
+
+  /**
+   * The run ended well: Shellie decides what the change is. Returns whether the proposal's commit changed, or the
+   * fixed phrase the ask failed for (the caller then puts the worktree back).
+   */
+  const settleAsk = async (
+    repo: Repo,
+    r: DreamResult,
+    a: Ask,
+  ): Promise<{ changed: boolean } | string> => {
+    const p = r.proposals.find((x) => x.id === a.proposalId);
+    if (!p || !FULL_SHA.test(p.commit)) return ASK.finish;
+    const { dir, worktree } = await checked(repo.id, r);
+    if (worktree !== 'live') return ASK.gone;
+    const wt = r.worktreePath;
+    const config = unattendedConfig(path.join(dir, 'hooks'));
+    const said = await readNote(r.dataDir);
+    // Allowed at the start and still at the end, as in a dream.
+    const still = new Set(foldersOf(repo));
+    const { allowed, outside } = splitAllowed(
+      await changedPaths(d.git, wt, config),
+      a.folders.filter((f) => still.has(f)),
+    );
+    const theirs = new Set(
+      r.proposals.filter((x) => x.id !== p.id).flatMap((x) => x.files),
+    );
+    const mine = allowed.filter((f) => !theirs.has(f));
+    // Not undone one by one: only `mine` goes into the commit, and the rebuild below leaves nothing else.
+    const reverted = [...outside, ...allowed.filter((f) => theirs.has(f))]
+      .sort()
+      .slice(0, REVERTED_MAX)
+      .map((f) => f.slice(0, REVERTED_PATH_MAX));
+    const title = said.title ?? p.title;
+    const made =
+      mine.length === 0
+        ? 'same'
+        : await remadeCommit(d.git, wt, {
+            commit: p.commit,
+            paths: mine,
+            index: path.join(dir, 'adjust.index'),
+            subject: commitSubject(title),
+            // A fixed line, as for the dream's own commits: the model's words stay on the page.
+            body: COMMIT_BODY,
+            config,
+          });
+    if (made === 'empty') return ASK.emptied;
+    if (made === 'same' && said.note === null && reverted.length === 0)
+      return ASK.nothing;
+    const adjustment: DreamAdjustment = {
+      ask: a.ask,
+      ...(a.quote === undefined ? {} : { quote: a.quote }),
+      at: new Date(now()).toISOString(),
+      note: said.note ?? NO_NOTE,
+      changed: made !== 'same',
+      reverted,
+      ...(made === 'same'
+        ? {}
+        : {
+            before: {
+              commit: p.commit,
+              files: p.files,
+              title: p.title,
+              why: p.why,
+            },
+          }),
+    };
+    // The old commit and the new one are on no branch: kept by a ref each until the dream closes.
+    if (made !== 'same')
+      await keepCommits(
+        d.git,
+        repo.path,
+        r.id,
+        [p.commit, made.commit],
+        config,
+      );
+    // Before anything is stored: a change the branch cannot be built with is no change.
+    await cleaned(
+      r,
+      keptOf(r).map((x) =>
+        x.id === p.id && made !== 'same' ? { ...x, commit: made.commit } : x,
+      ),
+      ASK.apply,
+    );
+    await d.store.updateResult(repo.id, r.id, (x) => {
+      const target = x.proposals.find((y) => y.id === p.id);
+      if (!target) return;
+      // An answer changes nothing of the proposal: its title and reason follow only a change, which Undo takes back.
+      if (made !== 'same') {
+        target.commit = made.commit;
+        target.files = made.files;
+        target.title = title;
+        target.why = said.why ?? p.why;
+      }
+      target.adjustments = [...(target.adjustments ?? []), adjustment];
+      x.adjusting = null;
+      x.adjustFailed = null;
+    });
+    return { changed: made !== 'same' };
+  };
+
+  /** In the chain, once the run ended: the result says what came of the ask, and the worktree holds nothing of it. */
+  const finishAsk = async (repo: Repo, a: Ask, end: RunEnd) => {
+    let outcome: 'changed' | 'answered' | 'failed' | 'stopped' | null = null;
+    try {
+      const r = d.store.repo(repo.id).result;
+      // The dream closed meanwhile (its repo was removed): nothing to say.
+      if (!r || r.id !== a.dreamId) return;
+      let failed: string | null = 'failed' in end ? end.failed : null;
+      if (!('failed' in end) && end.others.length > 0) {
+        // The model rule, exactly as after a dream: every project on the model goes off, with the record.
+        failed = ASK.wrongModel;
+        await d
+          .scheduler()
+          ?.switchOffModel({
+            project: a.project,
+            model: a.model,
+            answered: end.others.join(', '),
+            repoId: repo.id,
+          })
+          .catch((e: unknown) =>
+            console.error('[dreams] the switch-off could not be made', e),
+          );
+      }
+      if (failed === null)
+        try {
+          const done = await settleAsk(repo, r, a);
+          if (typeof done === 'string') failed = done;
+          else outcome = done.changed ? 'changed' : 'answered';
+        } catch (e) {
+          if (!(e instanceof Refusal))
+            console.error('[dreams] an ask could not be finished', e);
+          failed = e instanceof Refusal ? e.message : ASK.finish;
+        }
+      if (failed === null) return;
+      outcome = 'failed' in end && end.stopped ? 'stopped' : 'failed';
+      const reason = failed;
+      // The proposal stays as it was; what the run left in the worktree goes (only in a worktree that is the dream's).
+      try {
+        const cur = d.store.repo(repo.id).result ?? r;
+        if ((await checked(repo.id, cur)).worktree === 'live')
+          await cleaned(cur, keptOf(cur), ASK.finish);
+      } catch (e) {
+        console.error('[dreams] the dream worktree was not put back', e);
+      }
+      await d.store.updateResult(repo.id, r.id, (x) => {
+        x.adjusting = null;
+        x.adjustFailed = {
+          proposalId: a.proposalId,
+          ask: a.ask,
+          ...(a.quote === undefined ? {} : { quote: a.quote }),
+          reason,
+        };
+      });
+    } catch (e) {
+      // The store could not be written: `dream:adjustStop` clears what is left of the ask.
+      console.error('[dreams] an ask’s outcome could not be saved', e);
+    } finally {
+      asks.delete(repo.id);
+      if (outcome) event('dream.adjust', { outcome });
+      d.broadcast();
+    }
+  };
+
+  /** The run of an ask, outside the chain (so Stop, drop and the reads go on), then its end inside it. */
+  const runAsk = async (repo: Repo, r: DreamResult, a: Ask, prompt: string) => {
+    let end: RunEnd;
+    try {
+      end = {
+        others: await dreamCall(d, {
+          model: a.model,
+          what: 'adjust',
+          project: a.project,
+          worktree: r.worktreePath,
+          dataDir: r.dataDir,
+          prompt,
+          timeoutMs: DREAM_ADJUST_TIMEOUT_MS,
+          signal: a.stop.signal,
+        }),
+      };
+    } catch (e) {
+      if (e instanceof DreamStopped)
+        end = { failed: ASK.stopped, stopped: true };
+      else if (e instanceof DreamFailed)
+        end = { failed: e.reason, stopped: false };
+      else {
+        console.error('[dreams] an ask could not be run', e);
+        end = { failed: ASK.finish, stopped: false };
+      }
+    }
+    await serial(() => finishAsk(repo, a, end)).catch((e: unknown) =>
+      console.error('[dreams] an ask could not be finished', e),
+    );
+  };
+
+  /** Stops the repo's ask, when one runs, and waits for its end, at most `ASK_STOP_MS`. Outside the chain. */
+  const stopAsk = async (repoId: string) => {
+    const a = asks.get(repoId);
+    if (!a) return;
+    a.stop.abort();
+    await settledWithin(a.done, ASK_STOP_MS);
   };
 
   /**
@@ -863,20 +1223,166 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         }),
       ),
 
-    'dream:discard': (repoId) =>
+    'dream:adjust': (repoId, proposalId, ask, quote) =>
       serial(() =>
+        phrased(ASK.start, async () => {
+          // Trimmed and bounded here, whatever the renderer sent.
+          const text = typeof ask === 'string' ? ask.trim() : '';
+          if (text === '') throw refuse(ASK.empty);
+          if (text.length > DREAM_ASK_MAX) throw refuse(ASK.long);
+          const about =
+            typeof quote === 'string'
+              ? quote.trim().slice(0, DREAM_QUOTE_MAX).trim()
+              : '';
+          started();
+          const r = openResult(repoId);
+          const p = r.proposals.find((x) => x.id === proposalId);
+          if (!p) throw refuse('This dream has no such proposal');
+          if (p.dropped) throw refuse(ASK.dropped);
+          if (asks.has(repoId)) throw refuse(ASK.running);
+          const repo = repoOf(repoId);
+          if (!repo) throw refuse(ASK.start);
+          // The project's dream model, tested: after a switch-off for another model's answer no ask runs on it.
+          const s =
+            repo.connectionId === null
+              ? null
+              : dreamingOf(d.settings.get().dreaming, repo.connectionId);
+          const folders = foldersOf(repo);
+          if (!s || repo.connectionId === null || folders.length === 0)
+            throw refuse(ASK.notSetUp);
+          if (s.model === null || s.testedModel !== s.model)
+            throw refuse(ASK.untested);
+          // Before any git: the record must be the dream's own, and its worktree there to work in.
+          const { worktree } = await checked(repoId, r);
+          if (worktree !== 'live') throw refuse(ASK.gone);
+          if (!FULL_SHA.test(p.commit)) throw refuse(MISMATCH);
+          // The agent reads every kept proposal as it stands, and nothing an earlier run left.
+          await cleaned(r, keptOf(r), ASK.start);
+          await fs.rm(path.join(r.dataDir, 'adjust.json'), { force: true });
+          const a: Ask = {
+            dreamId: r.id,
+            proposalId: p.id,
+            ask: text,
+            ...(about === '' ? {} : { quote: about }),
+            project: repo.connectionId,
+            model: s.model,
+            folders,
+            stop: new AbortController(),
+            done: Promise.resolve(),
+          };
+          const prompt = adjustPrompt({
+            dataDir: r.dataDir,
+            folders,
+            proposal: { title: p.title, why: p.why, files: p.files },
+            ask: a.ask,
+            quote: a.quote,
+          });
+          await d.store.updateResult(repoId, r.id, (x) => {
+            x.adjusting = {
+              proposalId: a.proposalId,
+              ask: a.ask,
+              ...(a.quote === undefined ? {} : { quote: a.quote }),
+              startedAt: now(),
+            };
+            x.adjustFailed = null;
+          });
+          asks.set(repoId, a);
+          a.done = runAsk(repo, r, a, prompt);
+          d.broadcast();
+        }),
+      ),
+
+    // The run ends and the result says so (`dream:changed`); nothing to do when none runs.
+    'dream:adjustStop': async (repoId) => {
+      const a = asks.get(repoId);
+      if (a) {
+        a.stop.abort();
+        return;
+      }
+      await serial(() =>
+        phrased('The dream could not be saved', async () => {
+          // An ask that started while this waited.
+          const late = asks.get(repoId);
+          if (late) {
+            late.stop.abort();
+            return;
+          }
+          // No run, but the result still names one (its end could not be saved): cleared, as stopped.
+          if (!d.scheduler()) return;
+          const r = d.store.repo(repoId).result;
+          const left = r?.adjusting;
+          if (!r || !left) return;
+          await d.store.updateResult(repoId, r.id, (x) => {
+            x.adjusting = null;
+            x.adjustFailed = {
+              proposalId: left.proposalId,
+              ask: left.ask,
+              ...(left.quote === undefined ? {} : { quote: left.quote }),
+              reason: ASK.stopped,
+            };
+          });
+          d.broadcast();
+        }),
+      );
+    },
+
+    'dream:adjustUndo': (repoId, proposalId) =>
+      serial(() =>
+        phrased(ASK.undo, async () => {
+          started();
+          const r = openResult(repoId);
+          const p = r.proposals.find((x) => x.id === proposalId);
+          if (!p) throw refuse('This dream has no such proposal');
+          if (asks.has(repoId)) throw refuse(ASK.busy);
+          const list = p.adjustments ?? [];
+          const at = list.findLastIndex((x) => x.changed && x.before);
+          const before = list[at]?.before;
+          if (!before) throw refuse(ASK.noUndo);
+          const { worktree } = await checked(repoId, r);
+          if (worktree !== 'live') throw refuse(ASK.gone);
+          if (!FULL_SHA.test(before.commit)) throw refuse(MISMATCH);
+          // The branch first: an undo the branch cannot be built with is not stored.
+          await cleaned(
+            r,
+            keptOf(r).map((x) =>
+              x.id === p.id ? { ...x, commit: before.commit } : x,
+            ),
+            ASK.undo,
+          );
+          await d.store.updateResult(repoId, r.id, (x) => {
+            const target = x.proposals.find((y) => y.id === p.id);
+            if (!target) return;
+            target.commit = before.commit;
+            target.files = before.files;
+            target.title = before.title;
+            target.why = before.why;
+            // That ask and the answers after it leave the list.
+            target.adjustments = list.slice(0, at);
+            x.adjustFailed = null;
+          });
+          d.broadcast();
+        }),
+      ),
+
+    'dream:discard': async (repoId) => {
+      // An ask being worked on stops first; its end runs in the chain, so it is waited for outside it.
+      await stopAsk(repoId);
+      return serial(() =>
         phrased('The dream could not be saved', async () => {
           started();
           const r = openResult(repoId);
+          if (asks.has(repoId)) throw refuse(ASK.busy);
           await discard(repoId, r, (await checked(repoId, r)).dir);
         }),
-      ),
+      );
+    },
 
     'dream:openAsTask': (repoId) =>
       serial(() =>
         phrased(OPEN_FAILED, async () => {
           started();
           const r = openResult(repoId);
+          if (asks.has(repoId)) throw refuse(ASK.busy);
           // Before any git or removal: the record must be the dream's own.
           const { dir, worktree } = await checked(repoId, r);
           const kept = r.proposals.filter((p) => !p.dropped);
@@ -1013,8 +1519,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     },
   };
 
-  const repoRemoved = (repo: Repo): Promise<void> =>
-    serial(async () => {
+  const repoRemoved = async (repo: Repo): Promise<void> => {
+    // An ask about its open result stops first (its end runs in the chain).
+    await stopAsk(repo.id).catch(() => undefined);
+    return serial(async () => {
       const s = d.scheduler();
       await s
         ?.stopDreamOf(repo.id, REMOVED_STOP_MS)
@@ -1074,12 +1582,14 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       }
       d.broadcast();
     });
+  };
 
   const publish: DreamApi['publish'] = (repoId, send) =>
     serial(() =>
       phrased(PUBLISH_FAILED, async () => {
         started();
         const r = openResult(repoId);
+        if (asks.has(repoId)) throw refuse(ASK.busy);
         const repo = repoOf(repoId);
         if (!repo) throw refuse(PUBLISH_FAILED);
         // Before any git or removal: the record must be the dream's own.
