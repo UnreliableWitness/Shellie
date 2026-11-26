@@ -959,7 +959,7 @@ describe('tabs and focus', () => {
     expect(useStore.getState().activeTab('a')).toBe('docs');
   });
 
-  it('shows a Brain tab with the wiki when the task has a brain', async () => {
+  it('shows a Brain tab with its guide when the task has a brain', async () => {
     const { calls } = setup(
       {},
       {
@@ -971,7 +971,7 @@ describe('tabs and focus', () => {
     expect(tab).toHaveAttribute('title', expect.stringContaining('Shift+B'));
     await userEvent.click(tab);
     expect(tab).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByText('Acme')).toBeInTheDocument();
+    expect(await screen.findByText('Acme brain')).toBeInTheDocument();
     await waitFor(() =>
       expect(calls).toContainEqual({
         channel: 'brain:pages',
@@ -980,9 +980,11 @@ describe('tabs and focus', () => {
     );
     // The body lives in the page area, not among the tab buttons.
     expect(
-      within(screen.getByRole('tablist')).queryByText('Open brain'),
+      within(screen.getByRole('tablist')).queryByText('Open the whole brain'),
     ).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Open brain' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open the whole brain' }),
+    );
     expect(useStore.getState().screen).toEqual({
       kind: 'brain',
       brainId: 'b1',
@@ -1049,15 +1051,17 @@ describe('tabs and focus', () => {
     render(<Shell />);
     await userEvent.click(await screen.findByRole('tab', { name: /^Brain$/ }));
     const forTask = await screen.findByRole('region', {
-      name: 'For this task',
+      name: '2 · Read what applies',
     });
     expect(
       within(forTask).getByRole('button', { name: /Scope of work/ }),
     ).toBeInTheDocument();
     expect(calls.some((c) => c.channel === 'brain:relevant')).toBe(true);
+    await userEvent.click(await screen.findByText('All pages (2)'));
     expect(
-      screen.getByRole('region', { name: 'Other pages' }),
+      await screen.findByRole('region', { name: 'Other pages' }),
     ).toBeInTheDocument();
+    await userEvent.click(screen.getByText('All pages (2)'));
     await userEvent.type(screen.getByLabelText('Search the brain'), 'acme');
     await userEvent.click(
       await screen.findByRole('button', { name: /Account/ }),

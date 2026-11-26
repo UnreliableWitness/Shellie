@@ -772,6 +772,9 @@ export const TerminalTabs = memo(function TerminalTabs({
           <BrainTab
             brain={brain}
             taskId={task.id}
+            hasAgentTab={task.terminals.some(
+              (t) => t.kind === 'claude' || t.kind === 'opencode',
+            )}
             onTerminal={(def) => {
               setBrainTerm(def);
               setTab(task.id, def.id);

@@ -1,24 +1,30 @@
 import { useEffect, useMemo } from 'react';
-import { readsForWork } from '../../../shared/reading';
+import {
+  readsForWork,
+  type ReadingBrain,
+  type ReadingRead,
+} from '../../../shared/reading';
 import { useTaskBrain } from '../../hooks/useBrains';
 import { openPiece, useReadingNudges } from '../../hooks/useReadingFeed';
 import { useStore } from '../../store';
 import { track } from '../../telemetry';
 
 /**
- * "Before you start" on a task: the long reads that bear on its work item and that the reader has not read (or that
- * changed since), from the brains of the task's own connection: a work item's id says nothing in another
- * organization. Nothing when there are none, and when the nudges are off.
+ * The long reads that bear on the task's work item and that the reader has not read (or that changed since), from
+ * the brains of the task's own connection: a work item's id says nothing in another organization. None when there
+ * are none, and when the nudges are off.
  */
-export function BeforeYouStart({ taskId }: { taskId: string }) {
+export function useReadsForTask(
+  taskId: string,
+): { brain: ReadingBrain; read: ReadingRead }[] {
   const on = useReadingNudges();
   const task = useStore((s) => s.tasks.find((t) => t.id === taskId));
   const reading = useStore((s) => s.reading);
   const connectionId = useTaskBrain(taskId)?.connectionId;
   const workItemId = task?.workItem?.id;
-  const rows = useMemo(
+  return useMemo(
     () =>
-      workItemId && connectionId
+      on && workItemId && connectionId
         ? reading
             .filter((b) => b.connectionId === connectionId)
             .flatMap((b) =>
@@ -28,9 +34,14 @@ export function BeforeYouStart({ taskId }: { taskId: string }) {
               })),
             )
         : [],
-    [reading, workItemId, connectionId],
+    [on, reading, workItemId, connectionId],
   );
-  const shown = on && rows.length > 0;
+}
+
+/** "Before you start" on a task's setup page: the long reads for its work item (useReadsForTask). Nothing without any. */
+export function BeforeYouStart({ taskId }: { taskId: string }) {
+  const rows = useReadsForTask(taskId);
+  const shown = rows.length > 0;
   useEffect(() => {
     if (shown) track('reading.nudge', { kind: 'task' });
   }, [shown, taskId]);
