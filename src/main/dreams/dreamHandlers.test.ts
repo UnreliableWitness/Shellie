@@ -49,6 +49,7 @@ import { DreamStore } from './DreamStore';
 import { opencodeModelList } from './models';
 import { dreamArgs } from './opencodeDream';
 import type { DreamStatus } from './scheduler';
+import { ASK_LEFT_BY_QUIT } from './startDreams';
 
 const MODEL = 'zai/glm-5';
 const OTHER = 'zai/glm-6';
@@ -2036,5 +2037,548 @@ describe('the briefing of a task made from a dream', () => {
       titles: ['Rule 1'],
     });
     expect(api().taskLink.briefing(DREAM_ID, 'r1')).toBeNull();
+  });
+});
+
+describe('asking for a change to a proposal', () => {
+  const SESSION = `${JSON.stringify({ type: 'step_start', sessionID: 'ses_1' })}\n`;
+  type RunOpts = {
+    cwd: string;
+    input: string;
+    timeoutMs: number;
+    signal: AbortSignal;
+  };
+  /** What the fake agent does in the worktree and the data folder; then it answers as OpenCode does. */
+  const agent = (work: (wt: string, data: string, o: RunOpts) => void) =>
+    run.mockImplementation(async (_cmd: unknown, o: RunOpts) => {
+      work(o.cwd, store.repo('r1').result!.dataDir, o);
+      return SESSION;
+    });
+  const note = (data: string, n: Record<string, unknown>) =>
+    writeFileSync(path.join(data, 'adjust.json'), JSON.stringify(n));
+  /** The run ended and the result says so: the start and the end each send `dream:changed`. */
+  const ended = () =>
+    vi.waitFor(() => expect(changed()).toBeGreaterThanOrEqual(2), {
+      timeout: 15_000,
+    });
+  const ask = async (
+    a: ReturnType<typeof api>,
+    text = 'make it shorter',
+    proposal = 'p2',
+    quote?: string,
+  ) => {
+    vi.mocked(deps.broadcast).mockClear();
+    await a.handlers['dream:adjust']('r1', proposal, text, quote);
+    await ended();
+  };
+  const result = () => store.repo('r1').result!;
+  const p2 = () => result().proposals[1];
+  const show = (rev: string) => git(repoPath, 'show', rev);
+  const dirty = (wt: string) =>
+    git(wt, 'status', '--porcelain', '--ignored', '--untracked-files=all');
+  const refs = () =>
+    git(repoPath, 'for-each-ref', '--format=%(refname)', 'refs/shellie/')
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+
+  beforeEach(async () => {
+    await setDreaming(ready({ enabled: true }));
+    deps.event = vi.fn();
+  });
+
+  it('an ask that edits the proposal’s file gives the proposal a new commit on the old one’s parent, with its files, title and reason', async () => {
+    const r = await dreamWithThree();
+    const old = r.proposals[1];
+    const seen: unknown[] = [];
+    agent((wt, data, o) => {
+      seen.push(result().adjusting, o.timeoutMs, o.input);
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'rule 2, shorter\n');
+      writeFileSync(path.join(wt, '.apm/rules/b-example.md'), 'an example\n');
+      note(data, {
+        title: 'Rule 2, short',
+        why: 'Why 2, now shorter',
+        note: 'Cut the second example.',
+      });
+    });
+    const a = api();
+    await ask(a, '  make it shorter  ', 'p2', `  ${'q'.repeat(700)}  `);
+
+    // One run, as a dream's: its title and model, in the worktree, for at most 10 minutes.
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0][0].args).toEqual(
+      testPlatform().opencodeCommand(undefined, dreamArgs(MODEL, 'adjust', P))
+        .args,
+    );
+    expect(run.mock.calls[0][1].cwd).toBe(r.worktreePath);
+    expect(seen[0]).toMatchObject({
+      proposalId: 'p2',
+      ask: 'make it shorter',
+      quote: 'q'.repeat(600),
+    });
+    expect(seen[1]).toBe(10 * 60_000);
+    expect(seen[2]).toContain('make it shorter');
+
+    const p = p2();
+    expect(result().adjustFailed ?? null).toBeNull();
+    expect(p.commit).not.toBe(old.commit);
+    expect(git(repoPath, 'rev-parse', `${p.commit}^`)).toBe(
+      git(repoPath, 'rev-parse', `${old.commit}^`),
+    );
+    expect(p).toMatchObject({
+      title: 'Rule 2, short',
+      why: 'Why 2, now shorter',
+      files: ['.apm/rules/b-example.md', '.apm/rules/b.md'],
+    });
+    expect(p.adjustments).toEqual([
+      {
+        ask: 'make it shorter',
+        quote: 'q'.repeat(600),
+        at: expect.any(String),
+        note: 'Cut the second example.',
+        changed: true,
+        reverted: [],
+        before: {
+          commit: old.commit,
+          files: old.files,
+          title: 'Rule 2',
+          why: 'Why 2',
+        },
+      },
+    ]);
+    expect(result().adjusting ?? null).toBeNull();
+    expect(result().adjustFailed ?? null).toBeNull();
+    expect(show(`${p.commit}:.apm/rules/b.md`)).toBe('rule 2, shorter\n');
+    expect(git(repoPath, 'log', '-1', '--format=%s', p.commit).trim()).toBe(
+      'dream: Rule 2, short',
+    );
+    // The other proposals are as they were.
+    expect(result().proposals[0]).toEqual(r.proposals[0]);
+    expect(result().proposals[2]).toEqual(r.proposals[2]);
+
+    // The worktree is the base plus the three proposals, with nothing uncommitted and no note file left.
+    expect(dirty(r.worktreePath)).toBe('');
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
+    ).toBe('rule 2, shorter\n');
+    expect(
+      git(repoPath, 'rev-list', '--count', `${r.baseSha}..${BRANCH}`).trim(),
+    ).toBe('3');
+    expect(existsSync(path.join(r.dataDir, 'adjust.json'))).toBe(false);
+
+    // The diff reads the changed proposal with no change of its own.
+    const diff = await a.handlers['dream:diff']('r1', 'p2');
+    expect(diff.map((f) => f.path)).toEqual([
+      '.apm/rules/b-example.md',
+      '.apm/rules/b.md',
+    ]);
+    expect(diff[1].hunks[0].lines).toEqual([
+      { kind: 'add', text: 'rule 2, shorter', oldNo: null, newNo: 1 },
+    ]);
+
+    // Both commits stay reachable while the dream is open.
+    expect(refs().sort()).toEqual(
+      [old.commit, p.commit]
+        .map((c) => `refs/shellie/dreams/${DREAM_ID}/${c}`)
+        .sort(),
+    );
+    expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
+      outcome: 'changed',
+    });
+  });
+
+  it('an ask that is only answered adds the answer and leaves the commit, title and reason', async () => {
+    const r = await dreamWithThree();
+    agent((_wt, data) =>
+      note(data, {
+        title: 'Another title',
+        why: 'Another reason',
+        note: 'It is about the build step.',
+      }),
+    );
+    await ask(api(), 'what is this about?');
+    expect(p2()).toEqual({
+      ...r.proposals[1],
+      adjustments: [
+        {
+          ask: 'what is this about?',
+          at: expect.any(String),
+          note: 'It is about the build step.',
+          changed: false,
+          reverted: [],
+        },
+      ],
+    });
+    expect(refs()).toEqual([]);
+    expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
+      outcome: 'answered',
+    });
+  });
+
+  it('puts back edits to another proposal’s file, outside the allowed folders and to protected paths, and names them', async () => {
+    const r = await dreamWithThree();
+    commitFile(repoPath, 'README.md', 'read me\n', 'readme');
+    agent((wt, data) => {
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'rule 2, changed\n');
+      writeFileSync(path.join(wt, '.apm/rules/a.md'), 'not mine\n');
+      writeFileSync(path.join(wt, 'outside.md'), 'outside\n');
+      mkdirSync(path.join(wt, '.apm/hooks'));
+      writeFileSync(path.join(wt, '.apm/hooks/run.sh'), 'echo hi\n');
+      note(data, { note: 'x'.repeat(1200), title: 't'.repeat(201), why: '' });
+    });
+    await ask(api());
+    const p = p2();
+    expect(p.files).toEqual(['.apm/rules/b.md']);
+    // A title too long and an empty reason are not taken; a long note is cut.
+    expect(p.title).toBe('Rule 2');
+    expect(p.why).toBe('Why 2');
+    expect(p.adjustments![0]).toMatchObject({
+      changed: true,
+      reverted: ['.apm/hooks/run.sh', '.apm/rules/a.md', 'outside.md'],
+    });
+    expect(p.adjustments![0].note).toHaveLength(1000);
+    expect(dirty(r.worktreePath)).toBe('');
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/a.md'), 'utf8'),
+    ).toBe('rule 1\n');
+    expect(existsSync(path.join(r.worktreePath, 'outside.md'))).toBe(false);
+    expect(existsSync(path.join(r.worktreePath, '.apm/hooks'))).toBe(false);
+    expect(
+      git(repoPath, 'ls-tree', '-r', '--name-only', p.commit)
+        .trim()
+        .split('\n'),
+    ).toEqual(['.apm/rules/a.md', '.apm/rules/b.md', 'README.md']);
+  });
+
+  it('only what was put back, and no note: the ask is kept with "No note"', async () => {
+    await dreamWithThree();
+    agent((wt) => writeFileSync(path.join(wt, 'outside.md'), 'outside\n'));
+    await ask(api());
+    expect(p2().adjustments).toEqual([
+      expect.objectContaining({
+        note: 'No note',
+        changed: false,
+        reverted: ['outside.md'],
+      }),
+    ]);
+  });
+
+  it('nothing changed and no note: the ask failed, and can be offered again', async () => {
+    const r = await dreamWithThree();
+    agent(() => undefined);
+    await ask(api(), 'make it shorter', 'p2', 'rule 2');
+    expect(p2()).toEqual(r.proposals[1]);
+    expect(result().adjusting ?? null).toBeNull();
+    expect(result().adjustFailed).toEqual({
+      proposalId: 'p2',
+      ask: 'make it shorter',
+      quote: 'rule 2',
+      reason: 'The agent changed nothing',
+    });
+    expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
+      outcome: 'failed',
+    });
+  });
+
+  it('a change that would empty the proposal fails', async () => {
+    const r = await dreamWithThree();
+    agent((wt) => rmSync(path.join(wt, '.apm/rules/b.md')));
+    await ask(api());
+    expect(p2()).toEqual(r.proposals[1]);
+    expect(result().adjustFailed?.reason).toBe(
+      'The change would leave the proposal empty: drop it instead',
+    );
+    expect(existsSync(path.join(r.worktreePath, '.apm/rules/b.md'))).toBe(true);
+  });
+
+  it('a failing run leaves the proposal as it was, the worktree rebuilt, and says why in a fixed phrase', async () => {
+    const r = await dreamWithThree();
+    run.mockImplementation(async (_cmd: unknown, o: RunOpts) => {
+      writeFileSync(path.join(o.cwd, '.apm/rules/b.md'), 'half done\n');
+      writeFileSync(path.join(o.cwd, 'left.txt'), 'left\n');
+      throw new ExitError(`fatal: ${o.cwd} secret output`, 1, 'session text');
+    });
+    await ask(api());
+    expect(p2()).toEqual(r.proposals[1]);
+    expect(result().adjustFailed).toEqual({
+      proposalId: 'p2',
+      ask: 'make it shorter',
+      reason: 'OpenCode stopped',
+    });
+    expect(dirty(r.worktreePath)).toBe('');
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
+    ).toBe('rule 2\n');
+    // The next ask clears the failure.
+    agent((_wt, data) => note(data, { note: 'An answer.' }));
+    await ask(api());
+    expect(result().adjustFailed ?? null).toBeNull();
+  });
+
+  it('a run that times out says so', async () => {
+    await dreamWithThree();
+    run.mockRejectedValue(new Error('opencode timed out after 600000 ms'));
+    await ask(api());
+    expect(result().adjustFailed?.reason).toBe('timed out after 10 min');
+  });
+
+  it('Stop ends the run: the proposal stays as it was and the ask is offered again', async () => {
+    const r = await dreamWithThree();
+    run.mockImplementation(
+      (_cmd: unknown, o: RunOpts) =>
+        new Promise<string>((_resolve, reject) => {
+          writeFileSync(path.join(o.cwd, '.apm/rules/b.md'), 'half done\n');
+          o.signal.addEventListener('abort', () => reject(new Error('killed')));
+        }),
+    );
+    const a = api();
+    vi.mocked(deps.broadcast).mockClear();
+    await a.handlers['dream:adjust']('r1', 'p2', 'make it shorter');
+    expect(changed()).toBe(1);
+    expect(result().adjusting).toMatchObject({ proposalId: 'p2' });
+    await a.handlers['dream:adjustStop']('r1');
+    await ended();
+    expect(p2()).toEqual(r.proposals[1]);
+    expect(result().adjusting ?? null).toBeNull();
+    expect(result().adjustFailed).toEqual({
+      proposalId: 'p2',
+      ask: 'make it shorter',
+      reason: 'It was stopped',
+    });
+    expect(dirty(r.worktreePath)).toBe('');
+    expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
+      outcome: 'stopped',
+    });
+    // Stop with no run does nothing.
+    await a.handlers['dream:adjustStop']('r1');
+    expect(changed()).toBe(2);
+  });
+
+  it('Stop clears an ask the result still names when no run is under way', async () => {
+    const r = await dreamWithThree();
+    await store.updateResult('r1', r.id, (x) => {
+      x.adjusting = { proposalId: 'p2', ask: 'left', startedAt: 1 };
+    });
+    await api().handlers['dream:adjustStop']('r1');
+    expect(result().adjusting).toBeNull();
+    expect(result().adjustFailed).toEqual({
+      proposalId: 'p2',
+      ask: 'left',
+      reason: 'It was stopped',
+    });
+    expect(changed()).toBe(1);
+  });
+
+  it('Undo takes back the latest change and the answers after it', async () => {
+    const r = await dreamWithThree();
+    const a = api();
+    agent((wt, data) => {
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'first change\n');
+      note(data, { title: 'First', why: 'Why first', note: 'Changed once.' });
+    });
+    await ask(a, 'one');
+    const first = p2();
+    agent((wt, data) => {
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'second change\n');
+      note(data, { title: 'Second', note: 'Changed twice.' });
+    });
+    await ask(a, 'two');
+    agent((_wt, data) => note(data, { note: 'An answer.' }));
+    await ask(a, 'three?');
+    expect(p2().adjustments!.map((x) => x.changed)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+
+    vi.mocked(deps.broadcast).mockClear();
+    await a.handlers['dream:adjustUndo']('r1', 'p2');
+    expect(changed()).toBe(1);
+    expect(p2()).toEqual(first);
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
+    ).toBe('first change\n');
+    expect(dirty(r.worktreePath)).toBe('');
+
+    await a.handlers['dream:adjustUndo']('r1', 'p2');
+    expect(p2()).toEqual({ ...r.proposals[1], adjustments: [] });
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
+    ).toBe('rule 2\n');
+    await expect(a.handlers['dream:adjustUndo']('r1', 'p2')).rejects.toThrow(
+      'This proposal has no change to take back',
+    );
+    await expect(a.handlers['dream:adjustUndo']('r1', 'p9')).rejects.toThrow(
+      'This dream has no such proposal',
+    );
+  });
+
+  it('refuses a dropped or unknown proposal, an empty or too long ask, and a dream whose worktree is gone', async () => {
+    const r = await dreamWithThree();
+    const h = api().handlers;
+    await h['dream:drop']('r1', 'p3', true);
+    vi.mocked(deps.broadcast).mockClear();
+    await expect(h['dream:adjust']('r1', 'p3', 'shorter')).rejects.toThrow(
+      'Take the proposal back to change it',
+    );
+    await expect(h['dream:adjust']('r1', 'p9', 'shorter')).rejects.toThrow(
+      'This dream has no such proposal',
+    );
+    await expect(h['dream:adjust']('r2', 'p1', 'shorter')).rejects.toThrow(
+      'This repo has no dream to review',
+    );
+    for (const empty of ['', '  \n ', undefined, 7])
+      await expect(
+        h['dream:adjust']('r1', 'p2', empty as unknown as string),
+      ).rejects.toThrow('Type what should change');
+    await expect(
+      h['dream:adjust']('r1', 'p2', 'x'.repeat(4001)),
+    ).rejects.toThrow('The ask is too long: at most 4 000 characters');
+    rmSync(r.worktreePath, { recursive: true });
+    await expect(h['dream:adjust']('r1', 'p2', 'shorter')).rejects.toThrow(
+      "This dream's files are gone: it can be sent or discarded, not changed",
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(changed()).toBe(0);
+    expect(result().adjusting ?? null).toBeNull();
+  });
+
+  it('refuses without a tested dream model, and for a repo that is not set up to dream', async () => {
+    await dreamWithThree();
+    const h = api().handlers;
+    await setDreaming(ready({ testedModel: null }));
+    await expect(h['dream:adjust']('r1', 'p2', 'shorter')).rejects.toThrow(
+      'Test the dreaming model first',
+    );
+    await setDreaming(
+      ready({ repos: { r1: { on: false, folders: ['.apm'] } } }),
+    );
+    await expect(h['dream:adjust']('r1', 'p2', 'shorter')).rejects.toThrow(
+      'This repo is not set up to dream',
+    );
+    started = false;
+    await expect(h['dream:adjust']('r1', 'p2', 'shorter')).rejects.toThrow(
+      'Dreams are still starting',
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('while a run is under way: no second ask, no Undo, no pull request and no task; Discard stops it first', async () => {
+    const r = await dreamWithThree();
+    run.mockImplementation(
+      (_cmd: unknown, o: RunOpts) =>
+        new Promise<string>((_resolve, reject) => {
+          o.signal.addEventListener('abort', () => reject(new Error('killed')));
+        }),
+    );
+    const a = api();
+    await a.handlers['dream:adjust']('r1', 'p2', 'make it shorter');
+    await expect(
+      a.handlers['dream:adjust']('r1', 'p1', 'another'),
+    ).rejects.toThrow('A change is already being made');
+    const busy = 'A change is being made: stop it or wait for it first';
+    await expect(a.handlers['dream:adjustUndo']('r1', 'p2')).rejects.toThrow(
+      busy,
+    );
+    const send = vi.fn();
+    await expect(a.publish('r1', send)).rejects.toThrow(busy);
+    await expect(a.handlers['dream:openAsTask']('r1')).rejects.toThrow(busy);
+    expect(send).not.toHaveBeenCalled();
+    expect(result().adjusting).toMatchObject({ proposalId: 'p2' });
+    expect(run).toHaveBeenCalledOnce();
+
+    await a.handlers['dream:discard']('r1');
+    expect(run.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(store.repo('r1').result).toBeNull();
+    expect(existsSync(r.worktreePath)).toBe(false);
+    expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
+      outcome: 'stopped',
+    });
+  });
+
+  it('after an ask, sending the branch carries the changed commit, and the kept commits go with the dream', async () => {
+    await dreamWithThree();
+    const a = api();
+    agent((wt, data) => {
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'rule 2, shorter\n');
+      note(data, { title: 'Rule 2, short', note: 'Shorter.' });
+    });
+    await ask(a);
+    expect(refs()).toHaveLength(2);
+    await a.handlers['dream:drop']('r1', 'p1', true);
+    const seen: unknown[] = [];
+    await a.publish('r1', async (ready) => {
+      seen.push(
+        ready.kept.map((k) => k.title),
+        show(`${ready.branch}:.apm/rules/b.md`),
+        git(
+          repoPath,
+          'log',
+          '--format=%s',
+          '--reverse',
+          `${ready.baseSha}..${ready.branch}`,
+        )
+          .trim()
+          .split('\n'),
+      );
+      return { as: 'pushed' };
+    });
+    expect(seen).toEqual([
+      ['Rule 2, short', 'Rule 3'],
+      'rule 2, shorter\n',
+      ['dream: Rule 2, short', 'dream: Rule 3'],
+    ]);
+    expect(refs()).toEqual([]);
+  });
+
+  it('another model answering switches dreaming off as after a dream, and changes nothing', async () => {
+    const r = await dreamWithThree();
+    answered = [MODEL, OTHER];
+    agent((wt, data) => {
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'by another model\n');
+      note(data, { note: 'Changed.' });
+    });
+    await ask(api());
+    expect(scheduler.switchOffModel).toHaveBeenCalledWith({
+      project: P,
+      model: MODEL,
+      answered: OTHER,
+      repoId: 'r1',
+    });
+    expect(p2()).toEqual(r.proposals[1]);
+    expect(result().adjustFailed?.reason).toBe('Another model answered');
+    expect(dirty(r.worktreePath)).toBe('');
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
+    ).toBe('rule 2\n');
+  });
+
+  it('an ask left by a quit is cleared at the start, with the phrase for the page', async () => {
+    const r = await dreamWithThree();
+    await store.updateResult('r1', r.id, (x) => {
+      x.adjusting = {
+        proposalId: 'p2',
+        ask: 'make it shorter',
+        quote: 'rule 2',
+        startedAt: 1,
+      };
+    });
+    const next = new DreamStore(dir);
+    await next.load();
+    const written = vi.fn();
+    next.onChange(written);
+    await next.clearLeftAsks(ASK_LEFT_BY_QUIT);
+    expect(next.repo('r1').result).toMatchObject({
+      adjusting: null,
+      adjustFailed: {
+        proposalId: 'p2',
+        ask: 'make it shorter',
+        quote: 'rule 2',
+        reason: 'Shellie was closed while the change was being made',
+      },
+    });
+    // Nothing left: nothing written.
+    await next.clearLeftAsks(ASK_LEFT_BY_QUIT);
+    expect(written).toHaveBeenCalledOnce();
   });
 });

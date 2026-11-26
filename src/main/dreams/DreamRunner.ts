@@ -22,6 +22,7 @@ import type { runWithInput } from '../services/prSummary';
 import type { DreamStore } from './DreamStore';
 import {
   changedPaths,
+  COMMIT_BODY,
   commitFiles,
   commitSubject,
   dreamDate,
@@ -33,14 +34,7 @@ import {
   writeChangesDiff,
   type DreamMade,
 } from './dreamGit';
-import {
-  abortable,
-  DreamFailed,
-  runReason,
-  sessionOf,
-  settledWithin,
-  taskRef,
-} from './dreamRun';
+import { dreamCall, DreamFailed, RUN_GRACE_MS, taskRef } from './dreamRun';
 import {
   pickMaterial,
   sessionCount,
@@ -49,7 +43,6 @@ import {
   type TaskSessions,
 } from './material';
 import { cleanQuote, quoteWho } from './evidence';
-import { dreamArgs, dreamEnv, otherModels } from './opencodeDream';
 import { checkPrompt, proposePrompt } from './prompts';
 import {
   groupProposals,
@@ -61,11 +54,7 @@ import {
 export const DREAM_RUN_TIMEOUT_MS = 30 * 60_000;
 /** How often the day's limit is checked during a run. */
 const LIMIT_CHECK_MS = 30_000;
-/** How long a stopped run may take to end before its folders are removed anyway. */
-export const RUN_GRACE_MS = 10_000;
-/** The body of every dream commit. */
-export const COMMIT_BODY =
-  'Proposed by a Shellie dream. Review before merging.';
+export { COMMIT_BODY, RUN_GRACE_MS };
 
 /** The reasons a dream fails for (besides those of a run, `runReason`). */
 const REASON = {
@@ -478,44 +467,24 @@ export class DreamRunner {
     what: 'propose' | 'check',
     prompt: string,
   ): Promise<void> {
-    const d = this.deps;
-    const cmd = d.platform.opencodeCommand(
-      undefined,
-      dreamArgs(m.model, what, m.project),
-    );
-    // Applied last: spawning spreads process.env, then the env given, then the command's own.
-    const env = dreamEnv(cmd.env ?? {}, {
-      model: m.model,
-      worktree: m.worktree,
-      dataDir: m.dataDir,
-      readOnlyWorktree: what === 'check',
-    });
-    const signal = m.stop.signal;
-    const running = d.run(
-      { ...cmd, env },
-      {
-        cwd: m.worktree,
-        input: prompt,
-        timeoutMs: DREAM_RUN_TIMEOUT_MS,
-        env,
-        signal,
-      },
-    );
-    let stdout: string;
+    let others: string[];
     try {
-      stdout = await abortable(running, signal);
+      others = await dreamCall(this.deps, {
+        model: m.model,
+        what,
+        project: m.project,
+        worktree: m.worktree,
+        dataDir: m.dataDir,
+        readOnlyWorktree: what === 'check',
+        prompt,
+        timeoutMs: DREAM_RUN_TIMEOUT_MS,
+        signal: m.stop.signal,
+      });
     } catch (e) {
-      // Stopped: give the process time to end before its folders go.
-      if (signal.aborted) await settledWithin(running, RUN_GRACE_MS);
+      // Stopped: the interruption, whatever the run threw.
       this.checkStop(m);
-      throw new DreamFailed(runReason(e, DREAM_RUN_TIMEOUT_MS));
+      throw e;
     }
-    this.checkStop(m);
-    const session = sessionOf(stdout);
-    const others = otherModels(
-      session ? d.sessionModels(session) : [],
-      m.model,
-    );
     if (others.length)
       throw new Ended({ outcome: 'wrong-model', answered: others });
   }

@@ -258,15 +258,20 @@ export const KIND_LABEL: Record<DreamProposalKind, string> = {
   'changed-agent': 'Changed agent',
 };
 
-/** A proposal's short line in the list: its kind and in how many tasks it was seen, or Dropped. */
+/**
+ * A proposal's short line in the list: its kind, in how many tasks it was seen and "changed" once an ask changed
+ * it, or Dropped.
+ */
 export function proposalLine(
-  p: Pick<DreamProposal, 'kind' | 'dropped' | 'evidence'>,
+  p: Pick<DreamProposal, 'kind' | 'dropped' | 'evidence' | 'adjustments'>,
 ): string {
   if (p.dropped) return 'Dropped';
   const tasks = new Set(p.evidence.map((e) => e.taskId)).size;
-  return tasks > 0
-    ? `${KIND_LABEL[p.kind]} · seen in ${plural(tasks, 'task')}`
-    : KIND_LABEL[p.kind];
+  return [
+    KIND_LABEL[p.kind],
+    ...(tasks > 0 ? [`seen in ${plural(tasks, 'task')}`] : []),
+    ...(p.adjustments?.some((a) => a.changed) ? ['changed'] : []),
+  ].join(' · ');
 }
 
 /** The line under the proposals when the dream's own check removed ideas; null when it removed none. */

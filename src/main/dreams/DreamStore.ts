@@ -150,6 +150,44 @@ export class DreamStore {
     });
   }
 
+  /**
+   * Changes the open result in place (an ask about a proposal: its start, its end, its undo), in one write. Nothing
+   * when the open result is not `dreamId`'s: it closed meanwhile.
+   */
+  updateResult(
+    repoId: string,
+    dreamId: string,
+    mutate: (result: DreamResult) => void,
+  ): Promise<void> {
+    return this.change(repoId, (r) => {
+      if (r.result?.id === dreamId) mutate(r.result);
+    });
+  }
+
+  /**
+   * An ask that was being worked on when Shellie closed (`result.adjusting` left in the file) is marked as failed
+   * with `reason`, so the page offers it again. At the start, after `load`; nothing is written when none was left.
+   */
+  async clearLeftAsks(reason: string): Promise<void> {
+    const left = Object.values(this.store.value.repos).some(
+      (r) => r.result?.adjusting,
+    );
+    if (!left) return;
+    await this.write((f) => {
+      for (const r of Object.values(f.repos)) {
+        const a = r.result?.adjusting;
+        if (!r.result || !a) continue;
+        r.result.adjusting = null;
+        r.result.adjustFailed = {
+          proposalId: a.proposalId,
+          ask: a.ask,
+          ...(a.quote === undefined ? {} : { quote: a.quote }),
+          reason,
+        };
+      }
+    });
+  }
+
   /** Open as task: the result goes and its branch is remembered, in one write. */
   openedAsTask(repoId: string, opened: DreamOpened): Promise<void> {
     return this.change(repoId, (r) => {

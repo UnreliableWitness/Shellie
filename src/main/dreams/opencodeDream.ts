@@ -32,7 +32,7 @@ const checkedProject = (project: string): string => {
 /** `opencode run` for a dream: json events, the dream title (so the session is told apart and no title is generated), the model. */
 export function dreamArgs(
   model: string,
-  what: 'propose' | 'check' | 'test',
+  what: 'propose' | 'check' | 'test' | 'adjust',
   project: string,
 ): string[] {
   return [
