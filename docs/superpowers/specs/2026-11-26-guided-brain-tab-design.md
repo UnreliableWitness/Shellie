@@ -131,9 +131,13 @@ busy. Try again when it is done."); nothing is written or typed.
 
 ## When the tab appears
 
-- The brain's option `openBrainTerminalOnStart` changes meaning: it now puts the **Brain tab** in a ready task's
-  tab row (not selected, once per app session per task) instead of opening the terminal. Its label in Settings
-  becomes "Show the Brain tab when a task starts". The stored key stays, so nobody's setting is lost.
+- **In the tab row from the start** (the owner's choice, 2026-11-26): a ready task with a brain has the Brain tab
+  in its tab row without anyone opening it, not selected; the first terminal stays the tab a task opens on. It can
+  be closed like any view tab and then stays closed for that task until "Show brain" brings it back (as today, for
+  the app session). Today no view tab is in the row before it is opened (Usage, Docs and Changes appear once
+  opened), so this is new behaviour for the Brain tab only.
+- The brain's option `openBrainTerminalOnStart` goes: nothing opens the brain terminal by itself any more. Its
+  switch leaves Settings; the stored key is still read without error and ignored.
 - The New terminal menu's brain entry is renamed "<name> brain terminal", and the terminal's tab carries the same
   label, so the two are never confused. "Show brain" in the task menu and palette and its shortcut stay.
 
@@ -156,20 +160,10 @@ is updated.
 ## Calls made by Claude, not by the owner
 
 - The three fixed suggestions and their wording.
-- The option's new meaning and the terminal's new label.
+- The start option for the brain terminal is removed, and the terminal gets a new label.
 - Send to the agent types the line without pressing Enter.
 - Answers are kept for the app session only.
 - The source cards come from paths found in the answer, not from a change to the ask skill; no numbered markers.
 - Long-read cards open in the Brain screen's reader, as today; only wiki pages open in place.
 - Ask runs with no commands at all, is proven read-only on both real agents, and is refused while jobs are held.
 - Send to the agent follows the pull request draft's rules for when a tab may be typed into.
-
-## Open, for the owner
-
-- Whether the Brain tab is in a task's tab row from the start for every task with a brain. As written it is not:
-  the option above is off by default, so a newcomer still has to find "Show brain".
-
-## Left to the builder
-
-Component and file split, the store's shape for the thread, the IPC names beyond `brain:ask`, how the answer's
-cost is read from the ledger (leave the amount out when it is not there yet), the exact CSS.
