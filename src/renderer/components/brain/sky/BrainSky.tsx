@@ -32,13 +32,23 @@ function reducedMotion() {
   );
 }
 
-/** Whether a key press belongs to something the user is typing in or operating. */
-function busy(target: EventTarget | null, also = ''): boolean {
-  if (!(target instanceof Element)) return false;
+/** Whether a key went to a terminal, a field, or a menu or dialog laid over the view: there it is not ours. */
+function typing(target: EventTarget | null): boolean {
   return (
+    target instanceof Element &&
     target.closest(
-      `input, textarea, select, [contenteditable="true"], .brain-page-body${also}`,
-    ) !== null || document.querySelector('.brain-lightbox') !== null
+      '.brain-terminal, input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]',
+    ) !== null
+  );
+}
+
+/** Whether a key press belongs to something the user is typing in, reading or operating. */
+function busy(target: EventTarget | null, also = ''): boolean {
+  if (typing(target)) return true;
+  return (
+    (target instanceof Element &&
+      target.closest(`.brain-page-body${also}`) !== null) ||
+    document.querySelector('.brain-lightbox') !== null
   );
 }
 
@@ -264,6 +274,10 @@ export function BrainSky({
     );
   }, [shown, indexOf]);
 
+  // The neighbour the keys point at belongs to the page it was picked from, and a star's number to its sky.
+  useEffect(() => setCandidate(null), [shown, sky]);
+  useEffect(() => setHovered(null), [sky]);
+
   // A page that left the brain while it was open: back to the brain at a glance.
   useEffect(() => {
     if (
@@ -297,11 +311,12 @@ export function BrainSky({
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey) return;
+      // A key something else already took (a menu closing on Escape) is not ours.
+      if (e.altKey || e.defaultPrevented) return;
       const mod = e.metaKey || e.ctrlKey;
       if (
         (e.key === '/' && !mod && !busy(e.target)) ||
-        (e.key.toLowerCase() === 'k' && mod && !e.shiftKey)
+        (e.key.toLowerCase() === 'k' && mod && !e.shiftKey && !typing(e.target))
       ) {
         e.preventDefault();
         searchBox.current?.focus();

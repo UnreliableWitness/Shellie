@@ -71,4 +71,25 @@ Choosing Explore does not change the view a brain opens on: that stays Read or A
 - The reader's link chips share the class `brain-chip` with the Add composer's file chips, whose rule makes them
   340 px wide; the panel overrides that for itself, the task's Brain tab was not looked at.
 - The replay of a brain's growth and the pages an agent read lighting up are not built (the spec's second step).
+- From the review of the whole branch, fixed: Ctrl/Cmd+K is left to the brain's terminal and to other fields; a
+  key a menu or dialog already took is left alone; the neighbour picked with the keys and the hovered star are
+  forgotten when the page or the brain changes; the scene follows a change of display scaling (a monitor move).
+  The last one has no test: the scene cannot run in the test environment.
+- From the same review, left for later:
+  - Shift+Left and Shift+Right pick a neighbour instead of extending a text selection after a click on the
+    page's text.
+  - A lost graphics context that takes over 3 seconds to return (a locked session, a remote desktop) leaves the
+    flat map until the brain page is left; the wait also counts while the window is hidden.
+  - `dispose()` does not force the graphics context to be released; it goes when the browser collects it.
+  - Typing in the search field restarts the flight to the overview on every key.
+  - A page that left the brain stays in the trail under its path; a removed source stays open in the panel.
+  - A drag that ends without a pointer-up keeps the scene drawing at the display's rate.
+  - One frame can be drawn at the wrong size on the way back from Read or Add.
+  - A visible window that is not the active one keeps drawing at 30 frames a second.
+  - Between about 740 and 900 px the scene is still shifted for a panel that has moved to the bottom.
+  - The canvas has `role="application"` but cannot take focus; the neighbour picked with the keys is not
+    announced, and is not shown at all on the flat map.
+  - Over 2 000 pages the "changed" and "untouched" figures count only the drawn pages.
+  - Hovering a star re-renders the page reader.
+  - A chapter's glow is one large point, which may be cut off at the screen's edge or capped by a graphics card.
 - In development, editing `SkyScene.ts` while Explore is open leaves a blank scene until the page is reloaded.

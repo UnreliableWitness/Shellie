@@ -288,6 +288,67 @@ describe('BrainSky', () => {
     expect(scene().focus!.matches).toBeNull();
   });
 
+  it('leaves Ctrl+K to a terminal and to another field', async () => {
+    await show();
+    const terminal = document.createElement('div');
+    terminal.className = 'brain-terminal';
+    const shell = document.createElement('textarea');
+    terminal.appendChild(shell);
+    document.body.appendChild(terminal);
+    shell.focus();
+    await userEvent.keyboard('{Control>}k{/Control}');
+    expect(shell).toHaveFocus();
+    shell.blur();
+    await userEvent.keyboard('{Control>}k{/Control}');
+    expect(search()).toHaveFocus();
+    terminal.remove();
+  });
+
+  it('leaves a key that a menu or a dialog already took', async () => {
+    await show();
+    pick('Checkout');
+    // A menu closed itself on this Escape: the page behind it stays open.
+    const taken = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    taken.preventDefault();
+    act(() => void document.body.dispatchEvent(taken));
+    expect(scene().focus!.selected).toBe(star('Checkout'));
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    const button = document.createElement('button');
+    dialog.appendChild(button);
+    document.body.appendChild(dialog);
+    button.focus();
+    await userEvent.keyboard('{ArrowRight}{Escape}');
+    expect(scene().focus!.candidate).toBeNull();
+    expect(scene().focus!.selected).toBe(star('Checkout'));
+    dialog.remove();
+  });
+
+  it('forgets the picked neighbour when the page changes or the brain does', async () => {
+    const view = await show();
+    pick('Checkout');
+    await userEvent.keyboard('{ArrowRight}');
+    expect(scene().focus!.candidate).toBe(star('Cart'));
+    await userEvent.click(
+      within(panel()).getByRole('button', { name: 'Whole brain' }),
+    );
+    expect(scene().focus!.candidate).toBeNull();
+    pick('Checkout');
+    await userEvent.keyboard('{ArrowRight}');
+    act(() => scene().handlers.onHover(star('Mission')));
+    view.rerender(pagesOf(ROWS.slice(0, 2)));
+    await waitFor(() => expect(scene().sky!.stars).toHaveLength(2));
+    expect(scene().focus!.candidate).toBeNull();
+    expect(scene().focus!.hovered).toBeNull();
+    // Enter has nothing to open, and nothing breaks.
+    await userEvent.keyboard('{Enter}');
+    expect(scene().focus!.selected).toBe(star('Checkout'));
+  });
+
   it('Open in Read asks for the Read view on that page', async () => {
     await show();
     pick('Refunds');

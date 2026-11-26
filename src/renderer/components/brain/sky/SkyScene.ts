@@ -142,6 +142,7 @@ export class SkyScene {
   private panelWidth = 0;
   private disposed = false;
   private readonly v = new THREE.Vector3();
+  private ratioQuery: MediaQueryList | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -186,6 +187,7 @@ export class SkyScene {
       this.onContextRestored,
     );
     document.addEventListener('visibilitychange', this.onVisibility);
+    this.watchRatio();
     this.resizer = new ResizeObserver(() => this.resize());
     this.resizer.observe(host);
     this.resize();
@@ -261,6 +263,7 @@ export class SkyScene {
       this.onContextRestored,
     );
     document.removeEventListener('visibilitychange', this.onVisibility);
+    this.ratioQuery?.removeEventListener('change', this.onRatio);
     this.clear();
     this.scene.traverse((o) => {
       if (o instanceof THREE.Points) {
@@ -515,6 +518,8 @@ export class SkyScene {
   private resize(): void {
     this.width = this.host.clientWidth || 1;
     this.height = this.host.clientHeight || 1;
+    // Read again each time: the window may have moved to a display with another scaling.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(this.width, this.height, false);
     this.camera.aspect = this.width / this.height;
     // Keep the scene's middle in the space the panel leaves free.
@@ -653,6 +658,23 @@ export class SkyScene {
     if (this.lostTimer) clearTimeout(this.lostTimer);
     this.build();
     this.applyFocus();
+  };
+
+  /**
+   * A move to a display with another scaling need not change the host's size, so no resize is seen: a media query
+   * on the current ratio tells, once, and is asked again for the new ratio.
+   */
+  private watchRatio(): void {
+    this.ratioQuery?.removeEventListener('change', this.onRatio);
+    this.ratioQuery = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio || 1}dppx)`,
+    );
+    this.ratioQuery.addEventListener('change', this.onRatio);
+  }
+
+  private readonly onRatio = () => {
+    this.watchRatio();
+    this.resize();
   };
 
   private readonly onVisibility = () => {
