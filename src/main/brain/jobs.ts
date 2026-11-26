@@ -88,7 +88,7 @@ export function opencodeJobEnv(
 }
 
 /** Why an OpenCode run failed: the error event it printed, or that the program is missing. */
-function opencodeFailure(e: unknown): Error {
+export function opencodeFailure(e: unknown): Error {
   const code = (e as NodeJS.ErrnoException).code;
   if (code === 'ENOENT' || (e instanceof ExitError && e.exitCode === 127))
     return new Error('OpenCode (opencode) was not found');
@@ -104,7 +104,7 @@ function opencodeFailure(e: unknown): Error {
 }
 
 /** What OpenCode gets on stdin: the command's argument, the prompt without its leading `/<kind>`. */
-function opencodeInput(kind: BrainJobKind, input: string): string {
+export function opencodeInput(kind: string, input: string): string {
   if (input === `/${kind}`) return '';
   return input.startsWith(`/${kind} `) ? input.slice(kind.length + 2) : input;
 }
