@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskView } from '../../shared/types';
-import type { TaskUsage } from '../../shared/usage';
+import type { ReceiverStatus, TaskUsage } from '../../shared/usage';
 import { useStore } from '../store';
 import { emptyUsage, installFakeApi } from '../test-helpers/fakeApi';
 import { UsagePanel } from './UsagePanel';
@@ -122,6 +122,12 @@ const usage: TaskUsage = {
       unpricedRequests: 1,
     },
   ],
+};
+const OFF: ReceiverStatus = {
+  listening: false,
+  port: 4319,
+  error: 'Port 4319 is in use by another program',
+  copilot: { records: 0, unreadable: 0 },
 };
 const twoModels: TaskUsage = {
   ...usage,
@@ -590,5 +596,40 @@ describe('UsagePanel', () => {
       await screen.findByRole('img', { name: /Cost per 15 minutes/ }),
     ).toBeInTheDocument();
     expect(document.querySelectorAll('[data-part="bin"]')).toHaveLength(24);
+  });
+  it('says that capture is off, with a way to Settings, until the receiver listens', async () => {
+    const { emit } = installFakeApi({
+      'usage:task': () => usage,
+      'usage:receiverStatus': () => OFF,
+    });
+    render(<UsagePanel taskId="t1" />);
+    const line = await screen.findByRole('status');
+    expect(line).toHaveTextContent(
+      'AI usage capture is off: Port 4319 is in use by another program. Pick another port in Settings > AI cost and invoicing.',
+    );
+    expect(line).toHaveClass('check-warn');
+    await userEvent.click(
+      within(line).getByRole('button', { name: 'Open settings' }),
+    );
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      section: 'cost',
+    });
+    act(() =>
+      emit('usage:receiverStatus', {
+        ...OFF,
+        listening: true,
+        port: 4320,
+        error: null,
+      }),
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+  it('has no capture line while the receiver listens', async () => {
+    installFakeApi({ 'usage:task': () => usage });
+    render(<UsagePanel taskId="t1" />);
+    await screen.findByRole('img', { name: /Cost per 15 minutes/ });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(screen.queryByText(/capture is off/)).toBeNull();
   });
 });

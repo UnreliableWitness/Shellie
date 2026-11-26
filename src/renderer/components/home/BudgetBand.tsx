@@ -6,6 +6,7 @@ import { useBudget } from '../../hooks/useBudget';
 import { modelColor } from '../../modelColor';
 import { useStore } from '../../store';
 import { track } from '../../telemetry';
+import { CaptureOffLine } from '../CaptureOffLine';
 import { Band } from './Band';
 
 const INFO: Record<Vendor, string> = {
@@ -32,6 +33,26 @@ const shortDate = (day: string) =>
     month: 'short',
     day: 'numeric',
   });
+
+const WARN = String.fromCharCode(0x26a0);
+const unpricedSentence = (x: BudgetView['unpriced'][number]) =>
+  `Not in the total: no price for ${x.model} (${compact(x.tokens)} tokens)`;
+
+/** Next to the headline amount while the period has usage without a price: the amount is too low. */
+function UnpricedMark({ v }: { v: BudgetView }) {
+  if (v.unpriced.length === 0) return null;
+  const words = v.unpriced.map(unpricedSentence).join('\n');
+  return (
+    <span
+      role="img"
+      className="budget-warn-mark"
+      title={words}
+      aria-label={words}
+    >
+      {WARN}
+    </span>
+  );
+}
 
 function Status({ v }: { v: BudgetView }) {
   if (v.status === 'over' && v.budgetEur !== null)
@@ -261,6 +282,7 @@ export function BudgetBand({ vendor }: { vendor: Vendor }) {
   if (!revealed) return null;
   return (
     <Band title={TITLE[vendor]}>
+      {vendor === 'claude' && <CaptureOffLine />}
       {v && (
         <div className="budget">
           <div className="budget-head">
@@ -307,6 +329,7 @@ export function BudgetBand({ vendor }: { vendor: Vendor }) {
                         ? `in ${monthName(v.startDay)}`
                         : 'this month'}
                     </b>
+                    <UnpricedMark v={v} />
                     <button
                       type="button"
                       className="link"
@@ -320,7 +343,8 @@ export function BudgetBand({ vendor }: { vendor: Vendor }) {
                   </>
                 ) : (
                   <>
-                    <b>{eur(v.spentEur)}</b>{' '}
+                    <b>{eur(v.spentEur)}</b>
+                    <UnpricedMark v={v} />{' '}
                     <span className="muted">of {eur(v.budgetEur)}</span>
                   </>
                 )}
@@ -354,10 +378,9 @@ export function BudgetBand({ vendor }: { vendor: Vendor }) {
                 >{`Not in a budget: ${x.model} via ${providerName(x.provider)}, ${x.requests} requests`}</p>
               ))}
               {v.unpriced.map((x) => (
-                <p
-                  key={x.model}
-                  className="muted small"
-                >{`Unpriced: ${x.model}, ${compact(x.tokens)} tokens`}</p>
+                <p key={x.model} className="budget-warn small">
+                  {unpricedSentence(x)}
+                </p>
               ))}
             </>
           )}

@@ -5,7 +5,7 @@ import type { HomeConnection, HomeSnapshot } from '../../../shared/home';
 import type { Repo } from '../../../shared/types';
 import { useStore } from '../../store';
 import { installFakeApi } from '../../test-helpers/fakeApi';
-import { SprintsBand } from './SprintsBand';
+import { daysLeft, SprintsBand } from './SprintsBand';
 
 const item = (id: string, state: string) => ({
   id,
@@ -53,6 +53,56 @@ beforeEach(() =>
     screen: { kind: 'home' },
   }),
 );
+
+describe('daysLeft', () => {
+  const at = (now: string, finish: string | null) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    try {
+      return daysLeft(finish);
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it('says how long ago a past sprint ended', () => {
+    expect(at('2026-11-26T10:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      'Ended 32 days ago',
+    );
+    expect(at('2026-10-27T10:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      'Ended 2 days ago',
+    );
+    expect(at('2026-10-26T10:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      'Ended yesterday',
+    );
+  });
+
+  it('says Ends today on the finish day, never "Ended 0 days ago"', () => {
+    expect(at('2026-10-25T00:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      'Ends today',
+    );
+    expect(at('2026-10-25T10:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      'Ends today',
+    );
+    expect(at('2026-10-25T23:59:00Z', '2026-10-25T00:00:00Z')).toBe(
+      'Ends today',
+    );
+  });
+
+  it('counts the days before the finish date', () => {
+    expect(at('2026-10-24T10:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      '1 day left',
+    );
+    expect(at('2026-10-21T10:00:00Z', '2026-10-25T00:00:00Z')).toBe(
+      '4 days left',
+    );
+  });
+
+  it('is null without a finish date or with one that is no date', () => {
+    expect(at('2026-10-25T10:00:00Z', null)).toBeNull();
+    expect(at('2026-10-25T10:00:00Z', 'soon')).toBeNull();
+  });
+});
 
 describe('SprintsBand', () => {
   it('a card per sprint with my items by state and days left', async () => {

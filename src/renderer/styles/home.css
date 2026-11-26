@@ -31,6 +31,12 @@
   gap: 6px;
   flex-wrap: wrap;
 }
+/* In the title row the project chips wrap before the title is cut. */
+.pagehead-inline .commandbar > .home-chips {
+  flex: 0 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
 .home-chip {
   display: inline-flex;
   align-items: center;

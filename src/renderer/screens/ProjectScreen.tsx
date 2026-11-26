@@ -49,6 +49,7 @@ export function ProjectScreen() {
             {statusText(connection).text}
           </span>
         }
+        inline
         commands={
           <>
             <button

@@ -60,6 +60,7 @@ export function HomeScreen() {
             </span>
           )
         }
+        inline
         commands={
           <>
             <div className="home-chips">

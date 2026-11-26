@@ -118,10 +118,10 @@ function useStepActions(brains: BrainView[]) {
 }
 
 const TITLES: Record<OnboardingStep, string> = {
-  agents: '1 · Agents',
-  connect: '2 · Connect Azure DevOps',
-  repository: '3 · Add a repository',
-  brain: '4 · A brain for your project',
+  agents: 'Agents',
+  connect: 'Connect Azure DevOps',
+  repository: 'Add a repository',
+  brain: 'A brain for your project',
 };
 const BUTTONS: Record<OnboardingStep, string> = {
   agents: 'Open',
@@ -199,7 +199,7 @@ export function StepCards({ band }: { band?: boolean }) {
         ? BUTTONS[k]
         : brainDoes === 'open'
           ? 'Open'
-          : BUTTONS.connect;
+          : 'Connect a project';
 
   const keys = (['agents', 'connect', 'repository', 'brain'] as const).filter(
     (k) => !band || steps[k] === 'todo',

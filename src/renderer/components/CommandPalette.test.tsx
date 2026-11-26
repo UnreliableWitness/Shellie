@@ -61,6 +61,39 @@ describe('CommandPalette', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('marks a command that destroys in the danger colour', () => {
+    const noop = () => undefined;
+    render(
+      <>
+        <Offer
+          commands={[
+            {
+              id: 'task.finish',
+              title: 'Finish task',
+              group: 'task',
+              run: noop,
+            },
+            {
+              id: 'task.discard',
+              title: 'Discard task',
+              group: 'task',
+              danger: true,
+              run: noop,
+            },
+          ]}
+        />
+        <CommandPalette />
+      </>,
+    );
+    open();
+    expect(screen.getByRole('option', { name: /Discard task/ })).toHaveClass(
+      'is-danger',
+    );
+    expect(screen.getByRole('option', { name: /Finish task/ })).not.toHaveClass(
+      'is-danger',
+    );
+  });
+
   it('runs a clicked command', async () => {
     render(<CommandPalette />);
     open();

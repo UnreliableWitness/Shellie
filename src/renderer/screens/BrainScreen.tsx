@@ -314,6 +314,10 @@ export function BrainScreen({
             shared={brain.sharing !== null}
             conflicts={conflicts.open}
             onSettle={(id) => openSettle(id, 'read')}
+            onAdd={() => {
+              setSettle(null);
+              choose('add');
+            }}
           />
         </div>
         {/* Mounted from the first time it is chosen, then kept and paused: its camera and open page survive too. */}

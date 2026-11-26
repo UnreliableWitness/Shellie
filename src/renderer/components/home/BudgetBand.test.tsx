@@ -145,9 +145,96 @@ describe('BudgetBand', () => {
         'Not in a budget: gpt-claude-ish via OpenAI, 1 requests',
       ),
     ).toBeTruthy();
-    expect(
-      screen.getByText('Unpriced: claude-mystery-9, 2k tokens'),
-    ).toBeTruthy();
+    const line = screen.getByText(
+      'Not in the total: no price for claude-mystery-9 (2k tokens)',
+    );
+    expect(line).toHaveClass('budget-warn');
+    expect(line).not.toHaveClass('muted');
+    expect(screen.queryByText(/^Unpriced:/)).toBeNull();
+  });
+
+  it('marks the headline amount while usage has no price', async () => {
+    installFakeApi({
+      'budget:get': () =>
+        view({
+          unpriced: [{ model: 'claude-mystery-9', tokens: 2_000, requests: 2 }],
+        }),
+    });
+    const { container } = render(<BudgetBand vendor="claude" />);
+    await screen.findByText('€312.00');
+    const mark = screen.getByRole('img', {
+      name: 'Not in the total: no price for claude-mystery-9 (2k tokens)',
+    });
+    expect(mark).toHaveAttribute(
+      'title',
+      'Not in the total: no price for claude-mystery-9 (2k tokens)',
+    );
+    expect(container.querySelector('.budget-total')).toContainElement(mark);
+  });
+
+  it('marks the headline without a budget too', async () => {
+    installFakeApi({
+      'budget:get': () =>
+        view({
+          budgetEur: null,
+          status: 'none',
+          unpriced: [{ model: 'claude-mystery-9', tokens: 2_000, requests: 2 }],
+        }),
+    });
+    const { container } = render(<BudgetBand vendor="claude" />);
+    await screen.findByText('€312.00 this month');
+    expect(container.querySelector('.budget-warn-mark')).toBeTruthy();
+  });
+
+  it('has no mark and no warning line when every model has a price', async () => {
+    installFakeApi({ 'budget:get': () => view() });
+    const { container } = render(<BudgetBand vendor="claude" />);
+    await screen.findByText('€312.00');
+    expect(container.querySelector('.budget-warn-mark')).toBeNull();
+    expect(container.querySelector('.budget-warn')).toBeNull();
+    expect(screen.queryByText(/Not in the total/)).toBeNull();
+  });
+
+  it('says that capture is off in the Claude band until the receiver listens', async () => {
+    const off = {
+      listening: false,
+      port: 4319,
+      error: 'Port 4319 is in use by another program',
+      copilot: { records: 0, unreadable: 0 },
+    };
+    const { emit } = installFakeApi({
+      'budget:get': () => view(),
+      'usage:receiverStatus': () => off,
+    });
+    render(<BudgetBand vendor="claude" />);
+    const line = await screen.findByRole('status');
+    expect(line).toHaveTextContent(
+      'AI usage capture is off: Port 4319 is in use by another program. Pick another port in Settings > AI cost and invoicing.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }));
+    expect(useStore.getState().screen).toEqual({
+      kind: 'settings',
+      section: 'cost',
+    });
+    act(() =>
+      emit('usage:receiverStatus', { ...off, listening: true, error: null }),
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('leaves the capture line to the Claude band', async () => {
+    installFakeApi({
+      'budget:get': () => view(),
+      'usage:receiverStatus': () => ({
+        listening: false,
+        port: 4319,
+        error: 'Port 4319 is in use by another program',
+        copilot: { records: 0, unreadable: 0 },
+      }),
+    });
+    render(<BudgetBand vendor="copilot" />);
+    await screen.findByText('€312.00');
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   });
 
   it('titles the Copilot band', async () => {

@@ -13,6 +13,13 @@
   color: var(--muted);
   margin-left: 12px;
 }
+/* In the title row the connection's status is cut before the project's name. */
+.pagehead-inline .pagehead-title > .project-status {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .project-status.is-stale {
   color: var(--warn);
 }

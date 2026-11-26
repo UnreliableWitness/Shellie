@@ -213,7 +213,7 @@
   flex-wrap: wrap;
 }
 
-/* New task: the work item grid on the left, a fixed 380 px details panel on the right. */
+/* New task: the work item grid on the left, a 380 px details panel on the right that gives up to 60 px in a narrow window. */
 .newtask {
   flex: 1;
   min-height: 0;
@@ -222,22 +222,60 @@
 }
 .newtask-main {
   flex: 1;
-  min-width: 0;
+  /* The grid at its narrowest (icon, id, a 160 px title) plus this section's padding. */
+  min-width: 332px;
   min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 16px 24px 0 32px;
 }
 .newtask-details {
-  flex: 0 0 380px;
+  flex: 0 1 380px;
+  min-width: 320px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-chrome);
+  border-left: 1px solid var(--line);
+}
+/* The form scrolls; Cancel and Create stay in the foot under it. */
+.newtask-details-body {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: var(--bg-chrome);
-  border-left: 1px solid var(--line);
+}
+.newtask-foot {
+  flex: none;
+  padding: 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+}
+.newtask-foot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.newtask-foot-row .btn {
+  flex: none;
+}
+.newtask-why {
+  flex: 1;
+  min-width: 0;
+}
+/* Right to left only to put the ellipsis at the start; the path itself stays left to right (the bdi). */
+.newtask-folder {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 .newtask-preview-title {
   font-size: 16px;
@@ -262,6 +300,32 @@
 }
 .picker-grid {
   flex: 1;
+  container: picker-grid / inline-size;
+}
+/* Title keeps the free width and at least 160 px; the narrower the grid, the fewer columns beside it. */
+.picker-grid .grid-head,
+.picker-grid .grid-row {
+  grid-template-columns: 20px 56px minmax(160px, 1fr) 120px 140px;
+}
+@container picker-grid (max-width: 619px) {
+  .picker-grid .grid-head,
+  .picker-grid .grid-row {
+    grid-template-columns: 20px 56px minmax(160px, 1fr) 120px;
+  }
+  .picker-grid .grid-head > :nth-child(5),
+  .picker-grid .grid-row > .grid-muted {
+    display: none;
+  }
+}
+@container picker-grid (max-width: 419px) {
+  .picker-grid .grid-head,
+  .picker-grid .grid-row {
+    grid-template-columns: 20px 56px minmax(160px, 1fr);
+  }
+  .picker-grid .grid-head > :nth-child(4),
+  .picker-grid .grid-row > .state {
+    display: none;
+  }
 }
 
 /* Setup */
@@ -413,6 +477,9 @@
 .check-warn > span:first-child {
   color: var(--warn);
 }
+.check-info > span:first-child {
+  color: var(--muted);
+}
 .check .body {
   flex: 1;
   display: flex;
@@ -499,7 +566,8 @@
 }
 .grid.sprint-grid {
   flex: 1;
-  --grid-cols: 24px minmax(0, 1fr) 140px 180px 120px 150px 180px;
+  /* Title takes what the fixed columns leave; they are as wide as their widest content, no wider. */
+  --grid-cols: 24px minmax(0, 1fr) 120px 150px 120px 130px 150px;
 }
 .sprint-grid .grid-head,
 .sprint-grid .grid-row {
@@ -621,6 +689,9 @@
   overflow: auto;
   padding: 16px 32px;
   border-top: 1px solid var(--line);
+}
+.week-body .empty p {
+  margin: 0 0 6px;
 }
 /* The week's total, beside the dates in the page's head. */
 .week-total {

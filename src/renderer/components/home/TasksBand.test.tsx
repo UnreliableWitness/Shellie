@@ -168,6 +168,14 @@ describe('TasksBand', () => {
       'tasks:create': (input) => ({ id: 'new', ...input }) as never,
     });
     render(<TasksBand snapshot={snapshot} />);
+    // Plain buttons: a list of what could be next has no single primary action.
+    for (const name of [
+      'Start a task for Issue 7 Reset mail',
+      'Choose the agent for Issue 7 Reset mail',
+    ])
+      expect(await screen.findByRole('button', { name })).not.toHaveClass(
+        'btn-primary',
+      );
     await userEvent.click(
       await screen.findByRole('button', {
         name: 'Choose the agent for Issue 7 Reset mail',

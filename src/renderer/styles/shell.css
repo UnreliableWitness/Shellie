@@ -554,10 +554,36 @@ button.navmark:hover {
   color: var(--muted);
   font-size: 12px;
 }
+/* A task in the rail: a few characters that tell it from its neighbours (railTag.ts). */
+.rail-tag {
+  min-width: 26px;
+  max-width: 42px;
+  height: 20px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.railrow[aria-current='true'] .rail-tag {
+  border-color: var(--accent);
+}
+.rail-fly-name svg,
+.rail-fly-name img {
+  flex: none;
+  align-self: center;
+}
 .rail-dot {
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 4px;
+  right: 5px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -575,8 +601,8 @@ button.navmark:hover {
 /* A merged task in the rail: a small green check in the icon's corner. */
 .rail-check {
   position: absolute;
-  top: 4px;
-  right: 8px;
+  top: 2px;
+  right: 3px;
   display: inline-flex;
   border-radius: 50%;
   background: var(--bg-chrome);
@@ -693,7 +719,8 @@ button.navmark:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
-.terminal-menu {
+/* `.menu` (app.css, later in the cascade) stretches between its box's edges; this one is as wide as its items. */
+.menu.terminal-menu {
   position: fixed;
   right: auto;
   min-width: 200px;
@@ -908,6 +935,10 @@ button.navmark:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+/* A command that destroys (Discard task). */
+.taskmenu-item.is-danger .taskmenu-title {
+  color: var(--red);
 }
 
 /*

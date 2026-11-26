@@ -425,3 +425,28 @@ details summary {
   display: block;
   height: 100%;
 }
+
+/* Cost signals: AI usage is not captured, or an amount leaves usage out. */
+.taskbar-cost-warn,
+.budget-warn-mark {
+  color: var(--warn);
+}
+.taskbar-cost-warn {
+  margin-right: 4px;
+}
+.budget-warn-mark {
+  cursor: help;
+}
+.budget-warn {
+  padding: 4px 8px;
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+}
+.capture-off {
+  align-items: center;
+}
+.budget + .capture-off,
+.capture-off + .budget {
+  margin-top: 8px;
+}

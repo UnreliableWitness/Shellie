@@ -85,7 +85,7 @@ function Palette() {
         id={`palette-${i}`}
         role="option"
         aria-selected={i === selected}
-        className="palette-row"
+        className={command.danger ? 'palette-row is-danger' : 'palette-row'}
         onMouseMove={() => setSelectedId(command.id)}
         // The field keeps the focus, so the click is not lost to a blur.
         onMouseDown={(e) => e.preventDefault()}

@@ -227,6 +227,7 @@ export function SecretsScreen({ repoId }: { repoId?: string }) {
             <ChevronLeft16Regular aria-hidden="true" /> Settings
           </button>
         }
+        inline
         commands={
           <>
             <button

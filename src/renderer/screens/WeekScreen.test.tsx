@@ -305,6 +305,12 @@ describe('WeekScreen', () => {
     expect(
       await screen.findByText('No time measured in this week.'),
     ).toBeInTheDocument();
+    // The empty week says how time gets measured.
+    expect(
+      screen.getByText(
+        "Time counts while a task is open in Shellie with the window in front and you are at the keyboard, and while a task's agent is working.",
+      ),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'This week' }));
     await screen.findByRole('table', { name: 'Tasks this week' });
     expect(

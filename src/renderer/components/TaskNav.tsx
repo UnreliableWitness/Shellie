@@ -59,6 +59,8 @@ import { DreamNavStatus } from './dreams/DreamNavStatus';
 import { waitingCount } from './dreams/dreamWords';
 import { useDreamsState } from './dreams/useDreams';
 import { usePlaceCommands } from './PlaceCommands';
+import { railTag } from './railTag';
+import { useNarrowWindow } from '../hooks/useNarrowWindow';
 import { modKey, WorkItemTypeIcon } from './ui';
 
 /** Tasks in these states have no PR story yet: a stale pulse must not mark them. */
@@ -261,7 +263,7 @@ const railName = (task: TaskView) =>
 const RAIL_DOT = { broken: 'red', busy: 'accent', waits: 'amber' } as const;
 
 /**
- * A task in the rail: its type icon, and while the pointer or the keyboard is on it, the row folded open to the
+ * A task in the rail: its tag (the work item's id, or the initials of a blank task), and while the pointer or the keyboard is on it, the row folded open to the
  * right over the page: the task's name, what its mark tells, and Finish and Discard for a task that is ready.
  * The fly-out is part of the row, so the pointer can move onto it; it replaces a tooltip, which could not hold
  * the buttons.
@@ -313,7 +315,9 @@ function RailRow({
         aria-current={current ? 'true' : undefined}
         onClick={act(() => openTask(task.id))}
       >
-        <TypeIcon task={task} />
+        <span className="rail-tag" aria-hidden="true">
+          {railTag(task)}
+        </span>
         {mark &&
           (mark.kind === 'merged' ? (
             <span className="rail-check" aria-hidden="true">
@@ -330,6 +334,7 @@ function RailRow({
         <div className="rail-fly" style={at}>
           {/* The name again, for the eye: the row's button already names the task. */}
           <span className="rail-fly-name" aria-hidden="true">
+            <TypeIcon task={task} />
             {task.workItem && (
               <span className="navrow-id">{task.workItem.id}</span>
             )}
@@ -662,7 +667,9 @@ export function TaskNav() {
     connection?.id,
     connections.map((c) => c.id),
   );
-  const rail = navCollapsed;
+  // A narrow window gets the rail whatever the setting, which stays as it was for when there is room again.
+  const narrow = useNarrowWindow();
+  const rail = navCollapsed || narrow;
   // One read for every row that shows a cost; the rail shows none.
   const costs = useTaskCosts(
     rail ? [] : [...open, ...(showDone ? done : [])].map((t) => t.id),
@@ -842,15 +849,21 @@ export function TaskNav() {
             <span className="nav-status-text">{PULSE_AUTH_NOTE}</span>
           </div>
         )}
-        <button
-          type="button"
-          className="ibtn nav-collapse"
-          aria-label={rail ? 'Expand task list' : 'Collapse task list'}
-          title={rail ? 'Expand navigation' : 'Collapse navigation'}
-          onClick={() => setNavCollapsed(!rail)}
-        >
-          {rail ? <PanelLeftExpand20Regular /> : <PanelLeftContract20Regular />}
-        </button>
+        {!narrow && (
+          <button
+            type="button"
+            className="ibtn nav-collapse"
+            aria-label={rail ? 'Expand task list' : 'Collapse task list'}
+            title={rail ? 'Expand navigation' : 'Collapse navigation'}
+            onClick={() => setNavCollapsed(!rail)}
+          >
+            {rail ? (
+              <PanelLeftExpand20Regular />
+            ) : (
+              <PanelLeftContract20Regular />
+            )}
+          </button>
+        )}
       </div>
       {!rail && <NavResize width={width} onDrag={setDragWidth} />}
     </nav>

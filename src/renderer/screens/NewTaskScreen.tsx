@@ -303,12 +303,33 @@ export function NewTaskScreen({
         })
       : null;
 
-  const canCreate =
-    mode === 'pick'
-      ? picked !== null
-      : mode === 'typed'
-        ? Boolean(id.trim() && title.trim())
-        : Boolean(name.trim());
+  /** Why Create is off, in the order the form is filled in; null when it can be pressed (or a create is running). */
+  const whyNot: string | null = (() => {
+    const missing =
+      mode === 'pick'
+        ? picked
+          ? null
+          : 'Pick a work item'
+        : mode === 'typed'
+          ? id.trim() && title.trim()
+            ? null
+            : id.trim()
+              ? 'Enter the title'
+              : title.trim()
+                ? 'Enter the work item id'
+                : 'Enter the id and the title'
+          : name.trim()
+            ? null
+            : 'Give the task a name';
+    if (noRepo) return missing;
+    if (!repo) return 'Pick a repo';
+    if (config && config.fileError !== null) return 'Fix .shellie.yml first';
+    if (missing) return missing;
+    if (!config) return "Reading the repo's settings";
+    if (!baseRef) return 'Pick a branch to start from';
+    if (!branch) return 'Give the branch a name';
+    return null;
+  })();
 
   /** The tabs setup opens that can hold secrets, as the confirm names them. */
   const setupTabs = [
@@ -399,7 +420,7 @@ export function NewTaskScreen({
     ...(connection && !noRepo
       ? [{ key: 'pick' as const, label: 'Work item' }]
       : []),
-    ...(noRepo ? [] : [{ key: 'typed' as const, label: 'Typed' }]),
+    ...(noRepo ? [] : [{ key: 'typed' as const, label: 'Enter by hand' }]),
     { key: 'blank', label: 'Blank' },
   ];
 
@@ -473,224 +494,233 @@ export function NewTaskScreen({
           )}
         </section>
         <section className="newtask-details" aria-label="Task preview">
-          <div>
-            <div className="muted small newtask-preview-type">
-              {workItem?.id && (
-                <WorkItemTypeIcon
-                  type={workItem.type}
-                  connectionId={connectionId}
-                  size={14}
-                />
-              )}
-              {workItem?.id ? `${workItem.type} ${workItem.id}` : 'Blank task'}
-            </div>
-            <div className="newtask-preview-title">{label || 'New task'}</div>
-          </div>
-          <div className="form-grid">
-            <label htmlFor="nt-repo">Repo</label>
-            <select
-              id="nt-repo"
-              className="field"
-              value={repoId}
-              // A dream's branch is in its own repo.
-              disabled={dream !== null}
-              onChange={(e) => setRepoId(e.target.value)}
-            >
-              {candidates.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-              {!dream && <option value="">No repo</option>}
-            </select>
-            {noRepo && (
-              <p className="muted small form-grid-full">
-                A folder of its own with terminals and the project&apos;s brain:
-                no branch, no changes to review, no pull request.
-              </p>
-            )}
-            {!noRepo && config?.fileError != null && (
-              // A task never starts on a broken file's defaults: Create stays off until it is fixed.
-              <p className="text-red small form-grid-full" role="alert">
-                {config.fileError}
-              </p>
-            )}
-            {!noRepo && (
-              <>
-                <label htmlFor="nt-base">From</label>
-                <select
-                  id="nt-base"
-                  className="field mono"
-                  value={baseRef}
-                  onChange={(e) => setBaseRef(e.target.value)}
-                >
-                  {baseOptions.map((b) => (
-                    <option key={b}>{b}</option>
-                  ))}
-                </select>
-                <label htmlFor="nt-branch">Branch</label>
-                <input
-                  id="nt-branch"
-                  className="field mono"
-                  value={branch}
-                  readOnly={dream !== null}
-                  onChange={(e) => setEditedBranch(e.target.value)}
-                  onBlur={(e) => {
-                    if (!e.target.value) setEditedBranch(null);
-                  }}
-                />
-                <span className="label">Folder</span>
-                <span
-                  className="mono small"
-                  style={{ overflowWrap: 'anywhere' }}
-                >
-                  {folder}
-                </span>
-                <label htmlFor="nt-env">Environment</label>
-                <select
-                  id="nt-env"
-                  className="field"
-                  value={environment}
-                  onChange={(e) => {
-                    setEnvironment(e.target.value as Environment);
-                    setAsking(false);
-                  }}
-                >
-                  {ENVIRONMENTS.map((e) => (
-                    <option key={e} value={e}>
-                      {ENVIRONMENT_LABEL[e]}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-          {!noRepo && summary && repo && (
-            <TaskSummaryCard
-              summary={summary}
-              repoId={repo.id}
-              copyStates={copyStates}
-            />
-          )}
-          {!noRepo && (
-            <fieldset className="group">
-              <legend>Setup from .shellie.yml</legend>
-              {config && config.config.copy.length > 0 && (
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={copy}
-                    onChange={(e) => setCopy(e.target.checked)}
+          <div className="newtask-details-body">
+            <div>
+              <div className="muted small newtask-preview-type">
+                {workItem?.id && (
+                  <WorkItemTypeIcon
+                    type={workItem.type}
+                    connectionId={connectionId}
+                    size={14}
                   />
-                  Copy{' '}
-                  <span className="mono small">
-                    {config.config.copy.join(', ')}
-                  </span>
-                </label>
+                )}
+                {workItem?.id
+                  ? `${workItem.type} ${workItem.id}`
+                  : mode === 'blank'
+                    ? 'Blank task'
+                    : mode === 'pick'
+                      ? 'Work item'
+                      : 'Work item, entered by hand'}
+              </div>
+              <div className="newtask-preview-title">
+                {label ||
+                  (mode === 'blank'
+                    ? 'New task'
+                    : mode === 'pick'
+                      ? 'Pick a work item'
+                      : 'Enter its id and title')}
+              </div>
+            </div>
+            <div className="form-grid">
+              <label htmlFor="nt-repo">Repo</label>
+              <select
+                id="nt-repo"
+                className="field"
+                value={repoId}
+                // A dream's branch is in its own repo.
+                disabled={dream !== null}
+                onChange={(e) => setRepoId(e.target.value)}
+              >
+                {candidates.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+                {!dream && <option value="">No repo</option>}
+              </select>
+              {noRepo && (
+                <p className="muted small form-grid-full">
+                  A folder of its own with terminals and the project&apos;s
+                  brain: no branch, no changes to review, no pull request.
+                </p>
               )}
-              {(config?.config.setup ?? []).map((c) => (
-                <label key={c} className="checkbox">
+              {!noRepo && config?.fileError != null && (
+                // A task never starts on a broken file's defaults: Create stays off until it is fixed.
+                <p className="text-red small form-grid-full" role="alert">
+                  {config.fileError}
+                </p>
+              )}
+              {!noRepo && (
+                <>
+                  <label htmlFor="nt-base">From</label>
+                  <select
+                    id="nt-base"
+                    className="field mono"
+                    value={baseRef}
+                    onChange={(e) => setBaseRef(e.target.value)}
+                  >
+                    {baseOptions.map((b) => (
+                      <option key={b}>{b}</option>
+                    ))}
+                  </select>
+                  <label htmlFor="nt-branch">Branch</label>
                   <input
-                    type="checkbox"
-                    checked={commands[c] ?? false}
-                    onChange={(e) => {
-                      const { checked } = e.target;
-                      setCommands((prev) => ({ ...prev, [c]: checked }));
+                    id="nt-branch"
+                    className="field mono"
+                    value={branch}
+                    readOnly={dream !== null}
+                    onChange={(e) => setEditedBranch(e.target.value)}
+                    onBlur={(e) => {
+                      if (!e.target.value) setEditedBranch(null);
                     }}
                   />
-                  <span className="mono">{c}</span>
-                </label>
-              ))}
-              {(config?.config.setup.length ?? 0) > 0 && (
-                <span className="muted small">
-                  Commands run in a Setup tab while you work.
-                </span>
+                  <span className="label">Folder</span>
+                  {/* One line, cut at its start: the end of the path is what tells tasks apart. */}
+                  <span className="mono small newtask-folder" title={folder}>
+                    <bdi>{folder}</bdi>
+                  </span>
+                  <label htmlFor="nt-env">Environment</label>
+                  <select
+                    id="nt-env"
+                    className="field"
+                    value={environment}
+                    onChange={(e) => {
+                      setEnvironment(e.target.value as Environment);
+                      setAsking(false);
+                    }}
+                  >
+                    {ENVIRONMENTS.map((e) => (
+                      <option key={e} value={e}>
+                        {ENVIRONMENT_LABEL[e]}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
-              {config &&
-                config.config.setup.length === 0 &&
-                config.config.copy.length === 0 && (
+            </div>
+            {!noRepo && summary && repo && (
+              <TaskSummaryCard
+                summary={summary}
+                repoId={repo.id}
+                copyStates={copyStates}
+              />
+            )}
+            {!noRepo && (
+              <fieldset className="group">
+                <legend>Setup from .shellie.yml</legend>
+                {config && config.config.copy.length > 0 && (
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={copy}
+                      onChange={(e) => setCopy(e.target.checked)}
+                    />
+                    Copy{' '}
+                    <span className="mono small">
+                      {config.config.copy.join(', ')}
+                    </span>
+                  </label>
+                )}
+                {(config?.config.setup ?? []).map((c) => (
+                  <label key={c} className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={commands[c] ?? false}
+                      onChange={(e) => {
+                        const { checked } = e.target;
+                        setCommands((prev) => ({ ...prev, [c]: checked }));
+                      }}
+                    />
+                    <span className="mono">{c}</span>
+                  </label>
+                ))}
+                {(config?.config.setup.length ?? 0) > 0 && (
                   <span className="muted small">
-                    Nothing to run for this repo.
+                    Commands run in a Setup tab while you work.
                   </span>
                 )}
+                {config &&
+                  config.config.setup.length === 0 &&
+                  config.config.copy.length === 0 && (
+                    <span className="muted small">
+                      Nothing to run for this repo.
+                    </span>
+                  )}
+              </fieldset>
+            )}
+            <fieldset className="group">
+              <legend>When ready</legend>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={startClaude}
+                  onChange={(e) => setStartClaude(e.target.checked)}
+                />
+                Open Claude Code with the task loaded (it waits for you)
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={openShell}
+                  onChange={(e) => setOpenShell(e.target.checked)}
+                />
+                Open a shell tab
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={openCopilot}
+                  onChange={(e) => setOpenCopilot(e.target.checked)}
+                />
+                Start Copilot CLI with the task
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={openOpencode}
+                  onChange={(e) => setOpenOpencode(e.target.checked)}
+                />
+                Start OpenCode with the task
+              </label>
             </fieldset>
-          )}
-          <fieldset className="group">
-            <legend>When ready</legend>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={startClaude}
-                onChange={(e) => setStartClaude(e.target.checked)}
+            {dream && (
+              <p className="muted small">
+                This task uses the branch{' '}
+                <span className="mono">{dream.branch}</span> that the dream
+                left. If you leave now, Dreams keeps offering to make the task.
+              </p>
+            )}
+          </div>
+          <div className="newtask-foot">
+            {asking && isGuarded(environment) && (
+              <EnvironmentConfirm
+                title={`Start ${(workItem?.id || label.trim() || 'this task').trim()} on ${ENVIRONMENT_LABEL[environment]}?`}
+                env={environment as 'uat' | 'production'}
+                tabs={askTabs}
+                keys={askKeys}
+                minutes={productionMinutes}
+                busy={busy}
+                onCancel={() => setAsking(false)}
+                onConfirm={() => void create(true)}
               />
-              Open Claude Code with the task loaded (it waits for you)
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={openShell}
-                onChange={(e) => setOpenShell(e.target.checked)}
-              />
-              Open a shell tab
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={openCopilot}
-                onChange={(e) => setOpenCopilot(e.target.checked)}
-              />
-              Start Copilot CLI with the task
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={openOpencode}
-                onChange={(e) => setOpenOpencode(e.target.checked)}
-              />
-              Start OpenCode with the task
-            </label>
-          </fieldset>
-          {asking && isGuarded(environment) && (
-            <EnvironmentConfirm
-              title={`Start ${(workItem?.id || label.trim() || 'this task').trim()} on ${ENVIRONMENT_LABEL[environment]}?`}
-              env={environment as 'uat' | 'production'}
-              tabs={askTabs}
-              keys={askKeys}
-              minutes={productionMinutes}
-              busy={busy}
-              onCancel={() => setAsking(false)}
-              onConfirm={() => void create(true)}
-            />
-          )}
-          {dream && (
-            <p className="muted small">
-              This task uses the branch{' '}
-              <span className="mono">{dream.branch}</span> that the dream left.
-              If you leave now, Dreams keeps offering to make the task.
-            </p>
-          )}
-          <div className="actions">
-            <button type="button" className="btn" onClick={back}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={
-                noRepo
-                  ? busy || !canCreate
-                  : busy ||
-                    !repo ||
-                    !config ||
-                    config.fileError !== null ||
-                    !baseRef ||
-                    !branch ||
-                    !canCreate
-              }
-              onClick={() => void create()}
-            >
-              Create task
-            </button>
+            )}
+            <div className="newtask-foot-row">
+              <span id="nt-create-why" className="muted small newtask-why">
+                {busy ? '' : whyNot}
+              </span>
+              <button type="button" className="btn" onClick={back}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                aria-describedby="nt-create-why"
+                disabled={busy || whyNot !== null}
+                onClick={() => void create()}
+              >
+                Create task
+              </button>
+            </div>
           </div>
         </section>
       </div>

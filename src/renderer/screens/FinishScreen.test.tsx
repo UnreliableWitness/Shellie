@@ -136,6 +136,86 @@ describe('FinishScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('marks only real risks amber: not viewed and running terminals are plain rows', async () => {
+    installFakeApi({
+      'tasks:finishChecks': () => dirty,
+      'review:summary': () => ({ files: 5, notViewed: 2, unresolved: 0 }),
+    });
+    render(<FinishScreen taskId="a" />);
+    const rowOf = (text: string) => screen.getByText(text).closest('.check');
+    await screen.findByText('2 uncommitted changes');
+    expect(rowOf('2 uncommitted changes')).toHaveClass('check-warn');
+    expect(rowOf('2 commits not pushed')).toHaveClass('check-warn');
+    expect(rowOf('2 terminals still running')).toHaveClass('check-info');
+    expect(rowOf('2 terminals still running')).not.toHaveClass('check-warn');
+    expect(await screen.findByText('2 files not viewed')).toBeInTheDocument();
+    expect(rowOf('2 files not viewed')).toHaveClass('check-info');
+    expect(rowOf('2 files not viewed')).not.toHaveClass('check-warn');
+  });
+
+  it('with uncommitted changes the foot offers Commit before Discard', async () => {
+    const { calls } = installFakeApi({
+      'tasks:finishChecks': () => dirty,
+      'terminals:open': () => ({
+        id: 'g1',
+        kind: 'run',
+        label: 'git commit',
+        command: 'x',
+      }),
+    });
+    const { container } = render(<FinishScreen taskId="a" />);
+    await screen.findByText('2 uncommitted changes');
+    const foot = container.querySelector<HTMLElement>('.finish-foot')!;
+    const buttons = within(foot).getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      'Back to task',
+      'Commit' + String.fromCharCode(0x2026),
+      'Discard changes and clean up',
+    ]);
+    expect(buttons[0]).not.toHaveClass('btn-primary');
+    expect(buttons[1]).toHaveClass('btn-primary');
+    expect(buttons[2]).toHaveClass('btn-danger');
+    await userEvent.click(buttons[1]);
+    await waitFor(() =>
+      expect(calls.find((c) => c.channel === 'terminals:open')?.args).toEqual([
+        'a',
+        {
+          kind: 'run',
+          label: 'git commit',
+          command: 'git add -A && git commit',
+        },
+      ]),
+    );
+  });
+
+  it('without uncommitted changes the foot is Back to task and one primary Finish', async () => {
+    installFakeApi({ 'tasks:finishChecks': () => clean });
+    const { container } = render(<FinishScreen taskId="a" />);
+    await screen.findByText('No uncommitted changes');
+    const foot = container.querySelector<HTMLElement>('.finish-foot')!;
+    const buttons = within(foot).getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      'Back to task',
+      'Finish and clean up',
+    ]);
+    expect(buttons[1]).toHaveClass('btn-primary');
+    expect(foot.querySelectorAll('.btn-primary')).toHaveLength(1);
+  });
+
+  it('puts Add a worktree under the last safety check', async () => {
+    installFakeApi({ 'tasks:finishChecks': () => dirty });
+    render(<FinishScreen taskId="a" />);
+    await screen.findByText('2 uncommitted changes');
+    const section = screen
+      .getByRole('heading', { name: 'Safety checks' })
+      .closest('.finish-section')!;
+    const add = screen.getByRole('button', {
+      name: 'Add a worktree' + String.fromCharCode(0x2026),
+    });
+    expect(section.lastElementChild).toContainElement(add);
+    expect(section.lastElementChild).not.toHaveClass('check');
+  });
+
   it('shows green checks and a plain finish button when clean', async () => {
     installFakeApi({ 'tasks:finishChecks': () => clean });
     render(<FinishScreen taskId="a" />);
@@ -258,10 +338,12 @@ describe('FinishScreen', () => {
       }),
     });
     render(<FinishScreen taskId="a" />);
+    await screen.findByText('2 uncommitted changes');
+    // The row's button; the foot's runs the same action (tested with the foot).
     await userEvent.click(
-      await screen.findByRole('button', {
+      screen.getAllByRole('button', {
         name: 'Commit' + String.fromCharCode(0x2026),
-      }),
+      })[0],
     );
     await waitFor(() =>
       expect(calls.find((c) => c.channel === 'terminals:open')?.args).toEqual([
@@ -377,7 +459,7 @@ describe('FinishScreen', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Keep task' }),
+      screen.getByRole('button', { name: 'Back to task' }),
     ).toBeInTheDocument();
     expect(calls.some((c) => c.channel === 'tasks:finishChecks')).toBe(false);
   });
@@ -1644,6 +1726,33 @@ describe('FinishScreen with several repos', () => {
     expect(
       screen.getByRole('button', { name: 'Discard changes and clean up' }),
     ).toBeInTheDocument();
+  });
+
+  it('the foot commits in the first repo with uncommitted changes', async () => {
+    const { calls } = installFakeApi({
+      'tasks:finishChecks': () =>
+        checks({ uncommitted: [{ status: 'M', path: 'src/x.ts' }] }),
+      'terminals:open': () => ({
+        id: 'g1',
+        kind: 'run',
+        label: 'git commit',
+        command: 'x',
+      }),
+    });
+    const { container } = render(<FinishScreen taskId="a" />);
+    await screen.findByRole('group', { name: 'api' });
+    const foot = container.querySelector<HTMLElement>('.finish-foot')!;
+    const commit = within(foot).getByRole('button', {
+      name: 'Commit' + String.fromCharCode(0x2026),
+    });
+    expect(commit).toHaveClass('btn-primary');
+    expect(commit).toHaveAttribute('title', 'Commit in api');
+    await userEvent.click(commit);
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.channel === 'terminals:open')?.args[1],
+      ).toMatchObject({ workspaceId: 'w2' }),
+    );
   });
 
   it('opens commit in a terminal in that workspace', async () => {

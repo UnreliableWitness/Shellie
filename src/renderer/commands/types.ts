@@ -33,5 +33,7 @@ export type Command = {
   noteTone?: 'accent';
   /** Sorts after the rest of its group, whoever offers it: the ways out of a task (Finish, Discard). */
   last?: boolean;
+  /** It destroys something (Discard task): the menu and the palette show it in the danger colour. */
+  danger?: boolean;
   run(): void;
 };

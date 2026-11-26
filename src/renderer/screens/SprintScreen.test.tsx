@@ -868,6 +868,12 @@ describe('filterRows', () => {
     expect(
       within(table).getByRole('columnheader', { name: 'Spent / est.' }),
     ).toBeInTheDocument();
+    expect(
+      within(table).getByRole('columnheader', { name: 'Shellie' }),
+    ).toHaveAttribute(
+      'title',
+      "The item's task in Shellie: its status and AI cost, or Start to make one",
+    );
     expect(await within(table).findByText('3h 10m / 5h')).toBeInTheDocument();
     expect(within(table).getByText('–')).toBeInTheDocument();
   });

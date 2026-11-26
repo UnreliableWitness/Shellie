@@ -94,7 +94,8 @@ export function PlacesBand() {
         ))}
         <Place
           name="Cost"
-          line={month && `${eur(month.costEur)} this month`}
+          // Billable usage in Shellie's tasks only; the budget bands count the whole month, outside Shellie too.
+          line={month && `${eur(month.costEur)} in tasks this month`}
           onClick={open('cost', () =>
             document
               .querySelector('[aria-label="Stats"]')

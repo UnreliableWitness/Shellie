@@ -1412,7 +1412,30 @@ describe('TaskNav', () => {
     expect(useStore.getState().connectionId).toBe('c1');
   });
 
-  it('collapses to a rail of type icons and back, and remembers it', async () => {
+  it('is the rail in a narrow window whatever the setting, which it leaves alone', () => {
+    installFakeApi();
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(max-width: 859px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(<TaskNav />);
+      expect(screen.getByRole('navigation', { name: 'Tasks' })).toHaveClass(
+        'is-rail',
+      );
+      // Nothing to expand into: the button would do nothing the eye can see.
+      expect(screen.queryByRole('button', { name: /task list/ })).toBeNull();
+      expect(useStore.getState().navCollapsed).toBe(false);
+      expect(localStorage.getItem('shellie.ui.navCollapsed')).toBeNull();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('collapses to a rail of task tags and back, and remembers it', async () => {
     installFakeApi();
     render(<TaskNav />);
     await userEvent.click(
@@ -1423,9 +1446,17 @@ describe('TaskNav', () => {
     );
     expect(localStorage.getItem('shellie.ui.navCollapsed')).toBe('true');
     const rail = screen.getByRole('button', { name: /48213 Checkout/ });
+    // The tag tells the tasks apart; the type icon is in the fly-out.
+    expect(rail.querySelector('.rail-tag')).toHaveTextContent('48213');
+    expect(within(rail).queryByRole('img')).toBeNull();
+    await userEvent.hover(rail);
     expect(
-      within(rail).getByRole('img', { name: 'User Story' }),
+      within(document.querySelector<HTMLElement>('.rail-fly')!).getByRole(
+        'img',
+        { name: 'User Story', hidden: true },
+      ),
     ).toBeInTheDocument();
+    await userEvent.unhover(rail);
     // The rail keeps the palette, Home and Sprint; the other places are behind them.
     expect(
       screen.getByRole('button', { name: 'Go to or run' }),
