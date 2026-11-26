@@ -15,6 +15,7 @@ import { useClock } from '../hooks/useClock';
 import { useTaskUsage } from '../hooks/useTaskUsage';
 import { usageModelColor } from '../modelColor';
 import { useStore } from '../store';
+import { CaptureOffLine } from './CaptureOffLine';
 import { TimePanel } from './TimePanel';
 import { Pivots, RingGauge } from './ui';
 import { UsageLineage } from './UsageLineage';
@@ -268,6 +269,7 @@ export function UsagePanel({
         )}
       </div>
       <div className="up-col up-main">
+        <CaptureOffLine />
         <TimePanel taskId={taskId} />
         <div className="card up-box">
           <div className="up-head">

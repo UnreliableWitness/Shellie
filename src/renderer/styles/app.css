@@ -197,6 +197,25 @@ h3 {
   display: inline-flex;
   gap: 6px;
 }
+/*
+ * Discard task's confirmation lies over the top of the task's content: the holder takes no height, so the page
+ * under it does not move when the bar opens or closes.
+ */
+.discard-over {
+  position: relative;
+  flex: none;
+  height: 0;
+  z-index: 20;
+}
+.discard-over > .confirm-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* The wash alone would let the page show through. */
+  background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--bg-card);
+  box-shadow: var(--shadow-1);
+}
 .link {
   background: none;
   border: 0;

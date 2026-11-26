@@ -216,7 +216,7 @@ describe('Home page', () => {
     render(<Shell />);
     const band = await screen.findByRole('region', { name: 'Get started' });
     expect(
-      within(band).getByRole('region', { name: '2 · Connect Azure DevOps' }),
+      within(band).getByRole('region', { name: 'Connect Azure DevOps' }),
     ).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: 'Add an Azure DevOps connection' }),
@@ -233,7 +233,7 @@ describe('Home page', () => {
     const band = await screen.findByRole('region', { name: 'Get started' });
     expect(
       within(band).getByRole('region', {
-        name: '4 · A brain for your project',
+        name: 'A brain for your project',
       }),
     ).toBeTruthy();
   });
@@ -276,9 +276,7 @@ describe('Home page', () => {
     });
     render(<Shell />);
     const band = await screen.findByRole('region', { name: 'Get started' });
-    expect(
-      within(band).queryByRole('region', { name: '1 · Agents' }),
-    ).toBeNull();
+    expect(within(band).queryByRole('region', { name: 'Agents' })).toBeNull();
     await userEvent.click(
       within(band).getByRole('button', { name: 'Dismiss' }),
     );

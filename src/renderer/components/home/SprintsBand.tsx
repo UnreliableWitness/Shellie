@@ -16,14 +16,16 @@ import { Band } from './Band';
 
 const REFETCH_MS = 5_000;
 
+/** A sprint's end in words: days left, "Ends today" within a day of the finish date, how long ago after it. */
 export const daysLeft = (finish: string | null): string | null => {
   if (!finish) return null;
   const days = Math.ceil((Date.parse(finish) - Date.now()) / 86_400_000);
-  return days <= 0
-    ? 'Ends today'
-    : days === 1
-      ? '1 day left'
-      : `${days} days left`;
+  if (Number.isNaN(days)) return null;
+  if (days < -1) return `Ended ${-days} days ago`;
+  if (days === -1) return 'Ended yesterday';
+  // Math.ceil gives -0 during the finish day itself.
+  if (days === 0) return 'Ends today';
+  return days === 1 ? '1 day left' : `${days} days left`;
 };
 
 function SprintCard({

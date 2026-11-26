@@ -295,10 +295,10 @@ describe('first page', () => {
     });
     render(<App />);
     const connect = await screen.findByRole('region', {
-      name: '2 · Connect Azure DevOps',
+      name: 'Connect Azure DevOps',
     });
     expect(within(connect).getByLabelText('Done')).toBeInTheDocument();
-    const agents = screen.getByRole('region', { name: '1 · Agents' });
+    const agents = screen.getByRole('region', { name: 'Agents' });
     expect(within(agents).queryByLabelText('Done')).toBeNull();
     expect(within(agents).getByRole('button', { name: 'Open' })).toHaveClass(
       'btn-primary',
@@ -330,7 +330,9 @@ describe('full pages', () => {
     expect(
       within(content).getByRole('heading', { name: 'New task' }),
     ).toBeInTheDocument();
-    expect(within(content).getByRole('tab', { name: 'Typed' })).toBeVisible();
+    expect(
+      within(content).getByRole('tab', { name: 'Enter by hand' }),
+    ).toBeVisible();
     await userEvent.keyboard('{Escape}');
     expect(useStore.getState().screen).toEqual({ kind: 'settings' });
   });
@@ -366,7 +368,7 @@ describe('full pages', () => {
     expect(useStore.getState().screen.kind).not.toBe('new-task');
   });
 
-  it('renders Finish as a page and Keep task returns to the task', async () => {
+  it('renders Finish as a page and Back to task returns to the task', async () => {
     installFakeApi({
       'tasks:finishChecks': () => ({
         uncommitted: [],
@@ -383,7 +385,7 @@ describe('full pages', () => {
     expect(
       within(content).getByRole('heading', { name: 'Finish task' }),
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Keep task' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Back to task' }));
     expect(useStore.getState().screen).toEqual({ kind: 'task' });
   });
 });

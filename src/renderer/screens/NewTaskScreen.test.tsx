@@ -370,6 +370,57 @@ describe('NewTaskScreen', () => {
     expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled();
   });
 
+  it('says next to a disabled Create what is missing', async () => {
+    installFakeApi({ 'repos:config': () => config });
+    render(<NewTaskScreen />);
+    const create = screen.getByRole('button', { name: 'Create task' });
+    await waitFor(() =>
+      expect(screen.getByLabelText('npm run build')).toBeChecked(),
+    );
+    expect(create).toHaveAccessibleDescription('Enter the id and the title');
+    await userEvent.type(screen.getByLabelText('Title'), 'Only a title');
+    expect(create).toHaveAccessibleDescription('Enter the work item id');
+    await userEvent.type(screen.getByLabelText('Work item id'), '48231');
+    expect(create).toBeEnabled();
+    expect(create).toHaveAccessibleDescription('');
+    await userEvent.clear(screen.getByLabelText('Branch'));
+    expect(create).toBeDisabled();
+    expect(create).toHaveAccessibleDescription('Give the branch a name');
+    await userEvent.click(screen.getByRole('tab', { name: 'Blank' }));
+    expect(create).toHaveAccessibleDescription('Give the task a name');
+  });
+
+  it('names the tab in the panel heading until there is a work item', async () => {
+    installFakeApi({ 'repos:config': () => config });
+    render(<NewTaskScreen />);
+    const panel = screen.getByRole('region', { name: 'Task preview' });
+    expect(
+      within(panel).getByText('Work item, entered by hand'),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText('Blank task')).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Work item id'), '48231');
+    expect(within(panel).getByText('User Story 48231')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Blank' }));
+    expect(within(panel).getByText('Blank task')).toBeInTheDocument();
+    expect(within(panel).getByText('New task')).toBeInTheDocument();
+  });
+
+  it('keeps Create outside the part of the panel that scrolls, and the folder whole in its title', async () => {
+    installFakeApi({ 'repos:config': () => config });
+    render(<NewTaskScreen />);
+    await userEvent.type(screen.getByLabelText('Work item id'), '7');
+    await userEvent.type(screen.getByLabelText('Title'), 'Fix it');
+    const folder = await screen.findByText('/src/webshop.worktrees/7-fix-it');
+    expect(folder.closest('.newtask-folder')).toHaveAttribute(
+      'title',
+      '/src/webshop.worktrees/7-fix-it',
+    );
+    const create = screen.getByRole('button', { name: 'Create task' });
+    expect(create.closest('.newtask-foot')).not.toBeNull();
+    expect(create.closest('.newtask-details-body')).toBeNull();
+    expect(folder.closest('.newtask-details-body')).not.toBeNull();
+  });
+
   it('preselects the work item and repo it was opened with', async () => {
     const { calls } = installFakeApi({
       'repos:config': () => config,
@@ -542,6 +593,17 @@ describe('NewTaskScreen', () => {
     expect(
       await screen.findByLabelText('Search work items'),
     ).toBeInTheDocument();
+    const panel = screen.getByRole('region', { name: 'Task preview' });
+    expect(panel.querySelector('.newtask-preview-type')).toHaveTextContent(
+      /^Work item$/,
+    );
+    expect(panel.querySelector('.newtask-preview-title')).toHaveTextContent(
+      'Pick a work item',
+    );
+    expect(within(panel).queryByText('Blank task')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Create task' }),
+    ).toHaveAccessibleDescription('Pick a work item');
     await userEvent.selectOptions(screen.getByLabelText('Repo'), 'plain');
     expect(await screen.findByLabelText('Work item id')).toBeInTheDocument();
     expect(
@@ -792,7 +854,7 @@ describe('NewTaskScreen', () => {
       expect(screen.getByLabelText('Repo')).toHaveValue('');
       expect(screen.queryByLabelText('Branch')).not.toBeInTheDocument();
       expect(
-        screen.queryByRole('tab', { name: 'Typed' }),
+        screen.queryByRole('tab', { name: 'Enter by hand' }),
       ).not.toBeInTheDocument();
       const create = screen.getByRole('button', { name: 'Create task' });
       expect(create).toBeDisabled();

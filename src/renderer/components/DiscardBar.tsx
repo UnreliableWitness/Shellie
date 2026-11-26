@@ -115,14 +115,17 @@ export function DiscardBar({ task }: { task: TaskView }) {
   );
 
   return (
-    <ConfirmBar
-      message={`Discard ${name}?`}
-      details={details}
-      confirmLabel={lost.length > 0 ? 'Discard anyway' : 'Discard task'}
-      busy={busy}
-      confirmDisabled={!checks && !failed}
-      onConfirm={() => void discard()}
-      onCancel={cancelDiscard}
-    />
+    // The holder has no height and the bar lies over what follows it (app.css), so opening it moves nothing.
+    <div className="discard-over">
+      <ConfirmBar
+        message={`Discard ${name}?`}
+        details={details}
+        confirmLabel={lost.length > 0 ? 'Discard anyway' : 'Discard task'}
+        busy={busy}
+        confirmDisabled={!checks && !failed}
+        onConfirm={() => void discard()}
+        onCancel={cancelDiscard}
+      />
+    </div>
   );
 }

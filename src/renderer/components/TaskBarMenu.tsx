@@ -7,7 +7,7 @@ import { modKey, PopupMenu } from './ui';
 
 /**
  * The task menu's sections, by command id: the views, the ways out to an editor, what changes the task's setup,
- * and the ways out of the task. An id ending in a dot stands for every command that starts with it.
+ * the way out of the task, and under its own separator the way out that destroys. An id ending in a dot stands for every command that starts with it.
  */
 const SECTIONS: string[][] = [
   ['task.changes', 'task.usage', 'task.docs', 'task.brain'],
@@ -20,7 +20,8 @@ const SECTIONS: string[][] = [
     'app.focus',
   ],
   ['task.environment', 'task.cleanWorktree', 'task.scan', 'task.addWorktree'],
-  ['task.finish', 'task.discard'],
+  ['task.finish'],
+  ['task.discard'],
 ];
 
 /**
@@ -116,7 +117,11 @@ function Items({
               key={c.id}
               type="button"
               role="menuitem"
-              className="menu-item taskmenu-item"
+              className={
+                c.danger
+                  ? 'menu-item taskmenu-item is-danger'
+                  : 'menu-item taskmenu-item'
+              }
               onClick={() => {
                 close();
                 c.run();

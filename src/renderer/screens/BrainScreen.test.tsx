@@ -515,6 +515,18 @@ describe('BrainScreen', () => {
     );
   });
 
+  it('an empty brain offers Add a source, which opens Add', async () => {
+    setup(brainView(), { 'brain:pages': () => [] });
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add a source' }),
+    );
+    expect(screen.getByRole('tab', { name: /^Add/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
   it('the Add tab counts the sources waiting to capture, and shows nothing at zero', async () => {
     let sources = [source('sources/a.md'), source('sources/b.md')];
     const a = setup(brainView(), { 'brain:sources': () => sources });

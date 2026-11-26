@@ -27,11 +27,10 @@ import { brainTaskId } from '../../shared/brain';
 import type { NewTerminal, TaskView, TerminalDef } from '../../shared/types';
 import { useLatest } from '../hooks/useLatest';
 import { api, tryInvoke } from '../api';
-import { eur, plural } from '../format';
+import { plural } from '../format';
 import { useTaskBrain } from '../hooks/useBrains';
 import { useGitSummary } from '../hooks/useGitSummary';
 import { useRepoConfig } from '../hooks/useRepoConfig';
-import { useTaskCost } from '../hooks/useTaskCosts';
 import { holdWatch } from '../review/holdWatch';
 import { useChangeCount } from '../review/useReview';
 import {
@@ -56,6 +55,7 @@ import {
   type WorkspaceView,
 } from '../../shared/workspaces';
 import { EditorCommands } from './EditorCommands';
+import { CostButton } from './CostButton';
 import { ChangesTab } from './review/ChangesTab';
 import { DiscardBar } from './DiscardBar';
 import { NEW_TERMINALS, NewTerminalMenu } from './NewTerminalMenu';
@@ -78,7 +78,6 @@ const UP = String.fromCharCode(0x2191);
 const DOWN = String.fromCharCode(0x2193);
 const DOT = String.fromCharCode(0xb7);
 const DELTA = String.fromCharCode(0x394);
-const DASH = String.fromCharCode(0x2014);
 
 /** Whether the event brought something new for a tab that is not showing; cleared once the tab shows. */
 function useUnseen<K extends 'docs:changed' | 'usage:changed'>(
@@ -191,24 +190,6 @@ function RunCommands({
   );
   useContributeCommands(`task.run.${index}`, commands);
   return null;
-}
-
-/** The task's AI cost; opens the Usage tab. */
-function CostButton({ taskId }: { taskId: string }) {
-  const openUsage = useStore((s) => s.openUsage);
-  const cost = useTaskCost(taskId);
-  const shown = cost === null ? null : eur(cost);
-  return (
-    <button
-      type="button"
-      className="btn btn-subtle btn-sm taskbar-cost"
-      aria-label={`AI cost ${shown ?? 'unknown'}, open usage`}
-      title="AI cost, open usage"
-      onClick={() => openUsage(taskId)}
-    >
-      <span className="mono">{shown ?? DASH}</span>
-    </button>
-  );
 }
 
 /** A tab with a close button: a terminal, an HTML view or the brain terminal. Middle click closes, as in browsers and VS Code. */
@@ -528,6 +509,7 @@ export const TerminalTabs = memo(function TerminalTabs({
         title: 'Discard task',
         group: 'task',
         last: true,
+        danger: true,
         run: () => askDiscard(id),
       },
     ];

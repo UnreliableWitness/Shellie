@@ -90,6 +90,8 @@ const G = {
   OK: String.fromCharCode(0x2713),
   UP: String.fromCharCode(0x2191),
   PLAY: String.fromCharCode(0x25b6),
+  /** Something to know that is not a risk: no tick, no warning. */
+  INFO: String.fromCharCode(0x2022),
 };
 
 export function FinishScreen({ taskId }: { taskId: string }) {
@@ -119,7 +121,7 @@ function NotReadyPage({
         <div className="muted">{`This task is ${status}. Finish it once setup has succeeded; use the Setup screen to retry or remove it.`}</div>
         <div className="finish-foot">
           <button type="button" className="btn" onClick={back}>
-            Keep task
+            Back to task
           </button>
         </div>
       </div>
@@ -297,7 +299,7 @@ function NoRepoFinishScreen({ taskId }: { taskId: string }) {
         </div>
         <div className="finish-foot">
           <button type="button" className="btn" onClick={back}>
-            Keep task
+            Back to task
           </button>
           <button
             type="button"
@@ -572,6 +574,10 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
     if (opened && stillHere()) openTask(taskId);
   };
 
+  /** The commit terminal, for the task's own repo or one of its others: what every Commit button runs. */
+  const commit = (workspaceId?: string) =>
+    openGit('git commit', 'git add -A && git commit', workspaceId);
+
   const createPr = Boolean(pr?.available && prChoice);
 
   /** Whether finishing without the PR path would discard work, exactly as the main button judges it. */
@@ -799,6 +805,20 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
       ? dirtyRows(rows, Boolean(checksFailed), rowChoice)
       : dirtyWith(checks, Boolean(checksFailed), createPr));
   const nTerm = task.terminals.length;
+  /**
+   * Uncommitted work that Finish would discard, so the foot offers to commit it before the danger button. With
+   * several repos: the first row that holds some (a row on another branch is kept as is, and not offered).
+   */
+  const toCommit: { workspaceId?: string; repoName?: string } | null = !checks
+    ? null
+    : multi
+      ? (rows.find(
+          (c) =>
+            !c.missing && !foreign(c, taskBranch) && c.uncommitted.length > 0,
+        ) ?? null)
+      : checks.uncommitted.length > 0
+        ? {}
+        : null;
 
   return (
     <div className="page">
@@ -812,8 +832,8 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
           <h2>Safety checks</h2>
           {review && (review.notViewed > 0 || review.unresolved > 0) && (
             <Check
-              tone="warn"
-              glyph={G.WARN}
+              tone="info"
+              glyph={G.INFO}
               actions={
                 <button
                   type="button"
@@ -854,6 +874,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
                 otherBranch={foreign(c, taskBranch)}
                 onToggle={(on) => setRow(c.workspaceId, on)}
                 openGit={openGit}
+                onCommit={() => void commit(c.workspaceId)}
                 result={results?.find((r) => r.workspaceId === c.workspaceId)}
                 confirmLeak={confirmRows[c.workspaceId] ?? false}
                 onConfirmLeak={(on) =>
@@ -872,18 +893,6 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
                 }
               />
             ))}
-          {(checks || checksFailed) && (
-            <div>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() => void addWorktree()}
-              >
-                Add a worktree{ELLIPSIS}
-              </button>
-            </div>
-          )}
           {checks &&
             !multi &&
             (checks.uncommitted.length > 0 ? (
@@ -894,9 +903,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
                   <button
                     type="button"
                     className="btn btn-warn btn-sm"
-                    onClick={() =>
-                      openGit('git commit', 'git add -A && git commit')
-                    }
+                    onClick={() => void commit()}
                   >
                     Commit{ELLIPSIS}
                   </button>
@@ -947,7 +954,7 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
             ))}
           {checks &&
             (checks.runningTerminals > 0 ? (
-              <Check tone="warn" glyph={G.PLAY}>
+              <Check tone="info" glyph={G.PLAY}>
                 <div className="title">{`${plural(checks.runningTerminals, 'terminal')} still running`}</div>
                 <div className="small">
                   They are closed when you finish, unless you untick it below.
@@ -958,6 +965,18 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
                 No running processes besides this task's terminals
               </Check>
             ))}
+          {(checks || checksFailed) && (
+            <div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy}
+                onClick={() => void addWorktree()}
+              >
+                Add a worktree{ELLIPSIS}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="finish-section">
@@ -1173,8 +1192,21 @@ function RepoFinishScreen({ taskId }: { taskId: string }) {
 
         <div className="finish-foot">
           <button type="button" className="btn" onClick={back}>
-            Keep task
+            Back to task
           </button>
+          {toCommit && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              title={
+                toCommit.repoName ? `Commit in ${toCommit.repoName}` : undefined
+              }
+              onClick={() => void commit(toCommit.workspaceId)}
+            >
+              Commit{ELLIPSIS}
+            </button>
+          )}
           <button
             type="button"
             className={dirty ? 'btn btn-danger' : 'btn btn-primary'}
@@ -1207,7 +1239,8 @@ function Check({
   actions,
   children,
 }: {
-  tone: 'ok' | 'warn';
+  /** `info` is a fact that is no risk: the plain row, without the tick of `ok`. */
+  tone: 'ok' | 'warn' | 'info';
   glyph: string;
   role?: 'alert';
   actions?: ReactNode;
@@ -1229,6 +1262,7 @@ function WorkspaceRow({
   action,
   onToggle,
   openGit,
+  onCommit,
   result,
   busy,
   onRemove,
@@ -1244,6 +1278,8 @@ function WorkspaceRow({
   otherBranch: boolean;
   onToggle: (on: boolean) => void;
   openGit: (label: string, command: string, workspaceId?: string) => void;
+  /** Opens the commit terminal for this repo: the row's Commit and the foot's are the same action. */
+  onCommit: () => void;
   /** What the last Finish did with this row, when it stopped before cleanup. */
   result?: FinishRowResult;
   busy: boolean;
@@ -1323,13 +1359,7 @@ function WorkspaceRow({
                 <button
                   type="button"
                   className="btn btn-warn btn-sm"
-                  onClick={() =>
-                    openGit(
-                      'git commit',
-                      'git add -A && git commit',
-                      c.workspaceId,
-                    )
-                  }
+                  onClick={() => onCommit()}
                 >
                   Commit{ELLIPSIS}
                 </button>

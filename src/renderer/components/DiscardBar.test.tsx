@@ -52,6 +52,14 @@ beforeEach(() => {
 });
 
 describe('DiscardBar (#124)', () => {
+  it('lies over the page: its holder is the overlay, so the page under it does not move', async () => {
+    installFakeApi({ 'tasks:discardChecks': () => checks() });
+    render(<DiscardBar task={task} />);
+    const bar = await screen.findByRole('alertdialog');
+    expect(bar.parentElement).toHaveClass('discard-over');
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  });
+
   it('names what goes and what does not happen, then discards and goes Home', async () => {
     const api = installFakeApi({
       'tasks:discardChecks': () => checks(),

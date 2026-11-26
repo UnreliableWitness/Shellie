@@ -1043,6 +1043,15 @@
   gap: 12px;
   max-width: 960px;
 }
+.brain-read-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.brain-read-empty p {
+  margin: 0;
+}
 /* The front page of a book uses the whole reading width. */
 .brain-read-landing.is-front {
   max-width: none;

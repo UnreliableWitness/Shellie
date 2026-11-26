@@ -88,7 +88,7 @@ function UpNextRow({
   const startButton = (
     <button
       type="button"
-      className="btn btn-primary"
+      className="btn"
       aria-label={`Start a task for ${label}`}
       aria-disabled={!repoId || undefined}
       title={repoId ? undefined : NO_REPO}
@@ -107,7 +107,7 @@ function UpNextRow({
       {repoId && linked.length === 1 ? (
         <StartAgentMenu
           label={label}
-          className="btn btn-primary"
+          className="btn"
           disabled={starting}
           onPick={(agent) => start(agent)}
         >

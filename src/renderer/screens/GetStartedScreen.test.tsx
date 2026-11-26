@@ -89,7 +89,7 @@ describe('Get started page', () => {
     const { tracked } = installFakeApi({ 'agents:detect': () => detected });
     render(<Shell />);
     expect(
-      await within(card('1 · Agents')).findByText(
+      await within(card('Agents')).findByText(
         'Found Claude Code 2.1.307 and OpenCode 1.19.3 on this machine. New tasks open OpenCode and a shell.',
       ),
     ).toBeTruthy();
@@ -103,16 +103,16 @@ describe('Get started page', () => {
     installFakeApi({ 'agents:detect': () => detected });
     render(<Shell />);
     expect(
-      within(card('2 · Connect Azure DevOps')).getByRole('button', {
+      within(card('Connect Azure DevOps')).getByRole('button', {
         name: 'Connect',
       }),
     ).toHaveClass('btn-primary');
     expect(
-      within(card('1 · Agents')).getByRole('button', { name: 'Change' }),
+      within(card('Agents')).getByRole('button', { name: 'Change' }),
     ).not.toHaveClass('btn-primary');
-    expect(within(card('1 · Agents')).getByLabelText('Done')).toBeTruthy();
+    expect(within(card('Agents')).getByLabelText('Done')).toBeTruthy();
     expect(
-      within(card('3 · Add a repository')).getByRole('button', {
+      within(card('Add a repository')).getByRole('button', {
         name: 'Add folder…',
       }),
     ).not.toHaveClass('btn-primary');
@@ -123,10 +123,10 @@ describe('Get started page', () => {
     const { calls } = installFakeApi({ 'agents:detect': () => detected });
     render(<Shell />);
     expect(
-      within(card('1 · Agents')).getByRole('button', { name: 'Open' }),
+      within(card('Agents')).getByRole('button', { name: 'Open' }),
     ).toHaveClass('btn-primary');
     expect(
-      await within(card('1 · Agents')).findByText(
+      await within(card('Agents')).findByText(
         'Found Claude Code 2.1.307 and OpenCode 1.19.3 on this machine. New tasks open Claude Code and a shell.',
       ),
     ).toBeTruthy();
@@ -178,7 +178,7 @@ describe('Get started page', () => {
     installFakeApi();
     render(<Shell />);
     await userEvent.click(
-      within(card('2 · Connect Azure DevOps')).getByRole('button', {
+      within(card('Connect Azure DevOps')).getByRole('button', {
         name: 'Connect',
       }),
     );
@@ -198,7 +198,7 @@ describe('Get started page', () => {
 });
 
 describe('Get started texts', () => {
-  const BRAIN = '4 · A brain for your project';
+  const BRAIN = 'A brain for your project';
   const BRAIN_TODO =
     "A local wiki of the project's documents, kept by your agent, that every task can read. Optional.";
 
@@ -212,14 +212,14 @@ describe('Get started texts', () => {
       ),
     ).toBeTruthy();
     for (const title of [
-      '1 · Agents',
-      '2 · Connect Azure DevOps',
-      '3 · Add a repository',
+      'Agents',
+      'Connect Azure DevOps',
+      'Add a repository',
       BRAIN,
     ])
       expect(card(title)).toBeTruthy();
     expect(
-      within(card('2 · Connect Azure DevOps')).getByText(
+      within(card('Connect Azure DevOps')).getByText(
         'Shellie reads your sprint, moves the work item when a task starts and opens draft pull requests. GitHub later.',
       ),
     ).toBeTruthy();
@@ -243,7 +243,7 @@ describe('Get started texts', () => {
     ]);
     expect(document.body.textContent).not.toContain('writes cost');
     await userEvent.click(
-      within(card(BRAIN)).getByRole('button', { name: 'Connect' }),
+      within(card(BRAIN)).getByRole('button', { name: 'Connect a project' }),
     );
     expect(useStore.getState().screen).toEqual({
       kind: 'connect',
@@ -268,7 +268,7 @@ describe('Get started texts', () => {
     },
   );
 
-  it('with no tracker the brain card is done, needs a connected project and offers Connect', async () => {
+  it('with no tracker the brain card is done, needs a connected project and offers Connect a project', async () => {
     open(settings({ tracker: 'none' }));
     installFakeApi({ 'agents:detect': () => detected });
     render(<Shell />);
@@ -280,7 +280,7 @@ describe('Get started texts', () => {
       within(card(BRAIN)).queryByRole('button', { name: 'Open' }),
     ).toBeNull();
     await userEvent.click(
-      within(card(BRAIN)).getByRole('button', { name: 'Connect' }),
+      within(card(BRAIN)).getByRole('button', { name: 'Connect a project' }),
     );
     expect(useStore.getState().screen).toEqual({
       kind: 'connect',
@@ -338,6 +338,35 @@ describe('Get started texts', () => {
       from: 'get-started',
     });
   });
+});
+
+describe('Agents step state', () => {
+  // One state, `settings.onboarding.agentsCheckedAt`: Home's band and the wizard's chips never disagree on it.
+  const stripDots = () =>
+    within(screen.getByRole('list', { name: 'Setup steps' }))
+      .getAllByRole('listitem')
+      .map((li) => li.textContent?.[0]);
+
+  it.each([
+    [null, true, '1'],
+    ['2026-10-22T09:00:00.000Z', false, '✓'],
+  ])(
+    'checked at %s: the band lists Agents %s and the brain step chip reads %s',
+    async (agentsCheckedAt, listed, dot) => {
+      open(settings({ agentsCheckedAt }), [conn]);
+      useStore.setState({ screen: { kind: 'home' } });
+      installFakeApi();
+      const home = render(<Shell />);
+      const band = await screen.findByRole('region', { name: 'Get started' });
+      expect(
+        within(band).queryAllByRole('region', { name: 'Agents' }),
+      ).toHaveLength(listed ? 1 : 0);
+      home.unmount();
+      useStore.setState({ screen: { kind: 'brain-new', from: 'get-started' } });
+      render(<Shell />);
+      await waitFor(() => expect(stripDots()[0]).toBe(dot));
+    },
+  );
 });
 
 describe('Agents step page', () => {

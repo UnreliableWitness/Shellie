@@ -368,7 +368,14 @@ export function WeekScreen() {
         ) : !week ? (
           <div className="empty">Loading...</div>
         ) : week.rows.length === 0 ? (
-          <div className="empty">No time measured in this week.</div>
+          <div className="empty">
+            <p>No time measured in this week.</p>
+            <p className="small">
+              Time counts while a task is open in Shellie with the window in
+              front and you are at the keyboard, and while a task's agent is
+              working.
+            </p>
+          </div>
         ) : (
           <>
             <WeekColumns

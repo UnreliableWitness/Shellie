@@ -112,6 +112,7 @@ export function BrainRead({
   shared = false,
   conflicts = [],
   onSettle,
+  onAdd,
 }: {
   brainId: string;
   /** The brain's name, the front page's title. */
@@ -133,6 +134,8 @@ export function BrainRead({
   /** Open conflicts: a page in one says so above it, with Settle. */
   conflicts?: BrainConflictRow[];
   onSettle?: (conflictId: string) => void;
+  /** Opens the Add view: the empty brain's way forward. */
+  onAdd?: () => void;
 }) {
   const { rows, sources, log, book, reads, loaded } = pages;
   const nav = useBrainNav();
@@ -386,7 +389,16 @@ export function BrainRead({
               </button>
             )}
             {loaded && rows.length === 0 && (
-              <p className="muted">No pages yet. Add a source in Add.</p>
+              <div className="brain-read-empty">
+                <p className="muted">
+                  No pages yet. Your agent writes them from the sources you add.
+                </p>
+                {onAdd && (
+                  <button type="button" className="btn" onClick={onAdd}>
+                    Add a source
+                  </button>
+                )}
+              </div>
             )}
             <BrainGraph rows={rows} newPaths={newPaths} onOpen={open} />
             {pinned.length > 0 && (

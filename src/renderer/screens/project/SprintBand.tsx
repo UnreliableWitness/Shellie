@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import type { HomeConnection } from '../../../shared/home';
+import { type HomeConnection, stateCategory } from '../../../shared/home';
 import { projectTasks } from '../../../shared/projectGraph';
 import type { Connection } from '../../../shared/types';
 import { Band } from '../../components/home/Band';
@@ -35,15 +35,17 @@ export function SprintBand({
   useEffect(() => loadTypes(id), [id, loadTypes]);
 
   const iteration = sprint?.iteration ?? null;
+  const categoryOf = (type: string, state: string) =>
+    types?.status === 'ok'
+      ? stateMeta(types.types.get(type.toLowerCase()), state)?.category
+      : undefined;
+  /** A finished or removed item: no task to start for it. */
+  const completed = (type: string, state: string) => {
+    const c = stateCategory(categoryOf(type, state), state);
+    return c === 'Completed' || c === 'Removed';
+  };
   const totals = sprint
-    ? sprintTotals(
-        { items: sprint.rows.map((r) => r.item) },
-        {},
-        (type, state) =>
-          types?.status === 'ok'
-            ? stateMeta(types.types.get(type.toLowerCase()), state)?.category
-            : undefined,
-      )
+    ? sprintTotals({ items: sprint.rows.map((r) => r.item) }, {}, categoryOf)
     : null;
   const total = totals ? totals.todo + totals.doing + totals.done : 0;
   const mySprint = iteration
@@ -155,30 +157,27 @@ export function SprintBand({
                         />
                         {status.label}
                       </button>
-                    ) : (
-                      <span className="muted small">
-                        To do ·{' '}
-                        <button
-                          type="button"
-                          className="link"
-                          aria-label={`Start a task for ${w.type} ${w.id}`}
-                          onClick={() =>
-                            go({
-                              kind: 'new-task',
-                              connectionId: id,
-                              workItem: {
-                                id: w.id,
-                                type: w.type,
-                                title: w.title,
-                                url: w.url,
-                                project: w.project ?? null,
-                              },
-                            })
-                          }
-                        >
-                          Start
-                        </button>
-                      </span>
+                    ) : completed(w.type, w.state) ? null : (
+                      <button
+                        type="button"
+                        className="link small"
+                        aria-label={`Start a task for ${w.type} ${w.id}`}
+                        onClick={() =>
+                          go({
+                            kind: 'new-task',
+                            connectionId: id,
+                            workItem: {
+                              id: w.id,
+                              type: w.type,
+                              title: w.title,
+                              url: w.url,
+                              project: w.project ?? null,
+                            },
+                          })
+                        }
+                      >
+                        Start
+                      </button>
                     )}
                   </li>
                 );

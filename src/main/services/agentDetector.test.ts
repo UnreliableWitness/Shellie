@@ -29,6 +29,19 @@ describe('detectAgents', () => {
     expect(new Date(r.checkedAt).toISOString()).toBe(r.checkedAt);
   });
 
+  it('leaves the full stop of the sentence out of the version', async () => {
+    const r = await detectAgents(platform, async (cmd) =>
+      cmd.args[0] === 'copilot'
+        ? {
+            code: 0,
+            stdout: '/opt/homebrew/bin/copilot\nGitHub Copilot CLI 1.0.57.\n',
+          }
+        : { code: 0, stdout: '/bin/x\n1.19.3-beta.2\n' },
+    );
+    expect(r.agents.copilot.version).toBe('1.0.57');
+    expect(r.agents.opencode.version).toBe('1.19.3-beta.2');
+  });
+
   it('treats a timeout as not found', async () => {
     const r = await detectAgents(platform, async () => {
       throw new Error('timed out');

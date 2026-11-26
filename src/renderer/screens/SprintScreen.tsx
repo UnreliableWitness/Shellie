@@ -344,7 +344,12 @@ function SprintGrid({
           Remaining work
         </span>
         <span role="columnheader">Spent / est.</span>
-        <span role="columnheader">Shellie</span>
+        <span
+          role="columnheader"
+          title="The item's task in Shellie: its status and AI cost, or Start to make one"
+        >
+          Shellie
+        </span>
       </div>
       <div role="rowgroup" className="grid-body">
         {visibleRows(rows, collapsed).map((r) => (

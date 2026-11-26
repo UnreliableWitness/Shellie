@@ -71,6 +71,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A command that destroys (Discard task). */
+.palette-row.is-danger .palette-title {
+  color: var(--red);
+}
 .palette-note {
   flex: none;
   font-size: 12px;

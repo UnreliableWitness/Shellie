@@ -433,11 +433,15 @@ describe('BrainRead', () => {
     render(<BrainRead brainId="b1" since={null} />);
     await screen.findByLabelText('Search the brain');
     expect(
-      screen.queryByText('No pages yet. Add a source in Add.'),
+      screen.queryByText(
+        'No pages yet. Your agent writes them from the sources you add.',
+      ),
     ).not.toBeInTheDocument();
     answer([]);
     expect(
-      await screen.findByText('No pages yet. Add a source in Add.'),
+      await screen.findByText(
+        'No pages yet. Your agent writes them from the sources you add.',
+      ),
     ).toBeInTheDocument();
   });
 
@@ -447,10 +451,15 @@ describe('BrainRead', () => {
       'brain:sources': () => [],
       'brain:read': () => ({ text: '' }),
     });
-    render(<BrainRead brainId="b1" since={null} />);
+    const onAdd = vi.fn();
+    render(<BrainRead brainId="b1" since={null} onAdd={onAdd} />);
     expect(
-      await screen.findByText('No pages yet. Add a source in Add.'),
+      await screen.findByText(
+        'No pages yet. Your agent writes them from the sources you add.',
+      ),
     ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add a source' }));
+    expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
   describe('with a book', () => {

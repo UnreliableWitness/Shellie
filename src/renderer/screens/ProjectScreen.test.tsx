@@ -288,6 +288,37 @@ describe('Project page', () => {
     expect(useStore.getState().screen).toEqual({ kind: 'sprint' });
   });
 
+  it('my items without a task offer Start alone, and none once the item is done', async () => {
+    const snapshot = home();
+    snapshot.connections[0].sprints[0].items = [
+      items[0],
+      items[1],
+      { ...items[3], assignedTo: 'Dries Hoebeke' },
+    ];
+    fake({ 'home:get': () => snapshot });
+    render(<Shell />);
+    const s = await band('Sprint');
+    await within(s).findByText(/Upgrade payment SDK/);
+    expect(s.textContent).not.toContain('To do ·');
+    expect(
+      within(s).getByRole('button', { name: 'Start a task for Issue 1' }),
+    ).toHaveTextContent('Start');
+    expect(
+      within(s).getByRole('button', { name: 'Start a task for Task 5' }),
+    ).toBeInTheDocument();
+    expect(
+      within(s).queryByRole('button', { name: 'Start a task for Task 4' }),
+    ).toBeNull();
+    await userEvent.click(
+      within(s).getByRole('button', { name: 'Start a task for Issue 1' }),
+    );
+    expect(useStore.getState().screen).toMatchObject({
+      kind: 'new-task',
+      connectionId: 'c1',
+      workItem: { id: '1' },
+    });
+  });
+
   it('brains band links to the brain screen with a focus', async () => {
     const source = (path: string) => ({
       path,

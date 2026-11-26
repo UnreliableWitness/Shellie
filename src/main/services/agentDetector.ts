@@ -66,7 +66,9 @@ async function probe(
     if (at < 0) return NOT_FOUND;
     let version: string | null = null;
     for (const line of lines.slice(at + 1)) {
-      version = line.match(/\d+\.\d+\.\d+\S*/)?.[0] ?? null;
+      // Copilot ends its version line with a full stop ("… 1.0.57."): that is the sentence's, not the version's.
+      version =
+        line.match(/\d+\.\d+\.\d+\S*/)?.[0].replace(/[.,;:]+$/, '') ?? null;
       if (version) break;
     }
     return { found: true, version, path: lines[at] };
