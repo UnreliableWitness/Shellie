@@ -17,7 +17,8 @@ export type TreeGroup = {
   subgroups?: TreeGroup[];
 };
 
-const TYPE_LABELS: Record<BrainPageType, string> = {
+/** A page type as the heading of its group. */
+export const TYPE_LABELS: Record<BrainPageType, string> = {
   subject: 'Subjects',
   account: 'Accounts',
   scope: 'Scope',
