@@ -215,6 +215,13 @@ export type Store = {
   shownTabsByTask: Record<string, string[]>;
   /** Closes a view tab; when it was the one showing, the first terminal shows instead. */
   closeTab(taskId: string, tab: string): void;
+  /** The view tabs put in a task's row without being asked for (showTabOnce), so a closed one is not put back. */
+  shownOnceByTask: Record<string, string[]>;
+  /**
+   * Puts a view tab in the task's tab row without selecting it, once per task for the session: the Brain tab of a
+   * task with a brain is there from the start. Closed, it stays closed until it is opened again.
+   */
+  showTabOnce(taskId: string, tab: string): void;
   /**
    * What each task asked its brain from the Brain tab, oldest first. Here and not in the tab, so an answer lands
    * while another task or tab is showing. Kept for the session.
@@ -503,6 +510,15 @@ export const useStore = create<Store>((set, get) => ({
       },
       // Without a choice, activeTab falls back to the first terminal.
       ...(selected === tab ? { tabByTask: others } : {}),
+    });
+  },
+  shownOnceByTask: {},
+  showTabOnce: (taskId, tab) => {
+    const once = get().shownOnceByTask[taskId] ?? [];
+    if (once.includes(tab)) return;
+    set({
+      shownOnceByTask: { ...get().shownOnceByTask, [taskId]: [...once, tab] },
+      ...shownWith(get(), taskId, tab),
     });
   },
   brainAsksByTask: {},

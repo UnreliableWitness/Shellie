@@ -138,9 +138,6 @@ const VIEW_TABS: Record<
   },
 };
 
-/** Tasks whose brain terminal was opened for `openBrainTerminalOnStart` in this app session: once per task. */
-export const brainTerminalOpenedOnStart = new Set<string>();
-
 const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) ?? p;
 
 /**
@@ -530,19 +527,11 @@ export const TerminalTabs = memo(function TerminalTabs({
   ]);
   useContributeCommands('task', commands);
 
-  // A ready task whose brain asks for it gets the brain terminal in its tab bar, once per app session (not selected).
-  const autoOpen = brainShown && !!brain?.options.openBrainTerminalOnStart;
+  // A ready task with a brain has the Brain tab in its row from the start (not selected); closed, it stays closed.
+  const showTabOnce = useStore((s) => s.showTabOnce);
   useEffect(() => {
-    if (!autoOpen || !brain || brainTerm) return;
-    if (brainTerminalOpenedOnStart.has(task.id)) return;
-    brainTerminalOpenedOnStart.add(task.id);
-    void tryInvoke(() => api().invoke('brain:terminal', brain.id), notify).then(
-      (def) => {
-        if (def) setBrainTerm((cur) => cur ?? def);
-      },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once the task, its brain and the option are known
-  }, [autoOpen, brain?.id, task.id]);
+    if (brainShown) showTabOnce(task.id, BRAIN_TAB);
+  }, [brainShown, task.id, showTabOnce]);
 
   // Closing only detaches the tab: the terminal belongs to the brain and stays on its page (never killed here).
   const closeBrainTerminal = () => {
@@ -650,11 +639,11 @@ export const TerminalTabs = memo(function TerminalTabs({
             {brainTerm && (
               <ClosableTab
                 selected={active === brainTerm.id}
-                label={`${brain?.name ?? 'Brain'} brain`}
+                label={`${brain?.name ?? 'Brain'} brain terminal`}
                 onSelect={() => setTab(task.id, brainTerm.id)}
                 onClose={closeBrainTerminal}
               >
-                {`${brain?.name ?? 'Brain'} brain`}
+                {`${brain?.name ?? 'Brain'} brain terminal`}
               </ClosableTab>
             )}
             {/* The views open on demand (the task menu, the palette, a shortcut) and stay until closed. */}
