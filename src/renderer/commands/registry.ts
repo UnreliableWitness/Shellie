@@ -2,7 +2,12 @@ import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store';
-import { focusCommand, globalCommands, placeShortcutCommands } from './global';
+import {
+  focusCommand,
+  globalCommands,
+  nextProjectCommand,
+  placeShortcutCommands,
+} from './global';
 import { type Command, GROUP_ORDER } from './types';
 
 /**
@@ -93,10 +98,13 @@ export function useContributed(): Command[] {
  * The shortcut handler asks on every key with the mod key down (every Ctrl+C in a shell), so this builds nothing:
  * no task list, and the places are a fixed list.
  */
+const NEXT_PROJECT = nextProjectCommand();
+
 export function shortcutCommands(): Command[] {
   return [
     ...contributed().filter((c) => c.shortcut),
     ...placeShortcutCommands(),
+    NEXT_PROJECT,
     focusCommand(),
   ];
 }

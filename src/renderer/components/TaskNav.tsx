@@ -1,6 +1,7 @@
 import {
   Add16Regular,
   Add20Regular,
+  ArrowSprint20Regular,
   Brain20Regular,
   CheckmarkCircle12Filled,
   CheckmarkCircle16Regular,
@@ -14,6 +15,7 @@ import {
   PanelLeftContract20Regular,
   PanelLeftExpand20Regular,
   Search16Regular,
+  Settings20Regular,
 } from '@fluentui/react-icons';
 import {
   type KeyboardEvent,
@@ -44,6 +46,7 @@ import {
   useTaskConnectionId,
 } from '../store';
 import { useContributeCommands } from '../commands/registry';
+import { NEXT_PROJECT_SHORTCUT } from '../commands/global';
 import { shortcutLabel } from '../commands/shortcut';
 import type { Command } from '../commands/types';
 import { PALETTE_SHORTCUT } from '../hooks/useShortcuts';
@@ -444,6 +447,7 @@ function NavItem({
   current,
   rail,
   dot = false,
+  note,
   onClick,
 }: {
   icon: ReactNode;
@@ -452,20 +456,23 @@ function NavItem({
   rail: boolean;
   /** A dot whose reason the label already gives (a For you line). */
   dot?: boolean;
+  /** What a dot on this item means, when its label does not say (a brain with something to read). */
+  note?: string;
   onClick: () => void;
 }) {
+  const named = note ? `${label}, ${note}` : label;
   return (
     <button
       type="button"
       className="navitem"
       aria-current={current ? 'page' : undefined}
-      aria-label={rail ? label : undefined}
-      title={rail ? label : undefined}
+      aria-label={rail || note ? named : undefined}
+      title={rail || note ? named : undefined}
       onClick={onClick}
     >
       {icon}
       {!rail && <span>{label}</span>}
-      {dot && <span className="navitem-dot" aria-hidden="true" />}
+      {(dot || note) && <span className="navitem-dot" aria-hidden="true" />}
     </button>
   );
 }
@@ -474,8 +481,7 @@ function NavItem({
 function ProjectTile({ rail }: { rail: boolean }) {
   const connections = useStore((s) => s.connections);
   const connection = useStore(activeConnection);
-  const setConnectionId = useStore((s) => s.setConnectionId);
-  const go = useStore((s) => s.go);
+  const switchProject = useStore((s) => s.switchProject);
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -541,7 +547,7 @@ function ProjectTile({ rail }: { rail: boolean }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Project ${name}, switch project`}
-        title={name}
+        title={`${name} (next project: ${shortcutLabel(NEXT_PROJECT_SHORTCUT, modKey)})`}
         onClick={() => setOpen(!open)}
       >
         {avatar}
@@ -565,9 +571,8 @@ function ProjectTile({ rail }: { rail: boolean }) {
               aria-checked={c.id === connection?.id}
               className="menu-item"
               onClick={() => {
-                setConnectionId(c.id);
-                setOpen(false);
-                go({ kind: 'project' });
+                switchProject(c.id);
+                close(true);
                 track('project.open', { from: 'switcher' });
               }}
             >
@@ -673,7 +678,6 @@ export function TaskNav() {
           text: `${connection.name}: ${statusText(connection, true).text}`,
         };
   usePlaceCommands(brains, toRead);
-  const reads = brains.filter((b) => toRead.has(b.id));
   const dreams = useDreamsState().view;
   const dreamsWaiting = dreams ? waitingCount(dreams) : 0;
   // The palette can open the Done list, which lives here.
@@ -729,6 +733,25 @@ export function TaskNav() {
       />
       {/* One project needs no switcher; Home and the palette go to its page. */}
       {connections.length > 1 && <ProjectTile rail={rail} />}
+      <NavItem
+        icon={<ArrowSprint20Regular aria-hidden="true" />}
+        label="Sprint"
+        rail={rail}
+        current={screen.kind === 'sprint'}
+        onClick={() => go({ kind: 'sprint' })}
+      />
+      {/* A brain is a place the day goes through: one line each, with a dot while it has something to read. */}
+      {brains.map((b) => (
+        <NavItem
+          key={b.id}
+          icon={<Brain20Regular aria-hidden="true" />}
+          label={b.name}
+          rail={rail}
+          current={screen.kind === 'brain' && screen.brainId === b.id}
+          note={toRead.has(b.id) ? 'something to read' : undefined}
+          onClick={() => go({ kind: 'brain', brainId: b.id })}
+        />
+      ))}
       {/* The list and, over its foot, the For you block: one box, so the block takes no height from the list. */}
       <div className="leftnav-main">
         <div className="leftnav-scroll">
@@ -791,26 +814,6 @@ export function TaskNav() {
               />
             )}
             <DreamNavStatus rail={rail} />
-            {reads.length > 0 && (
-              <NavItem
-                icon={<Brain20Regular aria-hidden="true" />}
-                label={
-                  reads.length === 1
-                    ? `Something to read in ${reads[0].name}`
-                    : `Something to read in ${reads.length} brains`
-                }
-                rail={rail}
-                current={false}
-                dot
-                onClick={() =>
-                  go(
-                    reads.length === 1
-                      ? { kind: 'brain', brainId: reads[0].id }
-                      : { kind: 'home' },
-                  )
-                }
-              />
-            )}
             {!rail && connection && (
               <JoinCard
                 connectionId={connection.id}
@@ -821,6 +824,13 @@ export function TaskNav() {
         </div>
       </div>
       <div className="leftnav-foot">
+        <NavItem
+          icon={<Settings20Regular aria-hidden="true" />}
+          label="Settings"
+          rail={rail}
+          current={screen.kind === 'settings'}
+          onClick={() => go({ kind: 'settings' })}
+        />
         {footer && (
           <div className="nav-status" title={footer.text}>
             <span className="dot" style={{ background: footer.color }} />

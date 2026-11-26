@@ -239,6 +239,8 @@ export type Store = {
   setTasks(tasks: TaskView[]): void;
   setConnections(connections: Connection[]): void;
   setConnectionId(id: string | null): void;
+  /** Make another project the active one, staying on the page when it follows the project. */
+  switchProject(id: string): void;
   notify(level: Notice['level'], message: string): void;
   dismiss(id: string): void;
   load(): Promise<void>;
@@ -415,6 +417,10 @@ export const useStore = create<Store>((set, get) => ({
   setRepos: (repos) => set({ repos }),
   setConnections: (connections) => set({ connections }),
   setConnectionId: (connectionId) => set({ connectionId }),
+  switchProject: (connectionId) => {
+    set({ connectionId });
+    if (!FOLLOWS_PROJECT.has(get().screen.kind)) get().go({ kind: 'home' });
+  },
   setSprint: (connectionId, sprint) =>
     set((s) => ({
       sprints: { ...s.sprints, [connectionId]: { at: Date.now(), sprint } },
@@ -581,6 +587,20 @@ type ConnectionState = Pick<
   Store,
   'connections' | 'connectionId' | 'repos' | 'tasks' | 'selectedTaskId'
 > & { screen?: Screen };
+
+/**
+ * The pages that show the active project, or no project at all: a switch of project leaves them on screen. Any
+ * other page (a task, a brain, a dream result, a form) belongs to the project left behind, so a switch goes Home.
+ */
+const FOLLOWS_PROJECT: ReadonlySet<Screen['kind']> = new Set([
+  'home',
+  'sprint',
+  'week',
+  'dreams',
+  'project',
+  'settings',
+  'secrets',
+]);
 
 /** The task whose page is on screen: the task page, or its setup or finish page; null elsewhere. */
 export function taskOnScreen(s: {

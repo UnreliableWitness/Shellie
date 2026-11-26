@@ -86,9 +86,10 @@ describe('globalCommands', () => {
     expect(ids()).not.toContain('goto.project');
   });
 
-  it('switches to the other project', () => {
+  it('switches to the other project and stays on a page that follows it', () => {
     useStore.setState({
       connections: [connection('c1', 'Rome'), connection('c2', 'Oslo')],
+      screen: { kind: 'sprint' },
     });
     const switches = commands().filter((c) =>
       c.id.startsWith('goto.connection.'),
@@ -98,7 +99,35 @@ describe('globalCommands', () => {
     ]);
     switches[0].run();
     expect(useStore.getState().connectionId).toBe('c2');
-    expect(useStore.getState().screen.kind).toBe('project');
+    expect(useStore.getState().screen.kind).toBe('sprint');
+  });
+
+  it('goes Home on a switch from a page of the project left behind', () => {
+    useStore.setState({
+      connections: [connection('c1', 'Rome'), connection('c2', 'Oslo')],
+      screen: { kind: 'brain', brainId: 'b1' },
+    });
+    commands()
+      .find((c) => c.id.startsWith('goto.connection.'))
+      ?.run();
+    expect(useStore.getState().screen.kind).toBe('home');
+  });
+
+  it('Next project goes round the projects, and is not there with one', () => {
+    expect(ids()).not.toContain('goto.nextProject');
+    useStore.setState({
+      connections: [connection('c1', 'Rome'), connection('c2', 'Oslo')],
+      connectionId: 'c1',
+      screen: { kind: 'home' },
+    });
+    const next = () =>
+      commands()
+        .find((c) => c.id === 'goto.nextProject')
+        ?.run();
+    next();
+    expect(useStore.getState().connectionId).toBe('c2');
+    next();
+    expect(useStore.getState().connectionId).toBe('c1');
   });
 
   it("lists the active project's open tasks, newest first", () => {
