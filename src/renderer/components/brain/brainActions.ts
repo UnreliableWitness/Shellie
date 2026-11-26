@@ -43,6 +43,7 @@ export type BrainAction =
   /** The Read or Add view chosen. */
   | 'view-read'
   | 'view-add'
+  | 'view-explore'
   /** Pictures: a re-evaluation queued (source panel or Health), a drop accepted with Fine, I know. */
   | 'reevaluate'
   | 'accept-drop'

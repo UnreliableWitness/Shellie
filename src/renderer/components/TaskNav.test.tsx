@@ -438,10 +438,10 @@ describe('brains', () => {
     render(<TaskNav />);
     await waitFor(() =>
       expect(
-        allCommands().filter((c) => c.id.startsWith('goto.brain.')),
+        allCommands().filter((c) => /^goto\.brain\.\d/.test(c.id)),
       ).toHaveLength(2),
     );
-    const brains = allCommands().filter((c) => c.id.startsWith('goto.brain.'));
+    const brains = allCommands().filter((c) => /^goto\.brain\.\d/.test(c.id));
     expect(brains.map((c) => [c.id, c.title, c.note, c.noteTone])).toEqual([
       ['goto.brain.0', 'Brain: Acme', 'something to read', 'accent'],
       ['goto.brain.1', 'Brain: Globex', undefined, undefined],
@@ -455,6 +455,20 @@ describe('brains', () => {
     expect(useStore.getState().screen).toEqual({
       kind: 'brain',
       brainId: 'b2',
+    });
+    // Each brain can also be opened on its Explore view.
+    const explore = allCommands().filter((c) =>
+      c.id.startsWith('goto.brain.explore.'),
+    );
+    expect(explore.map((c) => c.title)).toEqual([
+      'Explore Acme',
+      'Explore Globex',
+    ]);
+    act(() => explore[0].run());
+    expect(useStore.getState().screen).toEqual({
+      kind: 'brain',
+      brainId: 'b1',
+      focus: 'explore',
     });
   });
 
@@ -507,7 +521,7 @@ describe('brains', () => {
     render(<TaskNav />);
     const brainTitles = () =>
       allCommands()
-        .filter((c) => c.id.startsWith('goto.brain.'))
+        .filter((c) => /^goto\.brain\.\d/.test(c.id))
         .map((c) => c.title);
     await waitFor(() => expect(brainTitles()).toEqual(['Brain: DXP brain']));
     await userEvent.click(

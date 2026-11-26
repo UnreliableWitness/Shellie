@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
 import { brainTaskId, picturesReady, writeReady } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
@@ -18,7 +18,15 @@ import { useBrain } from '../hooks/useBrains';
 import { local } from '../localStorage';
 import { useStore } from '../store';
 
-type View = 'read' | 'add';
+type View = 'read' | 'add' | 'explore';
+type Focus = 'ask' | 'wiki' | 'drop' | 'explore';
+
+// The sky and three.js load when Explore is first chosen, not with the brain page.
+const BrainSky = lazy(() =>
+  import('../components/brain/sky/BrainSky').then((m) => ({
+    default: m.BrainSky,
+  })),
+);
 
 const LAST_OPENED = (brainId: string) => `brain-last-opened:${brainId}`;
 const VIEW = (brainId: string) => `shellie.brain.view.${brainId}`;
@@ -38,8 +46,12 @@ function useLastOpened(brainId: string): string | null {
   return last;
 }
 
-/** The view to open on: `focus` decides when it names one, else the one last chosen for this brain, else Read. */
-function initialView(brainId: string, focus?: 'ask' | 'wiki' | 'drop'): View {
+/**
+ * The view to open on: `focus` decides when it names one, else the one last chosen for this brain, else Read.
+ * Explore is never the remembered one, so a brain opens on a 3D scene only when asked to.
+ */
+function initialView(brainId: string, focus?: Focus): View {
+  if (focus === 'explore') return 'explore';
   if (focus === 'wiki') return 'read';
   if (focus === 'drop') return 'add';
   try {
@@ -56,7 +68,7 @@ export function BrainScreen({
   open,
 }: {
   brainId: string;
-  focus?: 'ask' | 'wiki' | 'drop';
+  focus?: Focus;
   /** A page, long read or letter the route asks the Read view to open; another `n` opens it again. */
   open?: { path: string; n: number };
 }) {
@@ -66,6 +78,8 @@ export function BrainScreen({
   const [view, setView] = useState<View>(() =>
     open ? 'read' : initialView(brainId, focus),
   );
+  const [explored, setExplored] = useState(view === 'explore');
+  if (view === 'explore' && !explored) setExplored(true);
   const [openRequest, setOpenRequest] = useState<{
     path: string;
     n: number;
@@ -108,8 +122,9 @@ export function BrainScreen({
 
   const choose = (next: View) => {
     if (next === view) return;
-    trackBrain(next === 'read' ? 'view-read' : 'view-add');
+    trackBrain(`view-${next}`);
     setView(next);
+    if (next === 'explore') return;
     try {
       local()?.setItem(VIEW(brain.id), next);
     } catch {
@@ -173,6 +188,18 @@ export function BrainScreen({
                 {waiting > 0 && (
                   <span className="brain-switch-badge">{waiting}</span>
                 )}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'explore'}
+                className={view === 'explore' ? 'is-on' : undefined}
+                onClick={() => {
+                  setSettle(null);
+                  choose('explore');
+                }}
+              >
+                Explore
               </button>
             </div>
           </>
@@ -289,6 +316,26 @@ export function BrainScreen({
             onSettle={(id) => openSettle(id, 'read')}
           />
         </div>
+        {/* Mounted from the first time it is chosen, then kept and paused: its camera and open page survive too. */}
+        {explored && (
+          <div
+            className="brain-view brain-view-explore"
+            hidden={view !== 'explore'}
+          >
+            <Suspense fallback={null}>
+              <BrainSky
+                brainId={brain.id}
+                brainName={brain.name}
+                pages={pages}
+                since={since}
+                active={view === 'explore'}
+                jobs={brain.jobs}
+                skillsReady={picturesReady(brain)}
+                onOpenInRead={openPage}
+              />
+            </Suspense>
+          </div>
+        )}
         <div className="brain-view brain-view-add" hidden={view !== 'add'}>
           {settle && (
             <SettleView

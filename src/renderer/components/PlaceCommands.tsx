@@ -56,6 +56,12 @@ export function usePlaceCommands(
           : {}),
         run: () => go({ kind: 'brain', brainId: brain.id }),
       })),
+      ...brains.map((brain, i): Command => ({
+        id: `goto.brain.explore.${i}`,
+        title: `Explore ${brain.name}`,
+        group: 'goto',
+        run: () => go({ kind: 'brain', brainId: brain.id, focus: 'explore' }),
+      })),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- brainKey stands for the brains and what waits in them
     [brainKey, dreams, waiting, taskHasKey, go],
