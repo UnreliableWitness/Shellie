@@ -1,6 +1,7 @@
 # Brain constellation: a brain you can fly through
 
-Date: 2026-11-26. Status: design, waiting for the owner's approval.
+Date: 2026-11-26. Status: approved by the owner on 2026-11-26 ("Agree"); the section "Settled after the
+builder's read" was added after that and holds Claude's calls only.
 
 Prototype (throwaway, three.js, one page): https://claude.ai/artifact/Au4FxhYcPQfLNC5cy2bhz8, snapshot in
 `design/mockups/brain-constellation/prototype.html`. The owner flew around in it and said the look is right and
@@ -42,7 +43,7 @@ A third view of a brain, **Explore**, beside Read and Add. It fills the brain pa
 - **With nothing open** the panel shows the brain at a glance: how many pages and links, how many changed in the
   last 14 days, how many were untouched for 4 months, the new pages and the most linked pages, each a click away.
 
-It reads and never writes, except what the page reader already does (Mark verified, removing a source).
+It reads and never writes, except Mark verified on the page in the panel.
 
 ## Goals
 
@@ -119,6 +120,34 @@ The owner picked the look and the page beside the scene; Claude picked approach 
   when the view, the page or the window is not in front.
 - Over 2 000 pages the most linked 2 000 are drawn and the view says how many are not.
 - `three` is pinned to an exact version.
+
+## Settled after the builder's read (Claude's calls)
+
+- **The panel's reader** is `BrainPage` in its `chips` layout (the rail layout does not fit 460 px). A link or
+  chip to a source opens the source in the panel and the camera stays where it is; a source has no Remove here.
+  A long read or a letter goes to the Read view.
+- **One history.** The view has its own `useBrainNav`; the reader's back and forward use it and fly the camera,
+  and the trail is that history's last seven pages. It is not kept between visits.
+- **Frames.** Flights, drags and hover draw at the display's rate. The ambient motion (drift, twinkle, pulse)
+  draws at 30 frames a second at most. With reduced motion and no input the scene draws only when something
+  changes.
+- **Switching views.** The sky is created the first time Explore is opened, stays mounted and paused while Read
+  or Add is in front (camera and selection kept), and is disposed with the brain page.
+- **A brain that changes while open** (a job writes pages, a shared brain syncs): the sky is swapped in place
+  without animation; the camera stays and the open page stays selected by its path. If the open page is gone the
+  panel returns to the brain at a glance.
+- **Clusters.** A page that no chapter lists joins "Back of the book", whatever its type. Without a book there is
+  one unnumbered cluster per page type, in the order of `BRAIN_PAGE_TYPES`, empty types skipped.
+- **The remembered view.** Choosing Explore does not change the stored view, so the earlier Read or Add stays the
+  one a brain opens on. The palette command opens the brain with `focus: 'explore'`. A request to open a page
+  (from Settle, Add, or "Open in Read") still goes to Read.
+- **Keys** act only while focus is on the scene or the page body, never in a field, the reader's text or the
+  lightbox. Escape first clears a search, then closes the page. Cmd/Ctrl+K goes to the sky's search while Explore
+  is in front, as it goes to Read's search there.
+- **Without WebGL** the flat graph gains optional `focus` and `matches` props to light a page and its links and
+  dim the rest; it keeps its limit of 150 pages and the view says how many are not drawn.
+- A page without a `last_updated` counts as old (200 days) and as untouched.
+- Telemetry: `open-page` gains `origin: 'sky'`; other origins stay unset.
 
 ## How it is built
 
