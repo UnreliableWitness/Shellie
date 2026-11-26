@@ -2958,7 +2958,11 @@ export function createHandlers(s: Services): Handlers {
           await fs.mkdir(path.dirname(abs), { recursive: true });
           await fs.writeFile(abs, text);
         },
-        type: (id, data) => s.terminals.write(id, data),
+        type: (id, data) => {
+          s.terminals.write(id, data);
+          // As if the person typed it: the prompt now holds unsent text, so nothing else is typed over it.
+          s.onTerminalInput?.(id, data);
+        },
       },
       question,
       answer,

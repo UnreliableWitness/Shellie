@@ -220,7 +220,9 @@ export function BrainAnswers({
                       ...(e.answer.costEur === null
                         ? []
                         : [`${eur(e.answer.costEur)} on the brain`]),
-                      'nothing was changed in the brain',
+                      e.answer.changed
+                        ? "The brain's folder changed while this was answered (a job or someone at work, most likely). Check the brain's Health."
+                        : 'nothing was changed in the brain',
                     ].join(' · ')}
                   </p>
                 </div>

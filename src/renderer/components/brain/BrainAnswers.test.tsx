@@ -47,6 +47,7 @@ const exchange = (over: Partial<AskExchange>): AskExchange => ({
       'Semicolons, see `wiki/b.md` and wiki/a.md.\n\nSources:\n- sources/d.md#slide-4\n- wiki/gone.md',
     durationMs: 18_400,
     costEur: null,
+    changed: false,
   },
   error: null,
   refused: null,
@@ -136,6 +137,7 @@ describe('BrainAnswers', () => {
           answer: 'The brain does not answer this. Closest: wiki/gone.md',
           durationMs: 1000,
           costEur: null,
+          changed: false,
         },
       }),
     ]);
@@ -158,6 +160,7 @@ describe('BrainAnswers', () => {
           answer: 'Open.',
           durationMs: 4000,
           costEur: 0.031,
+          changed: false,
         },
       }),
     ]);
@@ -168,6 +171,26 @@ describe('BrainAnswers', () => {
     expect(feet[1].textContent).toBe(
       'Took 4 s · €0.03 on the brain · nothing was changed in the brain',
     );
+  });
+
+  it("does not claim nothing changed when the brain's folder did", () => {
+    show([
+      exchange({
+        answer: {
+          sessionId: 's1',
+          answer: 'Open.',
+          durationMs: 4000,
+          costEur: null,
+          changed: true,
+        },
+      }),
+    ]);
+    expect(screen.queryByText(/nothing was changed in the brain/)).toBeNull();
+    expect(
+      screen.getByText(
+        /The brain's folder changed while this was answered \(a job or someone at work, most likely\)\. Check the brain's Health\./,
+      ),
+    ).toBeTruthy();
   });
 
   it('stacks the exchanges oldest first with the follow-up under the last', async () => {
@@ -181,6 +204,7 @@ describe('BrainAnswers', () => {
           answer: 'Open.',
           durationMs: 1,
           costEur: null,
+          changed: false,
         },
       }),
     ]);

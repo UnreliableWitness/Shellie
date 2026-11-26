@@ -122,6 +122,7 @@ describe('BrainTab', () => {
           answer: 'Semicolons.',
           durationMs: 1000,
           costEur: null,
+          changed: false,
         },
       }),
     });

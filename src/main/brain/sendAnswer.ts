@@ -2,7 +2,14 @@ import path from 'node:path';
 import type { SendAnswerResult } from '../../shared/ipc';
 
 const QUESTION_MAX = 120;
-const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+/** One line, and nothing a terminal reads as a key (Ctrl+C, Escape, Delete): the text is typed into an agent's prompt. */
+const oneLine = (s: string) =>
+  s
+    .replace(/\s+/g, ' ')
+    // oxlint-disable-next-line no-control-regex -- control characters are the point
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
 
 /** The file the task's agent is pointed at: the question and the brain's answer, as Markdown. */
 export const answerFileText = (question: string, answer: string): string =>

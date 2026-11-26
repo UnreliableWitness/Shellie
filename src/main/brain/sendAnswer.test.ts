@@ -67,4 +67,14 @@ describe('sendAnswer', () => {
       `Read .shellie/brain-answer-1.md: what the project's brain says about "${'x'.repeat(120)}…"`,
     );
   });
+
+  it('types no control characters from the question into the terminal', () => {
+    const line = answerLine(
+      '.shellie/brain-answer-1.md',
+      'Why\u0003 \u001b[2J now\u0004?\u007f\u009b',
+    );
+    expect(line).toBe(
+      'Read .shellie/brain-answer-1.md: what the project\'s brain says about "Why [2J now?"',
+    );
+  });
 });

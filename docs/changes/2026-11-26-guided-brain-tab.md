@@ -37,22 +37,30 @@ picked direction A, and "open from the start" for the tab).
   old for its agent, or newer than this Shellie), with the reason. Usage lands on the brain (`brainJobEnv`).
 - **Read-only is enforced, not asked for.**
   - Claude Code gets `--tools Read,Glob,Grep`: it has no other tool.
-  - OpenCode gets an inline config that denies every edit and every command. OpenCode merges that with the brain's
-    own `opencode.json`, where a rule for a narrower pattern wins over `*`, so every pattern Shellie's brain rules
-    name and every pattern found in the brain's file is denied by name (`askOpencodePermission`,
-    `opencodeRulePatterns`).
+  - OpenCode gets a plain message, never `--command ask`: OpenCode puts a command's argument through its
+    template, where a shell snippet in the question or the work item's title runs in the shell and `@path` attaches
+    a file, whatever the permissions say.
+  - OpenCode also gets an inline config that denies every edit and every command and takes the web search, code
+    search and subagent tools away. OpenCode merges that with every other config it loads, where a rule for a
+    narrower pattern wins over `*`, so every pattern those configs name is denied by name: Shellie's brain rules,
+    the brain's own files and the person's global config, agents' rules included (`askOpencodePermission`,
+    `opencodeConfigFiles`, `opencodeRulePatterns`). A config that is there but cannot be read refuses the question.
+  - Both agents: the brain folder's commit and uncommitted changes are compared before and after. The answer's
+    foot says "nothing was changed in the brain" only when they are the same, else that the folder changed.
 - `brain:ask` adds one sentence naming the task's work item to the question (`askWithContext`), so "this" in a
   suggestion means something. `brain:askStop` stops the task's run.
 - The thread lives in the renderer's store (`brainAsksByTask`, `askBrain`), so an answer lands while another tab
   or task shows. It is kept for the session and dropped with its task.
 - `src/shared/brainAsk.ts`: `citedPaths` finds the `wiki/…` and `sources/…` paths an answer names, `linkCited`
-  makes the ones that exist links. A path that leaves the brain is never a link or a card. The ask skill did not
+  makes the ones that exist links, outside code blocks and links the agent wrote itself. A path that leaves the
+  brain is never a link or a card. The ask skill did not
   change: no numbered markers, no new skills version.
 - **Send to the agent** (`src/main/brain/sendAnswer.ts`, `brain:sendAnswer`): the question and answer go to
   `.shellie/brain-answer-<n>.md` in the agent tab's own folder, and one line naming the file is typed into the
   tab's prompt without Enter. Only into a running, unpaused agent tab that waits at an empty prompt
   (`pickSendTab` in `src/main/prDraft/pickTab.ts`: the pull request draft's rule without its one-hour limit); else
-  the tab says why and nothing is written. The pull request draft and this share how the task's agent tabs are
+  the tab says why and nothing is written. The typed line counts as text in the prompt (tab activity), so nothing
+  else is typed over it, and control characters in the question never reach the terminal. The pull request draft and this share how the task's agent tabs are
   read (`agentTabs` in `handlers.ts`).
 - The amount in an answer's foot is what the brain's requests cost since the question started
   (`brainCostSince`): cost records carry no session id.
@@ -68,10 +76,16 @@ picked direction A, and "open from the start" for the tab).
   - Claude Code (Sonnet), a first question and a follow-up on the same session: answered from the pages, cited
     them, wrote nothing, `git status` in the brain clean.
   - OpenCode (`opencode/big-pickle`): answered, cited the pages, wrote nothing.
-- **OpenCode could not have written.** Asked outside the ask command to write, edit and run `git status`,
-  `git log`, `ls` and `mkdir` with the app's exact ask config: every one was refused. This check found a real gap
-  first: with only `*` denied, `git status` still ran (the brain's own rule won), and switching the tools off in
-  the config changed nothing. The config now denies each pattern by name.
+- **OpenCode could not have written or run anything.** Asked directly, with the app's exact arguments and config,
+  to write, edit and run `git status`, `git log`, `ls` and `mkdir`: every one was refused. These checks and the
+  whole-branch review found three real holes, all closed and checked again on OpenCode 1.19.3:
+  - with only `*` denied, `git status` still ran (the brain's own rule won); switching tools off in the config
+    changed nothing;
+  - through `--command ask`, a shell snippet in the question created a file (the reviewer read it in OpenCode's
+    code, a live run confirmed it). With a plain message, the same snippet in the question and in the work item's
+    title did nothing;
+  - web search and subagents were available; with the three extra denies the agent reports it has neither.
+- Claude Code with the same shell snippet in the question: nothing ran.
 
 ## Known gaps
 
@@ -79,7 +93,11 @@ picked direction A, and "open from the start" for the tab).
 - "Send to this task's agent" was not run in the real app (the scratch task had no agent tab); its rules and the
   typed line are covered by tests.
 - "Continue in the terminal" and Stop were not clicked in the real app.
-- OpenCode's web search and subagent tools stay available to a question.
+- **Not from this change, found by its review:** the brain's jobs on OpenCode still pass their input (a source's
+  path, a conflict's answer) through `--command`, so a shell snippet in a dropped file's name could run there.
+  Worth its own fix.
+- The folder check cannot tell a question's change from a job's or a person's at the same moment, and sees only
+  the brain's folder.
 - The brain's agent changed between two questions of one thread: the follow-up asks the new agent to resume the
   other agent's session, which fails with a message; "Try again" then starts fresh only after the thread is gone
   (a restart).

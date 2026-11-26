@@ -1201,6 +1201,8 @@ async function boot(): Promise<void> {
       },
       costOf: (id, _sessionId, since) =>
         brainCostSince(ledgerStore.all(), id, since),
+      snapshot: async (dir) =>
+        `${await git.run(dir, ['rev-parse', 'HEAD'])}\n${await git.run(dir, ['status', '--porcelain'])}`,
     });
     const brainRunner = new BrainJobRunner({
       ...brainRunDeps,

@@ -58,4 +58,14 @@ describe('linkCited', () => {
       'No `wiki/gone.md`, no wiki/../a.md, no ../wiki/a.md, and [the page](wiki/a.md).';
     expect(linkCited(text, has)).toBe(text);
   });
+
+  it('leaves a link the agent wrote with the path as its text, and paths in a code block', () => {
+    const linked = 'See [wiki/a.md](wiki/a.md) and [wiki/a.md]( wiki/a.md ).';
+    expect(linkCited(linked, has)).toBe(linked);
+    const fenced =
+      'Before wiki/a.md\n\n```\ncat wiki/a.md\n```\n\nAfter `wiki/a.md`';
+    expect(linkCited(fenced, has)).toBe(
+      'Before [wiki/a.md](wiki/a.md)\n\n```\ncat wiki/a.md\n```\n\nAfter [wiki/a.md](wiki/a.md)',
+    );
+  });
 });

@@ -11,6 +11,7 @@ const answer = (sessionId: string): AskOutcome => ({
     answer: 'Semicolons.',
     durationMs: 18_000,
     costEur: null,
+    changed: false,
   },
 });
 

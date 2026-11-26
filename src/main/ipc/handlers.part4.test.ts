@@ -269,6 +269,10 @@ describe('handlers: finish with a pull request', () => {
       });
     });
     const typed: [string, string][] = [];
+    const noted: [string, string][] = [];
+    hx.services.onTerminalInput = (id, data) => {
+      noted.push([id, data]);
+    };
     let view = { state: 'done' as const, typed: false, quietFor: 60_000 };
     hx.services.tabActivity = {
       view: () => view,
@@ -288,6 +292,8 @@ describe('handlers: finish with a pull request', () => {
     ).toEqual({ ok: true, terminalId: 'c1' });
     const file = path.join(hx.t.worktreePath, '.shellie', 'brain-answer-1.md');
     expect(readFileSync(file, 'utf8')).toContain('Semicolons.');
+    // The typed line counts as text in the prompt: the next pick must not type over it.
+    expect(noted).toEqual([['c1', typed[0]?.[1]]]);
     expect(typed).toEqual([
       [
         'c1',

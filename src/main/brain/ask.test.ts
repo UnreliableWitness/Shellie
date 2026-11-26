@@ -10,6 +10,7 @@ import {
   askOpencodeArgs,
   askOpencodePermission,
   BrainAsks,
+  opencodeConfigFiles,
   opencodeRulePatterns,
   type BrainAsksDeps,
 } from './ask';
@@ -60,6 +61,7 @@ function asks(over: Partial<BrainAsksDeps> = {}) {
     heldReason: () => 'The skills are out of date',
     costOf: () => 0.03,
     rulePatterns: async () => ({ edit: [], bash: [] }),
+    snapshot: async () => 'same',
     ...over,
   });
 }
@@ -118,13 +120,13 @@ describe('the ask flags', () => {
     expect(p.bash['git diff*']).toBe('deny');
   });
 
-  it("reads the rule patterns of a brain's opencode.json, and none from a missing or broken one", async () => {
+  it('reads the rule patterns of every config, with comments and trailing commas, agents included', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'brain-ask-'));
-    expect(await opencodeRulePatterns(dir)).toEqual({ edit: [], bash: [] });
-    await writeFile(path.join(dir, 'opencode.json'), '{ not json');
-    expect(await opencodeRulePatterns(dir)).toEqual({ edit: [], bash: [] });
+    const a = path.join(dir, 'opencode.json');
+    const b = path.join(dir, 'opencode.jsonc');
+    expect(await opencodeRulePatterns([a, b])).toEqual({ edit: [], bash: [] });
     await writeFile(
-      path.join(dir, 'opencode.json'),
+      a,
       JSON.stringify({
         permission: {
           edit: { '*': 'allow', 'wiki/**': 'allow' },
@@ -133,27 +135,69 @@ describe('the ask flags', () => {
         },
       }),
     );
-    expect(await opencodeRulePatterns(dir)).toEqual({
-      edit: ['*', 'wiki/**'],
-      bash: ['npm run *'],
-    });
-    // A whole tool set with one word has no patterns to name.
     await writeFile(
-      path.join(dir, 'opencode.json'),
-      JSON.stringify({ permission: { edit: 'allow', bash: 'allow' } }),
+      b,
+      `{
+  // the person's own rules, "//" inside a string stays: "http://x"
+  "permission": { "bash": { "git *": "allow", /* block */ "ls http://x": "allow", }, "edit": "allow" },
+  "agent": { "build": { "permission": { "bash": { "make *": "allow" }, "edit": { "*.md": "allow" } } } },
+}`,
     );
-    expect(await opencodeRulePatterns(dir)).toEqual({ edit: [], bash: [] });
+    expect(await opencodeRulePatterns([a, b])).toEqual({
+      edit: ['*', 'wiki/**', '*.md'],
+      bash: ['npm run *', 'git *', 'ls http://x', 'make *'],
+    });
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('runs the ask command on OpenCode under a job title', () => {
+  it('refuses rules it cannot read rather than guess', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'brain-ask-'));
+    const a = path.join(dir, 'opencode.json');
+    await writeFile(a, '{ not json');
+    await expect(opencodeRulePatterns([a])).rejects.toThrow(
+      `Shellie could not read ${a}, so it cannot make sure a question only reads. Fix the file, or ask in the brain's terminal.`,
+    );
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('sends OpenCode a plain message, never a command whose template runs shell snippets', () => {
     const a = askOpencodeArgs('p/m', 's9');
-    expect(a.slice(0, 3)).toEqual(['run', '--command', 'ask']);
+    expect(a[0]).toBe('run');
+    // `--command` puts the question through the command template, where !`…` runs in the shell and @path attaches a file.
+    expect(a).not.toContain('--command');
     expect(a[a.indexOf('--title') + 1].startsWith(BRAIN_JOB_TITLE)).toBe(true);
     expect(a[a.indexOf('-m') + 1]).toBe('p/m');
     expect(a[a.indexOf('--session') + 1]).toBe('s9');
     expect(askOpencodeArgs(null, null)).not.toContain('--session');
     expect(askOpencodeArgs(null, null)).not.toContain('-m');
+  });
+
+  it('takes the web search, code search and subagent tools away on OpenCode', () => {
+    const p = askOpencodePermission();
+    expect(p.websearch).toBe('deny');
+    expect(p.codesearch).toBe('deny');
+    expect(p.task).toBe('deny');
+  });
+
+  it("lists every OpenCode config a run loads: the brain's and the person's own", () => {
+    expect(
+      opencodeConfigFiles(
+        '/b',
+        { OPENCODE_CONFIG: '/x/custom.json' },
+        '/home/me',
+      ),
+    ).toEqual([
+      '/b/opencode.json',
+      '/b/opencode.jsonc',
+      '/b/.opencode/opencode.json',
+      '/b/.opencode/opencode.jsonc',
+      '/home/me/.config/opencode/opencode.json',
+      '/home/me/.config/opencode/opencode.jsonc',
+      '/x/custom.json',
+    ]);
+    expect(
+      opencodeConfigFiles('/b', { XDG_CONFIG_HOME: '/cfg' }, '/home/me'),
+    ).toContain('/cfg/opencode/opencode.jsonc');
   });
 });
 
@@ -176,8 +220,42 @@ describe('BrainAsks', () => {
         answer: 'Semicolons. Sources:\n- wiki/a.md',
         durationMs: 18_000,
         costEur: 0.03,
+        changed: false,
       },
     });
+  });
+
+  it("says so when the brain's folder changed while the question ran", async () => {
+    let n = 0;
+    const out = await asks({ snapshot: async () => `state ${n++}` }).ask(
+      't1',
+      'b1',
+      'Why?',
+      null,
+    );
+    expect(out.ok && out.answer.changed).toBe(true);
+    // A folder whose state cannot be read is not called unchanged.
+    const blind = await asks({
+      snapshot: async () => {
+        throw new Error('not a git repo');
+      },
+    }).ask('t2', 'b1', 'Why?', null);
+    expect(blind.ok && blind.answer.changed).toBe(true);
+  });
+
+  it('refuses an OpenCode question when its rules cannot be read', async () => {
+    const out = await asks({
+      agent: () => 'opencode',
+      rulePatterns: async () => {
+        throw new Error('Shellie could not read /b/opencode.json');
+      },
+    }).ask('t1', 'b1', 'Why?', null);
+    expect(out).toEqual({
+      ok: false,
+      refused: null,
+      message: 'Shellie could not read /b/opencode.json',
+    });
+    expect(calls).toHaveLength(0);
   });
 
   it('leaves the cost out when it cannot be read', async () => {
@@ -212,7 +290,9 @@ describe('BrainAsks', () => {
     const c = calls[0];
     expect(c.cmd.command).toBe('opencode');
     expect(c.cmd.args).toEqual(askOpencodeArgs('p/m', 's1'));
-    expect(c.input).toBe('Why? (ctx)');
+    expect(c.input).toBe(
+      'Load the ask skill and answer from this brain, reading only: Why? (ctx)',
+    );
     expect(JSON.parse(c.env?.OPENCODE_CONFIG_CONTENT ?? '{}')).toEqual({
       permission: askOpencodePermission({ edit: [], bash: ['make *'] }),
     });
