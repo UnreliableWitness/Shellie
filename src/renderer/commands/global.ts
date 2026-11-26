@@ -17,6 +17,31 @@ export function focusCommand(): Command {
   };
 }
 
+/** O for "other project": free in the shell, the window and the dev tools. */
+export const NEXT_PROJECT_SHORTCUT: Shortcut = { code: 'KeyO', shift: true };
+
+/**
+ * The next project in the list, round again at its end: with two projects the key flips between them. It reads
+ * the store when it runs, as `focusCommand` does, and does nothing with one project.
+ */
+export function nextProjectCommand(): Command {
+  return {
+    id: 'goto.nextProject',
+    title: 'Next project',
+    group: 'goto',
+    shortcut: NEXT_PROJECT_SHORTCUT,
+    run: () => {
+      const s = useStore.getState();
+      if (s.connections.length < 2) return;
+      const at = s.connections.findIndex(
+        (c) => c.id === activeConnection(s)?.id,
+      );
+      s.switchProject(s.connections[(at + 1) % s.connections.length].id);
+      track('project.open', { from: 'key' });
+    },
+  };
+}
+
 type Screen = Parameters<Store['go']>[0];
 
 /**
@@ -113,14 +138,14 @@ export function globalCommands(s: Store): Command[] {
                   title: `Switch to project ${c.name}/${c.project}`,
                   group: 'goto',
                   run: () => {
-                    s.setConnectionId(c.id);
-                    s.go({ kind: 'project' });
+                    s.switchProject(c.id);
                     track('project.open', { from: 'palette' });
                   },
                 },
               ],
         )
       : []),
+    ...(s.connections.length > 1 ? [nextProjectCommand()] : []),
     ...open.map((t, i): Command => ({
       id: `tasks.open.${i}`,
       title: t.workItem
