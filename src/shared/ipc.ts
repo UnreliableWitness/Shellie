@@ -951,6 +951,23 @@ export type Channels = {
     args: [repoId: string, proposalId: string, dropped: boolean];
     result: void;
   };
+  /**
+   * Ask for a change to a kept proposal of the open result: one OpenCode run in the dream's worktree, as a dream
+   * runs. Resolves once the run has started (`result.adjusting`); what came of it arrives with `dream:changed`, as
+   * a new entry in the proposal's `adjustments` or as `result.adjustFailed`. Refused with a fixed phrase for a
+   * dropped proposal, an empty or too long ask, a run already under way, or a dream whose worktree is gone.
+   */
+  'dream:adjust': {
+    args: [repoId: string, proposalId: string, ask: string, quote?: string];
+    result: void;
+  };
+  /** Stops the ask being worked on; the proposal stays as it was. */
+  'dream:adjustStop': { args: [repoId: string]; result: void };
+  /** Takes back the proposal's latest ask that changed it (and the answers after it). */
+  'dream:adjustUndo': {
+    args: [repoId: string, proposalId: string];
+    result: void;
+  };
   /** Removes the open result's worktree, branch and data; every proposal is remembered as rejected. */
   'dream:discard': { args: [repoId: string]; result: void };
   /**

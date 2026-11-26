@@ -285,6 +285,37 @@ export const DreamEvidenceSchema = z.object({
 });
 export type DreamEvidence = z.infer<typeof DreamEvidenceSchema>;
 
+/** The longest ask `dream:adjust` takes, and the longest quote sent with one. */
+export const DREAM_ASK_MAX = 4000;
+export const DREAM_QUOTE_MAX = 600;
+
+/**
+ * One ask the developer made about a proposal on the dream's page (`dream:adjust`) and what came of it: a change
+ * to the proposal's files, or only an answer.
+ */
+export const DreamAdjustmentSchema = z.object({
+  ask: z.string(),
+  /** The text the developer had selected when asking. */
+  quote: z.string().optional(),
+  at: z.string(),
+  /** What the agent says it did, or its answer to a question. */
+  note: z.string(),
+  /** Whether the proposal's commit changed. */
+  changed: z.boolean(),
+  /** Paths the run changed that Shellie put back (outside the allowed folders, or another proposal's). */
+  reverted: z.array(z.string()),
+  /** The proposal as it was before this ask: `dream:adjustUndo` puts these back. Only when `changed`. */
+  before: z
+    .object({
+      commit: z.string(),
+      files: z.array(z.string()),
+      title: z.string(),
+      why: z.string(),
+    })
+    .optional(),
+});
+export type DreamAdjustment = z.infer<typeof DreamAdjustmentSchema>;
+
 export const DreamProposalSchema = z.object({
   id: z.string(),
   kind: z.enum(DREAM_PROPOSAL_KINDS),
@@ -294,6 +325,8 @@ export const DreamProposalSchema = z.object({
   files: z.array(z.string()),
   commit: z.string(),
   dropped: z.boolean(),
+  /** The asks made about this proposal, oldest first; missing in a result of before asks existed. */
+  adjustments: z.array(DreamAdjustmentSchema).optional(),
 });
 export type DreamProposal = z.infer<typeof DreamProposalSchema>;
 
@@ -312,6 +345,26 @@ export const DreamResultSchema = z.object({
   /** Paths changed outside the allowed folders. */
   reverted: z.array(z.string()),
   removedByCheck: z.number(),
+  /** The ask being worked on now (`dream:adjust`), one per result at a time. */
+  adjusting: z
+    .object({
+      proposalId: z.string(),
+      ask: z.string(),
+      quote: z.string().optional(),
+      startedAt: z.number(),
+    })
+    .nullable()
+    .optional(),
+  /** The last ask that failed or was stopped, with a fixed phrase, until the next ask or an undo. */
+  adjustFailed: z
+    .object({
+      proposalId: z.string(),
+      ask: z.string(),
+      quote: z.string().optional(),
+      reason: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 export type DreamResult = z.infer<typeof DreamResultSchema>;
 
