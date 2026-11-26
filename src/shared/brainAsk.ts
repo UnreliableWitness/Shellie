@@ -36,6 +36,37 @@ export function citedPaths(answer: string): string[] {
   return found;
 }
 
+const LINKABLE =
+  /(^|[\s`([\]"'])((?:wiki|sources)\/[^\s`()[\]"'#]+?\.md)(#[\w-]+(?:\.[\w-]+)*)?(`?)/gm;
+
+/**
+ * The answer with every cited path that `exists` made a Markdown link (with its anchor), so the page opens from the
+ * answer. A path that does not exist, leaves the brain or already is a link's target stays as written.
+ */
+export function linkCited(
+  answer: string,
+  exists: (path: string) => boolean,
+): string {
+  return answer.replace(
+    LINKABLE,
+    (
+      whole: string,
+      before: string,
+      p: string,
+      anchor = '',
+      tick: string,
+      at: number,
+    ) => {
+      if (p.split('/').includes('..') || !exists(p)) return whole;
+      // `](wiki/a.md)`: the target of a link the agent wrote itself.
+      if (before === '(' && answer[at - 1] === ']') return whole;
+      const ticked = before === '`' && tick === '`';
+      const target = `${p}${anchor}`;
+      return `${ticked ? '' : before}[${target}](${target})${ticked ? '' : tick}`;
+    },
+  );
+}
+
 export type BrainAnswer = {
   /** The agent's session, to follow up on or to continue in the brain terminal; null when the run named none. */
   sessionId: string | null;

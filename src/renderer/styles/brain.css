@@ -658,6 +658,98 @@
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-1);
 }
+/* A task's Brain tab: what it asked its brain, each question with its answer, then a follow-up. */
+.brain-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.brain-answers-bar {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+.brain-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.brain-answer-asked {
+  margin: 0;
+}
+.brain-answer-question {
+  margin: -8px 0 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.brain-answer-running {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+.brain-answer-failed p {
+  margin: 0 0 8px;
+  color: var(--red);
+}
+.brain-answer-cols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.brain-answer-main {
+  flex: 999 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.brain-answer-main p {
+  margin: 0;
+}
+.brain-answer-text {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 16px 20px;
+}
+.brain-answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.brain-answer-sources {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.brain-answer-sources h3,
+.brain-step-head h3 {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.brain-answer-sources ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brain-answer-source {
+  width: 100%;
+}
+.brain-answer-follow {
+  max-width: 640px;
+}
 .brain-takeaways p {
   margin: 4px 0 0;
   white-space: pre-wrap;

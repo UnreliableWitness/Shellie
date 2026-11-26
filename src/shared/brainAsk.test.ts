@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { askWithContext, citedPaths } from './brainAsk';
+import { askWithContext, citedPaths, linkCited } from './brainAsk';
 
 describe('askWithContext', () => {
   it('adds the work item on one line', () => {
@@ -39,5 +39,23 @@ describe('citedPaths', () => {
 
   it('finds none in an answer without paths', () => {
     expect(citedPaths('The brain does not answer this.')).toEqual([]);
+  });
+});
+
+describe('linkCited', () => {
+  const has = (p: string) => p === 'wiki/a.md' || p === 'sources/d.md';
+
+  it('turns the paths that exist into links, with their anchor, backticked or bare', () => {
+    expect(
+      linkCited('See `wiki/a.md` and sources/d.md#slide-4.\n- wiki/a.md', has),
+    ).toBe(
+      'See [wiki/a.md](wiki/a.md) and [sources/d.md#slide-4](sources/d.md#slide-4).\n- [wiki/a.md](wiki/a.md)',
+    );
+  });
+
+  it('leaves a path that does not exist, leaves the brain or is already a link', () => {
+    const text =
+      'No `wiki/gone.md`, no wiki/../a.md, no ../wiki/a.md, and [the page](wiki/a.md).';
+    expect(linkCited(text, has)).toBe(text);
   });
 });
