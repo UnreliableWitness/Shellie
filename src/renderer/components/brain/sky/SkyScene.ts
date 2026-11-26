@@ -53,13 +53,14 @@ const LOST_MS = 3000;
 const VERTEX = `
 attribute float aSize; attribute float aBright; attribute float aPhase; attribute float aNew; attribute float aLit;
 attribute vec3 aColor;
-uniform float uTime; uniform float uScale; uniform float uMin;
+uniform float uTime; uniform float uScale; uniform float uMin; uniform float uMax;
 varying vec3 vColor; varying float vA;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float tw = 0.88 + 0.12 * sin(uTime * 1.7 + aPhase);
   float pulse = 1.0 + aNew * 0.55 * (0.5 + 0.5 * sin(uTime * 3.0 + aPhase));
-  gl_PointSize = max(uMin, aSize * pulse * uScale * (0.7 + 0.3 * min(aLit, 1.8)) / -mv.z);
+  // Capped, so a star flown up to stays a star and does not become a disc.
+  gl_PointSize = clamp(aSize * pulse * uScale * (0.7 + 0.3 * min(aLit, 1.8)) / -mv.z, uMin, max(uMax, aSize * uMax / 12.0));
   vColor = aColor; vA = aBright * tw * aLit;
   gl_Position = projectionMatrix * mv;
 }`;
@@ -162,6 +163,7 @@ export class SkyScene {
         uTime: { value: 0 },
         uScale: { value: 1 },
         uMin: { value: 3 },
+        uMax: { value: 90 },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -531,6 +533,7 @@ export class SkyScene {
     this.starMaterial.uniforms.uScale.value =
       (this.height * ratio) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     this.starMaterial.uniforms.uMin.value = 3 * ratio;
+    this.starMaterial.uniforms.uMax.value = 90 * ratio;
     this.dirty = true;
     this.schedule();
   }

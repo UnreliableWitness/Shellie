@@ -282,3 +282,12 @@
     inset: 52px 16px 48% 16px;
   }
 }
+
+/* The reader's link chips share a class name with the Add composer's file chips (a 340 px card); here they are the
+   small tags they are meant to be. */
+.sky-panel .brain-chips .brain-chip {
+  display: inline-block;
+  width: auto;
+  padding: 1px 8px;
+  border-radius: var(--radius);
+}
