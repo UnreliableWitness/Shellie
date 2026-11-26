@@ -187,17 +187,17 @@ describe('the ask flags', () => {
         '/home/me',
       ),
     ).toEqual([
-      '/b/opencode.json',
-      '/b/opencode.jsonc',
-      '/b/.opencode/opencode.json',
-      '/b/.opencode/opencode.jsonc',
-      '/home/me/.config/opencode/opencode.json',
-      '/home/me/.config/opencode/opencode.jsonc',
+      path.join('/b', 'opencode.json'),
+      path.join('/b', 'opencode.jsonc'),
+      path.join('/b', '.opencode', 'opencode.json'),
+      path.join('/b', '.opencode', 'opencode.jsonc'),
+      path.join('/home/me', '.config', 'opencode', 'opencode.json'),
+      path.join('/home/me', '.config', 'opencode', 'opencode.jsonc'),
       '/x/custom.json',
     ]);
     expect(
       opencodeConfigFiles('/b', { XDG_CONFIG_HOME: '/cfg' }, '/home/me'),
-    ).toContain('/cfg/opencode/opencode.jsonc');
+    ).toContain(path.join('/cfg', 'opencode', 'opencode.jsonc'));
   });
 });
 

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { answerFileText, answerLine, sendAnswer } from './sendAnswer';
 
@@ -33,7 +34,7 @@ describe('sendAnswer', () => {
     });
     expect(written).toEqual([
       [
-        '/w/repo/.shellie/brain-answer-3.md',
+        path.join('/w/repo', '.shellie/brain-answer-3.md'),
         answerFileText('What\nwas decided?', 'Semicolons.'),
       ],
     ]);
