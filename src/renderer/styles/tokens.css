@@ -79,6 +79,13 @@
   --scrim: rgba(0, 0, 0, 0.4);
   /* The scrollbar thumb (app.css); the track stays clear so a scrolling pane has no gutter stripe. */
   --scroll-thumb: rgba(255, 255, 255, 0.2);
+  /* The brain's sky (Explore) is a night sky in both themes: what lies on it has its own ink. */
+  --sky: #070a12;
+  --sky-text: #e6ecfa;
+  --sky-muted: #93a0bd;
+  --sky-accent: #6fb1ff;
+  --sky-veil: rgba(7, 10, 18, 0.62);
+  --sky-line: rgba(150, 175, 230, 0.22);
   /* The first layer is a hairline: on the dark page a drop shadow alone does not show where a card ends. */
   --shadow-1:
     0 0 0 1px rgba(255, 255, 255, 0.07), 0 1.6px 3.6px rgba(0, 0, 0, 0.26),
@@ -167,6 +174,13 @@
     --danger-hover: #8e1f25;
     --focus-ring: rgba(0, 0, 0, 0.3);
     --highlight-flash: rgba(0, 120, 212, 0.18);
+    /* The same night sky as in the dark theme. */
+    --sky: #070a12;
+    --sky-text: #e6ecfa;
+    --sky-muted: #93a0bd;
+    --sky-accent: #6fb1ff;
+    --sky-veil: rgba(7, 10, 18, 0.62);
+    --sky-line: rgba(150, 175, 230, 0.22);
     --shadow-1:
       0 1.6px 3.6px rgba(0, 0, 0, 0.13), 0 0.3px 0.9px rgba(0, 0, 0, 0.11);
     --shadow-2:

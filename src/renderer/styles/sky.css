@@ -1,0 +1,284 @@
+/* The Explore view of a brain: a night sky that fills the view, with quiet controls laid on its edges. */
+.brain-view-explore {
+  position: relative;
+  overflow: hidden;
+}
+.sky {
+  position: absolute;
+  inset: 0;
+  background: var(--sky);
+  overflow: hidden;
+}
+.sky-scene {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+}
+.sky-scene.is-over {
+  cursor: pointer;
+}
+.sky-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.sky-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+/* A chapter's name sits above its cluster, centred on it. */
+.sky-label-chapter {
+  margin: -18px 0 0 -120px;
+  width: 240px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sky-muted);
+}
+.sky-label-page {
+  margin: -9px 0 0 12px;
+  padding: 1px 6px;
+  border-radius: var(--radius-card);
+  background: var(--sky-veil);
+  color: var(--sky-text);
+  font-size: 12px;
+}
+.sky-label-page.is-main {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sky-label-page.is-candidate {
+  outline: 1px solid var(--sky-accent);
+}
+
+/* Search and the trail, on the sky's top left. */
+.sky-top {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  right: 492px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.sky-top > * {
+  pointer-events: auto;
+}
+.sky-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius-card);
+  background: var(--sky-veil);
+  color: var(--sky-text);
+}
+.sky-search:focus-within {
+  border-color: var(--sky-accent);
+}
+.sky-search input {
+  width: 190px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.sky-search input::placeholder {
+  color: var(--sky-muted);
+}
+.sky-found {
+  color: var(--sky-muted);
+  white-space: nowrap;
+}
+.sky-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius-card);
+  background: var(--sky-veil);
+}
+.sky-trail-step {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--sky-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sky-trail-step + .sky-trail-step::before {
+  content: '›';
+  margin-right: 8px;
+  color: var(--sky-muted);
+}
+.sky-trail-step:hover,
+.sky-trail-step[aria-current='true'] {
+  color: var(--sky-text);
+}
+
+/* The panel: the brain at a glance, or the open page. It follows the app's theme; the sky does not. */
+.sky-panel {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  bottom: 12px;
+  width: 460px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+}
+.sky-panel[aria-label='The brain at a glance'] {
+  bottom: auto;
+  max-height: calc(100% - 24px);
+}
+.sky-panel-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px 16px;
+}
+.sky-panel-foot {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+.sky-glance {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.sky-glance h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.sky-glance h3 {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sky-glance p {
+  margin: 0;
+}
+.sky-glance ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sky-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.sky-facts dt {
+  color: var(--muted);
+}
+.sky-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.sky-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sky-row:hover {
+  background: var(--bg-hover);
+}
+.sky-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A type's colour as on the sky; the ring keeps a pale dot visible on the light theme's card. */
+.sky-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+.sky-keys kbd {
+  padding: 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+
+/* Without WebGL: the flat map on the page's own ground. */
+.sky:has(.sky-flat) {
+  background: var(--bg-page);
+}
+.sky-flat {
+  position: absolute;
+  inset: 52px 492px 12px 16px;
+  overflow: auto;
+}
+.sky:has(.sky-flat) .sky-search,
+.sky:has(.sky-flat) .sky-trail {
+  border-color: var(--line-strong);
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .sky-panel {
+    top: auto;
+    width: auto;
+    left: 16px;
+    max-height: 45%;
+  }
+  .sky-top {
+    right: 16px;
+  }
+  .sky-flat {
+    inset: 52px 16px 48% 16px;
+  }
+}

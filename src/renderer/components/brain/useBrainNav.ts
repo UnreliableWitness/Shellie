@@ -5,9 +5,10 @@ export type NavEntry = { path: string; anchor?: string };
 
 /**
  * Where the reader is inside a brain view: null on the lists, else a page or source, with back and forward over
- * the pages opened. Lives with the view: switching pivots or tabs forgets it.
+ * the pages opened. Lives with the view: switching pivots or tabs forgets it. `origin` says in the count of opened
+ * pages that they were opened from the sky.
  */
-export function useBrainNav() {
+export function useBrainNav(origin?: 'sky') {
   const [stack, setStack] = useState<NavEntry[]>([]);
   const [at, setAt] = useState(-1);
   const current: NavEntry | null = at >= 0 ? stack[at] : null;
@@ -16,7 +17,7 @@ export function useBrainNav() {
 
   const open = useCallback(
     (path: string, anchor?: string) => {
-      trackBrain('open-page');
+      trackBrain('open-page', origin && { origin });
       setOpened((n) => n + 1);
       // The page already shown is not a new place: Back would otherwise appear to do nothing once.
       const here = at >= 0 ? stack[at] : null;
@@ -24,7 +25,7 @@ export function useBrainNav() {
       setStack((s) => [...s.slice(0, at + 1), { path, anchor }]);
       setAt(at + 1);
     },
-    [at, stack],
+    [at, stack, origin],
   );
   /** Back to the previous page, or to the lists from the first one. */
   const back = useCallback(() => {
