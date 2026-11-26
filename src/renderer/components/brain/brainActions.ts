@@ -43,6 +43,7 @@ export type BrainAction =
   /** The Read or Add view chosen. */
   | 'view-read'
   | 'view-add'
+  | 'view-explore'
   /** Pictures: a re-evaluation queued (source panel or Health), a drop accepted with Fine, I know. */
   | 'reevaluate'
   | 'accept-drop'
@@ -65,8 +66,10 @@ export type BrainAction =
   | 'read-mark';
 
 /** One click on the Brain page, counted without names or content. */
-export const trackBrain = (action: BrainAction) =>
-  track('brain.screen.action', { action });
+export const trackBrain = (
+  action: BrainAction,
+  props?: Record<string, string>,
+) => track('brain.screen.action', { action, ...props });
 
 type Notify = (level: 'error', message: string) => void;
 

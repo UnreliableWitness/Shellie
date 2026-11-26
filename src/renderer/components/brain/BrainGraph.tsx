@@ -21,21 +21,34 @@ const DRIFT_MS = 1600;
  * The wiki's pages as dots and their links as lines, on the Read view's landing. The dots drift into place, then
  * float; hovering or focusing a page lights its links and names its neighbours, a click or Enter opens it. Pages in
  * `newPaths` get a ring. Positions are written straight to the SVG each frame, not through React. With reduced
- * motion the dots are drawn in place and nothing moves.
+ * motion the dots are drawn in place and nothing moves. `focus` lights a page and its links as hovering does, and
+ * `matches` dims every other page (the Explore view without 3D uses both); `height` replaces the default 300 px.
  */
 export function BrainGraph({
   rows,
   newPaths,
   onOpen,
+  focus = null,
+  matches = null,
+  height = HEIGHT,
 }: {
   rows: BrainPageRow[];
   newPaths: Set<string>;
   onOpen: (path: string) => void;
+  focus?: string | null;
+  matches?: ReadonlySet<string> | null;
+  height?: number;
 }) {
   const graph = useMemo(() => pageGraph(rows), [rows]);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
-  const [hover, setHover] = useState<number | null>(null);
+  const [pointed, setHover] = useState<number | null>(null);
+  // What is lit: the page under the pointer, else the one in focus.
+  const focused = useMemo(() => {
+    const i = focus ? graph.nodes.findIndex((n) => n.path === focus) : -1;
+    return i < 0 ? null : i;
+  }, [graph, focus]);
+  const hover = pointed ?? focused;
   const nodeEls = useRef<(SVGGElement | null)[]>([]);
   const linkEls = useRef<(SVGLineElement | null)[]>([]);
   const pulseEls = useRef<(SVGCircleElement | null)[]>([]);
@@ -125,17 +138,17 @@ export function BrainGraph({
   // Each dot's place is worked out at once; the motion is only the way there. A page already on screen glides from
   // where it is, a new one from near the middle.
   useLayoutEffect(() => {
-    seedLayout(graph, width, HEIGHT, 0.25);
+    seedLayout(graph, width, height, 0.25);
     const middle = graph.nodes.map((n) => ({ x: n.x, y: n.y }));
-    seedLayout(graph, width, HEIGHT);
-    settleLayout(graph, width, HEIGHT);
-    fitLayout(graph, width, HEIGHT);
+    seedLayout(graph, width, height);
+    settleLayout(graph, width, height);
+    fitLayout(graph, width, height);
     from.current = graph.nodes.map((n, i) =>
       still ? { x: n.x, y: n.y } : (shown.current.get(n.path) ?? middle[i]),
     );
     drift.current = still ? -Infinity : null;
     placeRef.current(0);
-  }, [graph, width, still]);
+  }, [graph, width, height, still]);
 
   useEffect(() => {
     if (still) return;
@@ -149,7 +162,7 @@ export function BrainGraph({
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [graph, width, still]);
+  }, [graph, width, height, still]);
 
   if (graph.nodes.length < 2) return null;
 
@@ -172,8 +185,8 @@ export function BrainGraph({
       <div ref={box} className="brain-graph-box">
         <svg
           width={width}
-          height={HEIGHT}
-          viewBox={`0 0 ${width} ${HEIGHT}`}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
           className={lit ? 'is-lit' : undefined}
         >
           {graph.links.map(([a, b], i) => (
@@ -202,7 +215,8 @@ export function BrainGraph({
             ))}
           {graph.nodes.map((n, i) => {
             const r = nodeRadius(n);
-            const on = !lit || lit.has(i);
+            const on =
+              (!lit || lit.has(i)) && (!matches || matches.has(n.path));
             return (
               <g
                 key={n.path}

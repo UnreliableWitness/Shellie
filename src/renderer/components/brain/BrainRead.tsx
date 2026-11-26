@@ -27,7 +27,8 @@ import { unreadCount } from './longReads';
 import { useReadMarks } from './useReadMarks';
 import { RecentList, type BrainPages } from './BrainWiki';
 import { PageCard } from './PageCards';
-import { isAfter, recentEntries } from './recent';
+import { recentEntries } from './recent';
+import { newPathsSince } from './newPaths';
 import { useBrainNav } from './useBrainNav';
 
 const CONTINUE = (brainId: string) => `shellie.brain.continue.${brainId}`;
@@ -139,14 +140,10 @@ export function BrainRead({
   const [searching, setSearching] = useState(false);
   const searchPane = useRef<HTMLDivElement>(null);
   const recent = useMemo(() => recentEntries(log, rows), [log, rows]);
-  const newPaths = useMemo(() => {
-    const out = new Set<string>();
-    if (!since) return out;
-    for (const e of recent)
-      if (isAfter(e.at, since))
-        for (const p of e.pages) if (p.path) out.add(p.path);
-    return out;
-  }, [recent, since]);
+  const newPaths = useMemo(
+    () => newPathsSince(log, rows, since),
+    [log, rows, since],
+  );
   const pinned = useMemo(() => pinnedPages(rows), [rows]);
   const start = useMemo(
     () => pinned.map((r) => ({ path: r.path, label: r.title })),

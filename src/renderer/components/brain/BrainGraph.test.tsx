@@ -41,6 +41,31 @@ describe('BrainGraph', () => {
     expect(screen.getByText('decision')).toBeInTheDocument();
   });
 
+  it('lights the page in focus with its links, and dims what a search did not find', () => {
+    const { rerender } = render(
+      <BrainGraph
+        rows={rows}
+        newPaths={new Set()}
+        onOpen={() => {}}
+        focus="wiki/account.md"
+      />,
+    );
+    const dot = (name: string) => screen.getByRole('button', { name });
+    expect(dot('Acme')).toHaveClass('hover');
+    expect(dot('Database')).not.toHaveClass('dim');
+    expect(dot('Hosting')).toHaveClass('dim');
+    rerender(
+      <BrainGraph
+        rows={rows}
+        newPaths={new Set()}
+        onOpen={() => {}}
+        matches={new Set(['wiki/hosting.md'])}
+      />,
+    );
+    expect(dot('Hosting')).not.toHaveClass('dim');
+    expect(dot('Acme')).toHaveClass('dim');
+  });
+
   it('opens a page on click and on Enter', async () => {
     const onOpen = vi.fn();
     render(<BrainGraph rows={rows} newPaths={new Set()} onOpen={onOpen} />);

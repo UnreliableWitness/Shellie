@@ -23,6 +23,15 @@ vi.mock('../components/TerminalView', () => ({
   ),
 }));
 
+// jsdom has no WebGL: the sky gives way to its flat map, as on a machine without it.
+vi.mock('../components/brain/sky/SkyScene', () => ({
+  SkyScene: class {
+    constructor() {
+      throw new Error('no WebGL');
+    }
+  },
+}));
+
 const def = { id: 'bt1', kind: 'claude' as const, label: 'Brain' };
 const setup = (brain = brainView(), over: FakeHandlers = {}) =>
   installFakeApi({
@@ -271,6 +280,80 @@ describe('BrainScreen', () => {
     expect(a.calls).toContainEqual({
       channel: 'brain:resumeQueue',
       args: ['b1'],
+    });
+  });
+
+  describe('Explore', () => {
+    const withPages = () =>
+      setup(brainView(), {
+        'brain:pages': () => [
+          page('wiki/a.md', 'Page A'),
+          { ...page('wiki/b.md', 'Page B'), linkedFrom: ['wiki/a.md'] },
+        ],
+        'brain:sources': () => [],
+        'brain:read': (_id, rel) => ({ text: `Text of ${rel}\n` }),
+      });
+    const glance = () =>
+      screen.findByRole('complementary', { name: 'The brain at a glance' });
+
+    it('has an Explore tab that shows the sky and does not change the remembered view', async () => {
+      const a = withPages();
+      render(<BrainScreen brainId="b1" />);
+      await userEvent.click(await screen.findByRole('tab', { name: /^Add/ }));
+      await userEvent.click(screen.getByRole('tab', { name: 'Explore' }));
+      expect(screen.getByRole('tab', { name: 'Explore' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(
+        within(await glance()).getByRole('heading', {
+          name: '2 pages in 1 cluster',
+        }),
+      ).toBeInTheDocument();
+      expect(localStorage.getItem('shellie.brain.view.b1')).toBe('add');
+      expect(a.tracked).toContainEqual(
+        expect.objectContaining({
+          name: 'brain.screen.action',
+          props: { action: 'view-explore' },
+        }),
+      );
+    });
+
+    it('does not load the sky until Explore is chosen', async () => {
+      withPages();
+      render(<BrainScreen brainId="b1" />);
+      await screen.findByRole('tab', { name: 'Explore' });
+      expect(screen.queryByRole('complementary')).toBeNull();
+    });
+
+    it('opens on Explore when the route asks for it', async () => {
+      withPages();
+      render(<BrainScreen brainId="b1" focus="explore" />);
+      expect(await glance()).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Explore' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+
+    it('Open in Read from the sky shows the Read view on that page', async () => {
+      withPages();
+      render(<BrainScreen brainId="b1" focus="explore" />);
+      await userEvent.click(
+        within(await glance()).getByRole('button', { name: 'Page B' }),
+      );
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Open in Read' }),
+      );
+      expect(screen.getByRole('tab', { name: 'Read' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(
+        await within(
+          screen.getByRole('region', { name: 'Reading' }),
+        ).findByText('Text of wiki/b.md'),
+      ).toBeInTheDocument();
     });
   });
 

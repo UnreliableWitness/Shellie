@@ -112,8 +112,8 @@ export type Screen =
   | {
       kind: 'brain';
       brainId: string;
-      /** Where the page puts the cursor on open: the Ask box, the Wiki tab or the drop zone. */
-      focus?: 'ask' | 'wiki' | 'drop';
+      /** Where the page puts the cursor on open: the Ask box, the Wiki tab or the drop zone; `explore` opens its Explore view. */
+      focus?: 'ask' | 'wiki' | 'drop' | 'explore';
       /** A page, long read or letter to open in the Read view; another `n` opens it again. */
       open?: { path: string; n: number };
     }

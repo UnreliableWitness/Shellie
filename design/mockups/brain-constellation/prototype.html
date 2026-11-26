@@ -1,0 +1,422 @@
+<title>Brain Constellation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the scene fills the window; quiet glass controls sit on its edges (search top left, the open page on the right, legend and trail at the foot). One dark world by choice: it is a night sky. */
+:root {
+  color-scheme: dark;
+  --sky: #070a12;
+  --sky-2: #0d1322;
+  --glass: rgba(14, 20, 36, 0.78);
+  --line: rgba(150, 175, 230, 0.18);
+  --fg: #e6ecfa;
+  --muted: #93a0bd;
+  --accent: #6fb1ff;
+  --font-display: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  --font-text: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+html, body { height: 100%; }
+body { background: var(--sky); color: var(--fg); font-family: var(--font-text); font-size: 14px; line-height: 1.45; overflow: hidden; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { position: relative; height: 100%; overflow: hidden; background: var(--sky); }
+#scene { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+#scene.is-over { cursor: pointer; }
+#scene canvas { display: block; width: 100%; height: 100%; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lbl { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform, opacity; }
+.lbl-chapter { font-family: var(--font-display); font-weight: 500; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lbl-chapter b { font-family: var(--font-data); font-weight: 400; color: var(--accent); margin-right: 8px; }
+.lbl-page { font-size: 12px; color: var(--fg); padding: 2px 7px; border-radius: 4px; background: rgba(7, 10, 18, 0.6); }
+.lbl-page.is-main { font-weight: 600; font-size: 13px; }
+.lbl-page.is-cand { outline: 1px solid var(--accent); }
+.ui { position: absolute; inset: 0; pointer-events: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.ui > * { pointer-events: auto; min-width: 0; }
+.glass { background: var(--glass); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.top { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-self: start; max-width: 100%; }
+.brand { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }
+.brand span { font-family: var(--font-data); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.seg { display: flex; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; padding: 5px 10px; border-radius: 7px; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: rgba(111, 177, 255, 0.16); color: var(--fg); }
+.search { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 34px; }
+.search input { background: none; border: 0; outline: 0; width: 190px; max-width: 46vw; }
+.search input::placeholder { color: var(--muted); }
+.search output { font-family: var(--font-data); font-size: 11px; color: var(--muted); }
+.search:focus-within { border-color: var(--accent); }
+.note { grid-column: 1; grid-row: 2; align-self: start; justify-self: start; color: var(--muted); font-size: 12px; max-width: 46ch; margin: 0; }
+.panel { grid-column: 2; grid-row: 1 / span 3; width: 340px; max-width: 100%; align-self: start; max-height: 100%; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.panel h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.2; text-wrap: balance; }
+.panel p { margin: 0; color: #c9d2e8; }
+.chip { align-self: start; display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--accent)); box-shadow: 0 0 8px var(--c, var(--accent)); flex: none; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: 12px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.panel h3 { margin: 4px 0 0; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.links { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.links button { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; background: none; border: 0; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.links button:hover, .links button.is-cand { background: rgba(111, 177, 255, 0.12); }
+.links span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-foot { display: flex; justify-content: space-between; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+.btn { background: rgba(111, 177, 255, 0.12); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; cursor: pointer; }
+.btn:hover { background: rgba(111, 177, 255, 0.22); }
+kbd { font-family: var(--font-data); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.foot { grid-column: 1; grid-row: 3; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.trail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 8px; max-width: 100%; }
+.trail em { font-style: normal; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 4px; }
+.trail button { background: none; border: 0; padding: 2px 6px; border-radius: 5px; cursor: pointer; color: var(--muted); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trail button:hover, .trail button[aria-current="true"] { color: var(--fg); background: rgba(111, 177, 255, 0.12); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 12px; font-size: 12px; color: var(--muted); max-width: 100%; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fail { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+@media (max-width: 760px) {
+  .ui { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; }
+  .panel { grid-column: 1; grid-row: 3; width: auto; max-height: 42vh; }
+  .foot { grid-row: 4; }
+  .legend { display: none; }
+  .note { display: none; }
+}
+</style>
+<div class="app">
+  <div id="scene" role="application" aria-label="The brain as a constellation. Drag to turn, scroll to zoom, click a star to open its page."></div>
+  <div id="labels" aria-hidden="true"></div>
+  <div class="ui">
+    <div class="top">
+      <div class="brand glass"><h1>Brain Constellation</h1><span>prototype</span></div>
+      <div class="seg glass" role="group" aria-label="Brain">
+        <button type="button" id="pick-sample" aria-pressed="true">Sample brain</button>
+        <button type="button" id="pick-demo" aria-pressed="false">Contoso shop</button>
+      </div>
+      <label class="search glass">
+        <span aria-hidden="true">⌕</span>
+        <input id="q" type="search" placeholder="Find a page" autocomplete="off" aria-label="Find a page">
+        <output id="q-count" for="q"></output>
+      </label>
+    </div>
+    <p class="note" id="note"></p>
+    <aside class="panel glass" id="panel" aria-live="polite"></aside>
+    <div class="foot">
+      <div class="trail glass" id="trail" hidden></div>
+      <div class="legend glass" id="legend"></div>
+    </div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.DEMO_BRAIN = {"name": "Contoso shop", "chapters": [{"title": "The project", "pages": ["wiki/subject-mission.md", "wiki/scope-phase-2.md"]}, {"title": "The customer and who is on board", "pages": ["wiki/account.md"]}, {"title": "The system", "pages": ["wiki/component-storefront.md", "wiki/component-delivery-api.md"]}, {"title": "How the work runs", "pages": ["wiki/subject-way-of-working.md"]}], "pages": [{"path": "wiki/account.md", "title": "Contoso Retail NV", "summary": "Contoso Retail NV is a Ghent-based seller of kitchen and garden goods in Belgium, the Netherlands and Luxembourg; this page records who they are, who plays which role, and the contract in outline.", "type": "account", "updated": "2026-11-13", "confidence": "high", "verified": null, "links": ["wiki/scope-phase-2.md"]}, {"path": "wiki/component-delivery-api.md", "title": "delivery-api (carrier ETA service)", "summary": "A small Node service between the storefront and the carrier BeNeLux Parcel; it caches the carrier's ETA per postcode in Redis for 15 minutes and falls back to a \"1-2 working days\" message when the carrier is slow or failing. The carrier's terms of use say an ETA shown to a shopper may never be older than 5 minutes, which conflicts with the 15-minute cache.", "type": "component", "updated": "2026-11-13", "confidence": "medium", "verified": null, "links": ["wiki/component-storefront.md", "wiki/meeting-2026-10-09-kickoff.md", "wiki/scope-phase-2.md"]}, {"path": "wiki/component-storefront.md", "title": "Storefront and checkout architecture", "summary": "Next.js storefront with server components, payments through @contoso/pay-sdk (v5 from phase 2), postcode validation for BE, NL and LU in browser and API, and image performance targets (LCP under 2.5 s).", "type": "component", "updated": "2026-11-13", "confidence": "medium", "verified": null, "links": ["wiki/component-delivery-api.md", "wiki/decision-2026-10-21-payment-sdk-v5.md", "wiki/scope-phase-2.md"]}, {"path": "wiki/decision-2026-10-21-payment-sdk-v5.md", "title": "Decision: move to payment SDK v5 before go-live", "summary": "On 21 October 2026 the payment SDK upgrade to v5 was pulled into sprint 1 (task 4) instead of after go-live, because v4 is end of life on 31 March 2027; refunds retry once on a rate limit.", "type": "decision", "updated": "2026-11-13", "confidence": "high", "verified": null, "links": ["wiki/component-storefront.md", "wiki/meeting-2026-10-09-kickoff.md", "wiki/scope-phase-2.md"]}, {"path": "wiki/meeting-2026-10-09-kickoff.md", "title": "Kickoff meeting of 9 October 2026", "summary": "Kickoff of phase 2 with two customer representatives and the tech lead: the goal is fewer \"where is my parcel\" calls, the checkout ETA is cached per postcode, postcodes get validated, and the payment SDK must move to v5.", "type": "meeting", "updated": "2026-11-13", "confidence": "low", "verified": null, "links": ["wiki/account.md", "wiki/component-delivery-api.md", "wiki/scope-phase-2.md"]}, {"path": "wiki/scope-phase-2.md", "title": "Scope of phase 2 (checkout and delivery)", "summary": "Phase 2 rebuilds checkout and delivery so a customer ordering before 22:00 sees the parcel's arrival time at checkout; lists what is in and out of scope, the go-live date and the acceptance test.", "type": "scope", "updated": "2026-11-13", "confidence": "high", "verified": null, "links": ["wiki/account.md"]}, {"path": "wiki/subject-mission.md", "title": "Mission of the Contoso shop project", "summary": "The project is phase 2 of Contoso Retail NV's online shop, where we rebuild checkout and delivery so a customer ordering before 22:00 sees at checkout when the parcel will arrive.", "type": "subject", "updated": "2026-11-13", "confidence": "high", "verified": null, "links": ["wiki/account.md", "wiki/component-delivery-api.md", "wiki/component-storefront.md", "wiki/scope-phase-2.md"]}, {"path": "wiki/subject-way-of-working.md", "title": "How the work runs", "summary": "The team works in sprints with a review every two weeks, towards a go-live of the new checkout on 2 February 2027 that is accepted on a two-week A/B test.", "type": "subject", "updated": "2026-11-13", "confidence": "medium", "verified": null, "links": ["wiki/account.md", "wiki/decision-2026-10-21-payment-sdk-v5.md", "wiki/scope-phase-2.md"]}]};</script>
+<script>
+(() => {
+const TYPES = {
+  subject: ['Subject', '#5fe0c2'], component: ['Component', '#6fb1ff'], scope: ['Scope', '#b79bff'],
+  account: ['Account', '#f2f5ff'], decision: ['Decision', '#ffc45c'], meeting: ['Meeting', '#ff86b8'],
+  lesson: ['Lesson', '#ff9a6b'], glossary: ['Glossary', '#9fb0c8'],
+};
+const TODAY = Date.parse('2026-11-26');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const rng = (seed) => () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+
+/* ---------- the sample brain: invented pages, the same shape as a real one ---------- */
+function sampleBrain() {
+  const r = rng(7);
+  const ch = [
+    ['The project', 'subject-mission scope-phase-1 scope-phase-2 scope-phase-3 subject-budget subject-timeline subject-risks subject-success-measures'],
+    ['The customer and who is on board', 'account subject-stakeholders subject-customer-teams subject-support-desk subject-contract subject-who-decides-what subject-store-managers'],
+    ['Storefront', 'component-storefront component-product-pages component-search component-cart component-checkout component-customer-account component-design-system component-cms component-seo component-translations component-promotions component-wishlist component-reviews component-store-locator'],
+    ['Orders and delivery', 'component-delivery-api component-order-service component-carrier-eta component-returns component-warehouse-sync component-pick-up-points component-order-emails component-tracking-page component-stock-levels component-back-orders'],
+    ['Payments', 'component-payment-sdk component-refunds component-invoices component-gift-cards component-fraud-checks component-vat-rules component-payment-methods component-reconciliation'],
+    ['Data and integrations', 'component-erp-link component-product-feed component-pricing-import component-analytics component-customer-data component-event-bus component-search-index component-data-warehouse component-gdpr-requests component-newsletter-sync'],
+    ['Running it', 'component-hosting component-pipelines component-monitoring component-secrets component-environments component-backups component-feature-flags component-performance-budget component-incident-playbook component-release-train'],
+    ['How the work runs', 'subject-way-of-working subject-definition-of-done subject-branching subject-code-review subject-testing subject-sprint-rhythm subject-estimates subject-ai-agents-in-the-team subject-cost-reporting'],
+  ];
+  const back = {
+    decision: ['payment SDK v5 before go-live', 'one cart for all three countries', 'search hosted, not self-run', 'returns through pick-up points', 'no guest checkout in phase 1', 'prices from the ERP only', 'feature flags for every launch', 'Dutch first, French second', 'invoices as PDF by email', 'stock checked at checkout', 'one design system', 'carrier ETA cached for an hour', 'refunds retry once', 'analytics without cookies', 'release every Tuesday', 'back orders allowed for garden goods', 'gift cards in phase 2', 'alerts go to the team channel'],
+    meeting: ['Kickoff', 'Sprint 1 review', 'Sprint 2 review', 'Sprint 3 review', 'Sprint 4 review', 'Sprint 5 review', 'Payments workshop', 'Design review', 'Warehouse visit', 'Go-live rehearsal', 'Steering group, October', 'Steering group, November', 'Security review', 'ERP hand-over'],
+    lesson: ['Carrier API times out on Mondays', 'ERP export skips discontinued items', 'Checkout tests need a real VAT number', 'Feed rebuild takes 40 minutes', 'Preview links expire after a day', 'Stock sync lags after midnight'],
+    glossary: ['Glossary'],
+  };
+  const pages = []; const chapters = [];
+  const add = (path, title, type) => {
+    const age = Math.floor(r() * r() * 260);
+    const d = new Date(TODAY - age * 864e5).toISOString().slice(0, 10);
+    pages.push({ path, title, type, summary: 'Example page, invented for this prototype. In a real brain this line is the page’s own summary.', updated: d, confidence: ['high', 'high', 'medium', 'low'][Math.floor(r() * 4)], verified: r() < 0.3 ? d : null, isNew: age < 4, links: [] });
+    return pages[pages.length - 1];
+  };
+  const title = (slug) => { const w = slug.replace(/^(subject|component|scope)-/, '').replace(/-/g, ' '); return w.charAt(0).toUpperCase() + w.slice(1); };
+  ch.forEach(([name, slugs]) => {
+    const list = slugs.split(' ').map((s) => add('wiki/' + s + '.md', s === 'account' ? 'Contoso Retail NV' : title(s), s.split('-')[0]));
+    chapters.push({ title: name, pages: list.map((p) => p.path) });
+    list.forEach((p, i) => {
+      if (i > 0) p.links.push(list[r() < 0.6 ? 0 : Math.floor(r() * i)].path);
+      if (i > 2 && r() < 0.5) p.links.push(list[1 + Math.floor(r() * (i - 1))].path);
+    });
+  });
+  const inBook = pages.slice();
+  inBook.forEach((p) => { if (r() < 0.28) p.links.push(inBook[Math.floor(r() * inBook.length)].path); });
+  Object.entries(back).forEach(([type, names]) => names.forEach((n, i) => {
+    const p = add('wiki/' + type + '-' + i + '.md', type === 'decision' ? 'Decision: ' + n : n, type);
+    const k = type === 'glossary' ? 14 : 1 + Math.floor(r() * 3);
+    for (let j = 0; j < k; j++) p.links.push(inBook[Math.floor(r() * inBook.length)].path);
+    if (type === 'decision') p.links.push('wiki/meeting-' + Math.floor(r() * back.meeting.length) + '.md');
+  }));
+  return { name: 'Sample brain', chapters, pages };
+}
+
+/* ---------- a brain as nodes, links and clusters with places in space ---------- */
+function build(brain) {
+  const r = rng(brain.pages.length * 31 + 5);
+  const byPath = new Map(); const nodes = brain.pages.map((p, i) => { const n = { ...p, id: i, adj: new Set(), cluster: -1 }; byPath.set(p.path, n); return n; });
+  const links = []; const seen = new Set();
+  nodes.forEach((n) => (n.links || []).forEach((to) => { const m = byPath.get(to); if (!m || m === n) return; const k = Math.min(n.id, m.id) + '-' + Math.max(n.id, m.id); if (seen.has(k)) return; seen.add(k); links.push([n.id, m.id]); n.adj.add(m.id); m.adj.add(n.id); }));
+  const clusters = brain.chapters.map((c, i) => ({ title: c.title, number: i + 1, ids: [] }));
+  brain.chapters.forEach((c, i) => c.pages.forEach((p) => { const n = byPath.get(p); if (n && n.cluster < 0) { n.cluster = i; clusters[i].ids.push(n.id); } }));
+  const rest = nodes.filter((n) => n.cluster < 0);
+  if (rest.length) { clusters.push({ title: 'Back of the book', number: 0, ids: rest.map((n) => n.id) }); rest.forEach((n) => { n.cluster = clusters.length - 1; }); }
+  const maxDeg = Math.max(1, ...nodes.map((n) => n.adj.size));
+  const N = clusters.length;
+  clusters.forEach((c, i) => {
+    // The book's order is a slow helix, so a place in space is a place in the book.
+    const a = i * 0.95 - 0.6; const R = N > 5 ? 96 : 46;
+    c.pos = new THREE.Vector3(Math.cos(a) * R, (i - (N - 1) / 2) * (N > 5 ? 11 : 8), Math.sin(a) * R);
+    c.r = 7 + Math.sqrt(c.ids.length) * 4.2;
+    c.ids.forEach((id, k) => {
+      const n = nodes[id]; const u = (k + 0.5) / c.ids.length; const y = 1 - 2 * u; const rad = Math.sqrt(1 - y * y); const th = k * 2.39996 + i;
+      // The most linked pages sit near the middle of their chapter.
+      const d = c.r * (0.25 + 0.75 * (1 - 0.7 * (n.adj.size / maxDeg))) * (0.75 + 0.25 * r());
+      n.pos = new THREE.Vector3(c.pos.x + Math.cos(th) * rad * d, c.pos.y + y * d * 0.8, c.pos.z + Math.sin(th) * rad * d);
+    });
+  });
+  nodes.forEach((n) => {
+    const age = n.updated ? Math.max(0, (TODAY - Date.parse(n.updated)) / 864e5) : 200;
+    n.age = Math.round(age);
+    n.bright = 0.32 + 0.68 * Math.exp(-age / 70) + (n.verified ? 0.12 : 0);
+    n.size = 6.5 + 9 * Math.sqrt(n.adj.size / maxDeg);
+  });
+  return { name: brain.name, nodes, links, clusters };
+}
+
+/* ---------- scene ---------- */
+const host = $('scene'); const labelHost = $('labels');
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); } catch (e) { renderer = null; }
+if (!renderer) { host.innerHTML = '<div class="fail">This view needs a graphics card it could not find here. In Shellie it would fall back to the flat graph on the Read view.</div>'; return; }
+renderer.setClearColor(0x070a12, 1);
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 3000);
+const world = new THREE.Group(); scene.add(world);
+
+const starMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uScale: { value: 1 }, uMin: { value: 3 } },
+  vertexShader: `attribute float aSize; attribute float aBright; attribute float aPhase; attribute float aNew; attribute float aLit; attribute vec3 aColor;
+    uniform float uTime; uniform float uScale; uniform float uMin; varying vec3 vColor; varying float vA;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      float tw = 0.88 + 0.12 * sin(uTime * 1.7 + aPhase);
+      float pulse = 1.0 + aNew * 0.55 * (0.5 + 0.5 * sin(uTime * 3.0 + aPhase));
+      gl_PointSize = max(uMin, aSize * pulse * uScale * (0.7 + 0.3 * min(aLit, 1.8)) / -mv.z);
+      vColor = aColor; vA = aBright * tw * aLit; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `varying vec3 vColor; varying float vA;
+    void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;
+      float core = smoothstep(0.32, 0.0, d); float halo = pow(1.0 - d, 2.0);
+      vec3 c = mix(vColor, vec3(1.0), core * 0.8); gl_FragColor = vec4(c * (halo * 0.85 + core) * vA, 1.0); }`,
+  blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true,
+});
+
+// Far dust, for depth; it belongs to no brain.
+{ const r = rng(99); const n = 1600; const p = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { const v = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize().multiplyScalar(260 + r() * 700); p.set([v.x, v.y, v.z], i * 3); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x8fa6d8, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.45, depthWrite: false }))); }
+
+let G = null, stars, haze, baseLines, hotLines, pulses, chapterLabels = [], pageLabels = [];
+let selected = null, hovered = null, cand = null, query = '', matches = null, trail = [];
+const view = { target: new THREE.Vector3(), theta: 0.9, phi: 1.25, dist: 300 };
+let fly = null, overview = { target: new THREE.Vector3(), dist: 300 }, lastTouch = 0;
+
+function attr(arr, n) { return new THREE.BufferAttribute(new Float32Array(arr), n); }
+function load(brain) {
+  if (stars) [stars, haze, baseLines, hotLines, pulses].forEach((o) => { world.remove(o); o.geometry.dispose(); });
+  labelHost.innerHTML = ''; G = build(brain); selected = hovered = cand = null; trail = []; query = ''; matches = null; $('q').value = ''; $('q-count').textContent = '';
+  const N = G.nodes; const pos = [], col = [], size = [], bright = [], phase = [], isNew = [], lit = [];
+  const r = rng(3);
+  N.forEach((n) => { pos.push(n.pos.x, n.pos.y, n.pos.z); const c = new THREE.Color((TYPES[n.type] || TYPES.glossary)[1]); col.push(c.r, c.g, c.b); size.push(n.size); bright.push(n.bright); phase.push(r() * 6.28); isNew.push(n.isNew ? 1 : 0); lit.push(1); });
+  let g = new THREE.BufferGeometry();
+  g.setAttribute('position', attr(pos, 3)); g.setAttribute('aColor', attr(col, 3)); g.setAttribute('aSize', attr(size, 1)); g.setAttribute('aBright', attr(bright, 1)); g.setAttribute('aPhase', attr(phase, 1)); g.setAttribute('aNew', attr(isNew, 1)); g.setAttribute('aLit', attr(lit, 1));
+  stars = new THREE.Points(g, starMat); stars.frustumCulled = false; world.add(stars);
+  // A faint glow per chapter, so a cluster reads as one thing from far away.
+  g = new THREE.BufferGeometry(); const C = G.clusters;
+  g.setAttribute('position', attr(C.flatMap((c) => [c.pos.x, c.pos.y, c.pos.z]), 3)); g.setAttribute('aColor', attr(C.flatMap(() => [0.35, 0.5, 0.95]), 3)); g.setAttribute('aSize', attr(C.map((c) => c.r * 4.2), 1)); g.setAttribute('aBright', attr(C.map(() => 0.085), 1)); g.setAttribute('aPhase', attr(C.map((c, i) => i), 1)); g.setAttribute('aNew', attr(C.map(() => 0), 1)); g.setAttribute('aLit', attr(C.map(() => 1), 1));
+  haze = new THREE.Points(g, starMat); haze.frustumCulled = false; world.add(haze);
+  const lp = [], lc = [];
+  G.links.forEach(([a, b]) => { lp.push(...N[a].pos.toArray(), ...N[b].pos.toArray()); for (const i of [a, b]) lc.push(col[i * 3] * 0.5, col[i * 3 + 1] * 0.5, col[i * 3 + 2] * 0.5); });
+  g = new THREE.BufferGeometry(); g.setAttribute('position', attr(lp, 3)); g.setAttribute('color', attr(lc, 3));
+  baseLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, depthWrite: false })); world.add(baseLines);
+  hotLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xbfdcff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })); hotLines.frustumCulled = false; world.add(hotLines);
+  pulses = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0xffffff, size: 4, sizeAttenuation: false, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })); pulses.frustumCulled = false; world.add(pulses);
+
+  chapterLabels = G.clusters.map((c) => { const el = document.createElement('div'); el.className = 'lbl lbl-chapter'; el.innerHTML = (c.number ? '<b>' + String(c.number).padStart(2, '0') + '</b>' : '') + esc(c.title); labelHost.appendChild(el); return { el, c }; });
+  pageLabels = Array.from({ length: 22 }, () => { const el = document.createElement('div'); el.className = 'lbl lbl-page'; el.hidden = true; labelHost.appendChild(el); return el; });
+
+  const box = new THREE.Box3().setFromPoints(N.map((n) => n.pos)); const sph = box.getBoundingSphere(new THREE.Sphere());
+  overview = { target: sph.center.clone(), dist: Math.max(90, sph.radius * 1.95) };
+  view.target.copy(overview.target); view.dist = overview.dist * (reduced ? 1 : 1.9); view.theta = 0.3; view.phi = 1.25;
+  flyTo(overview.target, overview.dist, 2.2);
+  $('note').textContent = brain === DEMO
+    ? 'Contoso shop is the demo brain on this Mac: 8 real pages, their real links and chapters.'
+    : 'A sample brain: ' + N.length + ' invented pages in the shape of a real one, to see the view at a believable size.';
+  refresh(); drawPanel(); drawTrail();
+}
+
+function focusNode() { return selected ?? (cand != null ? null : hovered); }
+function refresh() {
+  const N = G.nodes; const lit = stars.geometry.attributes.aLit; const f = selected != null ? N[selected] : hovered != null ? N[hovered] : null;
+  for (let i = 0; i < N.length; i++) {
+    let v = 1;
+    if (matches) v = matches.has(i) ? 1.7 : 0.1;
+    else if (f) v = i === f.id ? 1.9 : f.adj.has(i) ? 1.35 : selected != null ? 0.2 : 0.5;
+    if (i === cand || i === hovered) v = Math.max(v, 1.9);
+    lit.array[i] = v;
+  }
+  lit.needsUpdate = true;
+  const p = []; if (f && !matches) f.adj.forEach((j) => p.push(...f.pos.toArray(), ...N[j].pos.toArray()));
+  hotLines.geometry.dispose(); hotLines.geometry = new THREE.BufferGeometry(); hotLines.geometry.setAttribute('position', attr(p, 3));
+  pulses.geometry.dispose(); pulses.geometry = new THREE.BufferGeometry(); pulses.geometry.setAttribute('position', attr(new Array((p.length / 6) * 3).fill(0), 3));
+  pulses.userData = { segs: p }; pulses.visible = !reduced && p.length > 0;
+  baseLines.material.opacity = matches ? 0.06 : f ? (selected != null ? 0.07 : 0.18) : 0.38;
+}
+
+function flyTo(target, dist, secs = 1.25) {
+  if (reduced) { view.target.copy(target); view.dist = dist; fly = null; return; }
+  fly = { t0: performance.now(), ms: secs * 1000, from: view.target.clone(), to: target.clone(), d0: view.dist, d1: dist, th0: view.theta, th1: view.theta + 0.55 };
+}
+function select(id, fromTrail) {
+  selected = id; cand = null; hovered = null;
+  if (id == null) { flyTo(overview.target, overview.dist); }
+  else {
+    if (matches) { matches = null; query = ''; $('q').value = ''; $('q-count').textContent = ''; }
+    if (!fromTrail) { trail = trail.filter((t) => t !== id); trail.push(id); if (trail.length > 7) trail.shift(); }
+    flyTo(G.nodes[id].pos, 30 + G.nodes[id].adj.size * 1.2);
+  }
+  refresh(); drawPanel(); drawTrail();
+}
+
+/* ---------- panel, trail, legend ---------- */
+function typeChip(n) { const t = TYPES[n.type] || TYPES.glossary; return '<span class="chip"><i class="dot" style="--c:' + t[1] + '"></i>' + t[0] + '</span>'; }
+function drawPanel() {
+  const el = $('panel');
+  if (selected == null) {
+    const N = G.nodes; const fresh = N.filter((n) => n.age <= 14).length; const stale = N.filter((n) => n.age > 120).length; const news = N.filter((n) => n.isNew);
+    const hubs = N.slice().sort((a, b) => b.adj.size - a.adj.size).slice(0, 5);
+    el.innerHTML = '<span class="chip">' + esc(G.name) + '</span><h2>' + N.length + ' pages in ' + G.clusters.length + ' clusters</h2>'
+      + '<p>Each star is a page and each cluster a chapter, in the order of the book. Click a star to fly to it and read it here.</p>'
+      + '<dl class="facts"><dt>Links</dt><dd>' + G.links.length + '</dd><dt>Changed in 14 days</dt><dd>' + fresh + '</dd><dt>Untouched for 4 months</dt><dd>' + stale + '</dd></dl>'
+      + (news.length ? '<h3>New</h3><ul class="links">' + news.slice(0, 5).map(linkRow).join('') + '</ul>' : '')
+      + '<h3>Most linked</h3><ul class="links">' + hubs.map(linkRow).join('') + '</ul>'
+      + '<div class="panel-foot"><span><kbd>/</kbd> find</span><span>drag to turn, scroll to zoom</span></div>';
+  } else {
+    const n = G.nodes[selected]; const c = G.clusters[n.cluster]; const adj = [...n.adj].map((i) => G.nodes[i]).sort((a, b) => b.adj.size - a.adj.size);
+    el.innerHTML = typeChip(n) + '<h2>' + esc(n.title) + '</h2><p>' + esc(n.summary || 'This page has no summary.') + '</p>'
+      + '<dl class="facts"><dt>Chapter</dt><dd>' + (c.number ? c.number + ' · ' : '') + esc(c.title) + '</dd><dt>Updated</dt><dd>' + esc(n.updated || 'unknown') + (n.age != null ? ' (' + n.age + ' d)' : '') + '</dd><dt>Confidence</dt><dd>' + esc(n.confidence || 'not set') + '</dd><dt>Checked by a person</dt><dd>' + esc(n.verified || 'no') + '</dd></dl>'
+      + (adj.length ? '<h3>Linked pages (' + adj.length + ')</h3><ul class="links">' + adj.map(linkRow).join('') + '</ul>' : '<h3>No linked pages</h3>')
+      + '<div class="panel-foot"><span><kbd>←</kbd> <kbd>→</kbd> pick, <kbd>Enter</kbd> go</span><button type="button" class="btn" data-go="-1">Whole brain <kbd>Esc</kbd></button></div>';
+  }
+}
+function linkRow(n) { const t = TYPES[n.type] || TYPES.glossary; return '<li><button type="button" data-go="' + n.id + '"><i class="dot" style="--c:' + t[1] + '"></i><span>' + esc(n.title) + '</span></button></li>'; }
+function drawTrail() {
+  const el = $('trail'); el.hidden = trail.length < 2;
+  el.innerHTML = '<em>Trail</em>' + trail.map((id) => '<button type="button" data-go="' + id + '" data-trail="1"' + (id === selected ? ' aria-current="true"' : '') + '>' + esc(G.nodes[id].title) + '</button>').join('<span aria-hidden="true">›</span>');
+}
+function markCand() { $('panel').querySelectorAll('.links button').forEach((b) => b.classList.toggle('is-cand', Number(b.dataset.go) === cand)); }
+document.querySelector('.ui').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (!b) return; const id = Number(b.dataset.go); select(id < 0 ? null : id, !!b.dataset.trail); });
+document.querySelector('.ui').addEventListener('pointerover', (e) => { const b = e.target.closest('.links [data-go]'); const id = b ? Number(b.dataset.go) : null; if (id !== cand) { cand = id; refresh(); } });
+$('legend').innerHTML = Object.values(TYPES).slice(0, 7).map((t) => '<span><i class="dot" style="--c:' + t[1] + '"></i>' + t[0] + '</span>').join('') + '<span>bigger: more linked</span><span>brighter: fresher</span><span>pulsing: new</span>';
+
+/* ---------- search ---------- */
+$('q').addEventListener('input', (e) => {
+  query = e.target.value.trim().toLowerCase();
+  if (!query) { matches = null; $('q-count').textContent = ''; }
+  else { matches = new Set(G.nodes.filter((n) => (n.title + ' ' + n.summary + ' ' + n.type).toLowerCase().includes(query)).map((n) => n.id)); $('q-count').textContent = matches.size + ' found'; if (selected != null) { selected = null; drawPanel(); drawTrail(); } flyTo(overview.target, overview.dist); }
+  refresh();
+});
+$('q').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && matches && matches.size) { const best = [...matches].map((i) => G.nodes[i]).sort((a, b) => (b.title.toLowerCase().startsWith(query) - a.title.toLowerCase().startsWith(query)) || b.adj.size - a.adj.size)[0]; e.target.blur(); select(best.id); }
+  if (e.key === 'Escape') { e.target.value = ''; e.target.dispatchEvent(new Event('input')); e.target.blur(); }
+});
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === '/') { e.preventDefault(); $('q').focus(); }
+  else if (e.key === 'Escape') select(null);
+  else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selected != null) {
+    const adj = [...G.nodes[selected].adj].map((i) => G.nodes[i]).sort((a, b) => b.adj.size - a.adj.size).map((n) => n.id); if (!adj.length) return; e.preventDefault();
+    const at = adj.indexOf(cand); cand = adj[(at + (e.key === 'ArrowRight' ? 1 : -1) + adj.length + (at < 0 && e.key === 'ArrowLeft' ? 1 : 0)) % adj.length]; refresh(); markCand();
+  } else if (e.key === 'Enter' && cand != null) select(cand);
+});
+
+/* ---------- pointer: turn, zoom, pick ---------- */
+const v3 = new THREE.Vector3(); const ptrs = new Map(); let drag = null, pinch = 0, moved = 0;
+function pick(x, y) {
+  const rect = host.getBoundingClientRect(); let best = null, bd = 1e9;
+  for (const n of G.nodes) { v3.copy(n.pos).project(camera); if (v3.z > 1) continue; const sx = (v3.x * 0.5 + 0.5) * rect.width, sy = (-v3.y * 0.5 + 0.5) * rect.height; const d = Math.hypot(sx - (x - rect.left), sy - (y - rect.top)); if (d < bd && d < 16) { bd = d; best = n.id; } }
+  return best;
+}
+host.addEventListener('pointerdown', (e) => { host.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, e); drag = { x: e.clientX, y: e.clientY }; moved = 0; pinch = 0; fly = null; lastTouch = performance.now(); });
+host.addEventListener('pointermove', (e) => {
+  if (ptrs.has(e.pointerId)) {
+    ptrs.set(e.pointerId, e); lastTouch = performance.now();
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); if (pinch) view.dist = Math.min(900, Math.max(12, view.dist * (pinch / d))); pinch = d; moved = 99; return; }
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; moved += Math.abs(dx) + Math.abs(dy);
+    view.theta += dx * 0.006; view.phi = Math.min(2.9, Math.max(0.25, view.phi - dy * 0.006)); return;
+  }
+  const h = pick(e.clientX, e.clientY); if (h !== hovered) { hovered = h; host.classList.toggle('is-over', h != null); refresh(); }
+});
+const up = (e) => { if (!ptrs.delete(e.pointerId)) return; if (moved < 6) { const h = pick(e.clientX, e.clientY); if (h != null) select(h); } pinch = 0; };
+host.addEventListener('pointerup', up); host.addEventListener('pointercancel', up);
+host.addEventListener('pointerleave', () => { if (hovered != null) { hovered = null; host.classList.remove('is-over'); refresh(); } });
+host.addEventListener('wheel', (e) => { e.preventDefault(); fly = null; lastTouch = performance.now(); view.dist = Math.min(900, Math.max(12, view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+
+/* ---------- frame ---------- */
+function place(el, p, dx, dy, alpha) {
+  v3.copy(p).project(camera);
+  if (v3.z > 1 || alpha <= 0.02) { el.hidden = true; return; }
+  el.hidden = false; el.style.opacity = alpha; el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W + dx).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H + dy).toFixed(1) + 'px)';
+}
+let W = 1, H = 1;
+function resize() { W = host.clientWidth || 1; H = host.clientHeight || 1; renderer.setSize(W, H, false); camera.aspect = W / H; if (W > 760) camera.setViewOffset(W, H, 170, 0, W, H); else camera.clearViewOffset(); camera.updateProjectionMatrix(); const dpr = renderer.getPixelRatio(); starMat.uniforms.uScale.value = (H * dpr) / (2 * Math.tan((camera.fov * Math.PI) / 360)); starMat.uniforms.uMin.value = 3 * dpr; }
+new ResizeObserver(resize).observe(host); resize();
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+function frame(now) {
+  requestAnimationFrame(frame); if (!G) return;
+  if (fly) { const t = Math.min(1, (now - fly.t0) / fly.ms); const k = ease(t); view.target.lerpVectors(fly.from, fly.to, k); view.dist = fly.d0 + (fly.d1 - fly.d0) * k; view.theta = fly.th0 + (fly.th1 - fly.th0) * k; if (t >= 1) fly = null; }
+  else if (!reduced && !ptrs.size && now - lastTouch > 2500) view.theta += selected != null ? 0.0006 : 0.0011;
+  const sp = Math.sin(view.phi);
+  camera.position.set(view.target.x + view.dist * sp * Math.cos(view.theta), view.target.y + view.dist * Math.cos(view.phi), view.target.z + view.dist * sp * Math.sin(view.theta));
+  camera.lookAt(view.target);
+  if (!reduced) starMat.uniforms.uTime.value = now / 1000;
+  if (pulses.visible) { const s = pulses.userData.segs; const a = pulses.geometry.attributes.position; for (let i = 0; i < s.length / 6; i++) { const t = (now / 1400 + i * 0.37) % 1; a.array[i * 3] = s[i * 6] + (s[i * 6 + 3] - s[i * 6]) * t; a.array[i * 3 + 1] = s[i * 6 + 1] + (s[i * 6 + 4] - s[i * 6 + 1]) * t; a.array[i * 3 + 2] = s[i * 6 + 2] + (s[i * 6 + 5] - s[i * 6 + 2]) * t; } a.needsUpdate = true; }
+  renderer.render(scene, camera);
+  // Names: chapters from far, pages once something is in focus.
+  const far = Math.min(1, Math.max(0, (view.dist - 40) / 60));
+  chapterLabels.forEach(({ el, c }) => { v3.copy(c.pos); v3.y += c.r * 0.95; place(el, v3, -el.offsetWidth / 2, -8, (matches ? 0.35 : 0.9) * far); });
+  const N = G.nodes; const want = []; const f = selected != null ? N[selected] : hovered != null ? N[hovered] : null;
+  if (f && !matches) { want.push(f.id); [...f.adj].sort((a, b) => N[b].adj.size - N[a].adj.size).slice(0, 14).forEach((i) => want.push(i)); }
+  if (matches) [...matches].sort((a, b) => N[b].adj.size - N[a].adj.size).slice(0, 14).forEach((i) => want.push(i));
+  if (hovered != null && !want.includes(hovered)) want.push(hovered);
+  if (cand != null && !want.includes(cand)) want.push(cand);
+  pageLabels.forEach((el, i) => {
+    const id = want[i]; if (id == null) { el.hidden = true; return; }
+    if (el.dataset.id !== String(id)) { el.dataset.id = id; el.textContent = N[id].title; }
+    el.className = 'lbl lbl-page' + (id === (f && f.id) ? ' is-main' : '') + (id === cand ? ' is-cand' : '');
+    place(el, N[id].pos, 12, -9, 1);
+  });
+}
+
+const DEMO = window.DEMO_BRAIN; const SAMPLE = sampleBrain();
+const choose = (b) => { $('pick-sample').setAttribute('aria-pressed', String(b === SAMPLE)); $('pick-demo').setAttribute('aria-pressed', String(b === DEMO)); load(b); };
+$('pick-sample').addEventListener('click', () => choose(SAMPLE)); $('pick-demo').addEventListener('click', () => choose(DEMO));
+load(SAMPLE); requestAnimationFrame(frame);
+})();
+</script>
