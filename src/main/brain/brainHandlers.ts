@@ -59,7 +59,7 @@ import {
   takeOver,
 } from './share/keeper';
 import { unsentCount } from './share/gitUtil';
-import { joinLink, NEWER_SHELLIE } from '../../shared/brainShare';
+import { joinLink, NEWER_SHELLIE, repoJoinLink } from '../../shared/brainShare';
 import { getInstallId } from '../installId';
 import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
@@ -996,8 +996,11 @@ export function createBrainHandlers(
       await d.sync.push(id);
     },
     'brain:share': async (input) => {
-      // Only the two fixed homes reach telemetry, whatever the window sent.
-      const home = input.home === 'company' ? 'company' : 'customer';
+      // Only the three fixed homes reach telemetry, whatever the window sent.
+      const home =
+        input.home === 'company' || input.home === 'repo'
+          ? input.home
+          : 'customer';
       let outcome: ShareResult['status'] | 'failed' = 'failed';
       try {
         live(input.brainId);
@@ -1011,6 +1014,7 @@ export function createBrainHandlers(
     },
     'brain:joinLink': async (id) => {
       const { sharing } = sharedBrain(id);
+      if (sharing.home === 'repo') return repoJoinLink(sharing.remoteUrl);
       return joinLink({
         organizationUrl: sharing.homeOrganizationUrl,
         project: sharing.homeProject,

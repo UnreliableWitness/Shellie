@@ -852,8 +852,10 @@ export type Channels = {
     args: [
       input: {
         brainId: string;
-        home: 'customer' | 'company';
+        /** `repo`: an empty repo the person made themselves (GitHub or any git host), named by `repoUrl`. */
+        home: 'customer' | 'company' | 'repo';
         repoName: string;
+        repoUrl?: string;
       },
     ];
     result:
@@ -861,7 +863,7 @@ export type Channels = {
       | { status: 'secrets'; files: string[] }
       | { status: 'syncing' };
   };
-  /** The `shellie://join?…` link of a shared brain (no token in it). */
+  /** The `shellie://join?…` link of a shared brain (no token in it); for a repo home it carries the repo's address. */
   'brain:joinLink': { args: [brainId: string]; result: string };
   /** Makes a shared brain local again; its folder, history and origin.json stay. */
   'brain:stopSharing': { args: [brainId: string]; result: void };
@@ -880,7 +882,7 @@ export type Channels = {
   };
   /** A member becomes the keeper; refused while the keeper's Shellie sent changes in the last 14 days. */
   'brain:takeOver': { args: [brainId: string]; result: void };
-  /** What a `shellie://join?…` link leads to; `pat` is a token typed for the link's organization (never stored here). */
+  /** What a `shellie://join?…` link, or a pasted repo address, leads to; `pat` is a token typed for the link's organization (never stored here). */
   'brain:previewJoin': {
     args: [link: string, pat?: string];
     result: JoinPreview;

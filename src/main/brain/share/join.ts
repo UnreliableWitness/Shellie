@@ -4,6 +4,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {
   BrainSchema,
@@ -13,14 +14,20 @@ import {
 import {
   joinLink,
   parseJoinLink,
+  parseRepoJoin,
+  repoHomeOf,
   type DiscoveredBrain,
   type JoinPreview,
   type Origin,
+  type RepoAddress,
 } from '../../../shared/brainShare';
 import { isGitAuthFailure } from '../../../shared/gitAuth';
 import type { Connection } from '../../../shared/types';
 import { AdoClient, AdoError } from '../../services/AdoClient';
-import { organizationOf } from '../../services/azureRepos';
+import {
+  organizationOf,
+  parseAzureReposRemote,
+} from '../../services/azureRepos';
 import { GitError, type GitClient } from '../../services/GitClient';
 import { azureHeaderScope, extraHeaderEnv } from '../../services/gitAuth';
 import { JOIN_MESSAGE } from '../brainCommits';
@@ -29,6 +36,7 @@ import { withBrainGit } from '../gitMutex';
 import { isBrainFolder } from '../scaffold';
 import type { BrainHomeStore } from './BrainHomeStore';
 import { parseOrigin, readShared, upsertMember } from './files';
+import { cantReach } from './share';
 import { setCommitIdentity } from './keeper';
 
 const ORIGIN_PATH = '/brain/origin.json';
@@ -57,6 +65,8 @@ export type JoinDeps = {
   installId: () => Promise<string>;
   /** The Azure DevOps client of an organization; tests pass a fake. */
   ado?: (organizationUrl: string, token: () => Promise<string>) => JoinAdo;
+  /** Reads a pasted repo address; tests pass one that takes a local folder as the server. */
+  parseRepo?: (url: string) => RepoAddress | null;
   now?: () => Date;
 };
 
@@ -147,7 +157,87 @@ type Inspected =
       repo: Awaited<ReturnType<JoinAdo['repositoryById']>>;
       connection: JoinConnection | null;
       alreadyHave: boolean;
+      /** A repo of the keeper's own (GitHub, …), joined by its address: git signs in by itself there. */
+      own?: true;
     };
+
+/**
+ * `brain/origin.json` of a repo on any git host, read through a shallow clone without files in a scratch folder
+ * (git has no call for one file); null when the repo holds none. Git signs in as it does on this machine.
+ */
+async function originTextOf(
+  git: GitClient,
+  repo: RepoAddress,
+): Promise<string | null> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'shellie-join-'));
+  const env = { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' };
+  try {
+    const at = path.join(tmp, 'peek');
+    try {
+      await git.run(
+        tmp,
+        [
+          'clone',
+          '--quiet',
+          '--depth',
+          '1',
+          '--no-checkout',
+          '--filter=blob:none',
+          '--',
+          repo.remoteUrl,
+          at,
+        ],
+        { env, timeoutMs: CLONE_TIMEOUT_MS },
+      );
+    } catch (e) {
+      throw new Error(cantReach(repo, e));
+    }
+    return await git
+      .run(at, ['show', 'HEAD:brain/origin.json'], {
+        env,
+        timeoutMs: CLONE_TIMEOUT_MS,
+      })
+      .catch(() => null);
+  } finally {
+    await fs
+      .rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      .catch(() => undefined);
+  }
+}
+
+async function inspectOwnRepo(
+  d: JoinDeps,
+  repo: RepoAddress,
+): Promise<Inspected> {
+  if (parseAzureReposRemote(repo.remoteUrl))
+    throw new Error(
+      'A brain in Azure DevOps is joined by its join link: ask the keeper to copy it',
+    );
+  const text = await originTextOf(d.git, repo);
+  if (text === null) throw new Error('This repo holds no shared brain');
+  const origin = parseOrigin(text);
+  if (!origin) throw new Error("This brain's origin.json could not be read");
+  const connection = connectionFor(d, origin);
+  const home = repoHomeOf(repo);
+  return {
+    needsToken: false,
+    link: { ...home, repositoryId: '' },
+    token: async () => '',
+    origin,
+    repo: {
+      id: '',
+      name: repo.name,
+      remoteUrl: repo.remoteUrl,
+      project: home.project,
+      defaultBranch: null,
+    },
+    connection,
+    alreadyHave: connection
+      ? haveBrain(d, connection.id, origin.project)
+      : false,
+    own: true,
+  };
+}
 
 async function inspect(
   d: JoinDeps,
@@ -155,7 +245,13 @@ async function inspect(
   pat: string | undefined,
 ): Promise<Inspected> {
   const link = parseJoinLink(url);
-  if (!link) throw new Error('This is not a Shellie join link');
+  if (!link) {
+    const own = parseRepoJoin(url, d.parseRepo);
+    if (own) return inspectOwnRepo(d, own);
+    throw new Error(
+      'This is not a Shellie join link or the address of a git repo',
+    );
+  }
   const token = tokenFor(d, link, pat);
   if (!token) return { needsToken: true, link };
   const ado = (d.ado ?? realAdo)(link.organizationUrl, token);
@@ -255,9 +351,10 @@ export async function joinBrain(
     const shared = await readShared(dir);
     const installId = await d.installId();
     const person = connection.user ?? 'Shellie';
-    const home: BrainSharing['home'] =
-      sameOrg(i.link.organizationUrl, origin.organizationUrl) &&
-      sameName(i.link.project, origin.project)
+    const home: BrainSharing['home'] = i.own
+      ? 'repo'
+      : sameOrg(i.link.organizationUrl, origin.organizationUrl) &&
+          sameName(i.link.project, origin.project)
         ? 'customer'
         : 'company';
     const brain = BrainSchema.parse({
@@ -336,8 +433,10 @@ async function clone(
   const scope = azureHeaderScope(remoteUrl);
   const env = scope ? extraHeaderEnv(scope, await token()) : {};
   try {
-    await git.run(cwd, ['clone', '--quiet', '--', remoteUrl, dir], {
-      env,
+    // The same line endings on every machine: git for Windows would check a brain out with CRLF otherwise.
+    const args = ['clone', '--quiet', '-c', 'core.autocrlf=false'];
+    await git.run(cwd, [...args, '--', remoteUrl, dir], {
+      env: scope ? env : { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' },
       timeoutMs: CLONE_TIMEOUT_MS,
     });
   } catch (e) {

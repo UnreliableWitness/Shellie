@@ -172,6 +172,16 @@ describe('brainHealth', () => {
     ]);
   });
 
+  it('stops at a /sync that changed no page', async () => {
+    await write('wiki/a.md', 'a\n');
+    await commit('Edited outside a capture');
+    // The sync found nothing to change in wiki/: only its record moved.
+    await write('log.md', 'synced\n');
+    await commit('Brain: sync');
+    const h = await brainHealth(dir, git, today, false);
+    expect(h.outsideEdits).toEqual([]);
+  });
+
   it("merges Shellie's own findings with the lint's, dropping the kinds Shellie computes", async () => {
     const a = await addSource(git, dir, { text: 'a', title: 'A' }, 'note');
     if (!a.ok) throw new Error('add failed');

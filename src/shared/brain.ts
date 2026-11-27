@@ -68,7 +68,8 @@ export type BrainWiki = z.infer<typeof BrainWikiSchema>;
 
 /** Where a shared brain lives and how it is doing; null on a brain that is not shared. Re-exported by brainShare. */
 export const BrainSharingSchema = z.object({
-  home: z.enum(['customer', 'company']),
+  /** `repo`: a git repo the person made themselves on any host (GitHub, …), named by its address; no `repositoryId`. */
+  home: z.enum(['customer', 'company', 'repo']),
   remoteUrl: z.string(),
   repositoryId: z.string(),
   homeOrganizationUrl: z.string(),

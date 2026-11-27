@@ -567,3 +567,123 @@ describe('the old history', () => {
     expect(brains.get('a')?.sharing?.lastPullAt).not.toBeNull();
   });
 });
+
+describe("shareBrain to a repo of the person's own", () => {
+  const local = (url: string) =>
+    url.startsWith('nope')
+      ? null
+      : { remoteUrl: url, host: 'github.com', owner: 'acme', name: 'brain' };
+  const synced = async () => {
+    const at = await head();
+    await writeState(dir, (s) => ({ ...s, lastSyncCommit: at }));
+    await commit('Brain: sync');
+  };
+
+  it('pushes the brain to the empty repo, makes no Azure DevOps repo, and gives a link with the address', async () => {
+    await synced();
+    const r = await shareBrain(deps({ parseRepo: local }), {
+      brainId: 'a',
+      home: 'repo',
+      repoName: '',
+      repoUrl: server,
+    });
+    expect(r).toEqual({
+      status: 'shared',
+      joinLink: `shellie://join?url=${encodeURIComponent(server)}`,
+    });
+    expect(made).toEqual([]);
+    expect((await onServer(['log', '-1', '--format=%s', 'main'])).trim()).toBe(
+      'Brain: shared',
+    );
+    expect(brains.get('a')?.sharing).toMatchObject({
+      home: 'repo',
+      remoteUrl: server,
+      repositoryId: '',
+      homeOrganizationUrl: 'https://github.com/acme',
+      homeProject: 'brain',
+      status: 'ok',
+    });
+    // Git signs in by itself there: the brain's own connection is named, never the brain home.
+    expect(connectionIdForBrain(brains.list(), dir)).toBe('c');
+  });
+
+  it('refuses a repo that already has commits, and leaves the brain local', async () => {
+    await synced();
+    const other = path.join(root, 'other');
+    await git.run(root, ['clone', '-q', server, other]);
+    await fs.writeFile(path.join(other, 'README.md'), '# hi\n');
+    await git.run(other, ['add', '-A']);
+    await git.run(other, [
+      '-c',
+      'user.name=x',
+      '-c',
+      'user.email=x@x',
+      'commit',
+      '-q',
+      '-m',
+      'readme',
+    ]);
+    await git.run(other, ['push', '-q', 'origin', 'HEAD:main']);
+    const before = await head();
+    await expect(
+      shareBrain(deps({ parseRepo: local }), {
+        brainId: 'a',
+        home: 'repo',
+        repoName: '',
+        repoUrl: server,
+      }),
+    ).rejects.toThrow(/already has commits/);
+    expect(await head()).toBe(before);
+    expect(brains.get('a')?.sharing).toBeNull();
+    expect(await git.remotes(dir)).toEqual([]);
+  });
+
+  it('refuses an address that is not a repo, an Azure DevOps one, and a repo git cannot reach', async () => {
+    await synced();
+    const share = (repoUrl: string, d = deps({ parseRepo: local })) =>
+      shareBrain(d, { brainId: 'a', home: 'repo', repoName: '', repoUrl });
+    await expect(share('nope')).rejects.toThrow(/Enter the repo's address/);
+    await expect(
+      share('https://dev.azure.com/customer/Webshop/_git/brain', deps()),
+    ).rejects.toThrow(/choose the customer project/);
+    await expect(share(path.join(root, 'nowhere.git'))).rejects.toThrow(
+      /can't open acme\/brain on github.com/,
+    );
+    expect(brains.get('a')?.sharing).toBeNull();
+  });
+});
+
+describe('the sync before a share', () => {
+  it('is not asked for again after a /sync that ended well, even when it recorded nothing', async () => {
+    // Captures and no lastSyncCommit: a sync is due.
+    await writeState(dir, (s) => ({
+      ...s,
+      captured: {
+        'sources/a.md': { at: '2026-11-12T09:00:00.000Z', sessionId: null },
+      },
+    }));
+    await commit('Brain: capture sources/a.md');
+    const d = deps();
+    const input = { brainId: 'a', home: 'company', repoName: 'x' } as const;
+    expect(await shareBrain(d, input)).toEqual({ status: 'syncing' });
+    // The /sync ran and ended well, but wrote no lastSyncCommit and made no commit.
+    const job = d.runner.jobs('a')[0];
+    job.status = 'done';
+    job.endedAt = new Date(Date.now() + 1000).toISOString();
+    expect((await shareBrain(d, input)).status).toBe('shared');
+    expect(enqueued).toEqual([['a', 'sync']]);
+  });
+
+  it('is asked for again when the wiki changed after that /sync', async () => {
+    const d = deps();
+    d.runner.enqueue('a', 'sync');
+    enqueued = [];
+    const job = d.runner.jobs('a')[0];
+    job.status = 'done';
+    job.endedAt = new Date(Date.now() - 60_000).toISOString();
+    await write('wiki/x.md', '# X\n\nEdited by hand, not committed.\n');
+    expect(
+      await shareBrain(d, { brainId: 'a', home: 'company', repoName: 'x' }),
+    ).toEqual({ status: 'syncing' });
+  });
+});

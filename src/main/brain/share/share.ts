@@ -4,15 +4,25 @@
  */
 import fs from 'node:fs/promises';
 import type { BrainSharing } from '../../../shared/brain';
-import { isKeeper, joinLink, sharedFactsOf } from '../../../shared/brainShare';
+import {
+  isKeeper,
+  joinLink,
+  parseRepoUrl,
+  repoHomeOf,
+  repoJoinLink,
+  sharedFactsOf,
+  type RepoAddress,
+} from '../../../shared/brainShare';
+import { isGitAuthFailure } from '../../../shared/gitAuth';
 import type { Connection } from '../../../shared/types';
 import { AdoClient } from '../../services/AdoClient';
-import type { GitClient } from '../../services/GitClient';
+import { parseAzureReposRemote } from '../../services/azureRepos';
+import { GitError, type GitClient } from '../../services/GitClient';
 import { PENDING } from '../bookPass';
 import { LEAVE_MESSAGE, SHARE_MESSAGE } from '../brainCommits';
 import type { BrainStore } from '../BrainStore';
 import { withBrainGit } from '../gitMutex';
-import { isSyncCommit, outsideEdits } from '../health';
+import { isSyncCommit, outsideEdits, uncommittedWikiEdits } from '../health';
 import type { BrainJobRunner } from '../jobs';
 import { absPath } from '../paths';
 import { READS_RECORD } from '../reads';
@@ -59,7 +69,19 @@ export type ShareDeps = {
     organizationUrl: string,
     token: () => Promise<string>,
   ) => Pick<AdoClient, 'createRepository'>;
+  /** Reads a pasted repo address; tests pass one that takes a local folder as the server. */
+  parseRepo?: (url: string) => RepoAddress | null;
   now?: () => Date;
+};
+
+export type ShareInput = {
+  brainId: string;
+  /** `repo`: a repo the person made themselves (GitHub or any git host), named by `repoUrl`. */
+  home: 'customer' | 'company' | 'repo';
+  /** The name of the repo to create (the two Azure DevOps homes). */
+  repoName: string;
+  /** The address of the existing, empty repo (the `repo` home). */
+  repoUrl?: string;
 };
 
 export type ShareResult =
@@ -74,8 +96,23 @@ const realAdo: NonNullable<ShareDeps['ado']> = (org, token) =>
  * True when a /sync must run before the share: outside edits Health lists, or commits to sources/ or wiki/ since
  * `lastSyncCommit` other than a /sync's own (any capture at all when there is none). The shared history starts
  * afresh, so /sync could not see those changes later.
+ *
+ * `syncedAt` (when the last /sync job of this app session ended well): nothing committed to sources/ or wiki/ after
+ * it, and nothing uncommitted in wiki/, means that sync saw everything, whatever it wrote or left out (a /sync that
+ * did not record `lastSyncCommit` once asked for a sync before every share, for good).
  */
-async function needsSync(git: GitClient, dir: string): Promise<boolean> {
+async function needsSync(
+  git: GitClient,
+  dir: string,
+  syncedAt: number | null,
+): Promise<boolean> {
+  if (syncedAt !== null && !(await uncommittedWikiEdits(dir, git)).length) {
+    const last = await git
+      .run(dir, ['log', '-1', '--format=%ct', '--', 'sources/', 'wiki/'])
+      .catch(() => '');
+    const at = Number(last.trim()) * 1000;
+    if (Number.isFinite(at) && at <= syncedAt) return false;
+  }
   if ((await outsideEdits(dir, git)).length) return true;
   const { state } = await readState(dir);
   const last = state?.lastSyncCommit ?? null;
@@ -97,6 +134,52 @@ async function needsSync(git: GitClient, dir: string): Promise<boolean> {
     .some((subject) => subject.trim() && !isSyncCommit(subject));
 }
 
+/** When the brain's last /sync job that ended well ended (epoch ms), null when there was none this session. */
+const lastSyncDone = (d: ShareDeps, brainId: string): number | null => {
+  let at: number | null = null;
+  for (const j of d.runner.jobs(brainId)) {
+    if (j.kind !== 'sync' || j.status !== 'done' || !j.endedAt) continue;
+    const t = Date.parse(j.endedAt);
+    if (Number.isFinite(t) && (at === null || t > at)) at = t;
+  }
+  return at;
+};
+
+/** A repo of the person's own must be reachable by this machine's git and hold nothing yet. */
+async function requireEmptyRepo(
+  git: GitClient,
+  dir: string,
+  repo: RepoAddress,
+): Promise<void> {
+  let heads: string;
+  try {
+    heads = await git.run(dir, ['ls-remote', '--heads', '--', repo.remoteUrl], {
+      timeoutMs: git.fetchTimeoutMs,
+      env: { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' },
+    });
+  } catch (e) {
+    throw new Error(cantReach(repo, e));
+  }
+  if (heads.trim())
+    throw new Error(
+      `${repo.owner}/${repo.name} already has commits. Share needs an empty repo (made without a README); a repo that already holds a brain is joined, not shared to.`,
+    );
+}
+
+/** Why git could not reach a repo of the person's own, in words that say what to do. */
+export function cantReach(repo: RepoAddress, e: unknown): string {
+  const stderr = e instanceof GitError ? e.stderr.trim() : '';
+  const where = `${repo.owner}/${repo.name} on ${repo.host}`;
+  if (
+    isGitAuthFailure(stderr) ||
+    /repository not found|permission denied|could not read from remote/i.test(
+      stderr,
+    )
+  )
+    return `Git on this machine can't open ${where}. Check the address and that you have access, and sign git in to ${repo.host} (for GitHub: "gh auth login", or Git Credential Manager).`;
+  return `Can't reach ${where}: ${stderr || (e as Error).message}`;
+}
+
 const localConfig = (git: GitClient, dir: string, key: string) =>
   git
     .run(dir, ['config', '--local', '--get', key])
@@ -112,18 +195,28 @@ const localConfig = (git: GitClient, dir: string, key: string) =>
  */
 export async function shareBrain(
   d: ShareDeps,
-  i: { brainId: string; home: 'customer' | 'company'; repoName: string },
+  i: ShareInput,
 ): Promise<ShareResult> {
   const now = (d.now ?? (() => new Date()))();
   const b = d.brains.get(i.brainId);
   if (!b) throw new Error(`Unknown brain ${i.brainId}`);
   if (b.sharing) throw new Error('Already shared');
-  const repoName = i.repoName.trim();
+  const own =
+    i.home === 'repo' ? (d.parseRepo ?? parseRepoUrl)(i.repoUrl ?? '') : null;
+  if (i.home === 'repo' && !own)
+    throw new Error(
+      "Enter the repo's address, like https://github.com/acme/project-brain",
+    );
+  if (own && parseAzureReposRemote(own.remoteUrl))
+    throw new Error(
+      'For a repo in Azure DevOps, choose the customer project or the company brain home instead',
+    );
+  const repoName = own ? own.name : i.repoName.trim();
   if (!repoName) throw new Error('Enter a repo name');
   const dir = b.path;
   if (d.runner.running(b.id)) throw new Error(BUSY);
 
-  if (await needsSync(d.git, dir)) {
+  if (await needsSync(d.git, dir, lastSyncDone(d, b.id))) {
     const waiting = d.runner
       .jobs(b.id)
       .some((j) => j.kind === 'sync' && PENDING.has(j.status));
@@ -142,26 +235,33 @@ export async function shareBrain(
   const company = i.home === 'company' ? d.home.get() : null;
   if (i.home === 'company' && !company)
     throw new Error('Set up the company brain home first');
-  const home = company
-    ? {
-        organizationUrl: company.organizationUrl,
-        project: company.project,
-        token: () => d.home.token(),
-      }
-    : {
-        organizationUrl: connection.organizationUrl,
-        project: b.project,
-        token: () => d.connections.token(b.connectionId),
-      };
+  const home = own
+    ? { ...repoHomeOf(own), token: async () => '' }
+    : company
+      ? {
+          organizationUrl: company.organizationUrl,
+          project: company.project,
+          token: () => d.home.token(),
+        }
+      : {
+          organizationUrl: connection.organizationUrl,
+          project: b.project,
+          token: () => d.connections.token(b.connectionId),
+        };
   const installId = await d.installId();
   const person = connection.user ?? 'Shellie';
 
-  const repo = await (d.ado ?? realAdo)(
-    home.organizationUrl,
-    home.token,
-  ).createRepository(home.project, repoName);
+  if (own) await requireEmptyRepo(d.git, dir, own);
+  const repo = own
+    ? { id: '', remoteUrl: own.remoteUrl }
+    : await (d.ado ?? realAdo)(
+        home.organizationUrl,
+        home.token,
+      ).createRepository(home.project, repoName);
 
-  const nothingShared = `Nothing was shared; the empty repo ${repoName} can be deleted in Azure DevOps.`;
+  const nothingShared = own
+    ? 'Nothing was shared.'
+    : `Nothing was shared; the empty repo ${repoName} can be deleted in Azure DevOps.`;
   await withBrainLock(
     dir,
     () =>
@@ -171,7 +271,7 @@ export async function shareBrain(
         // A commit made since the checks (a source added meanwhile) is checked too, before anything is written.
         if (
           before !== scanned &&
-          ((await needsSync(git, dir)) ||
+          ((await needsSync(git, dir, lastSyncDone(d, b.id))) ||
             (await treeSecretFiles(dir, before)).length)
         )
           throw new Error(
@@ -289,11 +389,13 @@ export async function shareBrain(
   );
   return {
     status: 'shared',
-    joinLink: joinLink({
-      organizationUrl: home.organizationUrl,
-      project: home.project,
-      repositoryId: repo.id,
-    }),
+    joinLink: own
+      ? repoJoinLink(own.remoteUrl)
+      : joinLink({
+          organizationUrl: home.organizationUrl,
+          project: home.project,
+          repositoryId: repo.id,
+        }),
   };
 }
 

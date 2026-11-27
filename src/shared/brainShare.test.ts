@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { BrainSchema } from './brain';
-import { isKeeper, joinLink, parseJoinLink } from './brainShare';
+import {
+  isJoinLink,
+  isKeeper,
+  joinLink,
+  parseJoinLink,
+  parseRepoJoin,
+  parseRepoUrl,
+  repoHomeOf,
+  repoJoinLink,
+} from './brainShare';
 
 describe('join link', () => {
   it('round-trips an organization url with spaces and ampersands', () => {
@@ -61,5 +70,71 @@ describe('isKeeper', () => {
     };
     expect(isKeeper(origin, 'a')).toBe(true);
     expect(isKeeper(origin, 'b')).toBe(false);
+  });
+});
+
+describe('a repo address', () => {
+  it('reads https, ssh and scp-style addresses', () => {
+    expect(parseRepoUrl(' https://github.com/acme/project-brain.git ')).toEqual(
+      {
+        remoteUrl: 'https://github.com/acme/project-brain.git',
+        host: 'github.com',
+        owner: 'acme',
+        name: 'project-brain',
+      },
+    );
+    expect(parseRepoUrl('git@github.com:acme/brain.git')).toMatchObject({
+      host: 'github.com',
+      owner: 'acme',
+      name: 'brain',
+    });
+    expect(parseRepoUrl('ssh://git@gitlab.com/a/b/brain')).toMatchObject({
+      host: 'gitlab.com',
+      owner: 'a/b',
+      name: 'brain',
+    });
+    expect(repoHomeOf(parseRepoUrl('https://github.com/acme/brain')!)).toEqual({
+      organizationUrl: 'https://github.com/acme',
+      project: 'brain',
+    });
+  });
+
+  it('refuses anything else', () => {
+    for (const bad of [
+      '',
+      'acme/brain',
+      'http://github.com/acme/brain',
+      'https://user:secret@github.com/acme/brain',
+      'https://token@github.com/acme/brain',
+      'https://github.com/acme',
+      'https://github.com/acme/brain?x=1',
+      '--upload-pack=evil',
+      'ext::sh -c evil',
+      'file:///tmp/repo',
+      '/tmp/repo',
+      'https://github.com/acme/brain and more',
+    ])
+      expect(parseRepoUrl(bad), bad).toBeNull();
+  });
+
+  it('round-trips through a join link, and is a join link only in its shellie form', () => {
+    const url = 'https://github.com/acme/project-brain.git';
+    const link = repoJoinLink(url);
+    expect(parseRepoJoin(link)?.remoteUrl).toBe(url);
+    expect(parseRepoJoin(url)?.remoteUrl).toBe(url);
+    expect(parseRepoJoin('shellie://join?url=file%3A%2F%2F%2Ftmp')).toBeNull();
+    expect(parseRepoJoin('shellie://other?url=x')).toBeNull();
+    expect(isJoinLink(link)).toBe(true);
+    expect(isJoinLink(url)).toBe(false);
+    expect(parseJoinLink(link)).toBeNull();
+    expect(
+      isJoinLink(
+        joinLink({
+          organizationUrl: 'https://dev.azure.com/o',
+          project: 'p',
+          repositoryId: 'r',
+        }),
+      ),
+    ).toBe(true);
   });
 });
