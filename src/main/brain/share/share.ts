@@ -97,7 +97,7 @@ export type ShareResult =
   | { status: 'secrets'; files: string[] }
   | { status: 'syncing' }
   /** Nothing on this machine opens the repo (the `repo` home): ask again with a token for `host`. */
-  | { status: 'needsToken'; host: string };
+  | { status: 'needsToken'; host: string; tried: string[] };
 
 const realAdo: NonNullable<ShareDeps['ado']> = (org, token) =>
   new AdoClient(org, token);
@@ -195,7 +195,8 @@ export async function shareBrain(
   let opened: FoundSignIn | null = null;
   if (own) {
     const found = await findSignIn(d.signIn, d.git, dir, own, i.repoToken);
-    if (found === 'needsToken') return { status: 'needsToken', host: own.host };
+    if (found.needsToken)
+      return { status: 'needsToken', host: own.host, tried: found.tried };
     if (found.heads.trim())
       throw new Error(
         `${own.owner}/${own.name} already has commits. Share needs an empty repo (made without a README); a repo that already holds a brain is joined, not shared to.`,

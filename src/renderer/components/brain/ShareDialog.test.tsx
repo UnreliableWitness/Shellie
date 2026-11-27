@@ -127,7 +127,14 @@ describe('ShareDialog', () => {
     const a = setup({
       'brain:share': () =>
         asked++ === 0
-          ? { status: 'needsToken', host: 'github.com' }
+          ? {
+              status: 'needsToken',
+              host: 'github.com',
+              tried: [
+                'git as it is signed in on this machine',
+                'the GitHub CLI account personal',
+              ],
+            }
           : { status: 'shared', joinLink: 'shellie://join?url=x' },
     });
     render(
@@ -144,7 +151,9 @@ describe('ShareDialog', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Share' }));
     expect(
-      await screen.findByText(/Nothing on this machine can open that repo/),
+      await screen.findByText(
+        /Nothing on this machine can open that repo on github.com\. Tried: git as it is signed in on this machine; the GitHub CLI account personal\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Share' })).toBeDisabled();
     await userEvent.type(screen.getByLabelText('Token'), 'github_pat_1');

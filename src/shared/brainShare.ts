@@ -223,6 +223,8 @@ export type JoinPreview = {
   alreadyHave: boolean;
   /** The brain is in a repo of the keeper's own (GitHub, …): the token asked for is one for that repo. */
   own?: boolean;
+  /** With `needsToken` on such a repo: the sign-ins that were tried and did not open it. */
+  tried?: string[];
 };
 
 /** A shared brain found in a connection's project (the Join card). */

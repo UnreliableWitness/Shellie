@@ -155,7 +155,12 @@ const denied = (origin: Origin, path: string, status?: number) =>
   );
 
 type Inspected =
-  | { needsToken: true; link: { organizationUrl: string }; own?: true }
+  | {
+      needsToken: true;
+      link: { organizationUrl: string };
+      own?: true;
+      tried?: string[];
+    }
   | {
       needsToken: false;
       link: { organizationUrl: string; project: string; repositoryId: string };
@@ -224,8 +229,8 @@ async function inspectOwnRepo(
     );
   const home = repoHomeOf(repo);
   const found = await findSignIn(d.signIn, d.git, os.tmpdir(), repo, pat);
-  if (found === 'needsToken')
-    return { needsToken: true, link: home, own: true };
+  if (found.needsToken)
+    return { needsToken: true, link: home, own: true, tried: found.tried };
   const text = found.heads.trim()
     ? await originTextOf(d.git, repo, found.env)
     : null;
@@ -316,7 +321,7 @@ export async function previewJoin(
       connectionId: null,
       needsToken: true,
       alreadyHave: false,
-      ...(i.own ? { own: true } : {}),
+      ...(i.own ? { own: true, tried: i.tried ?? [] } : {}),
     };
   return {
     name: i.origin.name,

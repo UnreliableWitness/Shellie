@@ -13,7 +13,7 @@ type Result =
   | { status: 'syncing'; since: number; again: boolean }
   | { status: 'secrets'; files: string[] }
   /** Nothing on this machine opens the repo: a token for `host` is asked for. */
-  | { status: 'needsToken'; host: string }
+  | { status: 'needsToken'; host: string; tried: string[] }
   | { status: 'shared'; joinLink: string };
 
 /** Share a local brain: where it lives, its name there, what goes along. A card in the page, not an overlay. */
@@ -87,7 +87,7 @@ export function ShareDialog({
           : r.status === 'secrets'
             ? { status: 'secrets', files: r.files }
             : r.status === 'needsToken'
-              ? { status: 'needsToken', host: r.host }
+              ? { status: 'needsToken', host: r.host, tried: r.tried }
               : { status: 'shared', joinLink: r.joinLink },
       );
     } catch (e) {
@@ -228,6 +228,8 @@ export function ShareDialog({
                   />
                   <p className="small" role="alert">
                     Nothing on this machine can open that repo on {result.host}.
+                    {result.tried.length > 0 &&
+                      ` Tried: ${result.tried.join('; ')}.`}{' '}
                     Check the address, or enter a token that can read and write
                     it (for GitHub: a fine-grained personal access token with
                     Contents: read and write). Shellie keeps it encrypted.

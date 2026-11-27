@@ -83,6 +83,9 @@ export type FoundSignIn = {
   heads: string;
 };
 
+/** Nothing here opens the repo; `tried` names what was tried, for the person to read. */
+export type NeedsToken = { needsToken: true; tried: string[] };
+
 /**
  * Finds a sign-in that opens the repo: the typed `token` alone when one is given; else git as it is, then each
  * GitHub CLI account of the host. `needsToken`: an https repo nothing here can open, so the person types a token.
@@ -94,7 +97,7 @@ export async function findSignIn(
   cwd: string,
   repo: RepoAddress,
   token?: string,
-): Promise<FoundSignIn | 'needsToken'> {
+): Promise<(FoundSignIn & { needsToken?: false }) | NeedsToken> {
   const heads = (env: Record<string, string>) =>
     git.run(cwd, ['ls-remote', '--heads', '--', repo.remoteUrl], {
       timeoutMs: git.fetchTimeoutMs,
@@ -121,7 +124,12 @@ export async function findSignIn(
       throw new Error(cantReach(repo, e));
     first = e;
   }
-  for (const user of await d.gh.accounts(repo.host).catch(() => [])) {
+  const tried = ['git as it is signed in on this machine'];
+  const accounts = await d.gh.accounts(repo.host).catch(() => []);
+  if (!accounts.length)
+    tried.push(`the GitHub CLI (no account for ${repo.host} found)`);
+  for (const user of accounts) {
+    tried.push(`the GitHub CLI account ${user}`);
     const t = await d.gh.token(repo.host, user).catch(() => null);
     if (!t) continue;
     const env = tokenEnv(repo, t);
@@ -131,7 +139,7 @@ export async function findSignIn(
       if (!isAccessFailure(e)) throw new Error(cantReach(repo, first));
     }
   }
-  return 'needsToken';
+  return { needsToken: true, tried };
 }
 
 /** Git's environment for a brain's recorded sign-in; empty when its token cannot be had (git then answers itself). */

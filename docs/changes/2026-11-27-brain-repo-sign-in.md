@@ -23,6 +23,10 @@ answers "Repository not found" for the work repo. No spec; the owner asked for s
   `x-access-token:<token>`) through `GIT_CONFIG_*` in git's environment, as for Azure Repos; never on a command line.
   `main.ts` puts `repoBrainEnv` in front of the Azure DevOps provider, so every fetch and push of such a brain
   (`BrainSync`) signs in the same way.
+- **What the person sees**: the token step lists what was tried ("git as it is signed in on this machine; the GitHub
+  CLI account …"), and a shared brain's sharing line says how it signs in ("signed in as <account> (GitHub CLI)",
+  "with the token you entered", "as git is on this machine"). There is no account picker: only an account that opens
+  the repo is ever used.
 - **The repo is checked before the sync**: Share opens the repo and checks it is empty before queueing a paid `/sync`.
 - `gh` is found on the person's PATH as the agents are (`Platform.probeCommand('gh')`), so a packaged app finds a
   Homebrew `gh`.

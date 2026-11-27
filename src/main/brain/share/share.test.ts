@@ -731,6 +731,10 @@ describe('the sign-in of a repo home', () => {
     expect(await shareBrain(d, input)).toEqual({
       status: 'needsToken',
       host: 'github.com',
+      tried: [
+        'git as it is signed in on this machine',
+        'the GitHub CLI (no account for github.com found)',
+      ],
     });
     expect(enqueued).toEqual([]);
     await expect(

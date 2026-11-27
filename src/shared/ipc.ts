@@ -865,7 +865,7 @@ export type Channels = {
       | { status: 'secrets'; files: string[] }
       | { status: 'syncing' }
       /** Nothing on this machine opens the repo: ask again with a token for `host`. */
-      | { status: 'needsToken'; host: string };
+      | { status: 'needsToken'; host: string; tried: string[] };
   };
   /** The `shellie://join?…` link of a shared brain (no token in it); for a repo home it carries the repo's address. */
   'brain:joinLink': { args: [brainId: string]; result: string };

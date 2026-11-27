@@ -95,9 +95,14 @@ describe('findSignIn', () => {
   });
 
   it('asks for a token when nothing opens an https repo, also without the GitHub CLI', async () => {
-    expect(await findSignIn(deps(), gitFor([]).git, '/', repo)).toBe(
-      'needsToken',
-    );
+    expect(await findSignIn(deps(), gitFor([]).git, '/', repo)).toEqual({
+      needsToken: true,
+      tried: [
+        'git as it is signed in on this machine',
+        'the GitHub CLI account personal',
+        'the GitHub CLI account work',
+      ],
+    });
     expect(
       await findSignIn(
         deps({ accounts: async () => Promise.reject(new Error('no gh')) }),
@@ -105,7 +110,13 @@ describe('findSignIn', () => {
         '/',
         repo,
       ),
-    ).toBe('needsToken');
+    ).toEqual({
+      needsToken: true,
+      tried: [
+        'git as it is signed in on this machine',
+        'the GitHub CLI (no account for github.com found)',
+      ],
+    });
   });
 
   it('takes a typed token alone, and says so when it does not open the repo', async () => {

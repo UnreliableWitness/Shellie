@@ -92,7 +92,7 @@ export function BrainJoinScreen({
             <span />
             <span className="small muted">
               {preview.own
-                ? `Nothing on this machine can open the repo at ${preview.organizationUrl}. Enter a token that can read and write it (for GitHub: a fine-grained personal access token with Contents: read and write). Shellie keeps it encrypted.`
+                ? `Nothing on this machine can open the repo at ${preview.organizationUrl}.${preview.tried?.length ? ` Tried: ${preview.tried.join('; ')}.` : ''} Check the address, or enter a token that can read and write it (for GitHub: a fine-grained personal access token with Contents: read and write). Shellie keeps it encrypted.`
                 : `A token for ${preview.organizationUrl}, with Code read and write. Shellie keeps it encrypted.`}
             </span>
             <span />
