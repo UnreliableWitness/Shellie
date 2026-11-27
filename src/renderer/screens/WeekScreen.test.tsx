@@ -167,21 +167,21 @@ describe('WeekScreen', () => {
     localStorage.clear();
   });
 
-  it('makes a card as tall as its time, on a scale of ten hours', async () => {
+  it("makes a card as tall as its time, on a scale that ends at the week's longest day", async () => {
     installFakeApi({ 'time:week': week });
     render(<WeekScreen />);
     await screen.findByRole('group', { name: /^Monday 16/ });
-    // 40 px per hour, less the 2 px gap under each card.
+    // No layout here, so an hour is its least, 40 px; a card is its time less the 2 px gap under it.
     expect(within(column(/^Monday 16/)).getByRole('button').style.height).toBe(
       '78px',
     );
     expect(
       within(column(/^Tuesday 17/)).getAllByRole('button')[0].style.height,
     ).toBe('18px');
-    expect(screen.getByTestId('week-axis').textContent).toBe('0 h12345678910');
+    expect(screen.getByTestId('week-axis').textContent).toBe('0 h12');
   });
 
-  it('stretches the scale for a day longer than ten hours', async () => {
+  it('runs the scale as far as a long day needs', async () => {
     const long = (weekStart: string): WeekTime => {
       const w = week(weekStart);
       const seconds = 14 * 3600 + 900;
@@ -200,6 +200,39 @@ describe('WeekScreen', () => {
       '568px',
     );
     expect(column(/^Monday 16/)).toHaveAccessibleName('Monday 16, 14.25 hours');
+  });
+
+  it('shares the height the page has over the hours of the scale, and again when it changes', async () => {
+    let pageHeight = 632;
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockImplementation(() => pageHeight);
+    const resized: (() => void)[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(onResize: () => void) {
+          resized.push(onResize);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      installFakeApi({ 'time:week': week });
+      render(<WeekScreen />);
+      await screen.findByRole('group', { name: /^Monday 16/ });
+      const monday = () => within(column(/^Monday 16/)).getByRole('button');
+      // Two hours on a scale of two: the card takes the whole 632 px, less its gap.
+      expect(monday().style.height).toBe('630px');
+      expect(screen.getByTestId('week-axis').style.height).toBe('632px');
+      pageHeight = 400;
+      act(() => resized.forEach((fn) => fn()));
+      expect(monday().style.height).toBe('398px');
+    } finally {
+      height.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('copies the id and title of a clicked card, and says so', async () => {
@@ -274,7 +307,7 @@ describe('WeekScreen', () => {
     );
   });
 
-  it('gives a card of minutes its true height and no text, and a one-hour card a single line', async () => {
+  it('gives a card of minutes a line with its text, out of the longer card of its day', async () => {
     const small = (weekStart: string): WeekTime => {
       const w = week(weekStart);
       w.rows[0].stretches[2] = [{ start: 400, seconds: 300 }];
@@ -284,14 +317,19 @@ describe('WeekScreen', () => {
     installFakeApi({ 'time:week': small });
     render(<WeekScreen />);
     await screen.findByRole('group', { name: /^Monday 16/ });
-    const [sliver, hour] = within(column(/^Wednesday 18/)).getAllByRole(
+    const [minutes, hour] = within(column(/^Wednesday 18/)).getAllByRole(
       'button',
     );
-    // Five minutes are 3 px on the scale: 1 px of card and its 2 px gap, so slivers never add height.
-    expect(sliver.style.height).toBe('1px');
-    expect(sliver).toHaveAttribute('data-size', 'xs');
-    // 38 px has no room for the hours above a title line: both go on one line.
-    expect(hour.style.height).toBe('38px');
+    // Five minutes are 3 px on the scale; the card gets a line (20 px with its gap) and shows its task.
+    expect(minutes.style.height).toBe('18px');
+    expect(minutes).toHaveAttribute('data-size', 's');
+    // Its hours would round to none, so it gives its minutes.
+    expect(minutes).toHaveTextContent('5 min12 Save a delivery address');
+    expect(minutes).toHaveAccessibleName(
+      '12 Save a delivery address, Wednesday, 5 minutes. Copy to the clipboard',
+    );
+    // The hour gives up what the minutes got: the day's 65 minutes still end at 43 px.
+    expect(hour.style.height).toBe('21px');
     expect(hour).toHaveAttribute('data-size', 's');
   });
 
