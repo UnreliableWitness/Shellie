@@ -672,6 +672,44 @@ export function BrainsForConnection({
         </div>
       )}
       <CreateBrainForm connection={connection} focus={focusNew} />
+      <JoinSharedBrain />
     </>
+  );
+}
+
+/** Join a colleague's brain by what they sent: a `shellie://join` link, or the address of the repo it lives in. */
+function JoinSharedBrain() {
+  const go = useStore((s) => s.go);
+  const id = useId();
+  const [link, setLink] = useState('');
+  return (
+    <form
+      className="conn-form"
+      aria-label="Join a shared brain"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (link.trim()) go({ kind: 'brain-join', link: link.trim() });
+      }}
+    >
+      <label htmlFor={id}>Join a shared brain</label>
+      <input
+        id={id}
+        className="field mono"
+        placeholder="shellie://join?… or https://github.com/acme/project-brain"
+        value={link}
+        onChange={(e) => setLink(e.target.value)}
+      />
+      <span />
+      <span className="small muted">
+        The join link a colleague sent, or the address of the repo their brain
+        lives in.
+      </span>
+      <span />
+      <div className="actions">
+        <button type="submit" className="btn btn-sm" disabled={!link.trim()}>
+          Join
+        </button>
+      </div>
+    </form>
   );
 }

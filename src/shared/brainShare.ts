@@ -109,6 +109,83 @@ export function parseJoinLink(
   return { organizationUrl, project, repositoryId };
 }
 
+/** A git repo by its address: where it is, and the two names shown for it (`owner`/`name`). */
+export type RepoAddress = {
+  remoteUrl: string;
+  host: string;
+  owner: string;
+  name: string;
+};
+
+const repoPath = (p: string): { owner: string; name: string } | null => {
+  const parts = p.split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+  const name = parts[parts.length - 1].replace(/\.git$/i, '');
+  if (!name) return null;
+  return { owner: parts.slice(0, -1).join('/'), name };
+};
+
+/**
+ * A repo address a person pastes: `https://host/owner/repo[.git]`, `ssh://[user@]host/owner/repo` or
+ * `user@host:owner/repo`. Null for anything else: http, an address with a password in it, a local path, an option.
+ */
+export function parseRepoUrl(text: string): RepoAddress | null {
+  const t = text.trim();
+  if (!t || t.startsWith('-') || /\s/.test(t)) return null;
+  const scp = /^([A-Za-z0-9._-]+)@([A-Za-z0-9.-]+):(?!\/)([^:]+)$/.exec(t);
+  if (scp) {
+    const at = repoPath(scp[3]);
+    return at ? { remoteUrl: t, host: scp[2].toLowerCase(), ...at } : null;
+  }
+  let u: URL;
+  try {
+    u = new URL(t);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'ssh:') return null;
+  if (u.password || (u.protocol === 'https:' && u.username)) return null;
+  if (u.search || u.hash) return null;
+  const at = repoPath(decodeURIComponent(u.pathname));
+  return at ? { remoteUrl: t, host: u.host.toLowerCase(), ...at } : null;
+}
+
+/** The join link of a brain shared in a repo of the person's own: `shellie://join?url=<address>`. */
+export const repoJoinLink = (remoteUrl: string): string =>
+  `${JOIN_PREFIX}url=${encodeURIComponent(remoteUrl)}`;
+
+/** The repo a `shellie://join?url=…` link names, or the repo of an address pasted as it is; null for anything else. */
+export function parseRepoJoin(
+  text: string,
+  parse: (url: string) => RepoAddress | null = parseRepoUrl,
+): RepoAddress | null {
+  const t = text.trim();
+  if (!t.toLowerCase().startsWith('shellie:')) return parse(t);
+  let u: URL;
+  try {
+    u = new URL(t);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'shellie:' || u.hostname !== 'join') return null;
+  const url = u.searchParams.get('url');
+  return url ? parse(url) : null;
+}
+
+/** A `shellie://join?…` link of either kind (what the operating system hands the app). */
+export const isJoinLink = (text: string): boolean =>
+  parseJoinLink(text) !== null ||
+  (text.trim().toLowerCase().startsWith('shellie:') &&
+    parseRepoJoin(text) !== null);
+
+/** How a repo home is recorded and shown: `https://<host>/<owner>` as the organization, the repo's name as the project. */
+export const repoHomeOf = (
+  a: RepoAddress,
+): { organizationUrl: string; project: string } => ({
+  organizationUrl: `https://${a.host}/${a.owner}`,
+  project: a.name,
+});
+
 export const isKeeper = (origin: Origin, installId: string): boolean =>
   origin.keeper.installId === installId;
 

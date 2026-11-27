@@ -216,8 +216,9 @@ export function SharingControls({ brain }: { brain: BrainView }) {
         <div className="conn-confirm" role="status">
           <span>
             This brain becomes local again. Its folder and history stay; what
-            colleagues already have stays with them. The repo stays; delete it
-            in Azure DevOps to end it for everyone.
+            colleagues already have stays with them. The repo stays; delete it{' '}
+            {sharing.home === 'repo' ? 'on its host' : 'in Azure DevOps'} to end
+            it for everyone.
           </span>
           <button
             type="button"

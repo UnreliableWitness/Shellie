@@ -28,30 +28,11 @@ const SUBJECT = '\u0001';
 /** Non-ASCII page names as they are, not octal-quoted. */
 const RAW = ['-c', 'core.quotepath=off'];
 
-/**
- * Files under wiki/ changed by commits other than Shellie's since the last /sync commit (or the whole history when
- * there is none), plus uncommitted changes there. Outside edits a job start commits ('Edited outside a capture')
- * stay listed until a /sync.
- */
-export async function outsideEdits(brainDir: string, git: GitClient) {
-  const found = new Set<string>();
-  const log = await git
-    .run(brainDir, [
-      ...RAW,
-      'log',
-      `--format=${SUBJECT}%s`,
-      '--name-only',
-      '--',
-      'wiki/',
-    ])
-    .catch(() => '');
-  // Newest first: stop at the first sync.
-  for (const block of log.split(SUBJECT).slice(1)) {
-    const [subject, ...files] = block.split('\n');
-    if (isSyncCommit(subject)) break;
-    if (isBrainCommit(subject)) continue;
-    for (const f of files) if (f.trim()) found.add(f.trim());
-  }
+/** Uncommitted changes under wiki/ (new files too), as paths. */
+export async function uncommittedWikiEdits(
+  brainDir: string,
+  git: GitClient,
+): Promise<string[]> {
   // No optional locks: Health must never hold .git/index.lock while a job or source commits.
   // -z: NUL-separated records with the path as it is (never quoted); a rename record is followed by the old path.
   const status = await git
@@ -66,13 +47,40 @@ export async function outsideEdits(brainDir: string, git: GitClient) {
       'wiki/',
     ])
     .catch(() => '');
+  const found: string[] = [];
   const records = status.split('\0');
   for (let i = 0; i < records.length; i++) {
     const r = records[i];
     if (r.length < 4) continue;
-    found.add(r.slice(3));
+    found.push(r.slice(3));
     if (r[0] === 'R' || r[0] === 'C') i++;
   }
+  return found;
+}
+
+/**
+ * Files under wiki/ changed by commits other than Shellie's since the last /sync commit (or the whole history when
+ * there is none), plus uncommitted changes there. Outside edits a job start commits ('Edited outside a capture')
+ * stay listed until a /sync.
+ */
+export async function outsideEdits(brainDir: string, git: GitClient) {
+  const found = new Set<string>();
+  // Every commit, not only those touching wiki/: a /sync that changed no page (only state.json and the log) still
+  // ends the list. With a wiki/ pathspec such a sync was skipped, and the edits before it stayed listed for good.
+  const log = await git
+    .run(brainDir, [...RAW, 'log', `--format=${SUBJECT}%s`, '--name-only'])
+    .catch(() => '');
+  // Newest first: stop at the first sync.
+  for (const block of log.split(SUBJECT).slice(1)) {
+    const [subject, ...files] = block.split('\n');
+    if (isSyncCommit(subject)) break;
+    if (isBrainCommit(subject)) continue;
+    for (const f of files) {
+      const file = f.trim();
+      if (file.startsWith('wiki/')) found.add(file);
+    }
+  }
+  for (const f of await uncommittedWikiEdits(brainDir, git)) found.add(f);
   return [...found].sort();
 }
 

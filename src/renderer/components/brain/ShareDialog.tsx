@@ -6,7 +6,7 @@ import { api } from '../../api';
 import { useStore } from '../../store';
 import { orgName } from './sharing';
 
-type Where = 'company' | 'customer';
+type Where = 'company' | 'customer' | 'repo';
 type Result =
   | { status: 'idle' }
   /** `again`: this is the one re-call after the sync; a second `syncing` stops there. */
@@ -33,6 +33,7 @@ export function ShareDialog({
   const [home, setHome] = useState<BrainHome | null | undefined>(undefined);
   const [picked, setPicked] = useState<Where | null>(null);
   const [repoName, setRepoName] = useState(brain.name);
+  const [repoUrl, setRepoUrl] = useState('');
   const [result, setResult] = useState<Result>({ status: 'idle' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,6 +65,7 @@ export function ShareDialog({
         brainId: brain.id,
         home: where,
         repoName: repoName.trim(),
+        ...(where === 'repo' ? { repoUrl: repoUrl.trim() } : {}),
       });
       if (r.status === 'syncing' && again) {
         // Never a second paid /sync on its own: the person decides.
@@ -128,6 +130,13 @@ export function ShareDialog({
         <>
           <p className="small">Shared. Colleagues join with this link:</p>
           <p className="mono small">{shared.joinLink}</p>
+          {where === 'repo' && (
+            <p className="small muted">
+              They need access to the repo, and the project added in Shellie. If
+              the link does not open Shellie, they paste it under Settings, the
+              project, Brains, "Join a shared brain".
+            </p>
+          )}
           <div className="actions">
             <button
               type="button"
@@ -169,18 +178,48 @@ export function ShareDialog({
               />
               This customer project ({customerOrg}/{connection?.project})
             </label>
+            <label className="row">
+              <input
+                type="radio"
+                name="share-where"
+                checked={where === 'repo'}
+                onChange={() => setPicked('repo')}
+              />
+              A repo I made (GitHub or another git host)
+            </label>
           </fieldset>
-          <label htmlFor="share-repo">Name</label>
-          <input
-            id="share-repo"
-            className="field"
-            value={repoName}
-            disabled={busy}
-            onChange={(e) => setRepoName(e.target.value)}
-          />
-          <p className="small muted">
-            Everyone with access to {org} sees this name.
-          </p>
+          {where === 'repo' ? (
+            <>
+              <label htmlFor="share-repo-url">Repo address</label>
+              <input
+                id="share-repo-url"
+                className="field mono"
+                placeholder="https://github.com/acme/project-brain"
+                value={repoUrl}
+                disabled={busy}
+                onChange={(e) => setRepoUrl(e.target.value)}
+              />
+              <p className="small muted">
+                An empty private repo (made without a README). Git on this
+                machine signs in to it as it does in a terminal; Shellie stores
+                no token for it.
+              </p>
+            </>
+          ) : (
+            <>
+              <label htmlFor="share-repo">Name</label>
+              <input
+                id="share-repo"
+                className="field"
+                value={repoName}
+                disabled={busy}
+                onChange={(e) => setRepoName(e.target.value)}
+              />
+              <p className="small muted">
+                Everyone with access to {org} sees this name.
+              </p>
+            </>
+          )}
           <p className="small muted">
             Everything in Sources goes along. To keep one out, remove it first.{' '}
             <button type="button" className="link" onClick={onSources}>
@@ -215,7 +254,7 @@ export function ShareDialog({
                 busy ||
                 result.status === 'syncing' ||
                 home === undefined ||
-                !repoName.trim()
+                !(where === 'repo' ? repoUrl.trim() : repoName.trim())
               }
               onClick={() => void share()}
             >

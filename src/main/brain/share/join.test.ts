@@ -527,3 +527,64 @@ describe('discoverCustomerBrains', () => {
     expect(listed()).toBe(2);
   });
 });
+
+describe("a brain in a repo of the keeper's own", () => {
+  const parseRepo = (url: string) => ({
+    remoteUrl: url,
+    host: 'github.com',
+    owner: 'acme',
+    name: 'brain',
+  });
+  const own = () => deps({ parseRepo, ado: undefined });
+
+  it('previews and joins by the pasted address, with no Azure DevOps call and no token', async () => {
+    home = null;
+    expect(await previewJoin(own(), server)).toEqual({
+      name: 'Webshop brain',
+      organizationUrl: CUSTOMER,
+      project: 'Webshop',
+      connectionId: 'c1',
+      needsToken: false,
+      alreadyHave: false,
+    });
+    const b = await joinBrain(
+      own(),
+      `shellie://join?url=${encodeURIComponent(server)}`,
+    );
+    expect(b.sharing).toMatchObject({
+      home: 'repo',
+      remoteUrl: server,
+      repositoryId: '',
+      homeOrganizationUrl: 'https://github.com/acme',
+      homeProject: 'brain',
+    });
+    expect(b.connectionId).toBe('c1');
+    expect(calls).toEqual([]);
+    expect(saved).toEqual([]);
+    expect((await readMembers(b.path))?.members.map((m) => m.name)).toEqual([
+      'Dries',
+      'Ann',
+    ]);
+    expect(
+      (await git.run(b.path, ['config', '--get', 'core.autocrlf'])).trim(),
+    ).toBe('false');
+    await expect(joinBrain(own(), server)).rejects.toThrow(
+      /already have a brain/,
+    );
+  });
+
+  it('says so when the repo holds no brain, or git cannot open it', async () => {
+    const empty = path.join(root, 'empty.git');
+    await git.run(root, ['init', '-q', '--bare', '-b', 'main', empty]);
+    await expect(previewJoin(own(), empty)).rejects.toThrow(
+      /holds no shared brain/,
+    );
+    await expect(
+      previewJoin(own(), path.join(root, 'nowhere.git')),
+    ).rejects.toThrow(/acme\/brain on github.com/);
+    await expect(previewJoin(deps(), 'not a link')).rejects.toThrow(
+      /not a Shellie join link or the address/,
+    );
+    expect(await brainFolders()).toEqual([]);
+  });
+});

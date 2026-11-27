@@ -28,7 +28,7 @@ import { EVENT_PREFIX, type Events, type PendingUpdate } from './shared/ipc';
 import {
   BRAIN_HOME_CONNECTION_ID,
   NEWER_SHELLIE,
-  parseJoinLink,
+  isJoinLink,
 } from './shared/brainShare';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
@@ -325,7 +325,7 @@ let pendingJoin: string | null = null;
 
 /** The `shellie://join?…` link among a launch's arguments (Windows hands the link to the app that way). */
 const joinLinkIn = (argv: string[]): string | null =>
-  argv.find((a) => parseJoinLink(a) !== null) ?? null;
+  argv.find((a) => isJoinLink(a)) ?? null;
 
 /**
  * Makes Shellie the handler of shellie:// links. On Windows the registry points at Squirrel's stub one folder up,
@@ -344,7 +344,7 @@ function registerJoinScheme(): void {
 
 /** Shows the join screen for a link now, or once the main window has loaded. */
 function openJoinLink(link: string): void {
-  if (!parseJoinLink(link)) return;
+  if (!isJoinLink(link)) return;
   const w = mainWindow;
   if (!w || w.isDestroyed() || w.webContents.isLoading()) {
     pendingJoin = link;

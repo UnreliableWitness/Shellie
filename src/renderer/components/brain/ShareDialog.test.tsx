@@ -83,6 +83,45 @@ describe('ShareDialog', () => {
     expect(await screen.findByText('shellie://join?x')).toBeInTheDocument();
   });
 
+  it("shares to a repo of the person's own by its address", async () => {
+    const link = 'shellie://join?url=https%3A%2F%2Fgithub.com%2Facme%2Fbrain';
+    const a = setup({
+      'brain:share': () => ({ status: 'shared', joinLink: link }),
+    });
+    render(
+      <ShareDialog brain={brainView()} onClose={vi.fn()} onSources={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole('radio', {
+        name: 'A repo I made (GitHub or another git host)',
+      }),
+    );
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Share' })).toBeDisabled();
+    await userEvent.type(
+      screen.getByLabelText('Repo address'),
+      ' https://github.com/acme/brain ',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Share' }));
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:share',
+        args: [
+          {
+            brainId: 'b1',
+            home: 'repo',
+            repoName: 'Acme',
+            repoUrl: 'https://github.com/acme/brain',
+          },
+        ],
+      }),
+    );
+    expect(await screen.findByText(link)).toBeInTheDocument();
+    expect(
+      screen.getByText(/They need access to the repo/),
+    ).toBeInTheDocument();
+  });
+
   it('lists the files that may hold a secret', async () => {
     setup({
       'brain:share': () => ({
