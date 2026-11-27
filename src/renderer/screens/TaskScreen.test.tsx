@@ -1364,7 +1364,7 @@ describe('the quiet task bar', () => {
     const { calls } = setup({}, { 'brain:forTask': () => listedBrain() });
     render(<Shell />);
     await waitFor(() =>
-      expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Brain']),
+      expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes', 'Brain']),
     );
     expect(screen.getByRole('tab', { name: /Claude Code/ })).toHaveAttribute(
       'aria-selected',
@@ -1384,15 +1384,15 @@ describe('the quiet task bar', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Close Brain' }),
     );
-    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
     unmount();
     render(<Shell />);
     await screen.findByTestId('term-c1');
     await new Promise((r) => setTimeout(r, 50));
-    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
     act(() => useStore.getState().openTab('a', 'brain'));
     await waitFor(() =>
-      expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Brain']),
+      expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes', 'Brain']),
     );
   });
 
@@ -1401,7 +1401,7 @@ describe('the quiet task bar', () => {
     const { unmount } = render(<Shell />);
     await screen.findByTestId('term-c1');
     await new Promise((r) => setTimeout(r, 50));
-    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
     unmount();
     setup({ worktreeMissing: true }, { 'brain:forTask': () => listedBrain() });
     render(<Shell />);
