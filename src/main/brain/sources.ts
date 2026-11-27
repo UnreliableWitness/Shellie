@@ -17,6 +17,7 @@ import {
   type ConvertedImage,
   type Converted,
 } from './convert';
+import { fileCache, mapAtOnce } from './fileCache';
 import { withBrainGit } from './gitMutex';
 import { absPath } from './paths';
 import { DROPPED_FILE, readDropped, writeDropped } from './pictures';
@@ -43,9 +44,12 @@ type SourceEntry = {
   fm: NonNullable<ReturnType<typeof parseSourceFrontmatter>>;
 };
 
+/** Each source's frontmatter as last parsed, by its file: a source can be megabytes, and only its head is used. */
+const sourceHeads = fileCache<ReturnType<typeof parseSourceFrontmatter>>();
+
 async function readSources(brainDir: string): Promise<SourceEntry[]> {
   const root = path.join(brainDir, 'sources');
-  const out: SourceEntry[] = [];
+  const found: string[] = [];
   const walk = async (rel: string): Promise<void> => {
     let entries;
     try {
@@ -56,16 +60,17 @@ async function readSources(brainDir: string): Promise<SourceEntry[]> {
     for (const e of entries) {
       const next = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(next);
-      else if (e.isFile() && e.name.endsWith('.md')) {
-        const fm = parseSourceFrontmatter(
-          await fs.readFile(path.join(root, next), 'utf8'),
-        );
-        if (fm) out.push({ path: `sources/${next}`, fm });
-      }
+      else if (e.isFile() && e.name.endsWith('.md')) found.push(next);
     }
   };
   await walk('');
-  return out;
+  const heads = await mapAtOnce(found, (next) =>
+    sourceHeads.read(path.join(root, next), parseSourceFrontmatter),
+  );
+  return found.flatMap((next, i) => {
+    const fm = heads[i];
+    return fm ? [{ path: `sources/${next}`, fm: { ...fm } }] : [];
+  });
 }
 
 export async function addSource(
@@ -325,10 +330,17 @@ export async function listSources(
   state: BrainState | null,
 ): Promise<BrainSourceRow[]> {
   const rows: BrainSourceRow[] = [];
+  // Each folder is listed once, not once per source in it.
+  const listed = new Map<string, Promise<string[]>>();
+  const namesIn = (dir: string) => {
+    let names = listed.get(dir);
+    if (!names) listed.set(dir, (names = fs.readdir(dir)));
+    return names;
+  };
   for (const s of await readSources(brainDir)) {
     const stem = s.path.replace(/\.md$/, '');
     const dir = path.dirname(path.join(brainDir, s.path));
-    const sibling = (await fs.readdir(dir)).find(
+    const sibling = (await namesIn(dir)).find(
       (n) =>
         path.extname(n).toLowerCase() !== '.md' &&
         n.startsWith(`${path.basename(stem)}.`) &&

@@ -61,6 +61,7 @@ import {
 } from './share/keeper';
 import { unsentCount } from './share/gitUtil';
 import { joinLink, NEWER_SHELLIE, repoJoinLink } from '../../shared/brainShare';
+import { brainActivity } from './activity';
 import { getInstallId } from '../installId';
 import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
@@ -139,6 +140,7 @@ export type BrainChannels =
   | 'brain:syncNow'
   | 'brain:share'
   | 'brain:joinLink'
+  | 'brain:activity'
   | 'brain:stopSharing'
   | 'brain:leave'
   | 'brain:handOver'
@@ -205,7 +207,10 @@ export type BrainHandlerDeps = {
   task: (taskId: string) => Task;
   repos: () => Pick<Repo, 'id' | 'connectionId'>[];
   ledgerToday: (brainId: string) => { tokens: number; costEur: number };
-  broadcast: (event: 'brain:changed', payload: Events['brain:changed']) => void;
+  broadcast: <K extends 'brain:changed' | 'brain:shareProgress'>(
+    event: K,
+    payload: Events[K],
+  ) => void;
   pickFolder: () => Promise<string | null>;
   /** shell.openPath: resolves to an error message, empty on success. */
   openPath: (absPath: string) => Promise<string>;
@@ -531,6 +536,12 @@ export function createBrainHandlers(
     installId: myInstall,
     ado: d.ado,
     signIn: d.signIn,
+    progress: (brainId, step, percent) =>
+      d.broadcast('brain:shareProgress', {
+        brainId,
+        step,
+        percent: percent ?? null,
+      }),
     now: d.now,
   };
   /** The shared brains found per connection this app session (the Join card). */
@@ -1024,6 +1035,12 @@ export function createBrainHandlers(
         organizationUrl: sharing.homeOrganizationUrl,
         project: sharing.homeProject,
         repositoryId: sharing.repositoryId,
+      });
+    },
+    'brain:activity': async (id) => {
+      const b = brainOf(id);
+      return brainActivity(d.git, b.path, {
+        installId: b.sharing ? await myInstall() : null,
       });
     },
     'brain:stopSharing': async (id) => {

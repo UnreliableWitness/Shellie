@@ -37,6 +37,10 @@ class FakeScene {
     this.calls.push('overview');
   }
   setPanelWidth() {}
+  theme: unknown = null;
+  setTheme(theme: unknown) {
+    this.theme = theme;
+  }
   setRunning(on: boolean) {
     this.running = on;
   }

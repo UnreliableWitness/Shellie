@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BrainView } from '../../../shared/brain';
-import type { BrainHome } from '../../../shared/brainShare';
+import type { BrainHome, ShareStep } from '../../../shared/brainShare';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { useStore } from '../../store';
+import { CopyField } from './CopyField';
 import { orgName } from './sharing';
 
 type Where = 'company' | 'customer' | 'repo';
@@ -15,6 +16,78 @@ type Result =
   /** Nothing on this machine opens the repo: a token for `host` is asked for. */
   | { status: 'needsToken'; host: string; tried: string[] }
   | { status: 'shared'; joinLink: string };
+
+/** What the share is doing now, as the card says it while it waits. */
+export function stepText(step: ShareStep | null, percent: number | null) {
+  switch (step) {
+    case 'opening':
+      return 'Opening the repo';
+    case 'checking':
+      return 'Checking the brain for changes and secrets';
+    case 'creating':
+      return 'Creating the repo';
+    case 'uploading':
+      return percent === null
+        ? 'Uploading the brain'
+        : percent >= 100
+          ? 'Uploading the brain: finishing'
+          : `Uploading the brain: ${percent}%`;
+    default:
+      return 'Starting';
+  }
+}
+
+/** The line a share in progress shows: its step, a moving bar, and how long it has taken. */
+function ShareProgress({ brainId }: { brainId: string }) {
+  const [at, setAt] = useState<{
+    step: ShareStep | null;
+    percent: number | null;
+  }>({ step: null, percent: null });
+  const [seconds, setSeconds] = useState(0);
+  useEffect(
+    () =>
+      api().on('brain:shareProgress', (e) => {
+        if (e.brainId === brainId) setAt({ step: e.step, percent: e.percent });
+      }),
+    [brainId],
+  );
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(
+      () => setSeconds(Math.round((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, []);
+  const known = at.step === 'uploading' && at.percent !== null;
+  return (
+    <div className="brain-share-progress">
+      <div role="status" className="small">
+        {stepText(at.step, at.percent)}…
+        {seconds >= 5 && <span className="muted"> {seconds} s</span>}
+      </div>
+      <div
+        className={`brain-share-bar${known ? '' : ' is-busy'}`}
+        role="progressbar"
+        aria-label="Sharing"
+        {...(known
+          ? {
+              'aria-valuemin': 0,
+              'aria-valuemax': 100,
+              'aria-valuenow': at.percent ?? 0,
+            }
+          : {})}
+      >
+        <span style={known ? { width: `${at.percent}%` } : undefined} />
+      </div>
+      {at.step === 'uploading' && (
+        <p className="small muted">
+          A large brain can take a few minutes. Keep Shellie open.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Share a local brain: where it lives, its name there, what goes along. A card in the page, not an overlay. */
 export function ShareDialog({
@@ -28,7 +101,6 @@ export function ShareDialog({
   /** Takes the person to the Sources list. */
   onSources: () => void;
 }) {
-  const notify = useStore((s) => s.notify);
   const connection = useStore((s) =>
     s.connections.find((c) => c.id === brain.connectionId),
   );
@@ -122,12 +194,6 @@ export function ShareDialog({
     }
   }, [syncEnd]);
 
-  const copy = (link: string) =>
-    navigator.clipboard
-      .writeText(link)
-      .then(() => notify('info', 'Join link copied'))
-      .catch((e: unknown) => notify('error', errorMessage(e)));
-
   const shared = result.status === 'shared' ? result : null;
   return (
     <section
@@ -139,7 +205,7 @@ export function ShareDialog({
       {shared ? (
         <>
           <p className="small">Shared. Colleagues join with this link:</p>
-          <p className="mono small">{shared.joinLink}</p>
+          <CopyField label="Join link" value={shared.joinLink} />
           {where === 'repo' && (
             <p className="small muted">
               They need access to the repo, and the project added in Shellie. If
@@ -148,13 +214,6 @@ export function ShareDialog({
             </p>
           )}
           <div className="actions">
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => void copy(shared.joinLink)}
-            >
-              Copy join link
-            </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -258,8 +317,16 @@ export function ShareDialog({
               Sources
             </button>
           </p>
+          {busy && <ShareProgress brainId={brain.id} />}
           {result.status === 'syncing' && (
-            <p className="small">Syncing first…</p>
+            <div className="brain-share-progress">
+              <div role="status" className="small">
+                Syncing first. Shellie shares when that is done…
+              </div>
+              <div className="brain-share-bar is-busy">
+                <span />
+              </div>
+            </div>
           )}
           {result.status === 'secrets' && (
             <div className="small" role="alert">
@@ -291,7 +358,7 @@ export function ShareDialog({
               }
               onClick={() => void share()}
             >
-              Share
+              {busy ? 'Sharing…' : 'Share'}
             </button>
             <button
               type="button"

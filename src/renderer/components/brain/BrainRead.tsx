@@ -8,12 +8,12 @@ import { trackBrain, trackSettleOpen } from './brainActions';
 import { chapterOf } from './book';
 import { BrainChapter } from './BrainChapter';
 import { BrainFront } from './BrainFront';
-import { BrainGraph } from './BrainGraph';
 import { BrainLog } from './BrainLog';
 import { BrainLongRead } from './BrainLongRead';
 import { BrainLongReads } from './BrainLongReads';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
+import { SkyPreview } from './sky/SkyPreview';
 import { BrainTree, type TreeSpecial } from './BrainTreeView';
 import {
   backOfBook,
@@ -113,6 +113,7 @@ export function BrainRead({
   conflicts = [],
   onSettle,
   onAdd,
+  onExplore,
 }: {
   brainId: string;
   /** The brain's name, the front page's title. */
@@ -131,6 +132,8 @@ export function BrainRead({
   canWrite?: boolean;
   /** The brain is shared: removing a source warns about the server's history. */
   shared?: boolean;
+  /** Opens the Explore view, from the sky on the front page; absent: no sky there. */
+  onExplore?: () => void;
   /** Open conflicts: a page in one says so above it, with Settle. */
   conflicts?: BrainConflictRow[];
   onSettle?: (conflictId: string) => void;
@@ -360,6 +363,8 @@ export function BrainRead({
               newPaths={newPaths}
               continueAt={readContinue(brainId)}
               onOpen={open}
+              active={active}
+              onExplore={onExplore}
               longReads={
                 canWrite || reads.reads.length > 0
                   ? {
@@ -400,7 +405,15 @@ export function BrainRead({
                 )}
               </div>
             )}
-            <BrainGraph rows={rows} newPaths={newPaths} onOpen={open} />
+            {onExplore && (
+              <SkyPreview
+                rows={rows}
+                book={null}
+                newPaths={newPaths}
+                active={active}
+                onExplore={onExplore}
+              />
+            )}
             {pinned.length > 0 && (
               <section className="brain-section" aria-label="Pinned">
                 <div className="brain-card-grid">

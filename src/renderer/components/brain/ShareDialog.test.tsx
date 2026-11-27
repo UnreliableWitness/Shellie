@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '../../store';
@@ -80,7 +80,9 @@ describe('ShareDialog', () => {
         args: [{ brainId: 'b1', home: 'company', repoName: 'Acme' }],
       }),
     );
-    expect(await screen.findByText('shellie://join?x')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Join link')).toHaveValue(
+      'shellie://join?x',
+    );
   });
 
   it("shares to a repo of the person's own by its address", async () => {
@@ -116,7 +118,7 @@ describe('ShareDialog', () => {
         ],
       }),
     );
-    expect(await screen.findByText(link)).toBeInTheDocument();
+    expect(await screen.findByLabelText('Join link')).toHaveValue(link);
     expect(
       screen.getByText(/They need access to the repo/),
     ).toBeInTheDocument();
@@ -172,7 +174,9 @@ describe('ShareDialog', () => {
         ],
       }),
     );
-    expect(await screen.findByText('shellie://join?url=x')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Join link')).toHaveValue(
+      'shellie://join?url=x',
+    );
   });
 
   it('lists the files that may hold a secret', async () => {
@@ -195,6 +199,67 @@ describe('ShareDialog', () => {
     expect(screen.getByText('wiki/b.md')).toBeInTheDocument();
   });
 
+  it('says what the share is doing while it waits, then gives the link in a box to copy', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, { clipboard: { writeText } });
+    let done: (r: { status: 'shared'; joinLink: string }) => void = () =>
+      undefined;
+    const a = setup({
+      'brain:share': () =>
+        new Promise<{ status: 'shared'; joinLink: string }>((resolve) => {
+          done = resolve;
+        }),
+    });
+    render(
+      <ShareDialog brain={brainView()} onClose={vi.fn()} onSources={vi.fn()} />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Share' }));
+    expect(await screen.findByText('Starting…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sharing…' })).toBeDisabled();
+    act(() =>
+      a.emit('brain:shareProgress', {
+        brainId: 'other',
+        step: 'uploading',
+        percent: 90,
+      }),
+    );
+    expect(screen.getByText('Starting…')).toBeInTheDocument();
+    act(() =>
+      a.emit('brain:shareProgress', {
+        brainId: 'b1',
+        step: 'checking',
+        percent: null,
+      }),
+    );
+    expect(
+      screen.getByText('Checking the brain for changes and secrets…'),
+    ).toBeInTheDocument();
+    act(() =>
+      a.emit('brain:shareProgress', {
+        brainId: 'b1',
+        step: 'uploading',
+        percent: 42,
+      }),
+    );
+    expect(screen.getByText('Uploading the brain: 42%…')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '42',
+    );
+    await act(async () =>
+      done({ status: 'shared', joinLink: 'shellie://join?z' }),
+    );
+    expect(await screen.findByLabelText('Join link')).toHaveValue(
+      'shellie://join?z',
+    );
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('shellie://join?z');
+    expect(
+      await screen.findByRole('button', { name: 'Copied' }),
+    ).toBeInTheDocument();
+  });
+
   it('shows Syncing first and asks again when the sync job ends', async () => {
     let n = 0;
     const a = setup({
@@ -210,7 +275,11 @@ describe('ShareDialog', () => {
       <ShareDialog brain={running} onClose={vi.fn()} onSources={vi.fn()} />,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Share' }));
-    expect(await screen.findByText('Syncing first…')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Syncing first. Shellie shares when that is done…',
+      ),
+    ).toBeInTheDocument();
     expect(a.calls.filter((c) => c.channel === 'brain:share')).toHaveLength(1);
     rerender(
       <ShareDialog
@@ -228,7 +297,9 @@ describe('ShareDialog', () => {
         onSources={vi.fn()}
       />,
     );
-    expect(await screen.findByText('shellie://join?y')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Join link')).toHaveValue(
+      'shellie://join?y',
+    );
     expect(a.calls.filter((c) => c.channel === 'brain:share')).toHaveLength(2);
   });
 
@@ -255,7 +326,11 @@ describe('ShareDialog', () => {
       />,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Share' }));
-    expect(await screen.findByText('Syncing first…')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Syncing first. Shellie shares when that is done…',
+      ),
+    ).toBeInTheDocument();
     return { a, rerender };
   };
   const shares = (a: { calls: { channel: string }[] }) =>
@@ -293,6 +368,8 @@ describe('ShareDialog', () => {
       'The brain changed while it synced. Share again.',
     );
     expect(shares(a)).toBe(2);
-    expect(screen.queryByText('Syncing first…')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Syncing first. Shellie shares when that is done…'),
+    ).not.toBeInTheDocument();
   });
 });

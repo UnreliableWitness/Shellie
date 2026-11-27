@@ -9,7 +9,7 @@ import { TYPE_LABELS } from '../brainTree';
 /** At most this many pages are drawn; a bigger brain shows its most linked pages. */
 export const SKY_MAX_STARS = 2000;
 
-/** A star's colour by page type, chosen to read on the night sky (the sky is dark in both themes). */
+/** A star's colour by page type on the dark page: light, drawn as light added to the background. */
 export const SKY_TYPE_COLOR: Record<BrainPageType, string> = {
   subject: '#5fe0c2',
   account: '#f2f5ff',
@@ -21,6 +21,20 @@ export const SKY_TYPE_COLOR: Record<BrainPageType, string> = {
   lesson: '#ff9a6b',
   digest: '#9fb0c8',
   other: '#9fb0c8',
+};
+
+/** The same types on the light page: deep colours, drawn as ink over the background. */
+export const SKY_TYPE_COLOR_LIGHT: Record<BrainPageType, string> = {
+  subject: '#0b8f76',
+  account: '#3b4252',
+  scope: '#6a45d6',
+  component: '#0b6fd1',
+  glossary: '#5c6b82',
+  decision: '#b87400',
+  meeting: '#c8286f',
+  lesson: '#cf5a1e',
+  digest: '#5c6b82',
+  other: '#5c6b82',
 };
 
 /** One page as a star. */

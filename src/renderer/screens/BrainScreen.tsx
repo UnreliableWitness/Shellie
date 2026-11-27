@@ -1,10 +1,14 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
 import { brainTaskId, picturesReady, writeReady } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
 import { AskBox } from '../components/brain/AskBox';
 import { BrainAdd } from '../components/brain/BrainAdd';
 import { BrainRead } from '../components/brain/BrainRead';
+import { CopyField } from '../components/brain/CopyField';
+import { ArrivedChip } from '../components/brain/history/ArrivedChip';
+import { BrainHistory } from '../components/brain/history/BrainHistory';
+import { useBrainActivity } from '../components/brain/history/useBrainActivity';
 import { ShareDialog } from '../components/brain/ShareDialog';
 import { SharedStatus } from '../components/brain/SharedStatus';
 import { trackBrain, trackSettleOpen } from '../components/brain/brainActions';
@@ -18,7 +22,7 @@ import { useBrain } from '../hooks/useBrains';
 import { local } from '../localStorage';
 import { useStore } from '../store';
 
-type View = 'read' | 'add' | 'explore';
+type View = 'read' | 'add' | 'explore' | 'history';
 type Focus = 'ask' | 'wiki' | 'drop' | 'explore';
 
 // The sky and three.js load when Explore is first chosen, not with the brain page.
@@ -101,6 +105,15 @@ export function BrainScreen({
   // The Settle view, shown in place of Add: at one conflict (target) or its list (null).
   const [settle, setSettle] = useState<{ target: string | null } | null>(null);
   const [sharing, setSharing] = useState(false);
+  // The join link of a shared brain, shown in a card to copy; null while closed.
+  const [joinLink, setJoinLink] = useState<string | null>(null);
+  const activity = useBrainActivity(brainId);
+  // The entries that were new when History was opened: they stay marked while it is looked at.
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
+  const titles = useMemo(
+    () => new Map(pages.rows.map((r) => [r.path, r.title])),
+    [pages.rows],
+  );
   // A shared brain pulls when its page opens.
   const isShared = brain?.sharing != null;
   useEffect(() => {
@@ -124,6 +137,11 @@ export function BrainScreen({
     if (next === view) return;
     trackBrain(`view-${next}`);
     setView(next);
+    if (next === 'history') {
+      setFresh(new Set(activity.unseen.map((e) => e.id)));
+      activity.markSeen();
+      return;
+    }
     if (next === 'explore') return;
     try {
       local()?.setItem(VIEW(brain.id), next);
@@ -160,6 +178,15 @@ export function BrainScreen({
           <>
             <span className="muted">{brain.project}</span>
             <SharedStatus brain={brain} />
+            {view !== 'history' && (
+              <ArrivedChip
+                unseen={activity.unseen}
+                onOpen={() => {
+                  setSettle(null);
+                  choose('history');
+                }}
+              />
+            )}
             <div className="brain-switch" role="tablist" aria-label="View">
               <button
                 type="button"
@@ -201,6 +228,18 @@ export function BrainScreen({
               >
                 Explore
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'history'}
+                className={view === 'history' ? 'is-on' : undefined}
+                onClick={() => {
+                  setSettle(null);
+                  choose('history');
+                }}
+              >
+                History
+              </button>
             </div>
           </>
         }
@@ -211,15 +250,20 @@ export function BrainScreen({
               <button
                 type="button"
                 className="btn btn-sm"
+                aria-expanded={joinLink !== null}
                 onClick={() =>
-                  void tryInvoke(async () => {
-                    const link = await api().invoke('brain:joinLink', brain.id);
-                    await navigator.clipboard.writeText(link);
-                    notify('info', 'Join link copied');
-                  }, notify)
+                  joinLink !== null
+                    ? setJoinLink(null)
+                    : void tryInvoke(
+                        async () =>
+                          setJoinLink(
+                            await api().invoke('brain:joinLink', brain.id),
+                          ),
+                        notify,
+                      )
                 }
               >
-                Copy join link
+                Join link
               </button>
             ) : (
               <button
@@ -299,6 +343,33 @@ export function BrainScreen({
             }}
           />
         )}
+        {joinLink !== null && brain.sharing && (
+          <section
+            role="dialog"
+            aria-label="Join link"
+            className="brain-card brain-share"
+          >
+            <h2>Invite a colleague</h2>
+            <p className="small">
+              Send them this link. It opens Shellie and joins this brain.
+            </p>
+            <CopyField label="Join link" value={joinLink} />
+            <p className="small muted">
+              {brain.sharing.home === 'repo'
+                ? 'They need access to the repo, and the project added in Shellie. If the link does not open Shellie, they paste it under Settings, the project, Brains, "Join a shared brain".'
+                : 'They need access to the project in Azure DevOps, and the project added in Shellie.'}
+            </p>
+            <div className="actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setJoinLink(null)}
+              >
+                Done
+              </button>
+            </div>
+          </section>
+        )}
         {/* Both views stay mounted, so the open page and a half-filled form survive a switch. */}
         <div className="brain-view brain-view-read" hidden={view !== 'read'}>
           <BrainRead
@@ -314,6 +385,10 @@ export function BrainScreen({
             shared={brain.sharing !== null}
             conflicts={conflicts.open}
             onSettle={(id) => openSettle(id, 'read')}
+            onExplore={() => {
+              setSettle(null);
+              choose('explore');
+            }}
             onAdd={() => {
               setSettle(null);
               choose('add');
@@ -338,6 +413,17 @@ export function BrainScreen({
                 onOpenInRead={openPage}
               />
             </Suspense>
+          </div>
+        )}
+        {view === 'history' && (
+          <div className="brain-view brain-view-history">
+            <BrainHistory
+              entries={activity.entries}
+              fresh={fresh}
+              titles={titles}
+              shared={brain.sharing !== null}
+              onOpenPage={openPage}
+            />
           </div>
         )}
         <div className="brain-view brain-view-add" hidden={view !== 'add'}>

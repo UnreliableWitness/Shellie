@@ -233,3 +233,79 @@ export type DiscoveredBrain = {
   name: string;
   joinLink: string;
 };
+
+/** Where a share is: opening the repo, checking the brain, creating the repo (Azure DevOps), uploading. */
+export type ShareStep = 'opening' | 'checking' | 'creating' | 'uploading';
+
+/** One line of a brain's history: who did what, and the pages it touched. */
+export type BrainActivityEntry = {
+  /** The commit. */
+  id: string;
+  at: string;
+  /** The person's name as their Shellie recorded it. */
+  who: string;
+  /** Made on this machine. */
+  me: boolean;
+  kind: BrainActivityKind;
+  /** What the entry is about: a source's file name, a long read's target; null when it has none. */
+  subject: string | null;
+  /** The wiki pages and long reads it added or changed (at most ACTIVITY_PAGES; `morePages` counts the rest). */
+  pages: { path: string; added: boolean }[];
+  morePages: number;
+};
+export const BRAIN_ACTIVITY_KINDS = [
+  'created',
+  'shared',
+  'joined',
+  'left',
+  'source',
+  'captured',
+  'removed',
+  'wrote',
+  'tidied',
+  'digest',
+  'settled',
+  'answered',
+  'edited',
+  'scrubbed',
+  'changed',
+] as const;
+export type BrainActivityKind = (typeof BRAIN_ACTIVITY_KINDS)[number];
+export const ACTIVITY_PAGES = 6;
+
+/** What an entry says after the person's name ("added notes.md", "joined the brain"). */
+export function activityText(e: BrainActivityEntry): string {
+  const s = e.subject;
+  switch (e.kind) {
+    case 'created':
+      return 'started the brain';
+    case 'shared':
+      return 'shared the brain';
+    case 'joined':
+      return 'joined the brain';
+    case 'left':
+      return 'left the brain';
+    case 'source':
+      return s ? `added ${s}` : 'added a source';
+    case 'captured':
+      return s ? `turned ${s} into pages` : 'turned a source into pages';
+    case 'removed':
+      return s ? `removed ${s}` : 'removed a source';
+    case 'wrote':
+      return s ? `wrote the long read ${s}` : 'wrote a long read';
+    case 'tidied':
+      return 'brought the wiki up to date';
+    case 'digest':
+      return 'wrote the digest';
+    case 'settled':
+      return 'settled a conflict';
+    case 'answered':
+      return 'answered a conflict';
+    case 'edited':
+      return 'edited pages by hand';
+    case 'scrubbed':
+      return 'scrubbed a value';
+    case 'changed':
+      return 'changed pages';
+  }
+}

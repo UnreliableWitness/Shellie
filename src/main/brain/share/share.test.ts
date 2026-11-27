@@ -13,7 +13,13 @@ import { readState, writeState } from '../state';
 import { BrainSync, PRE_SHARE_REF, type SyncRunner } from './BrainSync';
 import { readMembers, readOrigin, readShared, upsertMember } from './files';
 import { LEAVE_MESSAGE } from '../brainCommits';
-import { leaveBrain, shareBrain, stopSharing, type ShareDeps } from './share';
+import {
+  leaveBrain,
+  pushPercent,
+  shareBrain,
+  stopSharing,
+  type ShareDeps,
+} from './share';
 
 // real git, many subprocesses per test: slow under load and on the Windows runner
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -141,12 +147,27 @@ describe('shareBrain', () => {
     await commit('Brain: sync');
     const before = await head();
 
-    const r = await shareBrain(deps(), {
-      brainId: 'a',
-      home: 'company',
-      repoName: 'Acme brain',
-    });
+    const steps: string[] = [];
+    const percents: number[] = [];
+    const r = await shareBrain(
+      deps({
+        progress: (id, step, percent) => {
+          steps.push(`${id} ${step}`);
+          if (percent !== undefined) percents.push(percent);
+        },
+      }),
+      { brainId: 'a', home: 'company', repoName: 'Acme brain' },
+    );
 
+    // Each step is named once, in order (an upload's percentages repeat the last).
+    expect([...new Set(steps)]).toEqual([
+      'a checking',
+      'a creating',
+      'a uploading',
+    ]);
+    // Git's own progress, read while the push runs: it only ever goes up, and ends at 100.
+    expect(percents.at(-1)).toBe(100);
+    expect(percents).toEqual([...percents].sort((x, y) => x - y));
     expect(r).toEqual({
       status: 'shared',
       joinLink:
@@ -782,5 +803,17 @@ describe('the sync before a share', () => {
     expect(
       await shareBrain(d, { brainId: 'a', home: 'company', repoName: 'x' }),
     ).toEqual({ status: 'syncing' });
+  });
+});
+
+describe('pushPercent', () => {
+  it("reads the upload's last percentage from git's progress text", () => {
+    expect(
+      pushPercent(
+        'Compressing objects: 100% (8/8), done.\rWriting objects:   7% (1/14)\rWriting objects:  42% (6/14)\r',
+      ),
+    ).toBe(42);
+    expect(pushPercent('Counting objects: 100% (14/14), done.')).toBeNull();
+    expect(pushPercent('remote: Resolving deltas: 50% (1/2)')).toBeNull();
   });
 });

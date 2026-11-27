@@ -172,6 +172,8 @@ export class GitClient {
       env?: Record<string, string>;
       /** false: the caller records `git.ms` itself, once for all its attempts. */
       timed?: boolean;
+      /** What git writes to stderr while it runs (its progress lines); only with `timeoutMs`. */
+      onStderr?: (text: string) => void;
     } = {},
   ): Promise<string> {
     if (opts.timed === false) return this.runGit(cwd, args, opts);
@@ -183,7 +185,11 @@ export class GitClient {
   private async runGit(
     cwd: string,
     args: string[],
-    opts: { timeoutMs?: number; env?: Record<string, string> },
+    opts: {
+      timeoutMs?: number;
+      env?: Record<string, string>;
+      onStderr?: (text: string) => void;
+    },
   ): Promise<string> {
     try {
       const options = {
@@ -194,7 +200,12 @@ export class GitClient {
       };
       if (opts.timeoutMs === undefined)
         return (await execFileAsync('git', args, options)).stdout;
-      return await execWithTimeout(args, options, opts.timeoutMs);
+      return await execWithTimeout(
+        args,
+        options,
+        opts.timeoutMs,
+        opts.onStderr,
+      );
     } catch (e) {
       if (e instanceof GitTimeoutError) throw e;
       const err = e as {
@@ -602,8 +613,15 @@ export class GitClient {
     cwd: string,
     remote: string,
     branch: string,
-    opts: { forceWithLease?: boolean } = {},
+    opts: {
+      forceWithLease?: boolean;
+      /** A push someone watches (a brain's first upload) may take longer than `pushTimeoutMs`. */
+      timeoutMs?: number;
+      /** Git's progress lines (`Writing objects:  42% …`) as they come. */
+      onProgress?: (text: string) => void;
+    } = {},
   ): Promise<void> {
+    const timeoutMs = opts.timeoutMs ?? this.pushTimeoutMs;
     const ctx = await this.remoteAuth(cwd, remote);
     const env: Record<string, string> = {
       ...((await this.hasOwnSshCommand(cwd))
@@ -613,14 +631,20 @@ export class GitClient {
     };
     try {
       const force = opts.forceWithLease ? ['--force-with-lease'] : [];
-      await this.run(cwd, ['push', '-u', ...force, remote, branch], {
-        timeoutMs: this.pushTimeoutMs,
-        env,
-      });
+      const progress = opts.onProgress ? ['--progress'] : [];
+      await this.run(
+        cwd,
+        ['push', '-u', ...progress, ...force, remote, branch],
+        {
+          timeoutMs,
+          env,
+          onStderr: opts.onProgress,
+        },
+      );
     } catch (e) {
       if (e instanceof GitTimeoutError)
         throw new Error(
-          `git push timed out after ${this.pushTimeoutMs / 1000} s (a credential prompt may be waiting)`,
+          `git push timed out after ${timeoutMs / 1000} s (a credential prompt may be waiting)`,
         );
       const signIn = this.signInError(e, cwd, remote, ctx, (g) =>
         g.stderr.trim(),
@@ -1002,6 +1026,7 @@ function execWithTimeout(
   args: string[],
   options: ExecFileOptions,
   timeoutMs: number,
+  onStderr?: (text: string) => void,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let timedOut = false;
@@ -1016,6 +1041,7 @@ function execWithTimeout(
         else resolve(String(stdout));
       },
     );
+    if (onStderr) child.stderr?.on('data', (d) => onStderr(String(d)));
     const timer = setTimeout(() => {
       timedOut = true;
       child.stdout?.destroy();
