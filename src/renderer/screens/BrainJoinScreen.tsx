@@ -129,6 +129,16 @@ export function BrainJoinScreen({
             </div>
           </>
         )}
+        {can && busy && (
+          <div className="brain-share-progress">
+            <div role="status" className="small">
+              Downloading the brain… A large one can take a few minutes.
+            </div>
+            <div className="brain-share-bar is-busy">
+              <span />
+            </div>
+          </div>
+        )}
         {can && (
           <div className="actions">
             <button
@@ -137,7 +147,7 @@ export function BrainJoinScreen({
               disabled={busy}
               onClick={() => void join()}
             >
-              Join
+              {busy ? 'Joining…' : 'Join'}
             </button>
           </div>
         )}

@@ -55,6 +55,7 @@ export type BrainAction =
   | 'view-read'
   | 'view-add'
   | 'view-explore'
+  | 'view-history'
   /** Pictures: a re-evaluation queued (source panel or Health), a drop accepted with Fine, I know. */
   | 'reevaluate'
   | 'accept-drop'

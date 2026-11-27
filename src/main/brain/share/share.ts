@@ -7,6 +7,7 @@ import type { BrainSharing } from '../../../shared/brain';
 import {
   isKeeper,
   joinLink,
+  type ShareStep,
   parseRepoUrl,
   repoHomeOf,
   repoJoinLink,
@@ -77,7 +78,18 @@ export type ShareDeps = {
   signIn?: RepoSignInDeps;
   /** Reads a pasted repo address; tests pass one that takes a local folder as the server. */
   parseRepo?: (url: string) => RepoAddress | null;
+  /** Tells the window which step the share is at, and how far the upload is (`brain:shareProgress`). */
+  progress?: (brainId: string, step: ShareStep, percent?: number) => void;
   now?: () => Date;
+};
+
+/** A first upload may be large: it gets this long, not a push's usual two minutes. */
+const SHARE_PUSH_TIMEOUT_MS = 30 * 60_000;
+
+/** The upload's percent in git's progress text (`Writing objects:  42% (…)`), its last one; null when it names none. */
+export const pushPercent = (text: string): number | null => {
+  const all = [...text.matchAll(/Writing objects:\s+(\d+)%/g)];
+  return all.length ? Number(all[all.length - 1][1]) : null;
 };
 
 export type ShareInput = {
@@ -192,8 +204,11 @@ export async function shareBrain(
   if (d.runner.running(b.id)) throw new Error(BUSY);
 
   // Before any paid /sync: the repo must open (as this machine's git, a GitHub CLI account, or a typed token) and be empty.
+  const step = (s: ShareStep, percent?: number) =>
+    d.progress?.(b.id, s, percent);
   let opened: FoundSignIn | null = null;
   if (own) {
+    step('opening');
     const found = await findSignIn(d.signIn, d.git, dir, own, i.repoToken);
     if (found.needsToken)
       return { status: 'needsToken', host: own.host, tried: found.tried };
@@ -204,6 +219,7 @@ export async function shareBrain(
     opened = found;
   }
 
+  step('checking');
   if (await needsSync(d.git, dir, lastSyncDone(d, b.id))) {
     const waiting = d.runner
       .jobs(b.id)
@@ -239,6 +255,7 @@ export async function shareBrain(
   const installId = await d.installId();
   const person = connection.user ?? 'Shellie';
 
+  if (!own) step('creating');
   const repo = own
     ? { id: '', remoteUrl: own.remoteUrl }
     : await (d.ado ?? realAdo)(
@@ -337,7 +354,17 @@ export async function shareBrain(
             await d.signIn?.tokens.set(b.id, i.repoToken.trim());
           await d.brains.patch(b.id, { sharing });
           recorded = true;
-          await git.push(dir, 'origin', 'HEAD:main');
+          step('uploading');
+          let sent = -1;
+          await git.push(dir, 'origin', 'HEAD:main', {
+            timeoutMs: SHARE_PUSH_TIMEOUT_MS,
+            onProgress: (text) => {
+              const percent = pushPercent(text);
+              if (percent === null || percent <= sent) return;
+              sent = percent;
+              step('uploading', percent);
+            },
+          });
           await d.brains.patch(b.id, {
             sharing: {
               ...sharing,

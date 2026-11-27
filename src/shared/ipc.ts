@@ -21,10 +21,12 @@ import type {
 } from './brain';
 import type { AskOutcome } from './brainAsk';
 import type {
+  BrainActivityEntry,
   BrainHome,
   BrainHomeInput,
   DiscoveredBrain,
   JoinPreview,
+  ShareStep,
 } from './brainShare';
 import type { ColorScheme } from './theme';
 import type {
@@ -869,6 +871,8 @@ export type Channels = {
   };
   /** The `shellie://join?…` link of a shared brain (no token in it); for a repo home it carries the repo's address. */
   'brain:joinLink': { args: [brainId: string]; result: string };
+  /** The brain's history, newest first: who added, wrote or changed what (read from its git log). */
+  'brain:activity': { args: [brainId: string]; result: BrainActivityEntry[] };
   /** Makes a shared brain local again; its folder, history and origin.json stay. */
   'brain:stopSharing': { args: [brainId: string]; result: void };
   /**
@@ -1107,6 +1111,12 @@ export type Events = {
   'window:fullScreen': boolean;
   /** A brain's store entry, jobs, state, files or mirror changed; the renderer fetches `brain:get` again. */
   'brain:changed': { brainId: string };
+  /** A share in progress: its step, and how far the upload is when git says so. */
+  'brain:shareProgress': {
+    brainId: string;
+    step: ShareStep;
+    percent: number | null;
+  };
   /** A `shellie://join?…` link was opened (macOS open-url, Windows argv); the renderer shows the join screen. */
   'brain:openJoin': { link: string };
   /** A dream started or ended, or what dreams remember or wait for changed; the renderer fetches `dream:get` again. */

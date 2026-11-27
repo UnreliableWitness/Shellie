@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainSourceRow } from '../../shared/brain';
+import type { BrainActivityEntry } from '../../shared/brainShare';
 import { useStore } from '../store';
 import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
 import { brainJob, brainView } from '../test-helpers/brainFixture';
@@ -683,7 +685,7 @@ describe('BrainScreen sharing', () => {
       screen.queryByRole('button', { name: 'Share with colleagues' }),
     ).not.toBeInTheDocument();
   });
-  it('pulls when a shared brain opens, and copies the join link', async () => {
+  it('pulls when a shared brain opens, and shows the join link in a box to copy', async () => {
     const writeText = vi.fn(() => Promise.resolve());
     Object.assign(navigator, { clipboard: { writeText } });
     const a = setup(sharedBrain());
@@ -695,13 +697,69 @@ describe('BrainScreen sharing', () => {
       }),
     );
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Copy join link' }),
+      await screen.findByRole('button', { name: 'Join link' }),
     );
+    expect(
+      await screen.findByRole('textbox', { name: 'Join link' }),
+    ).toHaveValue('shellie://join?org=o&project=p&repo=r');
+    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(
         'shellie://join?org=o&project=p&repo=r',
       ),
     );
+  });
+  it('lights up when a colleague added pages, and History marks them new', async () => {
+    const entry = (over: Partial<BrainActivityEntry>): BrainActivityEntry => ({
+      id: 'c0',
+      at: new Date().toISOString(),
+      who: 'Dries',
+      me: true,
+      kind: 'source',
+      subject: 'notes.md',
+      pages: [],
+      morePages: 0,
+      ...over,
+    });
+    let list = [entry({})];
+    const a = setup(sharedBrain(), { 'brain:activity': () => list });
+    render(<BrainScreen brainId="b1" />);
+    await waitFor(() => expect(names(a)).toContain('brain:activity'));
+    // The first look: nothing is announced.
+    expect(
+      screen.queryByRole('button', { name: /added \d+ (page|source)/ }),
+    ).not.toBeInTheDocument();
+    list = [
+      entry({
+        id: 'c1',
+        who: 'Anna',
+        me: false,
+        kind: 'captured',
+        subject: 'plan.md',
+        pages: [
+          { path: 'wiki/plan.md', added: true },
+          { path: 'wiki/team.md', added: false },
+        ],
+      }),
+      ...list,
+    ];
+    act(() => a.emit('brain:changed', { brainId: 'b1' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Anna added 2 pages' }),
+    );
+    expect(
+      await screen.findByText('turned plan.md into pages'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('New')).toBeInTheDocument();
+    expect(screen.getByText('added notes.md')).toBeInTheDocument();
+    // Looked at: the light is out, and stays out the next time.
+    expect(
+      screen.queryByRole('button', { name: 'Anna added 2 pages' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Read' }));
+    expect(
+      screen.queryByRole('button', { name: 'Anna added 2 pages' }),
+    ).not.toBeInTheDocument();
   });
   it('does not sync a local brain', async () => {
     const a = setup();
