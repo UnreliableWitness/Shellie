@@ -636,16 +636,16 @@ describe('tabs and focus', () => {
     useStore.setState({ focus: false, navCollapsed: false, tabByTask: {} });
   });
 
-  it('puts the opened views after the terminals', async () => {
+  it('puts the opened views after the terminals, Changes first', async () => {
     setup();
     render(<Shell />);
     const tabs = await screen.findAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual([
       'Claude Code',
       'zsh',
+      expect.stringContaining('Changes'),
       expect.stringContaining('Usage'),
       expect.stringContaining('Docs'),
-      expect.stringContaining('Changes'),
     ]);
   });
 
@@ -1414,7 +1414,7 @@ describe('the quiet task bar', () => {
     setup();
     render(<Shell />);
     await screen.findByTestId('term-c1');
-    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
     for (const name of ['Open folder', 'Open in an editor', 'Focus'])
       expect(screen.queryByRole('button', { name })).toBeNull();
     expect(screen.queryByRole('button', { name: /Development/ })).toBeNull();
@@ -1454,23 +1454,52 @@ describe('the quiet task bar', () => {
     );
   });
 
-  it('opens a view as a tab after the terminals, and closing it goes back to a terminal', async () => {
+  it('keeps Changes in the row of a task with a worktree, with no close button (#386)', async () => {
     setup();
     render(<Shell />);
+    await screen.findByTestId('term-c1');
+    expect(screen.getByRole('tab', { name: /Changes/ })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+    expect(screen.queryByRole('button', { name: 'Close Changes' })).toBeNull();
+    // The task menu entry only selects it: still one Changes tab.
     await openMenu();
     await userEvent.click(
       await screen.findByRole('menuitem', { name: /Show changes/ }),
     );
-    expect(screen.queryByRole('menu')).toBeNull();
     expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
     expect(screen.getByRole('tab', { name: /Changes/ })).toHaveAttribute(
       'aria-selected',
       'true',
     );
+  });
+
+  it.each([
+    ['no repo', { repoId: null }],
+    ['a missing worktree', { worktreeMissing: true }],
+  ])('has no Changes tab for a task with %s', async (_, patch) => {
+    setup(patch);
+    render(<Shell />);
+    await screen.findByRole('tablist', { name: 'Terminals' });
+    expect(screen.queryByRole('tab', { name: /Changes/ })).toBeNull();
+  });
+
+  it('opens a view as a tab after the terminals, and closing it goes back to a terminal', async () => {
+    setup();
+    render(<Shell />);
+    await openMenu();
     await userEvent.click(
-      screen.getByRole('button', { name: 'Close Changes' }),
+      await screen.findByRole('menuitem', { name: /Show docs/ }),
     );
-    expect(tabNames()).toEqual(['Claude Code', 'zsh']);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes', 'Docs']);
+    expect(screen.getByRole('tab', { name: /Docs/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Close Docs' }));
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes']);
     expect(screen.getByTestId('term-c1')).toHaveAttribute(
       'data-active',
       'true',
@@ -1483,9 +1512,9 @@ describe('the quiet task bar', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: /AI cost/ }),
     );
-    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Usage']);
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes', 'Usage']);
     await userEvent.click(screen.getByRole('tab', { name: 'zsh' }));
-    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Usage']);
+    expect(tabNames()).toEqual(['Claude Code', 'zsh', 'Changes', 'Usage']);
   });
 
   it('offers the run entries in the new terminal menu', async () => {
