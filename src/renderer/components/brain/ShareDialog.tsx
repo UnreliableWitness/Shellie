@@ -12,6 +12,8 @@ type Result =
   /** `again`: this is the one re-call after the sync; a second `syncing` stops there. */
   | { status: 'syncing'; since: number; again: boolean }
   | { status: 'secrets'; files: string[] }
+  /** Nothing on this machine opens the repo: a token for `host` is asked for. */
+  | { status: 'needsToken'; host: string; tried: string[] }
   | { status: 'shared'; joinLink: string };
 
 /** Share a local brain: where it lives, its name there, what goes along. A card in the page, not an overlay. */
@@ -34,6 +36,7 @@ export function ShareDialog({
   const [picked, setPicked] = useState<Where | null>(null);
   const [repoName, setRepoName] = useState(brain.name);
   const [repoUrl, setRepoUrl] = useState('');
+  const [repoToken, setRepoToken] = useState('');
   const [result, setResult] = useState<Result>({ status: 'idle' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,7 +68,12 @@ export function ShareDialog({
         brainId: brain.id,
         home: where,
         repoName: repoName.trim(),
-        ...(where === 'repo' ? { repoUrl: repoUrl.trim() } : {}),
+        ...(where === 'repo'
+          ? {
+              repoUrl: repoUrl.trim(),
+              ...(repoToken.trim() ? { repoToken: repoToken.trim() } : {}),
+            }
+          : {}),
       });
       if (r.status === 'syncing' && again) {
         // Never a second paid /sync on its own: the person decides.
@@ -78,7 +86,9 @@ export function ShareDialog({
           ? { status: 'syncing', since: started, again }
           : r.status === 'secrets'
             ? { status: 'secrets', files: r.files }
-            : { status: 'shared', joinLink: r.joinLink },
+            : r.status === 'needsToken'
+              ? { status: 'needsToken', host: r.host, tried: r.tried }
+              : { status: 'shared', joinLink: r.joinLink },
       );
     } catch (e) {
       setResult({ status: 'idle' });
@@ -200,10 +210,32 @@ export function ShareDialog({
                 onChange={(e) => setRepoUrl(e.target.value)}
               />
               <p className="small muted">
-                An empty private repo (made without a README). Git on this
-                machine signs in to it as it does in a terminal; Shellie stores
-                no token for it.
+                An empty private repo (made without a README). Shellie signs in
+                as git does on this machine, or as the GitHub CLI account that
+                can open the repo.
               </p>
+              {result.status === 'needsToken' && (
+                <>
+                  <label htmlFor="share-repo-token">Token</label>
+                  <input
+                    id="share-repo-token"
+                    className="field mono"
+                    type="password"
+                    autoComplete="off"
+                    value={repoToken}
+                    disabled={busy}
+                    onChange={(e) => setRepoToken(e.target.value)}
+                  />
+                  <p className="small" role="alert">
+                    Nothing on this machine can open that repo on {result.host}.
+                    {result.tried.length > 0 &&
+                      ` Tried: ${result.tried.join('; ')}.`}{' '}
+                    Check the address, or enter a token that can read and write
+                    it (for GitHub: a fine-grained personal access token with
+                    Contents: read and write). Shellie keeps it encrypted.
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -254,7 +286,8 @@ export function ShareDialog({
                 busy ||
                 result.status === 'syncing' ||
                 home === undefined ||
-                !(where === 'repo' ? repoUrl.trim() : repoName.trim())
+                !(where === 'repo' ? repoUrl.trim() : repoName.trim()) ||
+                (result.status === 'needsToken' && !repoToken.trim())
               }
               onClick={() => void share()}
             >

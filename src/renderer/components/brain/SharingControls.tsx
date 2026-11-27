@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { BrainView } from '../../../shared/brain';
+import type { BrainSharing, BrainView } from '../../../shared/brain';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { orgName } from './sharing';
@@ -7,6 +7,16 @@ import { orgName } from './sharing';
 type Step = null | 'ask' | 'stop' | 'take' | 'leave';
 
 /** The keeper of a shared brain with colleagues who joined: archiving, deleting or stopping first asks to hand over. */
+/** How a brain in a repo of the person's own signs in, for the sharing line; nothing for an Azure DevOps home. */
+export const signedInAs = (sharing: BrainSharing): string =>
+  sharing.home !== 'repo'
+    ? ''
+    : sharing.signIn?.kind === 'gh'
+      ? `, signed in as ${sharing.signIn.user} (GitHub CLI)`
+      : sharing.signIn?.kind === 'token'
+        ? ', signed in with the token you entered'
+        : ', signed in as git is on this machine';
+
 export const asksHandOver = (brain: BrainView): boolean =>
   !!brain.sharing && !!brain.keeper?.me && brain.keeper.members.length > 0;
 
@@ -152,8 +162,8 @@ export function SharingControls({ brain }: { brain: BrainView }) {
   return (
     <div className="small">
       <div>
-        Shared on {orgName(sharing.homeOrganizationUrl)}/{sharing.homeProject}.
-        Keeper: {keeper.me ? 'you' : keeper.name}.
+        Shared on {orgName(sharing.homeOrganizationUrl)}/{sharing.homeProject}
+        {signedInAs(sharing)}. Keeper: {keeper.me ? 'you' : keeper.name}.
       </div>
       <div className="row">
         {keeper.me && keeper.members.length > 0 && (

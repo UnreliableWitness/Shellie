@@ -13,11 +13,10 @@ import {
   sharedFactsOf,
   type RepoAddress,
 } from '../../../shared/brainShare';
-import { isGitAuthFailure } from '../../../shared/gitAuth';
 import type { Connection } from '../../../shared/types';
 import { AdoClient } from '../../services/AdoClient';
 import { parseAzureReposRemote } from '../../services/azureRepos';
-import { GitError, type GitClient } from '../../services/GitClient';
+import type { GitClient } from '../../services/GitClient';
 import { PENDING } from '../bookPass';
 import { LEAVE_MESSAGE, SHARE_MESSAGE } from '../brainCommits';
 import type { BrainStore } from '../BrainStore';
@@ -44,6 +43,11 @@ import {
   withPrivateIndex,
 } from './gitUtil';
 import { setCommitIdentity } from './keeper';
+import {
+  findSignIn,
+  type FoundSignIn,
+  type RepoSignInDeps,
+} from './repoSignIn';
 import { treeSecretFiles } from './secretScan';
 
 const BUSY = 'A brain job is running; try again later';
@@ -69,6 +73,8 @@ export type ShareDeps = {
     organizationUrl: string,
     token: () => Promise<string>,
   ) => Pick<AdoClient, 'createRepository'>;
+  /** The GitHub CLI's accounts and the typed tokens, for a repo home; absent: only git as it is on the machine. */
+  signIn?: RepoSignInDeps;
   /** Reads a pasted repo address; tests pass one that takes a local folder as the server. */
   parseRepo?: (url: string) => RepoAddress | null;
   now?: () => Date;
@@ -82,12 +88,16 @@ export type ShareInput = {
   repoName: string;
   /** The address of the existing, empty repo (the `repo` home). */
   repoUrl?: string;
+  /** A token typed for that repo, after `needsToken`. */
+  repoToken?: string;
 };
 
 export type ShareResult =
   | { status: 'shared'; joinLink: string }
   | { status: 'secrets'; files: string[] }
-  | { status: 'syncing' };
+  | { status: 'syncing' }
+  /** Nothing on this machine opens the repo (the `repo` home): ask again with a token for `host`. */
+  | { status: 'needsToken'; host: string; tried: string[] };
 
 const realAdo: NonNullable<ShareDeps['ado']> = (org, token) =>
   new AdoClient(org, token);
@@ -145,41 +155,6 @@ const lastSyncDone = (d: ShareDeps, brainId: string): number | null => {
   return at;
 };
 
-/** A repo of the person's own must be reachable by this machine's git and hold nothing yet. */
-async function requireEmptyRepo(
-  git: GitClient,
-  dir: string,
-  repo: RepoAddress,
-): Promise<void> {
-  let heads: string;
-  try {
-    heads = await git.run(dir, ['ls-remote', '--heads', '--', repo.remoteUrl], {
-      timeoutMs: git.fetchTimeoutMs,
-      env: { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' },
-    });
-  } catch (e) {
-    throw new Error(cantReach(repo, e));
-  }
-  if (heads.trim())
-    throw new Error(
-      `${repo.owner}/${repo.name} already has commits. Share needs an empty repo (made without a README); a repo that already holds a brain is joined, not shared to.`,
-    );
-}
-
-/** Why git could not reach a repo of the person's own, in words that say what to do. */
-export function cantReach(repo: RepoAddress, e: unknown): string {
-  const stderr = e instanceof GitError ? e.stderr.trim() : '';
-  const where = `${repo.owner}/${repo.name} on ${repo.host}`;
-  if (
-    isGitAuthFailure(stderr) ||
-    /repository not found|permission denied|could not read from remote/i.test(
-      stderr,
-    )
-  )
-    return `Git on this machine can't open ${where}. Check the address and that you have access, and sign git in to ${repo.host} (for GitHub: "gh auth login", or Git Credential Manager).`;
-  return `Can't reach ${where}: ${stderr || (e as Error).message}`;
-}
-
 const localConfig = (git: GitClient, dir: string, key: string) =>
   git
     .run(dir, ['config', '--local', '--get', key])
@@ -216,6 +191,19 @@ export async function shareBrain(
   const dir = b.path;
   if (d.runner.running(b.id)) throw new Error(BUSY);
 
+  // Before any paid /sync: the repo must open (as this machine's git, a GitHub CLI account, or a typed token) and be empty.
+  let opened: FoundSignIn | null = null;
+  if (own) {
+    const found = await findSignIn(d.signIn, d.git, dir, own, i.repoToken);
+    if (found.needsToken)
+      return { status: 'needsToken', host: own.host, tried: found.tried };
+    if (found.heads.trim())
+      throw new Error(
+        `${own.owner}/${own.name} already has commits. Share needs an empty repo (made without a README); a repo that already holds a brain is joined, not shared to.`,
+      );
+    opened = found;
+  }
+
   if (await needsSync(d.git, dir, lastSyncDone(d, b.id))) {
     const waiting = d.runner
       .jobs(b.id)
@@ -251,7 +239,6 @@ export async function shareBrain(
   const installId = await d.installId();
   const person = connection.user ?? 'Shellie';
 
-  if (own) await requireEmptyRepo(d.git, dir, own);
   const repo = own
     ? { id: '', remoteUrl: own.remoteUrl }
     : await (d.ado ?? realAdo)(
@@ -337,6 +324,7 @@ export async function shareBrain(
             repositoryId: repo.id,
             homeOrganizationUrl: home.organizationUrl,
             homeProject: home.project,
+            ...(opened?.signIn ? { signIn: opened.signIn } : {}),
             joinedAt: now.toISOString(),
             lastPullAt: null,
             lastPushAt: null,
@@ -345,6 +333,8 @@ export async function shareBrain(
           };
           // Recorded before the push: git signs in by the brain's home (connectionIdForBrain), the brain home's token
           // for the company home. The brain lock keeps BrainSync's pulls out meanwhile.
+          if (opened?.signIn?.kind === 'token' && i.repoToken)
+            await d.signIn?.tokens.set(b.id, i.repoToken.trim());
           await d.brains.patch(b.id, { sharing });
           recorded = true;
           await git.push(dir, 'origin', 'HEAD:main');
@@ -356,6 +346,7 @@ export async function shareBrain(
             },
           });
         } catch (e) {
+          await d.signIn?.tokens.delete(b.id).catch(() => undefined);
           if (recorded)
             await d.brains
               .patch(b.id, { sharing: null })
@@ -444,7 +435,7 @@ async function restore(
 
 /** Stops sharing: the brain keeps its folder and history (origin.json too) and becomes local again. */
 export async function stopSharing(
-  d: Pick<ShareDeps, 'brains' | 'git'>,
+  d: Pick<ShareDeps, 'brains' | 'git' | 'signIn'>,
   brainId: string,
 ): Promise<void> {
   const b = d.brains.get(brainId);
@@ -455,6 +446,7 @@ export async function stopSharing(
       await d.git.run(b.path, ['remote', 'remove', 'origin']);
   });
   await d.brains.patch(brainId, { sharing: null });
+  await d.signIn?.tokens.delete(brainId).catch(() => undefined);
 }
 
 /**
@@ -464,7 +456,7 @@ export async function stopSharing(
  * keeper is refused: they hand over first, or stop sharing.
  */
 export async function leaveBrain(
-  d: Pick<ShareDeps, 'brains' | 'git' | 'installId'> & {
+  d: Pick<ShareDeps, 'brains' | 'git' | 'installId' | 'signIn'> & {
     sync?: Pick<BrainSync, 'push'>;
   },
   brainId: string,

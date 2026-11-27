@@ -234,6 +234,7 @@ import { errorMessage } from '../../shared/errors';
 import type { createBrainTerminals } from '../brain/brainTerminal';
 import { BrainStore } from '../brain/BrainStore';
 import { BrainHomeStore } from '../brain/share/BrainHomeStore';
+import type { RepoSignInDeps } from '../brain/share/repoSignIn';
 import {
   createBrainHandlers,
   type BrainHandlerDeps,
@@ -308,6 +309,8 @@ export type Services = {
   brain?: {
     store: BrainStore;
     home: BrainHomeStore;
+    /** How git signs in to a brain's repo on GitHub or another host; absent: only as the machine's git does. */
+    signIn?: RepoSignInDeps;
     runner: BrainRunner;
     ledgerToday: (brainId: string) => { tokens: number; costEur: number };
     userData: string;
@@ -1013,6 +1016,7 @@ export function createHandlers(s: Services): Handlers {
   const brainHandlers = createBrainHandlers({
     brains: brain.store,
     home: brain.home,
+    signIn: 'signIn' in brain ? brain.signIn : undefined,
     rasterize: createRasterizer({ platform: s.platform, run: runWithInput }),
     git: s.git,
     runner: brain.runner,

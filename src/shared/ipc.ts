@@ -856,12 +856,16 @@ export type Channels = {
         home: 'customer' | 'company' | 'repo';
         repoName: string;
         repoUrl?: string;
+        /** A token typed for that repo, after `needsToken`; kept encrypted in main, for this brain. */
+        repoToken?: string;
       },
     ];
     result:
       | { status: 'shared'; joinLink: string }
       | { status: 'secrets'; files: string[] }
-      | { status: 'syncing' };
+      | { status: 'syncing' }
+      /** Nothing on this machine opens the repo: ask again with a token for `host`. */
+      | { status: 'needsToken'; host: string; tried: string[] };
   };
   /** The `shellie://join?…` link of a shared brain (no token in it); for a repo home it carries the repo's address. */
   'brain:joinLink': { args: [brainId: string]; result: string };
