@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parse } from 'yaml';
+import { fileCache, mapAtOnce } from './fileCache';
 import { absPath } from './paths';
 
 /** A page under wiki/, as Shellie's checks and the index see it. */
@@ -166,10 +167,13 @@ export function parsePage(relPath: string, text: string): WikiPage {
   };
 }
 
-/** Every `wiki/**\/*.md` page, sorted by path. A missing wiki/ is an empty list. */
+/** Each page as last parsed, by its file. */
+const parsedPages = fileCache<WikiPage>();
+
+/** Every `wiki/**\/*.md` page, sorted by path. A missing wiki/ is an empty list. A page that did not change since the last read is not read again. */
 export async function readPages(brainDir: string): Promise<WikiPage[]> {
   const root = path.join(brainDir, 'wiki');
-  const out: WikiPage[] = [];
+  const found: string[] = [];
   const walk = async (rel: string): Promise<void> => {
     let entries;
     try {
@@ -183,12 +187,17 @@ export async function readPages(brainDir: string): Promise<WikiPage[]> {
       if (e.name.startsWith('.')) continue;
       const next = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(next);
-      else if (e.isFile() && e.name.toLowerCase().endsWith('.md')) {
-        const text = await fs.readFile(absPath(root, next), 'utf8');
-        out.push(parsePage(`wiki/${next}`, text));
-      }
+      else if (e.isFile() && e.name.toLowerCase().endsWith('.md'))
+        found.push(next);
     }
   };
   await walk('');
+  const out = await mapAtOnce(found, async (next) => {
+    const page = await parsedPages.read(absPath(root, next), (text) =>
+      parsePage(`wiki/${next}`, text),
+    );
+    // A copy: callers may change what they are given.
+    return { ...page, links: [...page.links] };
+  });
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }

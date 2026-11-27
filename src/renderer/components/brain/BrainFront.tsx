@@ -1,13 +1,13 @@
 import type { BrainBook, BrainPageRow } from '../../../shared/brain';
 import { plural } from '../../../shared/text';
-import { BrainGraph } from './BrainGraph';
 import { trackBrain } from './brainActions';
 import { chapterOf } from './book';
+import { SkyPreview } from './sky/SkyPreview';
 
 /**
  * The front page of a brain with a book: its name and introduction (the summary of the first chapter's first page),
- * Continue reading when a page last read is still in the book, then the contents beside the graph of how the pages
- * link. A chapter row opens the chapter's first page; a chapter with no pages says so and is no button. With
+ * Continue reading when a page last read is still in the book, then the contents beside the brain's sky (a
+ * window on Explore). A chapter row opens the chapter's first page; a chapter with no pages says so and is no button. With
  * `longReads`, a line under the introduction leads to them.
  */
 export function BrainFront({
@@ -18,6 +18,8 @@ export function BrainFront({
   continueAt,
   onOpen,
   longReads,
+  active = true,
+  onExplore,
 }: {
   brainName: string;
   book: BrainBook;
@@ -27,6 +29,10 @@ export function BrainFront({
   /** The page last read in this brain, if any. */
   continueAt: { path: string } | null;
   onOpen: (path: string) => void;
+  /** Whether the Read view is in front (the sky draws only then). */
+  active?: boolean;
+  /** Opens the Explore view; absent: no sky beside the contents. */
+  onExplore?: () => void;
   /** The line to the long reads: how many chapters have one, how many reads and letters are unread. Absent: no line. */
   longReads?: {
     written: number;
@@ -119,7 +125,15 @@ export function BrainFront({
             })}
           </ul>
         </div>
-        <BrainGraph rows={rows} newPaths={newPaths} onOpen={onOpen} />
+        {onExplore && (
+          <SkyPreview
+            rows={rows}
+            book={book}
+            newPaths={newPaths}
+            active={active}
+            onExplore={onExplore}
+          />
+        )}
       </div>
     </div>
   );

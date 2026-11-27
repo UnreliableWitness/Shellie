@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { frameDue } from './frames';
-import { SKY_TYPE_COLOR, type Sky } from './skyLayout';
+import { SKY_TYPE_COLOR, SKY_TYPE_COLOR_LIGHT, type Sky } from './skyLayout';
+import { DARK_SKY, type SkyTheme } from './skyTheme';
 
 /** What is lit: the open page, the one under the pointer, the one the keys point at, or what a search found. */
 export type SkyFocus = {
@@ -35,7 +36,6 @@ const NO_FOCUS: SkyFocus = {
   candidate: null,
   matches: null,
 };
-const SKY_COLOR = 0x070a12;
 const MIN_DIST = 12;
 const MAX_DIST = 900;
 /** How near the pointer has to be to a star to mean it, in px. */
@@ -65,14 +65,19 @@ void main() {
   gl_Position = projectionMatrix * mv;
 }`;
 const FRAGMENT = `
-varying vec3 vColor; varying float vA;
+varying vec3 vColor; varying float vA; uniform float uLight;
 void main() {
   float d = length(gl_PointCoord - 0.5) * 2.0;
   if (d > 1.0) discard;
   float core = smoothstep(0.32, 0.0, d);
   float halo = pow(1.0 - d, 2.0);
-  vec3 c = mix(vColor, vec3(1.0), core * 0.8);
-  gl_FragColor = vec4(c * (halo * 0.85 + core) * vA, 1.0);
+  float lit = (halo * 0.85 + core) * vA;
+  if (uLight > 0.5) {
+    // On the light page a star is ink: its colour, deeper at the core, laid over the background.
+    gl_FragColor = vec4(mix(vColor, vColor * 0.5, core * 0.8), clamp(lit * 1.25, 0.0, 1.0));
+  } else {
+    gl_FragColor = vec4(mix(vColor, vec3(1.0), core * 0.8) * lit, 1.0);
+  }
 }`;
 
 /** `#rrggbb` as three 0..1 numbers, as written: the shader draws them without a colour space step. */
@@ -142,16 +147,18 @@ export class SkyScene {
   private panelWidth = 0;
   private disposed = false;
   private readonly v = new THREE.Vector3();
+  private theme: SkyTheme;
+  private readonly dustPoints: THREE.Points;
   private ratioQuery: MediaQueryList | null = null;
 
   constructor(
     private readonly host: HTMLElement,
     private readonly handlers: SkyHandlers,
-    private readonly options: { reducedMotion: boolean },
+    private readonly options: { reducedMotion: boolean; theme?: SkyTheme },
   ) {
+    this.theme = options.theme ?? DARK_SKY;
     // Throws without WebGL: the view then shows the flat map.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.renderer.setClearColor(SKY_COLOR, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.canvas = this.renderer.domElement;
     this.canvas.style.display = 'block';
@@ -165,6 +172,7 @@ export class SkyScene {
         uScale: { value: 1 },
         uMin: { value: 3 },
         uMax: { value: 90 },
+        uLight: { value: 0 },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -173,7 +181,9 @@ export class SkyScene {
       depthTest: false,
       transparent: true,
     });
-    this.scene.add(this.dust());
+    this.dustPoints = this.dust();
+    this.scene.add(this.dustPoints);
+    this.applyTheme();
 
     host.addEventListener('pointerdown', this.onDown);
     host.addEventListener('pointermove', this.onMove);
@@ -215,6 +225,37 @@ export class SkyScene {
       this.fly(this.overview.target, this.overview.dist, FIRST_FLY_MS);
     }
     this.applyFocus();
+  }
+
+  /** The page's background and whether it is light: light is added on a dark page, ink laid over a light one. */
+  setTheme(theme: SkyTheme): void {
+    if (
+      theme.light === this.theme.light &&
+      theme.background === this.theme.background
+    )
+      return;
+    this.theme = theme;
+    this.applyTheme();
+    // The stars' colours and the threads' materials are made per theme.
+    this.build();
+    this.applyFocus();
+  }
+
+  private get blending(): THREE.Blending {
+    return this.theme.light ? THREE.NormalBlending : THREE.AdditiveBlending;
+  }
+
+  private applyTheme(): void {
+    const { light, background } = this.theme;
+    this.renderer.setClearColor(background, 1);
+    this.starMaterial.uniforms.uLight.value = light ? 1 : 0;
+    this.starMaterial.blending = this.blending;
+    this.starMaterial.needsUpdate = true;
+    const dust = this.dustPoints.material as THREE.PointsMaterial;
+    dust.color.setHex(light ? 0x6b778c : 0x8fa6d8);
+    dust.opacity = light ? 0.4 : 0.45;
+    this.dirty = true;
+    this.schedule();
   }
 
   setFocus(focus: SkyFocus): void {
@@ -329,7 +370,9 @@ export class SkyScene {
   private build(): void {
     this.clear();
     const { stars, clusters, links } = this.sky;
-    const colors = stars.flatMap((s) => rgb(SKY_TYPE_COLOR[s.type]));
+    const light = this.theme.light;
+    const palette = light ? SKY_TYPE_COLOR_LIGHT : SKY_TYPE_COLOR;
+    const colors = stars.flatMap((s) => rgb(palette[s.type]));
     const points = (
       position: number[],
       color: number[],
@@ -394,7 +437,9 @@ export class SkyScene {
       'color',
       floats(
         links.flatMap(([a, b]) =>
-          [a, b].flatMap((i) => [0, 1, 2].map((k) => colors[i * 3 + k] * 0.5)),
+          [a, b].flatMap((i) =>
+            [0, 1, 2].map((k) => colors[i * 3 + k] * (light ? 1 : 0.5)),
+          ),
         ),
         3,
       ),
@@ -406,7 +451,7 @@ export class SkyScene {
           ...(color === undefined ? { vertexColors: true } : { color }),
           transparent: true,
           opacity: color === undefined ? 0.38 : 0.85,
-          blending: THREE.AdditiveBlending,
+          blending: this.blending,
           depthWrite: false,
         }),
       );
@@ -415,16 +460,19 @@ export class SkyScene {
       return l;
     };
     this.baseLines = line(base);
-    this.hotLines = line(new THREE.BufferGeometry(), 0xbfdcff);
+    this.hotLines = line(
+      new THREE.BufferGeometry(),
+      light ? 0x0b5cad : 0xbfdcff,
+    );
     this.dots = new THREE.Points(
       new THREE.BufferGeometry(),
       new THREE.PointsMaterial({
-        color: 0xffffff,
+        color: light ? 0x201f1e : 0xffffff,
         size: 4,
         sizeAttenuation: false,
         transparent: true,
         opacity: 0.95,
-        blending: THREE.AdditiveBlending,
+        blending: this.blending,
         depthWrite: false,
       }),
     );

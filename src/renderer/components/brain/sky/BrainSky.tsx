@@ -7,9 +7,12 @@ import type { BrainPages } from '../BrainWiki';
 import { newPathsSince } from '../newPaths';
 import { GRAPH_MAX_NODES } from '../pageGraph';
 import { useBrainNav } from '../useBrainNav';
+import { useColorScheme } from '../../../colorScheme';
 import type { SkyLabel, SkyScene } from './SkyScene';
+import { skyTheme } from './skyTheme';
 import {
   SKY_TYPE_COLOR,
+  SKY_TYPE_COLOR_LIGHT,
   skyFacts,
   skyLayout,
   skyMatches,
@@ -53,6 +56,9 @@ function busy(target: EventTarget | null, also = ''): boolean {
 }
 
 function StarRow({ star, onOpen }: { star: Star; onOpen(path: string): void }) {
+  // The dot sits on the panel, which follows the theme as the sky does.
+  const palette =
+    useColorScheme() === 'light' ? SKY_TYPE_COLOR_LIGHT : SKY_TYPE_COLOR;
   return (
     <li>
       <button
@@ -62,7 +68,7 @@ function StarRow({ star, onOpen }: { star: Star; onOpen(path: string): void }) {
       >
         <span
           className="sky-dot"
-          style={{ background: SKY_TYPE_COLOR[star.type] }}
+          style={{ background: palette[star.type] }}
           aria-hidden="true"
         />
         <span className="sky-row-title">{star.title}</span>
@@ -213,7 +219,7 @@ export function BrainSky({
               onLabels: placeLabels,
               onLost: () => setFlat(true),
             },
-            { reducedMotion: reducedMotion() },
+            { reducedMotion: reducedMotion(), theme: skyTheme(host.current) },
           );
           made.current.setPanelWidth(PANEL_PX);
           setScene(made.current);
@@ -241,6 +247,9 @@ export function BrainSky({
   }, [flat]);
 
   useEffect(() => scene?.setRunning(active), [scene, active]);
+  // The sky follows the app's theme, also when it changes while the page is open.
+  const scheme = useColorScheme();
+  useEffect(() => scene?.setTheme(skyTheme(host.current)), [scene, scheme]);
 
   // The first sky waits for the pages, so the flight in shows the real brain; a later one keeps the camera.
   const first = useRef(true);

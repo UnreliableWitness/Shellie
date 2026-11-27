@@ -140,8 +140,20 @@ describe('BrainFront', () => {
     ).toHaveTextContent(/3 of 3 chapters$/);
   });
 
-  it('renders the graph of the pages', () => {
+  it("shows the brain's sky as a way into Explore, and no flat graph", async () => {
+    const onExplore = vi.fn();
+    show({ onExplore });
+    expect(screen.queryByLabelText('How pages link')).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Explore the brain' }),
+    );
+    expect(onExplore).toHaveBeenCalled();
+  });
+
+  it('shows no sky where Explore cannot be opened', () => {
     show();
-    expect(screen.getByLabelText('How pages link')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Explore the brain' }),
+    ).not.toBeInTheDocument();
   });
 });

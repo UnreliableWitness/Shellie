@@ -63,7 +63,11 @@ export function useActiveBrains(): BrainView[] {
   return useActiveBrainsLoaded().brains;
 }
 
-/** One brain, fetched on mount and again when it changes; null until loaded or when it is gone. */
+/**
+ * One brain, fetched on mount and again when it changes; null until loaded or when it is gone. The first answer is
+ * the brain as the list has it (no `health`: that costs git calls and a read of every page and source), so the page
+ * shows at once; the full one follows.
+ */
 export function useBrain(brainId: string): BrainView | null {
   const [brain, setBrain] = useState<BrainView | null>(null);
   const load = useCallback(() => {
@@ -71,7 +75,23 @@ export function useBrain(brainId: string): BrainView | null {
       .invoke('brain:get', brainId)
       .then(setBrain, () => setBrain(null));
   }, [brainId]);
-  useEffect(load, [load]);
+  useEffect(() => {
+    let live = true;
+    api()
+      .invoke('brain:list')
+      .then(
+        (all) => {
+          const quick = all.find((b) => b.id === brainId);
+          // Never over the full answer, should that come first.
+          if (live && quick) setBrain((b) => b ?? quick);
+        },
+        () => undefined,
+      );
+    load();
+    return () => {
+      live = false;
+    };
+  }, [brainId, load]);
   useBrainChanged(brainId, load);
   return brain;
 }

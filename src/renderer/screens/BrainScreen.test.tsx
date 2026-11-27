@@ -761,6 +761,21 @@ describe('BrainScreen sharing', () => {
       screen.queryByRole('button', { name: 'Anna added 2 pages' }),
     ).not.toBeInTheDocument();
   });
+  it('shows the brain as the list has it while its health is still being read', async () => {
+    const quick = { ...sharedBrain(), health: null };
+    setup(sharedBrain(), {
+      'brain:list': () => [quick],
+      // The full answer never comes in this test.
+      'brain:get': () => new Promise<never>(() => undefined),
+    });
+    render(<BrainScreen brainId="b1" />);
+    expect(
+      await screen.findByRole('tab', { name: 'Read' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Join link' }),
+    ).toBeInTheDocument();
+  });
   it('does not sync a local brain', async () => {
     const a = setup();
     render(<BrainScreen brainId="b1" />);

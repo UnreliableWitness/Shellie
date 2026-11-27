@@ -385,6 +385,10 @@ export function BrainScreen({
             shared={brain.sharing !== null}
             conflicts={conflicts.open}
             onSettle={(id) => openSettle(id, 'read')}
+            onExplore={() => {
+              setSettle(null);
+              choose('explore');
+            }}
             onAdd={() => {
               setSettle(null);
               choose('add');
