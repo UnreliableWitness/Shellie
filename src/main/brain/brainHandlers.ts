@@ -35,6 +35,7 @@ import type { GitClient } from '../services/GitClient';
 import type { Tracker } from '../trackers/Tracker';
 import type { BrainJobRunner } from './jobs';
 import type { BrainHomeStore } from './share/BrainHomeStore';
+import type { RepoSignInDeps } from './share/repoSignIn';
 import type { BrainSync } from './share/BrainSync';
 import {
   discoverCustomerBrains,
@@ -184,6 +185,8 @@ export type BrainRunner = Pick<
 export type BrainHandlerDeps = {
   brains: BrainStore;
   home: Pick<BrainHomeStore, 'get' | 'save' | 'remove' | 'token'>;
+  /** How git signs in to a brain's repo on GitHub or another host; absent: only as the machine's git does. */
+  signIn?: RepoSignInDeps;
   /** Converts pictures in formats the agent cannot view (createRasterizer); absent in tests. */
   rasterize?: Rasterize;
   git: GitClient;
@@ -516,6 +519,7 @@ export function createBrainHandlers(
     userData: d.userData,
     installId: myInstall,
     ado: d.ado,
+    signIn: d.signIn,
     now: d.now,
   };
   const shareDeps: ShareDeps = {
@@ -526,6 +530,7 @@ export function createBrainHandlers(
     runner: d.runner,
     installId: myInstall,
     ado: d.ado,
+    signIn: d.signIn,
     now: d.now,
   };
   /** The shared brains found per connection this app session (the Join card). */
@@ -1023,7 +1028,7 @@ export function createBrainHandlers(
     },
     'brain:stopSharing': async (id) => {
       brainOf(id);
-      await stopSharing(d, id);
+      await stopSharing(shareDeps, id);
       changed(id);
     },
     'brain:leave': async (id, then, deleteFolder) => {

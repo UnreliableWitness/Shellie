@@ -138,6 +138,12 @@ import {
   connectionIdForPath,
   createGitAuth,
 } from './main/services/gitAuth';
+import {
+  ghCli,
+  repoBrainEnv,
+  RepoTokenStore,
+  type RepoSignInDeps,
+} from './main/brain/share/repoSignIn';
 import { loadEffectiveConfig } from './main/services/effectiveConfig';
 import { claudeSessionFile } from './main/services/claudeSessions';
 import { opencodeModels, runProbe } from './main/services/agentDetector';
@@ -678,12 +684,17 @@ async function boot(): Promise<void> {
       path.join(userData, 'brain-home.json'),
       secretCrypto,
     );
+    const repoTokens = new RepoTokenStore(
+      path.join(userData, 'brain-repo-tokens.json'),
+      secretCrypto,
+    );
     const [loaded, connectionsLoaded, secretsLoaded] = await Promise.all([
       store.load(),
       connections.load(),
       secrets.load(),
       brains.load(),
       brainHome.load(),
+      repoTokens.load(),
     ]);
     // Once per install: installs that already have repositories skip the first-run page and keep their tabs.
     const migrated = migrateOnboarding(
@@ -716,34 +727,43 @@ async function boot(): Promise<void> {
         .update((cur) => ({ ...cur, whatsNewSeen: seen }))
         .catch((err) => console.error('Saving whatsNewSeen failed', err));
     const recovered = await recoverInterruptedTasks(store);
-    // Fetch and push to Azure Repos sign in with the connection's token, not a credential helper that may not start.
-    const git = new GitClient(undefined, {
-      auth: createGitAuth({
-        connections: () => {
-          const home = brainHome.get();
-          return [
-            ...connections.list(),
-            ...(home
-              ? [
-                  {
-                    id: BRAIN_HOME_CONNECTION_ID,
-                    organizationUrl: home.organizationUrl,
-                    project: home.project,
-                  },
-                ]
-              : []),
-          ];
-        },
-        token: (id) =>
-          id === BRAIN_HOME_CONNECTION_ID
-            ? brainHome.token()
-            : connections.token(id),
-        connectionIdFor: (cwd) =>
-          connectionIdForBrain(brains.list(), cwd) ??
-          connectionIdForPath(store.state, cwd),
-      }),
-    });
     const platform = createPlatform();
+    // A brain in a repo on GitHub or another host signs in as found when it was shared or joined.
+    const repoSignIn: RepoSignInDeps = {
+      gh: ghCli(platform),
+      tokens: repoTokens,
+    };
+    // Fetch and push to Azure Repos sign in with the connection's token, not a credential helper that may not start.
+    const adoAuth = createGitAuth({
+      connections: () => {
+        const home = brainHome.get();
+        return [
+          ...connections.list(),
+          ...(home
+            ? [
+                {
+                  id: BRAIN_HOME_CONNECTION_ID,
+                  organizationUrl: home.organizationUrl,
+                  project: home.project,
+                },
+              ]
+            : []),
+        ];
+      },
+      token: (id) =>
+        id === BRAIN_HOME_CONNECTION_ID
+          ? brainHome.token()
+          : connections.token(id),
+      connectionIdFor: (cwd) =>
+        connectionIdForBrain(brains.list(), cwd) ??
+        connectionIdForPath(store.state, cwd),
+    });
+    const git = new GitClient(undefined, {
+      auth: async (o) => {
+        const env = await repoBrainEnv(repoSignIn, brains.list(), o.cwd);
+        return env ? { env, connectionId: null } : adoAuth(o);
+      },
+    });
     const repos = new RepoRegistry(store, git);
     // Worktrees made before the rename keep their task file in .miac/; move it in the background.
     void (async () => {
@@ -1365,6 +1385,7 @@ async function boot(): Promise<void> {
       brain: {
         store: brains,
         home: brainHome,
+        signIn: repoSignIn,
         runner: brainRunner,
         asks: brainAsks,
         ledgerToday: brainToday,

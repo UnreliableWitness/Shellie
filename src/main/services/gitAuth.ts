@@ -51,17 +51,21 @@ export function azureHeaderScope(url: string): string | null {
   return `https://${host}/`;
 }
 
-/** `Authorization: Basic base64(":" + pat)` for URLs under `scope`, added after any `GIT_CONFIG_COUNT` already set. */
+/**
+ * `Authorization: Basic base64(user + ":" + pat)` for URLs under `scope`, added after any `GIT_CONFIG_COUNT` already
+ * set. Azure DevOps takes an empty user; GitHub wants any name.
+ */
 export function extraHeaderEnv(
   scope: string,
   pat: string,
   base: NodeJS.ProcessEnv = process.env,
+  user = '',
 ): Record<string, string> {
   const n = Math.max(0, Number.parseInt(base.GIT_CONFIG_COUNT ?? '', 10) || 0);
   return {
     GIT_CONFIG_COUNT: String(n + 1),
     [`GIT_CONFIG_KEY_${n}`]: `http.${scope}.extraHeader`,
-    [`GIT_CONFIG_VALUE_${n}`]: `Authorization: Basic ${Buffer.from(`:${pat}`).toString('base64')}`,
+    [`GIT_CONFIG_VALUE_${n}`]: `Authorization: Basic ${Buffer.from(`${user}:${pat}`).toString('base64')}`,
   };
 }
 

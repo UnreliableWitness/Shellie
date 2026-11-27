@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrainSchema, type BrainJob } from '../../../shared/brain';
-import { GitClient } from '../../services/GitClient';
+import { GitClient, GitError } from '../../services/GitClient';
 import { connectionIdForBrain } from '../../services/gitAuth';
 import { BRAIN_HOME_CONNECTION_ID } from '../../../shared/brainShare';
 import { BrainStore } from '../BrainStore';
@@ -650,6 +650,99 @@ describe("shareBrain to a repo of the person's own", () => {
       /can't open acme\/brain on github.com/,
     );
     expect(brains.get('a')?.sharing).toBeNull();
+  });
+});
+
+describe('the sign-in of a repo home', () => {
+  const https = 'https://github.com/acme/brain';
+  /** The address is GitHub's; git is sent to the local server, which opens only with the right token. */
+  function gated(token: string) {
+    const real = new GitClient();
+    const g = Object.create(real) as GitClient;
+    const tokenOf = (env: Record<string, string> = {}) => {
+      const h = Object.values(env).find((v) => v.startsWith('Authorization: '));
+      return h
+        ? Buffer.from(h.split(' ').pop() ?? '', 'base64')
+            .toString()
+            .replace('x-access-token:', '')
+        : null;
+    };
+    g.run = (cwd, args, opts = {}) => {
+      if (args[0] === 'ls-remote' && tokenOf(opts.env) !== token)
+        return Promise.reject(
+          new GitError(args, 'remote: Repository not found.', 128),
+        );
+      return real.run(
+        cwd,
+        args.map((a) => (a === https ? server : a)),
+        opts,
+      );
+    };
+    return g;
+  }
+  const signIn = (accounts: string[]) => {
+    const kept = new Map<string, string>();
+    return {
+      kept,
+      deps: {
+        gh: {
+          accounts: async () => accounts,
+          token: async (_h: string, user: string) => `token-of-${user}`,
+        },
+        tokens: {
+          get: async (id: string) => kept.get(id) ?? null,
+          set: async (id: string, t: string) => void kept.set(id, t),
+          delete: async (id: string) => void kept.delete(id),
+        },
+      },
+    };
+  };
+  const input = {
+    brainId: 'a',
+    home: 'repo',
+    repoName: '',
+    repoUrl: https,
+  } as const;
+  const synced = async () => {
+    const at = await head();
+    await writeState(dir, (s) => ({ ...s, lastSyncCommit: at }));
+    await commit('Brain: sync');
+  };
+
+  it('shares as the GitHub CLI account that can open the repo, and records it', async () => {
+    await synced();
+    const s = signIn(['personal', 'work']);
+    const r = await shareBrain(
+      deps({ git: gated('token-of-work'), signIn: s.deps }),
+      input,
+    );
+    expect(r.status).toBe('shared');
+    expect(brains.get('a')?.sharing).toMatchObject({
+      home: 'repo',
+      signIn: { kind: 'gh', user: 'work' },
+    });
+    expect(s.kept.size).toBe(0);
+  });
+
+  it('asks for a token before any sync when nothing opens the repo, then keeps the typed one for the brain', async () => {
+    // A sync is due, yet none is queued: the repo comes first.
+    const s = signIn([]);
+    const d = deps({ git: gated('typed'), signIn: s.deps });
+    expect(await shareBrain(d, input)).toEqual({
+      status: 'needsToken',
+      host: 'github.com',
+    });
+    expect(enqueued).toEqual([]);
+    await expect(
+      shareBrain(d, { ...input, repoToken: 'wrong' }),
+    ).rejects.toThrow(/That token can't open/);
+    await synced();
+    const r = await shareBrain(d, { ...input, repoToken: ' typed ' });
+    expect(r.status).toBe('shared');
+    expect(brains.get('a')?.sharing?.signIn).toEqual({ kind: 'token' });
+    expect(s.kept.get('a')).toBe('typed');
+    await stopSharing({ brains, git, signIn: s.deps }, 'a');
+    expect(s.kept.size).toBe(0);
   });
 });
 

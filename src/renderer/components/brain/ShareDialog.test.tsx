@@ -122,6 +122,50 @@ describe('ShareDialog', () => {
     ).toBeInTheDocument();
   });
 
+  it('asks for a token when nothing on the machine opens the repo, and shares with it', async () => {
+    let asked = 0;
+    const a = setup({
+      'brain:share': () =>
+        asked++ === 0
+          ? { status: 'needsToken', host: 'github.com' }
+          : { status: 'shared', joinLink: 'shellie://join?url=x' },
+    });
+    render(
+      <ShareDialog brain={brainView()} onClose={vi.fn()} onSources={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole('radio', {
+        name: 'A repo I made (GitHub or another git host)',
+      }),
+    );
+    await userEvent.type(
+      screen.getByLabelText('Repo address'),
+      'https://github.com/acme/brain',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Share' }));
+    expect(
+      await screen.findByText(/Nothing on this machine can open that repo/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Share' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Token'), 'github_pat_1');
+    await userEvent.click(screen.getByRole('button', { name: 'Share' }));
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:share',
+        args: [
+          {
+            brainId: 'b1',
+            home: 'repo',
+            repoName: 'Acme',
+            repoUrl: 'https://github.com/acme/brain',
+            repoToken: 'github_pat_1',
+          },
+        ],
+      }),
+    );
+    expect(await screen.findByText('shellie://join?url=x')).toBeInTheDocument();
+  });
+
   it('lists the files that may hold a secret', async () => {
     setup({
       'brain:share': () => ({

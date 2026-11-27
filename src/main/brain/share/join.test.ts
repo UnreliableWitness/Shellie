@@ -546,6 +546,7 @@ describe("a brain in a repo of the keeper's own", () => {
       connectionId: 'c1',
       needsToken: false,
       alreadyHave: false,
+      own: true,
     });
     const b = await joinBrain(
       own(),

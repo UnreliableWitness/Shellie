@@ -66,6 +66,16 @@ export const BrainWikiSchema = z.object({
 });
 export type BrainWiki = z.infer<typeof BrainWikiSchema>;
 
+/**
+ * How git signs in to a `repo` home when not as the machine's git does by itself: as an account of the GitHub CLI
+ * (its token is asked from `gh` each time), or with a token typed for this brain (kept encrypted in main).
+ */
+export const BrainRepoSignInSchema = z.union([
+  z.object({ kind: z.literal('gh'), user: z.string() }),
+  z.object({ kind: z.literal('token') }),
+]);
+export type BrainRepoSignIn = z.infer<typeof BrainRepoSignInSchema>;
+
 /** Where a shared brain lives and how it is doing; null on a brain that is not shared. Re-exported by brainShare. */
 export const BrainSharingSchema = z.object({
   /** `repo`: a git repo the person made themselves on any host (GitHub, …), named by its address; no `repositoryId`. */
@@ -74,6 +84,8 @@ export const BrainSharingSchema = z.object({
   repositoryId: z.string(),
   homeOrganizationUrl: z.string(),
   homeProject: z.string(),
+  /** A `repo` home's sign-in; absent or null: git as it is on the machine. */
+  signIn: BrainRepoSignInSchema.nullable().optional(),
   joinedAt: z.string(),
   lastPullAt: z.string().nullable(),
   lastPushAt: z.string().nullable(),

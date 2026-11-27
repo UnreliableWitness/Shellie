@@ -221,6 +221,8 @@ export type JoinPreview = {
   connectionId: string | null;
   needsToken: boolean;
   alreadyHave: boolean;
+  /** The brain is in a repo of the keeper's own (GitHub, …): the token asked for is one for that repo. */
+  own?: boolean;
 };
 
 /** A shared brain found in a connection's project (the Join card). */
