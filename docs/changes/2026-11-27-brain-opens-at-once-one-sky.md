@@ -31,11 +31,11 @@ Measured in a scratch dev app on this Mac, on a brain grown to 300 sources (abou
 | `brain:pages` | 92 ms | 14 to 20 ms |
 | `brain:sources` | 31 ms | 2 ms |
 
-The sky was seen on Read's landing there and in Explore, in the dark and the light theme (the scheme switched over CDP), on the page's background in each; a click on the window opened Explore.
+The sky was seen on Read's landing there and in Explore, in the dark and the light theme (the scheme switched over CDP), on the page's background in each; a click on the window opened Explore. A second scratch brain closer to a real one (170 pages, a book of 8 chapters, six page types, a few hubs) showed the clusters, their names, the threads and the type colours readable in both themes, and the sky beside the contents on the book's front page.
 
 ## Known gaps
 
 - **Not measured on Windows**, where the owner saw the 10 seconds: the Mac figures show the same causes at a smaller scale (opening files and starting git are both several times slower there), but the gain on the owner's brain is not known until they open it. What is left in `brain:get` is mostly its git calls (the outside-edits log reads the whole history) and a folder listing per source for its pictures; they no longer hold the page back.
 - The first opening after Shellie starts still reads every file once.
-- The book's front page with the sky was not seen in the running app (the scratch brain had no book), nor a brain with several chapters and page types in the light theme: the scratch brain was one dense cluster of one type, so how the type colours read on the light page is unseen. A change of theme while the sky is open is covered by the code path only.
+- A brain with hundreds of pages in one cluster where every page is linked alike (the first scratch brain: 904 pages, no book, one type) draws as one bright, packed ball in either theme: every star is then at its largest and pulled to the middle. That is the layout's rule from before this change, not the theme; a real brain's links are uneven. A change of theme while the sky is open is covered by the code path only.
 - Each visit to the front page makes a graphics context for the window and gives it back on leaving.
