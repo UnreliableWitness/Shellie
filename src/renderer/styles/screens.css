@@ -793,7 +793,7 @@
     100% 100%,
     100% var(--week-hour);
 }
-/* A card: a task's stretch of work, as tall as it took. A click copies the task. */
+/* A card: a task's work, as tall as it took and a line at least. A click copies the task. */
 .week-card {
   flex: none;
   display: flex;
@@ -841,13 +841,6 @@
 .week-card[data-size='s'] .week-card-title {
   display: block;
   text-overflow: ellipsis;
-}
-/* A sliver: no room for text; the hover and the list below name it. */
-.week-card[data-size='xs'] {
-  padding: 0;
-}
-.week-card[data-size='xs'] > * {
-  display: none;
 }
 .week-card[data-series='1'],
 .week-swatch[data-series='1'] {

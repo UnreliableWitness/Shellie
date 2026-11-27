@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { WeekRow } from '../shared/time';
-import { dayBlocks, scaleHours, SERIES, taskSlots } from './weekColumns';
+import {
+  dayBlocks,
+  hourHeight,
+  MIN_HOUR_PX,
+  MIN_SLOT_PX,
+  scaleHours,
+  SERIES,
+  slotHeights,
+  taskSlots,
+} from './weekColumns';
 
 const row = (
   taskId: string,
@@ -104,13 +113,58 @@ describe('taskSlots', () => {
 });
 
 describe('scaleHours', () => {
-  it('is ten hours for an ordinary week', () => {
-    expect(scaleHours([0, 0, 0, 0, 0, 0, 0])).toBe(10);
-    expect(scaleHours([7.5 * 3600, 10 * 3600, 0, 0, 0, 0, 0])).toBe(10);
-  });
-
-  it('grows by whole hours to fit the longest day', () => {
+  it("ends at the week's longest day, in whole hours", () => {
+    expect(scaleHours([4.5 * 3600, 3600, 0, 0, 0, 0, 0])).toBe(5);
     expect(scaleHours([14 * 3600, 3600, 0, 0, 0, 0, 0])).toBe(14);
     expect(scaleHours([10 * 3600 + 60, 0, 0, 0, 0, 0, 0])).toBe(11);
+  });
+
+  it('is an hour at least', () => {
+    expect(scaleHours([0, 0, 0, 0, 0, 0, 0])).toBe(1);
+    expect(scaleHours([300, 0, 0, 0, 0, 0, 0])).toBe(1);
+  });
+});
+
+describe('slotHeights', () => {
+  it('makes a block as tall as its time', () => {
+    expect(slotHeights([3600, 3600], 40)).toEqual([40, 40]);
+    expect(slotHeights([5400], 100)).toEqual([150]);
+  });
+
+  it("gives a short block a line, out of the day's longer ones, so the day still ends at its total", () => {
+    // 2.75 h, 0.25 h and 1.5 h at 40 px an hour: 110, 10 and 60 px by their time.
+    const heights = slotHeights([9900, 900, 5400], 40);
+    expect(heights).toEqual([104, MIN_SLOT_PX, 56]);
+    expect(heights.reduce((n, h) => n + h, 0)).toBe(180);
+  });
+
+  it('takes nothing from a block that would fall under a line itself', () => {
+    // An hour of 40 px: 5 min, 30 min (20 px, a line already) and 25 min.
+    expect(slotHeights([300, 1800, 1500], 40)).toEqual([20, 20, 20]);
+  });
+
+  it("runs past the day's total when its lines do not fit in it", () => {
+    expect(slotHeights([300], 40)).toEqual([MIN_SLOT_PX]);
+    expect(slotHeights([300, 300, 600], 40)).toEqual([20, 20, 20]);
+  });
+
+  it('is nothing for a day without work', () => {
+    expect(slotHeights([], 40)).toEqual([]);
+  });
+});
+
+describe('hourHeight', () => {
+  it('shares the room over the hours of the scale', () => {
+    expect(hourHeight([3, 1], 5, 600)).toBe(120);
+    expect(hourHeight([1], 1, 613)).toBe(613);
+  });
+
+  it('is never under the least, whatever the room', () => {
+    expect(hourHeight([3], 15, 300)).toBe(MIN_HOUR_PX);
+    expect(hourHeight([], 10, 0)).toBe(MIN_HOUR_PX);
+  });
+
+  it('grows until the lines of the day with the most blocks fit in the chart', () => {
+    expect(hourHeight([2, 12], 2, 0)).toBe(120);
   });
 });

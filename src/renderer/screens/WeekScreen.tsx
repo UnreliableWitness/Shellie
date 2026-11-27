@@ -2,14 +2,26 @@ import {
   ChevronLeft16Regular,
   ChevronRight16Regular,
 } from '@fluentui/react-icons';
-import { type CSSProperties, useMemo, useState } from 'react';
+import {
+  type CSSProperties,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { WeekRow } from '../../shared/time';
 import { api } from '../api';
 import { PageHeader } from '../components/ui';
 import { useLiveQuery } from '../hooks/useLiveQuery';
 import { useStore } from '../store';
 import { readWeekAsWorked, writeWeekAsWorked } from '../uiPrefs';
-import { dayBlocks, scaleHours, taskSlots } from '../weekColumns';
+import {
+  dayBlocks,
+  hourHeight,
+  scaleHours,
+  slotHeights,
+  taskSlots,
+} from '../weekColumns';
 
 /** Time changes arrive every ~10 s while an agent runs; the page refetches at most this often. */
 const TIME_REFRESH_MS = 5_000;
@@ -24,12 +36,10 @@ const DAYS = [
   'Sunday',
 ];
 
-/** The height of an hour in a day's column; a card is as tall as its time, less the gap under it. */
-const HOUR_PX = 40;
+/** The gap under a card, out of its slot in the column. */
 const GAP_PX = 2;
-/** A card this tall has room for its hours above its title; a lower one shows both on one line, a sliver neither. */
+/** A card this tall has room for its hours above its title; a lower one shows both on one line. */
 const TWO_LINES_PX = 43;
-const ONE_LINE_PX = 16;
 
 const iso = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -91,8 +101,9 @@ function TaskName({ row }: { row: WeekRow }) {
 
 /**
  * The week as seven columns, Monday to Sunday, on a scale of hours worked (not of the clock): each day's work is
- * stacked from the top as cards, as tall as the time it took: one per task with its day's total, or (`asWorked`)
- * one per task per stretch, in the order worked. The scale is ten hours, or as many as the longest day needs.
+ * stacked from the top as cards, as tall as the time it took but never lower than a line of text: one per task
+ * with its day's total, or (`asWorked`) one per task per stretch, in the order worked. The scale ends at the
+ * week's longest day and the columns take the height the page has; a week too long for that scrolls.
  * Under the columns, the tasks with their week totals.
  */
 function WeekColumns({
@@ -111,6 +122,35 @@ function WeekColumns({
   const slots = useMemo(() => taskSlots(rows), [rows]);
   const byId = useMemo(() => new Map(rows.map((r) => [r.taskId, r])), [rows]);
   const scale = scaleHours(dayTotals);
+  // The height the page has for the columns: its own, less its padding and what the chart draws around them.
+  const chartRef = useRef<HTMLElement>(null);
+  const axisRef = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(0);
+  useLayoutEffect(() => {
+    const chart = chartRef.current;
+    const axis = axisRef.current;
+    const page = chart?.parentElement;
+    if (!chart || !axis || !page) return;
+    const measure = () => {
+      const style = getComputedStyle(page);
+      const padding =
+        (parseFloat(style.paddingTop) || 0) +
+        (parseFloat(style.paddingBottom) || 0);
+      setRoom(
+        page.clientHeight - padding - (chart.offsetHeight - axis.offsetHeight),
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(page);
+    return () => observer.disconnect();
+  }, []);
+  const hourPx = hourHeight(
+    blocks.map((day) => day.length),
+    scale,
+    room,
+  );
   const copy = (text: string) =>
     void navigator.clipboard.writeText(text).then(
       () => notify('info', `Copied: ${text}`),
@@ -118,7 +158,11 @@ function WeekColumns({
     );
   return (
     <>
-      <section className="week-chart" aria-label="Hours per day, by task">
+      <section
+        ref={chartRef}
+        className="week-chart"
+        aria-label="Hours per day, by task"
+      >
         <div className="week-grid">
           <span />
           {DAYS.map((day, i) => (
@@ -140,16 +184,17 @@ function WeekColumns({
             </div>
           ))}
           <div
+            ref={axisRef}
             className="week-axis mono"
             data-testid="week-axis"
             aria-hidden="true"
-            style={{ height: scale * HOUR_PX }}
+            style={{ height: scale * hourPx }}
           >
             {Array.from({ length: scale + 1 }, (_, h) => (
               <span
                 key={h}
                 className={h === 8 ? 'is-day' : undefined}
-                style={{ top: h * HOUR_PX }}
+                style={{ top: h * hourPx }}
               >
                 {h === 0 ? '0 h' : h}
               </span>
@@ -157,6 +202,10 @@ function WeekColumns({
           </div>
           {DAYS.map((day, i) => {
             const total = quarters(dayTotals[i]);
+            const heights = slotHeights(
+              blocks[i].map((b) => b.seconds),
+              hourPx,
+            );
             return (
               <div
                 key={day}
@@ -169,20 +218,18 @@ function WeekColumns({
                 className="week-col"
                 style={
                   {
-                    height: scale * HOUR_PX,
-                    '--week-hour': `${HOUR_PX}px`,
+                    height: scale * hourPx,
+                    '--week-hour': `${hourPx}px`,
                   } as CSSProperties
                 }
               >
                 {blocks[i].map((b, n) => {
                   const row = byId.get(b.taskId);
                   if (!row) return null;
-                  // Never more than its time: a sliver of minutes is a line, so a day's cards end at its total.
-                  const height = Math.max(
-                    1,
-                    Math.round((b.seconds / 3600) * HOUR_PX) - GAP_PX,
-                  );
+                  const height = heights[n] - GAP_PX;
+                  // Under a quarter the hours round to none: such a card gives its minutes.
                   const worked = quarters(b.seconds);
+                  const minutes = Math.max(1, Math.round(b.seconds / 60));
                   const name = nameOf(row);
                   return (
                     <button
@@ -190,13 +237,7 @@ function WeekColumns({
                       type="button"
                       className="week-card"
                       data-series={seriesOf(slots.get(b.taskId))}
-                      data-size={
-                        height >= TWO_LINES_PX
-                          ? 'l'
-                          : height >= ONE_LINE_PX
-                            ? 's'
-                            : 'xs'
-                      }
+                      data-size={height >= TWO_LINES_PX ? 'l' : 's'}
                       style={
                         {
                           height,
@@ -207,11 +248,17 @@ function WeekColumns({
                           ),
                         } as CSSProperties
                       }
-                      aria-label={`${name}, ${day}, ${worked} ${worked === 1 ? 'hour' : 'hours'}. Copy to the clipboard`}
+                      aria-label={`${name}, ${day}, ${
+                        worked
+                          ? `${worked} ${worked === 1 ? 'hour' : 'hours'}`
+                          : `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
+                      }. Copy to the clipboard`}
                       title={`${name}\n${day}: ${hmm(b.seconds)}\nClick to copy`}
                       onClick={() => copy(name)}
                     >
-                      <span className="week-card-hours mono">{worked} h</span>
+                      <span className="week-card-hours mono">
+                        {worked ? `${worked} h` : `${minutes} min`}
+                      </span>
                       <span className="week-card-title">
                         <TaskName row={row} />
                       </span>
