@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { type Ref, useEffect, useRef, useState } from 'react';
 import type {
   BrainPageRow,
   BrainSourceRow,
   BrainView,
 } from '../../../shared/brain';
 import { brainAskKey } from '../../../shared/askProgress';
-import { citedPaths, linkCited } from '../../../shared/brainAsk';
+import {
+  askOwner,
+  citedPaths,
+  linkCited,
+  type AskThread,
+} from '../../../shared/brainAsk';
 import { errorMessage } from '../../../shared/errors';
 import type { SendAnswerResult } from '../../../shared/ipc';
 import { eur } from '../../../shared/text';
@@ -44,9 +49,70 @@ const COPIED_MS = 2000;
  * What a task asked its brain, in the Brain tab: each question with its answer (the pages it names as links and as
  * cards), oldest first, then a follow-up. The thread lives in the store, so an answer lands while another tab shows.
  */
+/** The day a thread began, as "20 Nov". */
+const shortDate = (ms: number): string =>
+  new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+/** The earlier threads of an asker, newest first. */
+export const earlierOf = (earlier: AskThread[], owner: string): AskThread[] =>
+  earlier
+    .filter((t) => askOwner(t.taskId, t.brainId) === owner)
+    .sort((a, b) => b.startedAt - a.startedAt);
+
+/** "Earlier questions (n)": the asker's earlier threads by their first question; one click gets a thread back. */
+export function EarlierQuestions({ owner }: { owner: string }) {
+  const all = useStore((s) => s.brainAskEarlier);
+  const openBrainThread = useStore((s) => s.openBrainThread);
+  const running = useStore(
+    (s) =>
+      s.brainAsksByTask[owner]?.some((e) => e.status === 'running') ?? false,
+  );
+  const [open, setOpen] = useState(false);
+  const threads = earlierOf(all, owner);
+  if (threads.length === 0) return null;
+  return (
+    <div className="brain-qa-earlier">
+      <button
+        type="button"
+        className="link small"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {`Earlier questions (${threads.length})`}
+      </button>
+      {open && (
+        <ul aria-label="Earlier questions">
+          {threads.map((t) => (
+            <li key={t.id}>
+              <button
+                type="button"
+                className="brain-qa-earlier-row"
+                disabled={running}
+                onClick={() => {
+                  trackBrain('ask-earlier');
+                  openBrainThread(owner, t.id);
+                  setOpen(false);
+                }}
+              >
+                <span>{t.exchanges[0]?.question}</span>
+                <span className="muted small">{shortDate(t.startedAt)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function BrainAnswers({
   brain,
+  owner,
   taskId,
+  exchanges,
+  back = true,
+  bar = true,
+  boxRef,
   rows,
   sources,
   hasAgentTab,
@@ -54,7 +120,18 @@ export function BrainAnswers({
   onTerminal,
 }: {
   brain: BrainView;
-  taskId: string;
+  /** The asker (`askOwner`) whose current thread shows. */
+  owner: string;
+  /** The task an answer can be handed to; null on the brain's own page. */
+  taskId: string | null;
+  /** A thread to read only (another asker's, on the Brain page): shown in place of the asker's own, with nothing to ask. */
+  exchanges?: AskExchange[];
+  /** Whether there is a start to go back to (the task's tab has one). */
+  back?: boolean;
+  /** Whether the bar with New question and Earlier questions shows (the Brain page has its own list). */
+  bar?: boolean;
+  /** The follow-up box, for a page that puts the cursor in it. */
+  boxRef?: Ref<HTMLTextAreaElement>;
   rows: BrainPageRow[];
   sources: BrainSourceRow[];
   /** The task has a Claude Code or OpenCode tab an answer can be handed to. */
@@ -63,13 +140,16 @@ export function BrainAnswers({
   onOpen: (path: string, anchor?: string) => void;
   onTerminal: (def: TerminalDef) => void;
 }) {
-  const thread = useStore((s) => s.brainAsksByTask[taskId]) ?? NO_THREAD;
+  const own = useStore((s) => s.brainAsksByTask[owner]) ?? NO_THREAD;
+  const readOnly = exchanges !== undefined;
+  const thread = exchanges ?? own;
+  const newBrainQuestion = useStore((s) => s.newBrainQuestion);
   const askBrain = useStore((s) => s.askBrain);
   const stopBrainAsk = useStore((s) => s.stopBrainAsk);
   const setBrainAskOpen = useStore((s) => s.setBrainAskOpen);
   const setTab = useStore((s) => s.setTab);
   const go = useStore((s) => s.go);
-  const progress = useStore((s) => s.askProgress[brainAskKey(taskId)]);
+  const progress = useStore((s) => s.askProgress[brainAskKey(owner)]);
   const notify = useStore((s) => s.notify);
   const { asset, openFile, lightbox } = usePageMedia(brain.id);
   const [followUp, setFollowUp] = useState('');
@@ -90,7 +170,7 @@ export function BrainAnswers({
     if (def) onTerminal(def);
   };
   const send = async (e: AskExchange) => {
-    if (!e.answer) return;
+    if (!e.answer || taskId === null) return;
     try {
       const r = await api().invoke(
         'brain:sendAnswer',
@@ -121,24 +201,43 @@ export function BrainAnswers({
   };
   const submit = () => {
     if (!followUp.trim() || running) return;
-    void askBrain(taskId, brain.id, followUp, 'follow-up');
+    void askBrain(owner, brain.id, followUp, 'follow-up');
     setFollowUp('');
   };
   /** Asks the question of a stopped or failed exchange once more, in its place. */
   const again = (e: AskExchange) =>
-    void askBrain(taskId, brain.id, e.question, 'typed', e.id);
+    void askBrain(owner, brain.id, e.question, 'typed', e.id);
 
   return (
     <div className="brain-qas">
-      <div className="brain-qas-bar">
-        <button
-          type="button"
-          className="link small"
-          onClick={() => setBrainAskOpen(taskId, false)}
-        >
-          Back to the brain's start
-        </button>
-      </div>
+      {!readOnly && bar && (
+        <div className="brain-qas-bar">
+          {back && (
+            <button
+              type="button"
+              className="link small"
+              onClick={() => setBrainAskOpen(owner, false)}
+            >
+              Back to the brain's start
+            </button>
+          )}
+          <span className="brain-qas-bar-end">
+            <EarlierQuestions owner={owner} />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={running || thread.length === 0}
+              onClick={() => {
+                trackBrain('ask-new');
+                newBrainQuestion(owner);
+                setBrainAskOpen(owner, false);
+              }}
+            >
+              New question
+            </button>
+          </span>
+        </div>
+      )}
       {thread.map((e) => {
         const cited = e.answer
           ? citedPaths(e.answer.answer).filter(exists)
@@ -147,12 +246,15 @@ export function BrainAnswers({
           <section key={e.id} className="brain-qa">
             <p className="brain-qa-asked muted small">You asked</p>
             <h2 className="brain-qa-question">{e.question}</h2>
-            {e.status === 'running' && (
+            {e.status === 'running' && readOnly && (
+              <p className="muted small">Being answered in the task.</p>
+            )}
+            {e.status === 'running' && !readOnly && (
               <div className="brain-qa-state">
                 <AskWorking
                   word="Answering"
                   startedAt={e.startedAt}
-                  onStop={() => stopBrainAsk(taskId)}
+                  onStop={() => stopBrainAsk(owner)}
                   progress={progress}
                 >
                   {progress?.text && (
@@ -170,7 +272,13 @@ export function BrainAnswers({
                 </AskWorking>
               </div>
             )}
-            {e.status === 'stopped' && (
+            {e.status === 'stopped' && readOnly && (
+              <p className="muted small">Stopped.</p>
+            )}
+            {e.status === 'failed' && readOnly && (
+              <p className="muted small">{`Could not finish. ${e.error ?? ''}`}</p>
+            )}
+            {e.status === 'stopped' && !readOnly && (
               <div className="brain-qa-state">
                 <AskStopped
                   afterMs={e.endedAt ? e.endedAt - e.startedAt : null}
@@ -179,7 +287,7 @@ export function BrainAnswers({
                 />
               </div>
             )}
-            {e.status === 'failed' && (
+            {e.status === 'failed' && !readOnly && (
               <div className="brain-qa-state">
                 <AskFailed
                   reason={e.error ?? ''}
@@ -219,7 +327,7 @@ export function BrainAnswers({
                     />
                   </div>
                   <div className="brain-qa-actions">
-                    {hasAgentTab && (
+                    {hasAgentTab && !readOnly && taskId !== null && (
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
@@ -257,6 +365,8 @@ export function BrainAnswers({
                         `read ${e.answer.pagesRead} ${e.answer.pagesRead === 1 ? 'page' : 'pages'}`,
                       e.answer.costEur !== null &&
                         `${eur(e.answer.costEur)} on the brain`,
+                      !!e.answer.restarted &&
+                        "a new conversation: the brain's agent changed",
                       e.answer.changed
                         ? "The brain's folder changed while this was answered (a job or someone at work, most likely). Check the brain's Health."
                         : 'nothing was changed in the brain',
@@ -301,10 +411,11 @@ export function BrainAnswers({
           </section>
         );
       })}
-      {thread.length > 0 && (
+      {thread.length > 0 && !readOnly && (
         <div className="brain-qa-follow">
           <AskComposer
             label="Ask a follow-up"
+            boxRef={boxRef}
             value={followUp}
             onChange={setFollowUp}
             onSend={submit}

@@ -317,6 +317,7 @@ export type Services = {
     installId?: string;
     sync?: BrainHandlerDeps['sync'];
     asks?: BrainHandlerDeps['asks'];
+    askThreads?: BrainHandlerDeps['askThreads'];
     takePendingJoin?: BrainHandlerDeps['takePendingJoin'];
   };
   /** What needs the developer's attention (main); absent in tests. */
@@ -1036,6 +1037,7 @@ export function createHandlers(s: Services): Handlers {
     event: (n, p) => tel.event(n, p),
     sync: brain.sync,
     asks: brain.asks,
+    askThreads: brain.askThreads,
     takePendingJoin: brain.takePendingJoin,
   });
   /**

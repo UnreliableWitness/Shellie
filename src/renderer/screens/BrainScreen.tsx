@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { TerminalDef } from '../../shared/types';
 import { brainTaskId, picturesReady, writeReady } from '../../shared/brain';
 import { api, tryInvoke } from '../api';
-import { AskBox } from '../components/brain/AskBox';
+import { BrainAsk } from '../components/brain/BrainAsk';
 import { BrainAdd } from '../components/brain/BrainAdd';
 import { BrainRead } from '../components/brain/BrainRead';
 import { CopyField } from '../components/brain/CopyField';
@@ -22,7 +22,7 @@ import { useBrain } from '../hooks/useBrains';
 import { local } from '../localStorage';
 import { useStore } from '../store';
 
-type View = 'read' | 'add' | 'explore' | 'history';
+type View = 'read' | 'ask' | 'add' | 'explore' | 'history';
 type Focus = 'ask' | 'wiki' | 'drop' | 'explore';
 
 // The sky and three.js load when Explore is first chosen, not with the brain page.
@@ -56,6 +56,7 @@ function useLastOpened(brainId: string): string | null {
  */
 function initialView(brainId: string, focus?: Focus): View {
   if (focus === 'explore') return 'explore';
+  if (focus === 'ask') return 'ask';
   if (focus === 'wiki') return 'read';
   if (focus === 'drop') return 'add';
   try {
@@ -203,6 +204,18 @@ export function BrainScreen({
               <button
                 type="button"
                 role="tab"
+                aria-selected={view === 'ask'}
+                className={view === 'ask' ? 'is-on' : undefined}
+                onClick={() => {
+                  setSettle(null);
+                  choose('ask');
+                }}
+              >
+                Ask
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={view === 'add'}
                 aria-label={waiting > 0 ? `Add, ${waiting} waiting` : 'Add'}
                 className={view === 'add' ? 'is-on' : undefined}
@@ -274,12 +287,6 @@ export function BrainScreen({
                 Share with colleagues
               </button>
             )}
-            <AskBox
-              brainId={brain.id}
-              agent={brain.options.agent}
-              onTerminal={setTerminal}
-              initiallyOpen={focus === 'ask'}
-            />
             <button
               ref={setMoreButton}
               type="button"
@@ -393,6 +400,18 @@ export function BrainScreen({
               setSettle(null);
               choose('add');
             }}
+          />
+        </div>
+        {/* Kept mounted like Read and Add: a half-typed question and the open thread survive a switch. */}
+        <div className="brain-view brain-view-ask" hidden={view !== 'ask'}>
+          <BrainAsk
+            brain={brain}
+            rows={pages.rows}
+            sources={pages.sources}
+            active={view === 'ask'}
+            focusBox={focus === 'ask'}
+            onOpen={openPage}
+            onTerminal={setTerminal}
           />
         </div>
         {/* Mounted from the first time it is chosen, then kept and paused: its camera and open page survive too. */}

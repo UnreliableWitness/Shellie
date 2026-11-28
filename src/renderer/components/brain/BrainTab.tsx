@@ -9,7 +9,7 @@ import { type AskVia, useStore } from '../../store';
 import { track } from '../../telemetry';
 import { useReadsForTask } from '../reading/BeforeYouStart';
 import { ASK_HINT, AskComposer } from '../ask';
-import { BrainAnswers } from './BrainAnswers';
+import { BrainAnswers, EarlierQuestions } from './BrainAnswers';
 import { openBrainTerminal, trackBrain } from './brainActions';
 import { BrainPage } from './BrainPage';
 import { BrainSearch } from './BrainSearch';
@@ -138,6 +138,7 @@ export function BrainTab({
         {!nav.current && showAnswers && (
           <BrainAnswers
             brain={brain}
+            owner={taskId}
             taskId={taskId}
             rows={rows}
             sources={sources}
@@ -180,6 +181,7 @@ export function BrainTab({
                   Show the answers ({asked})
                 </button>
               )}
+              {asked === 0 && <EarlierQuestions owner={taskId} />}
             </div>
             <AskComposer
               label="Question for the brain"

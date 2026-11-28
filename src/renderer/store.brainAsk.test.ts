@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { AskOutcome } from '../shared/brainAsk';
+import type { AskOutcome, AskThread } from '../shared/brainAsk';
 import type { TaskView } from '../shared/types';
-import { useStore } from './store';
+import { askThreadsToSave, useStore } from './store';
 import { installFakeApi } from './test-helpers/fakeApi';
 
 const answer = (sessionId: string): AskOutcome => ({
@@ -15,19 +15,25 @@ const answer = (sessionId: string): AskOutcome => ({
   },
 });
 
-let asked: [string, string, string, string | null][];
+let asked: [string, string | null, string, string | null][];
+let keys: string[];
+let resumeAgents: (string | null)[];
 let stopped: string[];
 let settle: ((o: AskOutcome) => void)[];
 let fail: ((e: Error) => void)[];
 
 beforeEach(() => {
   asked = [];
+  keys = [];
+  resumeAgents = [];
   stopped = [];
   settle = [];
   fail = [];
   installFakeApi({
-    'brain:ask': (brainId, taskId, question, resume) => {
+    'brain:ask': (brainId, taskId, question, resume, key, resumeAgent) => {
       asked.push([brainId, taskId, question, resume]);
+      keys.push(key);
+      resumeAgents.push(resumeAgent);
       return new Promise<AskOutcome>((res, rej) => {
         settle.push(res);
         fail.push(rej);
@@ -37,7 +43,12 @@ beforeEach(() => {
       stopped.push(taskId);
     },
   });
-  useStore.setState({ brainAsksByTask: {}, brainAskOpenByTask: {} });
+  useStore.setState({
+    brainAsksByTask: {},
+    brainAskOpenByTask: {},
+    brainAskThread: {},
+    brainAskEarlier: [],
+  });
 });
 
 const thread = (taskId = 't1') =>
@@ -152,12 +163,162 @@ describe("a task's questions to its brain", () => {
     expect(thread()).toHaveLength(1);
   });
 
-  it("drops a removed task's thread", async () => {
+  it("keeps a removed task's thread among the earlier ones", async () => {
     const p = useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
     settle[0](answer('s1'));
     await p;
     useStore.getState().setTasks([{ id: 't2' } as unknown as TaskView]);
     expect(useStore.getState().brainAsksByTask).toEqual({});
     expect(useStore.getState().brainAskOpenByTask).toEqual({});
+    expect(useStore.getState().brainAskEarlier).toMatchObject([
+      { brainId: 'b1', taskId: 't1', current: false },
+    ]);
+  });
+
+  it("asks from the brain's own page without a task, under the page's key", () => {
+    void useStore.getState().askBrain('brain:b1', 'b1', 'Why?', 'typed');
+    expect(asked).toEqual([['b1', null, 'Why?', null]]);
+    expect(keys).toEqual(['brain:b1']);
+    useStore.getState().stopBrainAsk('brain:b1');
+    expect(stopped).toEqual(['brain:b1']);
+  });
+
+  it('passes the agent of the answer a follow-up continues', async () => {
+    const first = useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
+    settle[0]({
+      ok: true,
+      answer: {
+        ...(answer('ses_1') as { answer: object }).answer,
+        agent: 'opencode',
+      },
+    } as AskOutcome);
+    await first;
+    void useStore.getState().askBrain('t1', 'b1', 'And?', 'follow-up');
+    expect(resumeAgents).toEqual([null, 'opencode']);
+  });
+
+  it('takes a kept thread in once, however often it is given', () => {
+    const kept: AskThread = {
+      id: 'a',
+      brainId: 'b1',
+      taskId: 't1',
+      startedAt: 5,
+      current: true,
+      exchanges: [
+        {
+          id: 'e1',
+          question: 'Kept?',
+          status: 'done',
+          startedAt: 5,
+          answer: null,
+          error: null,
+          refused: null,
+        },
+      ],
+    };
+    const other = { ...kept, id: 'b', current: false };
+    useStore.getState().loadBrainThreads([kept, other]);
+    useStore.getState().loadBrainThreads([kept, other]);
+    expect(thread()).toHaveLength(1);
+    expect(useStore.getState().brainAskEarlier.map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('starts a new question: the thread so far is kept as an earlier one', async () => {
+    const p = useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
+    settle[0](answer('s1'));
+    await p;
+    useStore.getState().newBrainQuestion('t1');
+    expect(thread()).toEqual([]);
+    const [earlier] = useStore.getState().brainAskEarlier;
+    expect(earlier).toMatchObject({
+      brainId: 'b1',
+      taskId: 't1',
+      current: false,
+      exchanges: [{ question: 'Why?' }],
+    });
+    // The next question is a new conversation.
+    void useStore.getState().askBrain('t1', 'b1', 'Other?', 'typed');
+    expect(asked[1][3]).toBe(null);
+    expect(useStore.getState().brainAskThread.t1.id).not.toBe(earlier.id);
+  });
+
+  it('starts no new question while an answer is coming, or from an empty thread', () => {
+    useStore.getState().newBrainQuestion('t1');
+    expect(useStore.getState().brainAskEarlier).toEqual([]);
+    void useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
+    useStore.getState().newBrainQuestion('t1');
+    expect(thread()).toHaveLength(1);
+    expect(useStore.getState().brainAskEarlier).toEqual([]);
+  });
+
+  it('gets an earlier thread back, and files the current one in its place', async () => {
+    const a = useStore.getState().askBrain('t1', 'b1', 'First?', 'typed');
+    settle[0](answer('s1'));
+    await a;
+    useStore.getState().newBrainQuestion('t1');
+    const b = useStore.getState().askBrain('t1', 'b1', 'Second?', 'typed');
+    settle[1](answer('s2'));
+    await b;
+    const first = useStore.getState().brainAskEarlier[0];
+    useStore.getState().openBrainThread('t1', first.id);
+    expect(thread().map((e) => e.question)).toEqual(['First?']);
+    expect(useStore.getState().brainAskThread.t1.id).toBe(first.id);
+    expect(
+      useStore.getState().brainAskEarlier.map((t) => t.exchanges[0].question),
+    ).toEqual(['Second?']);
+    expect(useStore.getState().brainAskOpenByTask.t1).toBe(true);
+    // A follow-up there continues that thread's own session.
+    void useStore.getState().askBrain('t1', 'b1', 'More?', 'follow-up');
+    expect(asked[2][3]).toBe('s1');
+  });
+
+  it('takes the kept threads in at the start, without touching what was asked meanwhile', async () => {
+    void useStore.getState().askBrain('t1', 'b1', 'Now?', 'typed');
+    const kept = (
+      id: string,
+      taskId: string | null,
+      current: boolean,
+    ): AskThread => ({
+      id,
+      brainId: 'b1',
+      taskId,
+      startedAt: 5,
+      current,
+      exchanges: [
+        {
+          id: 'ask1',
+          question: `Kept ${id}`,
+          status: 'done',
+          startedAt: 5,
+          answer: null,
+          error: null,
+          refused: null,
+        },
+      ],
+    });
+    useStore
+      .getState()
+      .loadBrainThreads([
+        kept('a', 't1', true),
+        kept('b', 't2', true),
+        kept('c', null, true),
+        kept('d', 't2', false),
+      ]);
+    const s = useStore.getState();
+    // t1 asked before the load came back: its kept thread is an earlier one.
+    expect(thread().map((e) => e.question)).toEqual(['Now?']);
+    expect(thread('t2').map((e) => e.question)).toEqual(['Kept b']);
+    expect(thread('brain:b1').map((e) => e.question)).toEqual(['Kept c']);
+    expect(s.brainAskThread.t2.id).toBe('b');
+    expect(s.brainAskEarlier.map((t) => t.id).sort()).toEqual(['a', 'd']);
+    // Everything, current ones marked, for main to keep.
+    expect(
+      askThreadsToSave(s)
+        .map((t) => `${t.id}:${t.current}`)
+        .filter((x) => !x.startsWith('th')),
+    ).toEqual(
+      expect.arrayContaining(['b:true', 'c:true', 'a:false', 'd:false']),
+    );
+    expect(askThreadsToSave(s).filter((t) => t.current)).toHaveLength(3);
   });
 });

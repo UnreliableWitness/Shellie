@@ -5,6 +5,7 @@ import {
   askPrompt,
   BRAIN_JOB_TITLE,
   opencodeModelArg,
+  type BrainAgent,
   type BrainModel,
 } from '../../shared/brain';
 import {
@@ -241,6 +242,8 @@ export class BrainAsks {
     brainId: string,
     question: string,
     resume: string | null,
+    /** The agent that held the session `resume` names; unknown for an answer of before it was kept. */
+    resumeAgent?: BrainAgent | null,
   ): Promise<AskOutcome> {
     const d = this.deps;
     if (this.running.has(key)) throw new Error('A question is already running');
@@ -251,7 +254,11 @@ export class BrainAsks {
     const stop = new AbortController();
     this.running.set(key, stop);
     const since = d.now();
-    const opencode = d.agent(brainId) === 'opencode';
+    const agent = d.agent(brainId);
+    const opencode = agent === 'opencode';
+    // A session is the agent's own: after the brain changed agents the follow-up is a new conversation.
+    const restarted = resume !== null && !!resumeAgent && resumeAgent !== agent;
+    if (restarted) resume = null;
     let quiet = () => undefined as void;
     try {
       const cwd = d.brainDir(brainId);
@@ -350,6 +357,8 @@ export class BrainAsks {
           costEur,
           steps,
           ...(steps.length > 0 ? { pagesRead: read } : {}),
+          agent,
+          ...(restarted ? { restarted: true as const } : {}),
         },
       };
     } catch (e) {

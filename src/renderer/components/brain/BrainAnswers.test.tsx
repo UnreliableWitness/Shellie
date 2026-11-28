@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
 import { ASK_CAP_MESSAGE } from '../../../shared/brainAsk';
+import type { AskThread } from '../../../shared/brainAsk';
 import { type AskExchange, useStore } from '../../store';
 import { brainView } from '../../test-helpers/brainFixture';
 import { type FakeHandlers, installFakeApi } from '../../test-helpers/fakeApi';
@@ -62,16 +63,22 @@ function show(
   thread: AskExchange[],
   handlers: FakeHandlers = {},
   hasAgentTab = true,
+  over: Partial<Parameters<typeof BrainAnswers>[0]> = {},
 ) {
   const a = installFakeApi(handlers);
   useStore.setState({
     brainAsksByTask: { t1: thread },
     brainAskOpenByTask: { t1: true },
+    brainAskThread: { t1: { id: 'now', brainId: 'b1', startedAt: 1 } },
+    brainAskEarlier: [],
+    ...earlierState,
   });
   render(
     <BrainAnswers
       brain={brain}
+      owner="t1"
       taskId="t1"
+      {...over}
       rows={rows}
       sources={[source]}
       hasAgentTab={hasAgentTab}
@@ -82,7 +89,9 @@ function show(
   return a;
 }
 
+let earlierState: { brainAskEarlier?: AskThread[] } = {};
 beforeEach(() => {
+  earlierState = {};
   onOpen.mockReset();
   onTerminal.mockReset();
 });
@@ -153,6 +162,111 @@ describe('BrainAnswers', () => {
     expect(screen.getByText('2 steps')).toBeInTheDocument();
   });
 
+  it('starts a new question and gets an earlier one back', async () => {
+    earlierState = {
+      brainAskEarlier: [
+        {
+          id: 'old',
+          brainId: 'b1',
+          taskId: 't1',
+          startedAt: Date.UTC(2026, 10, 20, 10),
+          current: false,
+          exchanges: [exchange({ id: 'o1', question: 'Who owns exports?' })],
+        },
+        {
+          id: 'theirs',
+          brainId: 'b1',
+          taskId: 't2',
+          startedAt: 1,
+          current: false,
+          exchanges: [exchange({ id: 'x1', question: 'Not this task' })],
+        },
+      ],
+    };
+    show([exchange({})]);
+    const earlier = screen.getByRole('button', {
+      name: 'Earlier questions (1)',
+    });
+    await userEvent.click(earlier);
+    expect(screen.queryByText('Not this task')).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Who owns exports\?/ }),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Who owns exports?' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Earlier questions (1)' }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'New question' }));
+    expect(useStore.getState().brainAsksByTask.t1).toBeUndefined();
+    expect(useStore.getState().brainAskEarlier).toHaveLength(3);
+    expect(useStore.getState().brainAskOpenByTask.t1).toBe(false);
+  });
+
+  it('offers no new question while an answer is coming', () => {
+    show([exchange({ status: 'running', answer: null })]);
+    expect(screen.getByRole('button', { name: 'New question' })).toBeDisabled();
+  });
+
+  it('says when a follow-up began a new conversation', () => {
+    show([
+      exchange({
+        answer: {
+          sessionId: 's2',
+          answer: 'Open.',
+          durationMs: 1000,
+          costEur: null,
+          changed: false,
+          agent: 'claude',
+          restarted: true,
+        },
+      }),
+    ]);
+    expect(
+      screen.getByText(/a new conversation: the brain's agent changed/),
+    ).toBeInTheDocument();
+  });
+
+  it('only shows a thread that is given to read: nothing can be asked in it', () => {
+    show([], {}, true, {
+      exchanges: [
+        exchange({}),
+        exchange({
+          id: 'e2',
+          question: 'And then?',
+          status: 'stopped',
+          answer: null,
+        }),
+      ],
+    });
+    expect(
+      screen.getByRole('heading', { name: 'What was decided?' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ask again' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New question' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: "Send to this task's agent" }),
+    ).toBeNull();
+  });
+
+  it('shows a question that is being answered elsewhere without a way to stop it here', () => {
+    useStore.getState().setAskProgress('brain:t1', {
+      steps: [{ kind: 'read', label: 'Read mine.md' }],
+      earlier: 0,
+      text: 'My own answer',
+    });
+    show([], {}, true, {
+      exchanges: [exchange({ status: 'running', answer: null })],
+    });
+    expect(screen.getByText('Being answered in the task.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    expect(screen.queryByText('Read mine.md')).toBeNull();
+    expect(screen.queryByText('My own answer')).toBeNull();
+  });
+
   it('shows a stopped question as stopped, and asks it again in its place', async () => {
     const a = show([
       exchange({
@@ -170,7 +284,7 @@ describe('BrainAnswers', () => {
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:ask',
-        args: ['b1', 't1', 'What was decided?', null],
+        args: ['b1', 't1', 'What was decided?', null, 't1', null],
       }),
     );
     expect(useStore.getState().brainAsksByTask.t1).toHaveLength(1);
@@ -292,7 +406,7 @@ describe('BrainAnswers', () => {
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:ask',
-        args: ['b1', 't1', 'Who decides?', 's1'],
+        args: ['b1', 't1', 'Who decides?', 's1', 't1', null],
       }),
     );
   });
@@ -320,7 +434,7 @@ describe('BrainAnswers', () => {
     await waitFor(() =>
       expect(a.calls).toContainEqual({
         channel: 'brain:ask',
-        args: ['b1', 't1', 'What was decided?', null],
+        args: ['b1', 't1', 'What was decided?', null, 't1', null],
       }),
     );
     // The new run takes the failed one's place.

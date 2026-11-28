@@ -229,6 +229,7 @@ describe('BrainAsks', () => {
         costEur: 0.03,
         changed: false,
         steps: [],
+        agent: 'claude',
       },
     });
   });
@@ -437,6 +438,26 @@ describe('BrainAsks', () => {
     if (!out.ok) throw new Error('not ok');
     expect(out.answer.steps).toEqual([]);
     expect(out.answer).not.toHaveProperty('pagesRead');
+  });
+
+  it('continues a session only on the agent that held it', async () => {
+    const a = asks();
+    // The same agent: continued, and the answer names it.
+    const same = await a.ask('t1', 'b1', 'And?', 's1', 'claude');
+    expect(calls[0].cmd.args).toContain('--resume');
+    expect(same).toMatchObject({ ok: true, answer: { agent: 'claude' } });
+    if (!same.ok) throw new Error('not ok');
+    expect(same.answer).not.toHaveProperty('restarted');
+    // Not known (an answer of before this was kept): continued, as it was.
+    await a.ask('t1', 'b1', 'And?', 's1');
+    expect(calls[1].cmd.args).toContain('--resume');
+    // The brain is on another agent now: a new conversation, said so.
+    const other = await a.ask('t1', 'b1', 'And?', 'ses_1', 'opencode');
+    expect(calls[2].cmd.args).not.toContain('--resume');
+    expect(other).toMatchObject({
+      ok: true,
+      answer: { agent: 'claude', restarted: true },
+    });
   });
 
   it('stop aborts the run and resolves Stopped', async () => {
