@@ -193,6 +193,8 @@ function Review({
   const [shownAsk, setShownAsk] = useState<Record<string, string>>({});
   const [askDiffs, setAskDiffs] = useState<Record<string, DiffState>>({});
   const askedAsks = useRef(new Set<string>());
+  /** Counts up when a change that could not be read is asked for again. */
+  const [askAgain, setAskAgain] = useState(0);
   // Only an ask that still stands can be shown: one taken back, or gone with a retry, shows the whole again.
   const shownAt =
     chosen && shownAsk[chosen.id]
@@ -214,8 +216,12 @@ function Review({
         (files): DiffState => ({ files }),
         (e: unknown): DiffState => ({ error: errorMessage(e) }),
       )
-      .then((state) => setAskDiffs((d) => ({ ...d, [askKey]: state })));
-  }, [chosenPid, askKey, shownAt, result.repoId]);
+      .then((state) => {
+        // One that could not be read is asked for again the next time it is wanted.
+        if ('error' in state) askedAsks.current.delete(askKey);
+        setAskDiffs((d) => ({ ...d, [askKey]: state }));
+      });
+  }, [chosenPid, askKey, shownAt, result.repoId, askAgain]);
 
   // What is being written in each proposal's box, kept while another proposal is read.
   const [drafts, setDrafts] = useState<Record<string, AskDraft>>({});
@@ -529,12 +535,21 @@ function Review({
                   : null
             }
             shownAsk={shownAt}
-            onShowAsk={(at) =>
+            onShowAsk={(at) => {
+              // Asked for again after it could not be read: fetched again.
+              if (at !== null && at === shownAt && askKey) {
+                const was = askDiffs[askKey];
+                if (was && 'error' in was) {
+                  setAskDiffs(({ [askKey]: _gone, ...rest }) => rest);
+                  setAskAgain((n) => n + 1);
+                }
+                return;
+              }
               setShownAsk((s) => {
                 const { [chosen.id]: _was, ...rest } = s;
                 return at === null ? rest : { ...rest, [chosen.id]: at };
-              })
-            }
+              });
+            }}
             busy={dropping(chosen)}
             onDrop={(dropped) => void drop(chosen, dropped)}
             draft={drafts[chosen.id] ?? NO_DRAFT}
@@ -662,6 +677,7 @@ function Detail({
           proposalId={p.id}
           commit={p.commit}
           diff={diff}
+          whole={shownAsk === null}
         />
       </section>
       <DreamAsk
@@ -684,10 +700,13 @@ const Changes = memo(function Changes({
   proposalId,
   commit,
   diff,
+  whole,
 }: {
   repoId: string;
   dreamId: string;
   proposalId: string;
+  /** The files are the whole proposal's (the full diff reads those), not one ask's own change. */
+  whole: boolean;
   /** The proposal's commit: a file open in the full diff is read again when an ask changed it. */
   commit: string;
   diff: DiffState | null;
@@ -775,7 +794,7 @@ const Changes = memo(function Changes({
   return (
     <div className="dream-files">
       {diff.files.map((f) => (
-        <FileChange key={f.path} file={f} onOpen={open} />
+        <FileChange key={f.path} file={f} onOpen={whole ? open : undefined} />
       ))}
     </div>
   );
@@ -794,7 +813,8 @@ const FileChange = memo(function FileChange({
   onOpen,
 }: {
   file: DreamFileDiff;
-  onOpen: (path: string) => void;
+  /** Opens the file in the full diff; absent where there is none to open (one ask's own change). */
+  onOpen?: (path: string) => void;
 }) {
   const id = useId();
   return (
@@ -805,7 +825,7 @@ const FileChange = memo(function FileChange({
         </span>
         <span className="mono small text-green">{`+${f.added}`}</span>
         <span className="mono small text-red">{`${MINUS}${f.removed}`}</span>
-        {!f.binary && (
+        {!f.binary && onOpen && (
           <button
             type="button"
             className="btn btn-sm"

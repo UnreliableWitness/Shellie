@@ -1178,6 +1178,50 @@ describe('DreamScreen: asking for a change', () => {
     expect(screen.queryByText('only this ask')).toBeNull();
   });
 
+  it('asks again for an ask’s own change that could not be read, and offers no full diff of it', async () => {
+    const at = '2026-11-28T10:00:00.000Z';
+    let fail = true;
+    const { calls } = fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', 'Cut it.', {
+            at,
+            after: { commit: 'c'.repeat(40), files: [], title: 'T', why: 'W' },
+          }),
+        ],
+      }),
+      {
+        'dream:diff': (_repo: string, _p: string, askAt?: string) => {
+          if (!askAt) return diffs.p1;
+          if (fail) throw new Error('The changes could not be read');
+          return diffs.own;
+        },
+      },
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    // The whole proposal's files can be opened in full.
+    expect(
+      await screen.findByRole('button', { name: 'Open in full diff' }),
+    ).toBeInTheDocument();
+    const show = () =>
+      within(foot()).getByRole('button', { name: 'Show what this changed' });
+    await userEvent.click(show());
+    expect(
+      await screen.findByText('The changes could not be read'),
+    ).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(show());
+    expect(await screen.findByText('only this ask')).toBeInTheDocument();
+    expect(
+      callsOf(calls, 'dream:diff').filter((c) => c[2] === at),
+    ).toHaveLength(2);
+    // One ask's lines are not a file of the proposal: no full diff from here.
+    expect(
+      screen.queryByRole('button', { name: 'Open in full diff' }),
+    ).toBeNull();
+  });
+
   it('keeps an undone change in the list, struck through, with Redo where it can be put back', async () => {
     const { calls } = fakeMain(
       withP1({

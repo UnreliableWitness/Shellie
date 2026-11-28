@@ -741,5 +741,9 @@ export const undoAt = (asks: DreamAdjustment[]): number =>
   asks.findLastIndex((a) => a.changed && !!a.before && !a.undone);
 
 /** The change Redo puts back: the oldest undone one that still can be; -1 when there is none. */
-export const redoAt = (asks: DreamAdjustment[]): number =>
-  asks.findIndex((a) => a.changed && !!a.undone && !a.spent && !!a.after);
+export const redoAt = (asks: DreamAdjustment[]): number => {
+  // The oldest change that was taken back and still counts; the ones after it stand on it, so when it cannot be
+  // put back (a row of before `after` was kept) none can.
+  const at = asks.findIndex((a) => a.changed && !!a.undone && !a.spent);
+  return at !== -1 && asks[at].after ? at : -1;
+};

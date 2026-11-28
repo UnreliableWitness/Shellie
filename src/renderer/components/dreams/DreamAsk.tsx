@@ -32,6 +32,10 @@ export const NO_DRAFT: AskDraft = { text: '', quote: null };
 const NO_ASSET = () => Promise.reject(new Error('no pictures in a note'));
 const NOTHING = () => undefined;
 
+/** A note as it is said to a screen reader when the run ends: its start, not all 8 000 characters. */
+const spoken = (note: string) =>
+  note.length > 200 ? `${note.slice(0, 199)}…` : note;
+
 /** How many asks show before "Earlier asks" opens the rest. */
 const SHOWN = 3;
 /** The reason an older Shellie stored for a stopped ask (`result.adjustFailed`). */
@@ -150,9 +154,9 @@ export function DreamAsk({
       !last
         ? ''
         : end === 'changed'
-          ? `Changed: ${last.note}`
+          ? `Changed: ${spoken(last.note)}`
           : end === 'answer'
-            ? `Answer: ${last.note}`
+            ? `Answer: ${spoken(last.note)}`
             : end === 'stopped'
               ? 'Stopped'
               : `Could not finish: ${last.reason ?? ''}`,

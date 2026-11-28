@@ -94,8 +94,11 @@ export function adjustPrompt(o: {
   /** What was asked before about this proposal and what came of it, oldest first. */
   earlier?: { ask: string; note: string; changed: boolean }[];
 }): string {
-  const clip = (s: string) =>
-    s.length > EARLIER_MAX ? `${s.slice(0, EARLIER_MAX - 1)}…` : s;
+  // On one line and without angle brackets: a note is a model's text and must not close the block or pose as an ask.
+  const clip = (s: string) => {
+    const one = s.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
+    return one.length > EARLIER_MAX ? `${one.slice(0, EARLIER_MAX - 1)}…` : one;
+  };
   const before = (o.earlier ?? []).slice(-EARLIER_ASKS);
   const earlier =
     before.length === 0
@@ -110,7 +113,7 @@ ${before
   )
   .join('\n')}
 </earlier>
-The proposal's files already hold those changes. The ask below is the only one to act on now.
+The proposal's files already hold those changes. The ask above is the only one to act on now.
 `;
   const quote = o.quote
     ? `

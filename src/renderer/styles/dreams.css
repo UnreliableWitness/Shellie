@@ -625,6 +625,9 @@
 .dream-ask {
   position: sticky;
   bottom: 0;
+  /* In a low window the proposal keeps room above: the foot scrolls in itself. */
+  max-height: 60vh;
+  overflow-y: auto;
   margin: auto -28px -32px;
   padding: 12px 28px 16px;
   display: flex;
@@ -707,11 +710,27 @@
 .dream-asked-note {
   white-space: normal;
 }
-.dream-asked-note > :first-child {
+/* The Markdown view is a document elsewhere: here it is a line or two in a list. */
+.dream-asked-note .doc-md {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: 1.5;
+}
+.dream-asked-note .doc-md > :first-child {
   margin-top: 0;
 }
-.dream-asked-note > :last-child {
+.dream-asked-note .doc-md > :last-child {
   margin-bottom: 0;
+}
+/* In a narrow window the head's buttons go onto a second line instead of past the edge. */
+.dream-review .commandbar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.dream-review .pagehead-title {
+  flex-wrap: wrap;
 }
 .dream-ask-earlier {
   align-self: flex-start;
