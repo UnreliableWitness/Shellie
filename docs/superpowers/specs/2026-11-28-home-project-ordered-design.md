@@ -162,3 +162,30 @@ new cards. `home.clicked` telemetry keeps its event with new band names; `docs/t
 - Each row's exact sentence, following the words the bands use today.
 - How a task "waits for the owner" is read: the same rule the nav's mark uses.
 - Whether today's time comes from the Week page's data or the Usage tab's; whichever is already loaded on Home.
+
+## Settled after the builder's read (2026-11-28, Claude's calls)
+
+A reviewer read this document against the code. What it found, and what was decided:
+
+- **"Waits for the owner"** is the nav mark's rule (`taskSignal` and `taskMark`): a blocked agent, failed CI, a
+  merge conflict, changes asked, unanswered comments, a broken task, and a merged one that waits to be finished.
+  The Task rows, the "n wait" fact and the colours in My tasks all use it.
+- **For you in the nav** takes the Needs you list as its source, so this does change the nav's For you block and
+  nothing else of the nav. The running-dream line with its Stop panel stays there as it is: it is a status, not a
+  need, and is not a Needs you row.
+- **Not everything is in the renderer today.** "No new data" means nothing new is measured or stored; small
+  additions to existing main calls are in scope: today's active and agent time (a `today` period on `home:stats`),
+  and a task count beside each amount in `costByConnection`. My tasks shows each task's time today from the same
+  call.
+- **Brain rows** are for the active project's brains only. Their conflicts, arrivals and counts are read once
+  per Home refresh, a call per brain; the "seen" rule for arrivals stays the Brain page's.
+- **Dream rows keep "Not now"** as their ×: the row is hidden on Home until that project has a newer result, as
+  the band did. **Team reviews** stay, folded under My pull requests as "Team reviews (n)".
+- **How long it has waited** shows only where a time is known (blocked agents, pull requests, dream results).
+- **"Show" on What is new** unfolds the notes in the row, with the link to the release page; dismissing it saves
+  `whatsNewSeen` as today. An update ready to install stays a notice as well as being a row.
+- Corrections: capture-off is a line in the Claude budget band today, not a Home warning (it becomes a row and
+  stays on the Cost page); Recently finished gains the pull request link (`task.pullRequest.url`) and goes from
+  three rows to five; the join offer keeps its rule (only when the project has no local brain); Up next exists
+  inside My tasks today and becomes its own card; the ask-done rows come only once the Ask project's signal is
+  built.
