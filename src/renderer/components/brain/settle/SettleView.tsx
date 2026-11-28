@@ -295,7 +295,7 @@ export function SettleView({
                     className="btn btn-sm"
                     onClick={() => retry(s.id)}
                   >
-                    Retry
+                    Try again
                   </button>
                 )}
               </li>

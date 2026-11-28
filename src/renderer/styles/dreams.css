@@ -637,6 +637,19 @@
 .dream-ask p {
   margin: 0;
 }
+/* The box is as wide as the rows above it. */
+.dream-ask .ask-box {
+  max-width: 80ch;
+}
+/*
+ * The ask being worked on: a long one scrolls in its own three lines, so the foot does not grow over the proposal
+ * and the time and Stop under it stay in view.
+ */
+.dream-ask-running {
+  max-height: 4.2em;
+  line-height: 1.4;
+  overflow-y: auto;
+}
 .dream-ask-earlier {
   align-self: flex-start;
 }
@@ -663,73 +676,11 @@
   align-items: baseline;
   gap: 4px 10px;
 }
-/* A quoted selection, on one line. */
-.dream-ask-line {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.dream-ask-chip {
-  align-self: flex-start;
-  max-width: 100%;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px 0 8px;
-  color: var(--muted);
-  background: var(--bg-selected);
-  border-radius: var(--radius);
-}
-.dream-ask-chip-x {
-  width: 24px;
-  height: 24px;
-  color: inherit;
-}
-.dream-ask-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-.dream-ask-box {
-  flex: 1;
-  height: auto;
-  padding: 6px 8px;
-  font: inherit;
-  line-height: 1.4;
-  resize: none;
-}
-.dream-ask-box:disabled {
-  color: var(--disabled);
-  border-color: var(--line);
-}
-.dream-ask-working {
-  flex: 1;
-  min-width: 0;
-  max-height: 4.2em;
-  overflow: hidden;
-  line-height: 1.4;
-  align-self: center;
-}
-.dream-ask-working:focus {
-  outline: none;
-}
-.dream-ask-dot,
 .dream-proposal-dot {
   background: var(--link);
 }
-.dream-ask-dot {
-  align-self: center;
-}
 .dream-proposal-dot {
   margin-top: 6px;
-}
-.dream-ask-failed {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
 }
 /* Said to a screen reader only. */
 .dream-ask-said {

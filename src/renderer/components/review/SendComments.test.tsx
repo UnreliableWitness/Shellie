@@ -163,7 +163,7 @@ describe('SendComments', () => {
       name: 'Send 1 comment',
     }) as HTMLButtonElement;
     expect(off.disabled).toBe(true);
-    expect(off.title).toBe('Open a Claude Code tab first');
+    expect(off.title).toBe('Open an agent tab first');
     rerender(
       <SendComments
         task={task([{ id: 'cl', kind: 'claude', label: 'Claude Code' }])}

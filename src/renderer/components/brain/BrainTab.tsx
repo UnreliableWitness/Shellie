@@ -1,10 +1,4 @@
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { picturesReady, type BrainView } from '../../../shared/brain';
 import { ASK_SUGGESTIONS } from '../../../shared/brainAsk';
 import type { TerminalDef } from '../../../shared/types';
@@ -14,6 +8,7 @@ import { openPiece } from '../../hooks/useReadingFeed';
 import { type AskVia, useStore } from '../../store';
 import { track } from '../../telemetry';
 import { useReadsForTask } from '../reading/BeforeYouStart';
+import { ASK_HINT, AskComposer } from '../ask';
 import { BrainAnswers } from './BrainAnswers';
 import { openBrainTerminal, trackBrain } from './brainActions';
 import { BrainPage } from './BrainPage';
@@ -88,9 +83,9 @@ export function BrainTab({
 
   const ask = (text: string, via: AskVia) =>
     void askBrain(taskId, brain.id, text, via);
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!question.trim()) return;
+  const submit = () => {
+    // While an answer is coming nothing is asked, so what is typed stays.
+    if (!question.trim() || asking) return;
     ask(question, 'typed');
     setQuestion('');
   };
@@ -186,22 +181,16 @@ export function BrainTab({
                 </button>
               )}
             </div>
-            <form className="brain-guide-ask" onSubmit={submit}>
-              <input
-                className="field"
-                aria-label="Question for the brain"
-                placeholder="Ask anything about this task or the project"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-              />
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!question.trim() || asking}
-              >
-                Ask
-              </button>
-            </form>
+            <AskComposer
+              label="Question for the brain"
+              placeholder="Ask anything about this task or the project"
+              value={question}
+              onChange={setQuestion}
+              onSend={submit}
+              hint={ASK_HINT}
+              waiting={asking ? 'Wait for the answer, or stop it' : null}
+              primary
+            />
             <div className="brain-guide-try">
               <span className="muted small">Try</span>
               {ASK_SUGGESTIONS.map((s) => (

@@ -2073,6 +2073,9 @@ describe('asking for a change to a proposal', () => {
   };
   const result = () => store.repo('r1').result!;
   const p2 = () => result().proposals[1];
+  /** The proposal without its asks: what a failed or stopped ask must leave as it was. */
+  const asIs = ({ adjustments: _asks, ...rest }: DreamProposal) => rest;
+  const lastAsk = () => p2().adjustments?.at(-1);
   const show = (rev: string) => git(repoPath, 'show', rev);
   const dirty = (wt: string) =>
     git(wt, 'status', '--porcelain', '--ignored', '--untracked-files=all');
@@ -2138,6 +2141,8 @@ describe('asking for a change to a proposal', () => {
         note: 'Cut the second example.',
         changed: true,
         reverted: [],
+        outcome: 'changed',
+        durationMs: expect.any(Number),
         before: {
           commit: old.commit,
           files: old.files,
@@ -2206,6 +2211,8 @@ describe('asking for a change to a proposal', () => {
           note: 'It is about the build step.',
           changed: false,
           reverted: [],
+          outcome: 'answer',
+          durationMs: expect.any(Number),
         },
       ],
     });
@@ -2267,14 +2274,22 @@ describe('asking for a change to a proposal', () => {
     const r = await dreamWithThree();
     agent(() => undefined);
     await ask(api(), 'make it shorter', 'p2', 'rule 2');
-    expect(p2()).toEqual(r.proposals[1]);
+    expect(asIs(p2())).toEqual(r.proposals[1]);
     expect(result().adjusting ?? null).toBeNull();
-    expect(result().adjustFailed).toEqual({
-      proposalId: 'p2',
-      ask: 'make it shorter',
-      quote: 'rule 2',
-      reason: 'The agent changed nothing',
-    });
+    expect(result().adjustFailed ?? null).toBeNull();
+    expect(p2().adjustments).toEqual([
+      {
+        ask: 'make it shorter',
+        quote: 'rule 2',
+        at: expect.any(String),
+        note: '',
+        changed: false,
+        reverted: [],
+        outcome: 'failed',
+        reason: 'The agent changed nothing',
+        durationMs: expect.any(Number),
+      },
+    ]);
     expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
       outcome: 'failed',
     });
@@ -2284,10 +2299,11 @@ describe('asking for a change to a proposal', () => {
     const r = await dreamWithThree();
     agent((wt) => rmSync(path.join(wt, '.apm/rules/b.md')));
     await ask(api());
-    expect(p2()).toEqual(r.proposals[1]);
-    expect(result().adjustFailed?.reason).toBe(
-      'The change would leave the proposal empty: drop it instead',
-    );
+    expect(asIs(p2())).toEqual(r.proposals[1]);
+    expect(lastAsk()).toMatchObject({
+      outcome: 'failed',
+      reason: 'The change would leave the proposal empty: drop it instead',
+    });
     expect(existsSync(path.join(r.worktreePath, '.apm/rules/b.md'))).toBe(true);
   });
 
@@ -2299,27 +2315,33 @@ describe('asking for a change to a proposal', () => {
       throw new ExitError(`fatal: ${o.cwd} secret output`, 1, 'session text');
     });
     await ask(api());
-    expect(p2()).toEqual(r.proposals[1]);
-    expect(result().adjustFailed).toEqual({
-      proposalId: 'p2',
+    expect(asIs(p2())).toEqual(r.proposals[1]);
+    expect(lastAsk()).toMatchObject({
       ask: 'make it shorter',
+      outcome: 'failed',
       reason: 'OpenCode stopped',
     });
+    expect(lastAsk()).not.toHaveProperty('fix');
     expect(dirty(r.worktreePath)).toBe('');
     expect(
       readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
     ).toBe('rule 2\n');
-    // The next ask clears the failure.
+    // The next ask takes the failed row's place.
     agent((_wt, data) => note(data, { note: 'An answer.' }));
     await ask(api());
-    expect(result().adjustFailed ?? null).toBeNull();
+    expect(p2().adjustments).toEqual([
+      expect.objectContaining({ outcome: 'answer', note: 'An answer.' }),
+    ]);
   });
 
   it('a run that times out says so', async () => {
     await dreamWithThree();
     run.mockRejectedValue(new Error('opencode timed out after 600000 ms'));
     await ask(api());
-    expect(result().adjustFailed?.reason).toBe('timed out after 10 min');
+    expect(lastAsk()).toMatchObject({
+      outcome: 'failed',
+      reason: 'timed out after 10 min',
+    });
   });
 
   it('Stop ends the run: the proposal stays as it was and the ask is offered again', async () => {
@@ -2338,13 +2360,20 @@ describe('asking for a change to a proposal', () => {
     expect(result().adjusting).toMatchObject({ proposalId: 'p2' });
     await a.handlers['dream:adjustStop']('r1');
     await ended();
-    expect(p2()).toEqual(r.proposals[1]);
+    expect(asIs(p2())).toEqual(r.proposals[1]);
     expect(result().adjusting ?? null).toBeNull();
-    expect(result().adjustFailed).toEqual({
-      proposalId: 'p2',
-      ask: 'make it shorter',
-      reason: 'It was stopped',
-    });
+    expect(result().adjustFailed ?? null).toBeNull();
+    expect(p2().adjustments).toEqual([
+      {
+        ask: 'make it shorter',
+        at: expect.any(String),
+        note: '',
+        changed: false,
+        reverted: [],
+        outcome: 'stopped',
+        durationMs: expect.any(Number),
+      },
+    ]);
     expect(dirty(r.worktreePath)).toBe('');
     expect(deps.event).toHaveBeenCalledWith('dream.adjust', {
       outcome: 'stopped',
@@ -2354,6 +2383,26 @@ describe('asking for a change to a proposal', () => {
     expect(changed()).toBe(2);
   });
 
+  it('Undo finds the latest change under a stopped ask', async () => {
+    const r = await dreamWithThree();
+    const a = api();
+    agent((wt, data) => {
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'first change\n');
+      note(data, { note: 'Changed once.' });
+    });
+    await ask(a, 'one');
+    await store.updateResult('r1', r.id, (x) => {
+      x.adjusting = { proposalId: 'p2', ask: 'left', startedAt: 1 };
+    });
+    await a.handlers['dream:adjustStop']('r1');
+    expect(p2().adjustments!.map((x) => x.outcome)).toEqual([
+      'changed',
+      'stopped',
+    ]);
+    await a.handlers['dream:adjustUndo']('r1', 'p2');
+    expect(p2()).toEqual({ ...r.proposals[1], adjustments: [] });
+  });
+
   it('Stop clears an ask the result still names when no run is under way', async () => {
     const r = await dreamWithThree();
     await store.updateResult('r1', r.id, (x) => {
@@ -2361,11 +2410,7 @@ describe('asking for a change to a proposal', () => {
     });
     await api().handlers['dream:adjustStop']('r1');
     expect(result().adjusting).toBeNull();
-    expect(result().adjustFailed).toEqual({
-      proposalId: 'p2',
-      ask: 'left',
-      reason: 'It was stopped',
-    });
+    expect(lastAsk()).toMatchObject({ ask: 'left', outcome: 'stopped' });
     expect(changed()).toBe(1);
   });
 
@@ -2390,6 +2435,12 @@ describe('asking for a change to a proposal', () => {
       true,
       false,
     ]);
+    expect(p2().adjustments!.map((x) => x.outcome)).toEqual([
+      'changed',
+      'changed',
+      'answer',
+    ]);
+    expect(p2().adjustments![0].durationMs).toEqual(expect.any(Number));
 
     vi.mocked(deps.broadcast).mockClear();
     await a.handlers['dream:adjustUndo']('r1', 'p2');
@@ -2545,8 +2596,12 @@ describe('asking for a change to a proposal', () => {
       answered: OTHER,
       repoId: 'r1',
     });
-    expect(p2()).toEqual(r.proposals[1]);
-    expect(result().adjustFailed?.reason).toBe('Another model answered');
+    expect(asIs(p2())).toEqual(r.proposals[1]);
+    expect(lastAsk()).toMatchObject({
+      outcome: 'failed',
+      reason: 'Another model answered',
+      fix: 'settings',
+    });
     expect(dirty(r.worktreePath)).toBe('');
     expect(
       readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
@@ -2568,15 +2623,17 @@ describe('asking for a change to a proposal', () => {
     const written = vi.fn();
     next.onChange(written);
     await next.clearLeftAsks(ASK_LEFT_BY_QUIT);
-    expect(next.repo('r1').result).toMatchObject({
-      adjusting: null,
-      adjustFailed: {
-        proposalId: 'p2',
+    expect(next.repo('r1').result?.adjusting).toBeNull();
+    expect(
+      next.repo('r1').result?.proposals.find((x) => x.id === 'p2')?.adjustments,
+    ).toEqual([
+      expect.objectContaining({
         ask: 'make it shorter',
         quote: 'rule 2',
+        outcome: 'failed',
         reason: 'Shellie was closed while the change was being made',
-      },
-    });
+      }),
+    ]);
     // Nothing left: nothing written.
     await next.clearLeftAsks(ASK_LEFT_BY_QUIT);
     expect(written).toHaveBeenCalledOnce();

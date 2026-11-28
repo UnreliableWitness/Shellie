@@ -305,7 +305,12 @@ export class BrainAsks {
       };
     } catch (e) {
       if (stop.signal.aborted)
-        return { ok: false, refused: null, message: ASK_STOPPED };
+        return {
+          ok: false,
+          refused: null,
+          message: ASK_STOPPED,
+          stopped: true,
+        };
       if (!opencode && programMissing(e))
         return {
           ok: false,

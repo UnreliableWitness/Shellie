@@ -94,12 +94,46 @@ describe('BrainAnswers', () => {
     expect(
       screen.getByRole('heading', { name: 'What was decided?' }),
     ).toBeTruthy();
-    expect(screen.getByText(/Reading the brain/)).toBeTruthy();
+    expect(screen.getByRole('status').closest('p')).toHaveTextContent(
+      /^Answering · /,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(a.calls).toContainEqual({ channel: 'brain:askStop', args: ['t1'] });
+  });
+
+  it('keeps what is typed as a follow-up while an answer is coming', async () => {
+    const a = show([exchange({ status: 'running', answer: null })]);
+    const box = screen.getByRole('textbox', { name: 'Ask a follow-up' });
+    await userEvent.type(box, 'And then?{Enter}');
+    expect(box).toHaveValue('And then?');
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
     expect(
-      screen.queryByRole('textbox', { name: 'Follow-up question' }),
-    ).toBeNull();
+      screen.getByText('Wait for this answer, or stop it'),
+    ).toBeInTheDocument();
+    expect(a.calls.filter((c) => c.channel === 'brain:ask')).toEqual([]);
+  });
+
+  it('shows a stopped question as stopped, and asks it again in its place', async () => {
+    const a = show([
+      exchange({
+        status: 'stopped',
+        answer: null,
+        startedAt: 1000,
+        endedAt: 19_000,
+      }),
+    ]);
+    expect(
+      screen.getByText('Stopped after 18 s. Nothing was changed.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Ask again' }));
+    await waitFor(() =>
+      expect(a.calls).toContainEqual({
+        channel: 'brain:ask',
+        args: ['b1', 't1', 'What was decided?', null],
+      }),
+    );
+    expect(useStore.getState().brainAsksByTask.t1).toHaveLength(1);
   });
 
   it('renders the answer with links to the pages and sources that exist', async () => {
@@ -212,7 +246,7 @@ describe('BrainAnswers', () => {
       screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent),
     ).toEqual(['What was decided?', 'And credit notes?']);
     await userEvent.type(
-      screen.getByRole('textbox', { name: 'Follow-up question' }),
+      screen.getByRole('textbox', { name: 'Ask a follow-up' }),
       'Who decides?{Enter}',
     );
     await waitFor(() =>
@@ -249,6 +283,26 @@ describe('BrainAnswers', () => {
         args: ['b1', 't1', 'What was decided?', null],
       }),
     );
+    // The new run takes the failed one's place.
+    expect(useStore.getState().brainAsksByTask.t1).toHaveLength(1);
+  });
+
+  it('leads to Settings when the brain is held', async () => {
+    show([
+      exchange({
+        status: 'failed',
+        answer: null,
+        error: 'The brain waits for new skills',
+        refused: 'held',
+      }),
+    ]);
+    expect(
+      screen.queryByRole('button', { name: "Open the brain's terminal" }),
+    ).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open settings' }),
+    );
+    expect(useStore.getState().screen).toMatchObject({ kind: 'settings' });
   });
 
   it('shows the cap message when the brain reached its limit', () => {
@@ -307,6 +361,17 @@ describe('BrainAnswers', () => {
     await user.click(screen.getByRole('button', { name: 'Copy' }));
     expect(await navigator.clipboard.readText()).toBe(
       exchange({}).answer?.answer,
+    );
+    // The button says so, for a moment.
+    expect(
+      await screen.findByRole('button', { name: 'Copied' }),
+    ).toBeInTheDocument();
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole('button', { name: 'Copy' }),
+        ).toBeInTheDocument(),
+      { timeout: 3000 },
     );
   });
 

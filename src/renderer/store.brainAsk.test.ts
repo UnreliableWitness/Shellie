@@ -80,6 +80,30 @@ describe("a task's questions to its brain", () => {
     ]);
   });
 
+  it('keeps a stopped question as stopped, with when it ended', async () => {
+    const p = useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
+    settle[0]({ ok: false, refused: null, message: 'Stopped', stopped: true });
+    await p;
+    expect(thread()).toMatchObject([
+      { status: 'stopped', error: null, endedAt: expect.any(Number) },
+    ]);
+  });
+
+  it('asks again in the place of the exchange it replaces, on the session before it', async () => {
+    const first = useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
+    settle[0](answer('s1'));
+    await first;
+    const second = useStore.getState().askBrain('t1', 'b1', 'How?', 'typed');
+    fail[1](new Error('boom'));
+    await second;
+    const failed = thread()[1];
+    void useStore.getState().askBrain('t1', 'b1', 'How?', 'typed', failed.id);
+    expect(thread()).toHaveLength(2);
+    expect(thread()[1]).toMatchObject({ question: 'How?', status: 'running' });
+    expect(thread()[1].id).not.toBe(failed.id);
+    expect(asked[2]).toEqual(['b1', 't1', 'How?', 's1']);
+  });
+
   it('does nothing for a second question while one runs, or for an empty one', () => {
     void useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
     void useStore.getState().askBrain('t1', 'b1', 'Again?', 'typed');

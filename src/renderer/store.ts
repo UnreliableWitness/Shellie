@@ -46,8 +46,11 @@ export type AskExchange = {
   id: string;
   /** As the person typed it, without the task's context sentence. */
   question: string;
-  status: 'running' | 'done' | 'failed';
+  /** `stopped`: by the person, which is not a failure. */
+  status: 'running' | 'done' | 'failed' | 'stopped';
   startedAt: number;
+  /** When a stopped run ended; missing on one that is running or was kept before this existed. */
+  endedAt?: number | null;
   answer: BrainAnswer | null;
   error: string | null;
   refused: AskRefusal | null;
@@ -238,6 +241,8 @@ export type Store = {
     brainId: string,
     question: string,
     via: AskVia,
+    /** The exchange this one takes the place of (Ask again, Try again). */
+    replaceId?: string,
   ): Promise<void>;
   stopBrainAsk(taskId: string): void;
   setBrainAskOpen(taskId: string, open: boolean): void;
@@ -523,12 +528,16 @@ export const useStore = create<Store>((set, get) => ({
   },
   brainAsksByTask: {},
   brainAskOpenByTask: {},
-  askBrain: async (taskId, brainId, question, via) => {
+  askBrain: async (taskId, brainId, question, via, replaceId) => {
     const q = question.trim();
-    const before = get().brainAsksByTask[taskId] ?? [];
-    if (!q || before.some((e) => e.status === 'running')) return;
+    const all = get().brainAsksByTask[taskId] ?? [];
+    if (!q || all.some((e) => e.status === 'running')) return;
     track('brain.screen.action', { action: `ask-${via}` });
     const id = `ask${++askSeq}`;
+    // Asked again: the new exchange takes the place of the one that was stopped or could not finish.
+    const at = replaceId ? all.findIndex((e) => e.id === replaceId) : -1;
+    const before = at === -1 ? all : all.slice(0, at);
+    const after = at === -1 ? [] : all.slice(at + 1);
     const resume =
       before.findLast((e) => e.answer?.sessionId)?.answer?.sessionId ?? null;
     const patch = (over: Partial<AskExchange>) =>
@@ -557,6 +566,7 @@ export const useStore = create<Store>((set, get) => ({
             error: null,
             refused: null,
           },
+          ...after,
         ],
       },
       brainAskOpenByTask: { ...s.brainAskOpenByTask, [taskId]: true },
@@ -564,6 +574,7 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const out = await api().invoke('brain:ask', brainId, taskId, q, resume);
       if (out.ok) patch({ status: 'done', answer: out.answer });
+      else if (out.stopped) patch({ status: 'stopped', endedAt: Date.now() });
       else
         patch({ status: 'failed', error: out.message, refused: out.refused });
     } catch (e) {
