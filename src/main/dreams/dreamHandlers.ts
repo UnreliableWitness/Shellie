@@ -872,7 +872,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           onLine: (line) => {
             // After Stop nothing more is said of the run.
             if (a.stop.signal.aborted) return;
-            const step = opencodeStep(line, r.worktreePath);
+            // The agent's note for Shellie and the session digests lie in the data folder: not steps of the change.
+            const step = opencodeStep(line, r.worktreePath, {
+              quiet: [r.dataDir],
+            });
             if (step) log.step(step);
           },
           model: a.model,
@@ -895,7 +898,9 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         end = { failed: ASK.finish, stopped: false };
       }
     }
-    log.flush();
+    // A stopped run's last state is not sent: the page shows it as stopped.
+    if (a.stop.signal.aborted) log.stop();
+    else log.flush();
     a.steps = log.snapshot().steps;
     await serial(() => finishAsk(repo, a, end)).catch((e: unknown) =>
       console.error('[dreams] an ask could not be finished', e),

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
-import type { AskProgress } from '../shared/askProgress';
+import { brainAskKey, type AskProgress } from '../shared/askProgress';
 import type { AskRefusal, BrainAnswer } from '../shared/brainAsk';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { ReadingBrain } from '../shared/reading';
@@ -544,6 +544,13 @@ export const useStore = create<Store>((set, get) => ({
     if (!q || all.some((e) => e.status === 'running')) return;
     track('brain.screen.action', { action: `ask-${via}` });
     const id = `ask${++askSeq}`;
+    // What the agent of the question before was doing is not this one's (main says so too, a moment later).
+    const key = brainAskKey(taskId);
+    if (get().askProgress[key])
+      set((s) => {
+        const { [key]: _gone, ...rest } = s.askProgress;
+        return { askProgress: rest };
+      });
     // Asked again: the new exchange takes the place of the one that was stopped or could not finish.
     const at = replaceId ? all.findIndex((e) => e.id === replaceId) : -1;
     const before = at === -1 ? all : all.slice(0, at);

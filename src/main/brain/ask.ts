@@ -252,6 +252,7 @@ export class BrainAsks {
     this.running.set(key, stop);
     const since = d.now();
     const opencode = d.agent(brainId) === 'opencode';
+    let quiet = () => undefined as void;
     try {
       const cwd = d.brainDir(brainId);
       // Read before anything runs: an OpenCode question never starts on rules Shellie could not see.
@@ -267,6 +268,7 @@ export class BrainAsks {
       // An empty one first: what an earlier run of this asker left is not this run's.
       d.progress?.(key, NO_PROGRESS);
       const log = progressLog((p) => d.progress?.(key, p));
+      quiet = () => log.stop();
       let resultLine: string | null = null;
       const onLine = (line: string) => {
         // After Stop nothing more is said of the run.
@@ -366,6 +368,8 @@ export class BrainAsks {
         };
       return { ok: false, refused: null, message: (e as Error).message };
     } finally {
+      // Whatever the run still had to say is not said after its end.
+      quiet();
       this.running.delete(key);
     }
   }

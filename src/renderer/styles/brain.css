@@ -821,6 +821,13 @@
 /* A question that is being answered, was stopped or could not finish (components/ask). */
 .brain-qa-state {
   max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A long link or word in an answer wraps instead of widening the tab. */
+.brain-qa-text {
+  overflow-wrap: anywhere;
 }
 .brain-qa-cols {
   display: flex;

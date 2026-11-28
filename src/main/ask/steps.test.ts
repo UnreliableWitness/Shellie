@@ -67,6 +67,40 @@ describe('opencodeStep', () => {
       });
   });
 
+  it('never shows a search pattern that leaves the folder', () => {
+    for (const pattern of ['/Users/x/secret/**/*.md', '../../**', 'a/../../b'])
+      expect(opencodeStep(oc('glob', { pattern }), cwd)).toEqual({
+        kind: 'search',
+        label: 'Looked through the files',
+      });
+  });
+
+  it('keeps a very long path short, by its end, on one line', () => {
+    const long = `${'deep/'.repeat(60)}the\n page.md`;
+    const step = opencodeStep(oc('read', { filePath: long }), cwd);
+    expect(step?.label.length).toBeLessThanOrEqual(5 + 120);
+    expect(step?.label.startsWith('Read …')).toBe(true);
+    expect(step?.label.endsWith('deep/the page.md')).toBe(true);
+  });
+
+  it('says nothing of a file in a folder that is to be left out', () => {
+    const data = path.resolve('/work/data');
+    const quiet = { quiet: [data] };
+    expect(
+      opencodeStep(
+        oc('write', { filePath: path.join(data, 'adjust.json') }),
+        cwd,
+        quiet,
+      ),
+    ).toBe(null);
+    expect(
+      opencodeStep(oc('read', { filePath: inCwd('a.md') }), cwd, quiet),
+    ).toEqual({ kind: 'read', label: 'Read a.md' });
+    expect(
+      opencodeStep(oc('read', { filePath: '/etc/passwd' }), cwd, quiet),
+    ).toEqual({ kind: 'read', label: 'Read a file outside the folder' });
+  });
+
   it('names any other tool plainly, and is nothing for what is not a finished tool call', () => {
     expect(opencodeStep(oc('todowrite', {}), cwd)).toEqual({
       kind: 'other',
@@ -186,6 +220,23 @@ describe('progressLog', () => {
     log.text('At noon.');
     expect(log.snapshot().text).toBe('At noon.');
   });
+  it('says nothing more once stopped', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: AskProgress[] = [];
+      const log = progressLog((p) => seen.push(p), { everyMs: 250 });
+      log.text('a');
+      log.text('b');
+      log.stop();
+      vi.advanceTimersByTime(1000);
+      log.text('c');
+      log.flush();
+      expect(seen.map((p) => p.text)).toEqual(['a']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('says so at once, then at most once per interval, the last state always', () => {
     vi.useFakeTimers();
     try {

@@ -104,6 +104,16 @@ describe("a task's questions to its brain", () => {
     expect(asked[2]).toEqual(['b1', 't1', 'How?', 's1']);
   });
 
+  it('forgets what the agent of the question before was doing', () => {
+    useStore.getState().setAskProgress('brain:t1', {
+      steps: [{ kind: 'read', label: 'Read wiki/a.md' }],
+      earlier: 0,
+      text: 'The old answer',
+    });
+    void useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
+    expect(useStore.getState().askProgress['brain:t1']).toBeUndefined();
+  });
+
   it('does nothing for a second question while one runs, or for an empty one', () => {
     void useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
     void useStore.getState().askBrain('t1', 'b1', 'Again?', 'typed');
