@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainSourceRow } from '../../shared/brain';
 import type { BrainActivityEntry } from '../../shared/brainShare';
+import type { TaskView } from '../../shared/types';
 import { useStore } from '../store';
 import { installFakeApi, type FakeHandlers } from '../test-helpers/fakeApi';
 import { brainJob, brainView } from '../test-helpers/brainFixture';
@@ -75,7 +76,14 @@ const source = (path: string): BrainSourceRow => ({
 
 beforeEach(() => {
   localStorage.clear();
-  useStore.setState({ notices: [], screen: { kind: 'brain', brainId: 'b1' } });
+  useStore.setState({
+    notices: [],
+    screen: { kind: 'brain', brainId: 'b1' },
+    brainAsksByTask: {},
+    brainAskOpenByTask: {},
+    brainAskThread: {},
+    brainAskEarlier: [],
+  });
 });
 
 describe('BrainScreen', () => {
@@ -182,23 +190,136 @@ describe('BrainScreen', () => {
     );
   });
 
-  it('Ask sends the question with the terminal open, not by writing to it', async () => {
-    const a = setup();
+  it('answers a question in place on the Ask view, without a terminal', async () => {
+    const a = setup(brainView(), {
+      'brain:ask': () => ({
+        ok: true,
+        answer: {
+          sessionId: 's1',
+          answer: 'Finance owns billing.',
+          durationMs: 1000,
+          costEur: null,
+          changed: false,
+        },
+      }),
+    });
     render(<BrainScreen brainId="b1" />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Ask' }));
+    // The head has no Ask box any more: Ask is a view.
+    await userEvent.click(await screen.findByRole('tab', { name: 'Ask' }));
     await userEvent.type(
-      screen.getByLabelText('Question'),
-      'who owns billing?',
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(await screen.findByTestId('terminal')).toHaveTextContent(
-      'brain:b1/bt1',
+      screen.getByRole('textbox', { name: 'Question for the brain' }),
+      'who owns billing?{Enter}',
     );
     expect(a.calls).toContainEqual({
-      channel: 'brain:terminal',
-      args: ['b1', null, '/ask who owns billing?'],
+      channel: 'brain:ask',
+      args: ['b1', null, 'who owns billing?', null, 'brain:b1', null],
     });
-    expect(names(a)).not.toContain('terminals:write');
+    expect(
+      await screen.findByText('Finance owns billing.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'who owns billing?' }),
+    ).toBeInTheDocument();
+    expect(names(a)).not.toContain('brain:terminal');
+    expect(screen.queryByTestId('terminal')).not.toBeInTheDocument();
+    // No start to go back to here.
+    expect(
+      screen.queryByRole('button', { name: "Back to the brain's start" }),
+    ).toBeNull();
+  });
+
+  it('opens on the Ask view with the cursor in the box when the route asks for it', async () => {
+    setup();
+    render(<BrainScreen brainId="b1" focus="ask" />);
+    const box = await screen.findByRole('textbox', {
+      name: 'Question for the brain',
+    });
+    expect(screen.getByRole('tab', { name: 'Ask' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it("lists the brain's questions and those asked in tasks, a task's to read only", async () => {
+    setup();
+    const done = (id: string, question: string) => ({
+      id,
+      question,
+      status: 'done' as const,
+      startedAt: 5,
+      answer: {
+        sessionId: 's1',
+        answer: `Answer to ${question}`,
+        durationMs: 1000,
+        costEur: null,
+        changed: false,
+      },
+      error: null,
+      refused: null,
+    });
+    useStore.setState({
+      tasks: [
+        { id: 't1', name: 'invoice-export', workItem: { id: '412' } },
+      ] as unknown as TaskView[],
+      brainAsksByTask: {
+        'brain:b1': [done('e1', 'Why is cost local?')],
+        t1: [done('e2', 'How do we refresh the token?')],
+      },
+      brainAskThread: {
+        'brain:b1': { id: 'own', brainId: 'b1', startedAt: 9 },
+        t1: { id: 'task', brainId: 'b1', startedAt: 8 },
+      },
+      brainAskEarlier: [
+        {
+          id: 'old',
+          brainId: 'b1',
+          taskId: null,
+          startedAt: 3,
+          current: false,
+          exchanges: [done('e3', 'Who owns the rate table?')],
+        },
+        {
+          id: 'other-brain',
+          brainId: 'b9',
+          taskId: null,
+          startedAt: 3,
+          current: false,
+          exchanges: [done('e4', 'Not this brain')],
+        },
+      ],
+    });
+    render(<BrainScreen brainId="b1" />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Ask' }));
+    const list = within(screen.getByRole('navigation', { name: 'Questions' }));
+    expect(
+      list.getByRole('button', { name: /Why is cost local\?/ }),
+    ).toHaveAttribute('aria-current', 'true');
+    expect(list.queryByText('Not this brain')).toBeNull();
+    // An earlier one of the brain's own comes back as the thread to ask in.
+    await userEvent.click(
+      list.getByRole('button', { name: /Who owns the rate table\?/ }),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Who owns the rate table?' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: 'Ask a follow-up' }),
+    ).toBeInTheDocument();
+    // A task's: read only, with the way to the task.
+    await userEvent.click(
+      list.getByRole('button', { name: /How do we refresh the token\?/ }),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'How do we refresh the token?' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', { name: 'Ask a follow-up' }),
+    ).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open the task' }),
+    );
+    expect(useStore.getState().selectedTaskId).toBe('t1');
   });
 
   it('Open terminal shows the brain terminal; Close kills it', async () => {
@@ -413,9 +534,12 @@ describe('BrainScreen', () => {
 
   it('Cmd+K typed in another field stays there', async () => {
     setup(brainView(), { 'brain:pages': () => [page('wiki/a.md', 'Page A')] });
-    render(<BrainScreen brainId="b1" focus="ask" />);
+    render(<BrainScreen brainId="b1" />);
     await screen.findByRole('button', { name: /Page A/ });
-    const question = screen.getByLabelText('Question');
+    await userEvent.click(screen.getByRole('tab', { name: 'Ask' }));
+    const question = screen.getByRole('textbox', {
+      name: 'Question for the brain',
+    });
     question.focus();
     await userEvent.keyboard('{Meta>}k{/Meta}');
     expect(question).toHaveFocus();

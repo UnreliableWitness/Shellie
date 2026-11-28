@@ -1537,10 +1537,117 @@ button.brain-front-chapter:hover {
   max-width: 95vw;
   max-height: 95vh;
 }
-.brain-askbox {
+/* The Ask view: what was asked on the left, the thread on the right. */
+.brain-ask-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.brain-ask-list {
+  flex: none;
+  width: 280px;
+  box-sizing: border-box;
+  padding: 16px 12px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+}
+.brain-ask-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.brain-ask-list p {
+  margin: 0;
+}
+.brain-ask-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+.brain-ask-list-none,
+.brain-ask-list-sub {
+  padding: 4px 8px;
+}
+.brain-ask-list-sub {
+  margin-top: 12px;
+}
+.brain-ask-list-foot {
+  margin-top: auto;
+  padding: 16px 8px 0;
+}
+.brain-ask-row {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.brain-ask-row > :last-child {
+  flex: none;
+}
+.brain-ask-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.brain-ask-row[aria-current='true'] {
+  background: var(--bg-selected);
+}
+.brain-ask-row:disabled {
+  color: var(--disabled);
+}
+.brain-ask-thread {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px 32px 32px;
+}
+.brain-ask-read-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.brain-ask-empty {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.brain-ask-empty h2,
+.brain-ask-empty p {
+  margin: 0;
+}
+/* A narrow window: the list goes above the thread. */
+@media (max-width: 900px) {
+  .brain-ask-view {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .brain-ask-list {
+    width: auto;
+    max-height: 30vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .brain-ask-thread {
+    overflow-y: visible;
+  }
 }
 
 /* A source's Pictures panel above its text: counts, a bar per status, one row per picture with a thumbnail. */
