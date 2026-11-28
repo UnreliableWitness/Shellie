@@ -169,6 +169,8 @@ const PendingCleanupSchema = z.object({
   code: z.string(),
   /** The one notice that it still fails after a day was shown. */
   notified: z.boolean().default(false),
+  /** Retries stopped: another worktree has the branch checked out, or it failed too often that way (#400). */
+  final: z.boolean().optional(),
 });
 export type PendingCleanup = z.infer<typeof PendingCleanupSchema>;
 

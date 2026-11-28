@@ -201,12 +201,15 @@ function PendingCleanupStatus({ task }: { task: TaskView }) {
     setRetrying(false);
   };
   const stuck = task.pendingCleanup.some((p) => p.notified);
+  const branchHeld = task.pendingCleanup.some((p) => p.final);
   return (
     <div role="status" aria-label="Cleanup" className="done-cleanup">
       <div className={stuck ? 'text-warn' : 'muted'}>
-        {stuck
-          ? 'Still not removed after a day: a process still holds files in the worktree folder.'
-          : 'Removing the worktree folder: a process still holds files in it. Shellie retries every few minutes.'}{' '}
+        {branchHeld
+          ? 'Shellie stopped trying to delete the branch: another worktree still has it checked out.'
+          : stuck
+            ? 'Still not removed after a day: a process still holds files in the worktree folder.'
+            : 'Removing the worktree folder: a process still holds files in it. Shellie retries every few minutes.'}{' '}
         <button
           type="button"
           className="btn btn-sm"

@@ -6,7 +6,7 @@ import type {
 } from '../../shared/types';
 import { taskWorkspaces } from '../../shared/workspaces';
 import { pathExists } from '../fsRetry';
-import { samePath } from '../paths';
+import { sameFolder, samePath } from '../paths';
 import { FOLDER_IN_USE, GitError, type GitClient } from './GitClient';
 
 /**
@@ -33,6 +33,9 @@ export const GIVE_UP_MS = 24 * 60 * 60 * 1000;
 
 /** How often main retries what is left (and once shortly after launch). */
 export const RETRY_EVERY_MS = 3 * 60 * 1000;
+
+/** A branch some unlisted or vanished worktree holds is not retried past this many attempts (#400). */
+export const BRANCH_IN_USE_ATTEMPTS = 10;
 
 /**
  * A short code for telemetry and the Done page: the fs code (EPERM, EBUSY...), else in-use, branch-in-use,
@@ -95,14 +98,31 @@ export async function removeWorkspace(
       return left(e);
     // Prune keeps a registration whose folder is still there (half-removed on Windows) or that git lists
     // under another path form, and that registration still holds the branch (#379).
-    const holder = (await git.worktreeList(t.repoPath).catch(() => [])).find(
-      (w) => w.branch === branch,
-    );
+    let listFailed = false;
+    const list = await git.worktreeList(t.repoPath).catch(() => {
+      listFailed = true;
+      return [];
+    });
+    const holder = list.find((w) => w.branch === branch);
+    const own = !!holder && sameFolder(holder.path, t.worktreePath);
+    const holderExists = !!holder && (await exists(holder.path));
+    // No paths: tells a path-form mismatch from a really different worktree (#400).
+    const loose = (p: string) => p.replace(/\\/g, '/').toLowerCase();
     console.warn(
-      `[cleanup] branch ${branch} held by ${holder?.path ?? 'an unlisted worktree'}; ${t.worktreePath} ${(await exists(t.worktreePath)) ? 'exists' : 'is gone'}`,
+      `[cleanup] branch held: ${JSON.stringify({
+        holderListed: !!holder,
+        listFailed,
+        own,
+        sameAfterCase: !!holder && loose(holder.path) === loose(t.worktreePath),
+        holderExists,
+        holderIsMain: !!holder && holder === list[0],
+        taskExists: await exists(t.worktreePath),
+      })}`,
     );
-    // Any other worktree may be a reopened or live task: never touch it.
-    if (!holder || !samePath(holder.path, t.worktreePath)) return left(e);
+    // Any other worktree may be a reopened or live task: never touch it. One that is there for sure stays,
+    // so retrying is pointless.
+    if (!holder || !own)
+      return holder && holderExists ? { ...left(e), final: true } : left(e);
     try {
       await git.worktreeRemove(t.repoPath, holder.path, true);
       await git.worktreePrune(t.repoPath);
@@ -140,6 +160,9 @@ export type WorktreeCleanupDeps = {
   };
 };
 
+/** Given up on and told the user: the background no longer retries it. */
+const settled = (p: PendingCleanup) => p.final === true && p.notified;
+
 const key = (p: DiscardedCleanup) => `${p.taskId}\u0000${p.workspaceId}`;
 
 export class WorktreeCleanup {
@@ -154,9 +177,12 @@ export class WorktreeCleanup {
   async retryAll(): Promise<void> {
     const ids = this.d
       .tasks()
-      .filter((t) => t.status === 'done' && t.pendingCleanup.length > 0)
+      .filter(
+        (t) => t.status === 'done' && t.pendingCleanup.some((p) => !settled(p)),
+      )
       .map((t) => t.id);
-    for (const id of ids) await this.retryTask(id).catch(() => undefined);
+    for (const id of ids)
+      await this.retryTask(id, false).catch(() => undefined);
     await this.retryDiscarded().catch(() => undefined);
   }
 
@@ -184,6 +210,7 @@ export class WorktreeCleanup {
       const after = await this.retryItems(
         items.filter((p) => !inUse(p)),
         'a discarded task',
+        false,
       );
       const tried = new Set(items.map(key));
       await d.mutate((list) => [
@@ -195,8 +222,11 @@ export class WorktreeCleanup {
     }
   }
 
-  /** Retries one task's leftovers now. True when nothing is left. */
-  async retryTask(taskId: string): Promise<boolean> {
+  /**
+   * Retries one task's leftovers now. True when nothing is left. `all` (Retry now on the Done page) also tries
+   * the ones the background gave up on.
+   */
+  async retryTask(taskId: string, all = true): Promise<boolean> {
     const task = this.d.tasks().find((t) => t.id === taskId);
     if (!task) return true;
     // A reopened task makes its worktree again at the same path: never touch it then.
@@ -207,6 +237,7 @@ export class WorktreeCleanup {
       const after = await this.retryItems(
         task.pendingCleanup,
         'a finished task',
+        all,
       );
       await this.d.mutate(taskId, (t) => {
         t.pendingCleanup = after;
@@ -221,9 +252,14 @@ export class WorktreeCleanup {
   private async retryItems<T extends PendingCleanup>(
     items: T[],
     leftBy: string,
+    all: boolean,
   ): Promise<T[]> {
     const after: T[] = [];
     for (const p of items) {
+      if (!all && settled(p)) {
+        after.push(p);
+        continue;
+      }
       const left = await removeWorkspace(this.d.git, p, {
         exists: this.d.exists,
         now: this.now,
@@ -245,11 +281,36 @@ export class WorktreeCleanup {
         error: left.error,
         code: left.code,
       };
+      const capped =
+        next.code === 'branch-in-use' &&
+        next.attempts >= BRANCH_IN_USE_ATTEMPTS;
+      if (left.final || capped) next.final = true;
+      else delete next.final;
       // Local log only: tells a held folder (EBUSY, in-use) from other failures when the counts look odd.
       console.warn(
         `[cleanup] attempt ${next.attempts} left ${p.worktreePath} (${next.code}): ${next.error}`,
       );
-      if (!p.notified && this.now() - Date.parse(p.since) >= GIVE_UP_MS) {
+      // Finish may already have stored it final: the user hears of it on its first retry.
+      if (next.final && !p.notified) {
+        next.notified = true;
+        this.d.event(
+          'cleanup.gaveUp',
+          {
+            code: next.code,
+            reason: left.final ? 'other-worktree' : 'attempts',
+          },
+          { attempts: next.attempts },
+        );
+        this.d.notice(
+          `Shellie could not delete the branch ${p.branch}, left by ${leftBy}: ${next.error}. ` +
+            'Another worktree still has it checked out, so Shellie stopped trying. Delete the branch yourself ' +
+            'once that worktree is done with it, or press Retry now on the task.',
+        );
+      } else if (
+        !next.final &&
+        !p.notified &&
+        this.now() - Date.parse(p.since) >= GIVE_UP_MS
+      ) {
         next.notified = true;
         this.d.event(
           'cleanup.gaveUp',
