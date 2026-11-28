@@ -1329,6 +1329,48 @@ describe('DreamScreen: asking for a change', () => {
     }
   });
 
+  it('shows what the agent is doing while it works, and the steps of a finished ask behind their count', async () => {
+    const m = fakeMain(twoProposals(running('p1')));
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(
+      within(foot()).queryByRole('list', { name: 'What the agent did' }),
+    ).toBeNull();
+    act(() =>
+      useStore.getState().setAskProgress('dream:r1', {
+        steps: [{ kind: 'edit', label: 'Edited rules/b.md' }],
+        earlier: 0,
+        text: '',
+      }),
+    );
+    expect(
+      within(foot()).getByRole('list', { name: 'What the agent did' }),
+    ).toHaveTextContent('Edited rules/b.md');
+    // Another repo's ask is not this one's.
+    act(() =>
+      useStore.getState().setAskProgress('dream:r2', {
+        steps: [{ kind: 'read', label: 'Read other.md' }],
+        earlier: 0,
+        text: '',
+      }),
+    );
+    expect(within(foot()).queryByText('Read other.md')).toBeNull();
+
+    m.set(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', 'Cut it.', {
+            steps: [
+              { kind: 'read', label: 'Read rules/b.md' },
+              { kind: 'edit', label: 'Edited rules/b.md' },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(await within(foot()).findByText('2 steps')).toBeInTheDocument();
+  });
+
   it('says how long a finished ask took', async () => {
     fakeMain(
       withP1({

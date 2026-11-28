@@ -13,10 +13,11 @@ import {
   ASK_TIMEOUT_MS,
   type AskOutcome,
 } from '../../shared/brainAsk';
-import type { AskProgress } from '../../shared/askProgress';
+import { NO_PROGRESS, type AskProgress } from '../../shared/askProgress';
 import {
   claudeEvent,
   claudeStreamResult,
+  isClaudeResultLine,
   opencodeStep,
   progressLog,
 } from '../ask/steps';
@@ -263,7 +264,10 @@ export class BrainAsks {
       const before = await d.snapshot(cwd).catch(() => null);
       // Stop pressed while the rules and the folder were read: nothing is started.
       if (stop.signal.aborted) throw new Error('stopped');
+      // An empty one first: what an earlier run of this asker left is not this run's.
+      d.progress?.(key, NO_PROGRESS);
       const log = progressLog((p) => d.progress?.(key, p));
+      let resultLine: string | null = null;
       const onLine = (line: string) => {
         // After Stop nothing more is said of the run.
         if (stop.signal.aborted) return;
@@ -272,6 +276,8 @@ export class BrainAsks {
           if (step) log.step(step);
           return;
         }
+        // Kept as it passes: a long run prints more than the runner collects, and the result comes last.
+        if (isClaudeResultLine(line)) resultLine = line;
         const e = claudeEvent(line, cwd);
         if (!e) return;
         if (e.reset) log.resetText();
@@ -316,7 +322,9 @@ export class BrainAsks {
           ),
           { ...o, input: askPrompt('claude', question), env: d.env(brainId) },
         );
-        found = claudeStreamResult(stdout);
+        found = claudeStreamResult(
+          resultLine === null ? stdout : `${stdout}\n${resultLine}`,
+        );
       }
       log.flush();
       const { steps } = log.snapshot();

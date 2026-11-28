@@ -8,7 +8,11 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { AskProgress, AskStep } from '../../shared/askProgress';
+import {
+  NO_PROGRESS,
+  type AskProgress,
+  type AskStep,
+} from '../../shared/askProgress';
 import { opencodeStep, progressLog } from '../ask/steps';
 import { isOpencodeModel } from '../../shared/brain';
 import {
@@ -852,13 +856,16 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   /** The run of an ask, outside the chain (so Stop, drop and the reads go on), then its end inside it. */
   const runAsk = async (repo: Repo, r: DreamResult, a: Ask, prompt: string) => {
     let end: RunEnd;
-    const log = progressLog((p) => {
+    const say = (p: AskProgress) => {
       try {
         d.progress?.(repo.id, p);
       } catch (e) {
         console.error('[dreams] an ask’s progress could not be sent', e);
       }
-    });
+    };
+    // An empty one first: what an earlier ask of this dream left is not this run's.
+    say(NO_PROGRESS);
+    const log = progressLog(say);
     try {
       end = {
         others: await dreamCall(d, {

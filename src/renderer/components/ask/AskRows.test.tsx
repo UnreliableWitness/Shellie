@@ -32,6 +32,27 @@ describe('AskWorking', () => {
   });
 });
 
+describe('AskWorking with what the agent does', () => {
+  it('shows the steps and what it is given above the time', () => {
+    render(
+      <AskWorking
+        word="Answering"
+        startedAt={Date.now()}
+        onStop={() => undefined}
+        progress={{
+          steps: [{ kind: 'read', label: 'Read wiki/a.md' }],
+          earlier: 0,
+          text: '',
+        }}
+      >
+        <p>The answer so far</p>
+      </AskWorking>,
+    );
+    expect(screen.getByText('Read wiki/a.md')).toBeInTheDocument();
+    expect(screen.getByText('The answer so far')).toBeInTheDocument();
+  });
+});
+
 describe('AskStopped', () => {
   it('says how long it ran and is not an alert', async () => {
     const onAgain = vi.fn();

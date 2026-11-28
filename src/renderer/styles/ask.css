@@ -77,6 +77,39 @@
   height: 24px;
   color: inherit;
 }
+/* What the agent did: short lines, a tick each. */
+.ask-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ask-step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.ask-step.is-earlier {
+  padding-left: 18px;
+}
+.ask-step-tick {
+  flex: none;
+  color: var(--green);
+  transform: translateY(1px);
+}
+.ask-steps-fold > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.ask-steps-fold[open] > summary {
+  margin-bottom: 4px;
+}
 .ask-working {
   display: flex;
   align-items: center;

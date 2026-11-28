@@ -392,6 +392,18 @@ describe('BrainAsks', () => {
     expect(out.answer.steps).toHaveLength(4);
   });
 
+  it('takes the answer from the lines when the collected output was cut before it', async () => {
+    run = async (_c, o) => {
+      o.onLine?.(claudeOut('Semicolons.', 's7'));
+      // What a run that printed more than the runner keeps looks like: the result line is not in it.
+      return '{"type":"user","message":{}}';
+    };
+    expect(await asks().ask('t1', 'b1', 'Why?', null)).toMatchObject({
+      ok: true,
+      answer: { answer: 'Semicolons.', sessionId: 's7' },
+    });
+  });
+
   it("reads OpenCode's finished tool calls as steps", async () => {
     const seen: AskProgress[] = [];
     run = async (_c, o) => {

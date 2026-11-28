@@ -4,6 +4,7 @@ import type { AskProgress, AskStep } from '../../shared/askProgress';
 import {
   claudeEvent,
   claudeStreamResult,
+  isClaudeResultLine,
   opencodeStep,
   progressLog,
 } from './steps';
@@ -138,6 +139,14 @@ describe('claudeStreamResult', () => {
       result: 'At noon.',
       sessionId: 's9',
     });
+  });
+  it('knows the result line whatever the order of its keys', () => {
+    expect(isClaudeResultLine(result())).toBe(true);
+    expect(
+      isClaudeResultLine('{"duration_ms":4928,"result":"x","type":"result"}'),
+    ).toBe(true);
+    expect(isClaudeResultLine(claudeText('"type":"result"'))).toBe(false);
+    expect(isClaudeResultLine('not json "type":"result"')).toBe(false);
   });
   it('fails as a single JSON result does', () => {
     expect(() => claudeStreamResult(claudeText('At'))).toThrow(

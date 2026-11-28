@@ -139,6 +139,10 @@ export function claudeEvent(
   return null;
 }
 
+/** Whether a line of a stream-json run is its result (the keys come in no fixed order). */
+export const isClaudeResultLine = (line: string): boolean =>
+  line.includes('"type":"result"') && parsed(line)?.type === 'result';
+
 /** The answer and session of a stream-json run: its last `result` line, by the rules of a single JSON result. */
 export function claudeStreamResult(stdout: string): {
   result: string;
