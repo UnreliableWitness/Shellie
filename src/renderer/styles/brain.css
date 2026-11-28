@@ -731,18 +731,6 @@
   align-items: baseline;
   gap: 12px;
 }
-.brain-guide-ask {
-  background: var(--bg-card);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-card);
-  padding: 8px;
-}
-.brain-guide-ask .field {
-  height: 36px;
-  font-size: 15px;
-  background: transparent;
-  border-color: transparent;
-}
 .brain-guide-try {
   display: flex;
   flex-wrap: wrap;
@@ -828,16 +816,9 @@
   line-height: 28px;
   font-weight: 600;
 }
-.brain-qa-running {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--muted);
-}
-.brain-qa-failed p {
-  margin: 0 0 8px;
-  color: var(--red);
+/* A question that is being answered, was stopped or could not finish (components/ask). */
+.brain-qa-state {
+  max-width: 640px;
 }
 .brain-qa-cols {
   display: flex;
@@ -892,17 +873,6 @@
 }
 .brain-qa-source {
   width: 100%;
-}
-.brain-qa-follow,
-.brain-guide-ask {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.brain-qa-follow .field,
-.brain-guide-ask .field {
-  flex: 1;
-  min-width: 0;
 }
 .brain-qa-follow {
   max-width: 640px;

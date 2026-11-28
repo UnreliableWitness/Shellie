@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   BrainPageRow,
   BrainSourceRow,
@@ -11,6 +11,14 @@ import { eur } from '../../../shared/text';
 import type { TerminalDef } from '../../../shared/types';
 import { api } from '../../api';
 import { type AskExchange, useStore } from '../../store';
+import {
+  AskComposer,
+  AskFailed,
+  AskFoot,
+  AskStopped,
+  AskWorking,
+  tookWords,
+} from '../ask';
 import { MarkdownView } from '../docs/MarkdownView';
 import { openBrainTerminal, trackBrain } from './brainActions';
 import { PageTags } from './PageCards';
@@ -27,15 +35,8 @@ const SEND_REFUSED: Record<
   none: 'No agent tab can take it right now.',
 };
 
-/** The seconds since `startedAt`, counted while mounted. */
-function Elapsed({ startedAt }: { startedAt: number }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return <>{Math.max(0, Math.round((now - startedAt) / 1000))} s</>;
-}
+/** How long Copy says "Copied". */
+const COPIED_MS = 2000;
 
 /**
  * What a task asked its brain, in the Brain tab: each question with its answer (the pages it names as links and as
@@ -65,12 +66,17 @@ export function BrainAnswers({
   const stopBrainAsk = useStore((s) => s.stopBrainAsk);
   const setBrainAskOpen = useStore((s) => s.setBrainAskOpen);
   const setTab = useStore((s) => s.setTab);
+  const go = useStore((s) => s.go);
   const notify = useStore((s) => s.notify);
   const { asset, openFile, lightbox } = usePageMedia(brain.id);
   const [followUp, setFollowUp] = useState('');
   /** Why the agent could not take an answer, per exchange. */
   const [sendNote, setSendNote] = useState<Record<string, string>>({});
   const running = thread.some((e) => e.status === 'running');
+  /** The exchange whose answer was just copied. */
+  const [copied, setCopied] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   const pageOf = (p: string) => rows.find((r) => r.path === p);
   const sourceOf = (p: string) => sources.find((s) => s.path === p);
@@ -101,16 +107,23 @@ export function BrainAnswers({
   };
   const copy = (e: AskExchange) => {
     trackBrain('ask-copy');
-    void navigator.clipboard
-      .writeText(e.answer?.answer ?? '')
-      .catch((err: unknown) => notify('error', errorMessage(err)));
+    void navigator.clipboard.writeText(e.answer?.answer ?? '').then(
+      () => {
+        setCopied(e.id);
+        clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopied(null), COPIED_MS);
+      },
+      (err: unknown) => notify('error', errorMessage(err)),
+    );
   };
-  const submit = (ev: FormEvent) => {
-    ev.preventDefault();
-    if (!followUp.trim()) return;
+  const submit = () => {
+    if (!followUp.trim() || running) return;
     void askBrain(taskId, brain.id, followUp, 'follow-up');
     setFollowUp('');
   };
+  /** Asks the question of a stopped or failed exchange once more, in its place. */
+  const again = (e: AskExchange) =>
+    void askBrain(taskId, brain.id, e.question, 'typed', e.id);
 
   return (
     <div className="brain-qas">
@@ -132,41 +145,47 @@ export function BrainAnswers({
             <p className="brain-qa-asked muted small">You asked</p>
             <h2 className="brain-qa-question">{e.question}</h2>
             {e.status === 'running' && (
-              <p className="brain-qa-running" role="status">
-                <span>
-                  Reading the brain… <Elapsed startedAt={e.startedAt} />
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => stopBrainAsk(taskId)}
-                >
-                  Stop
-                </button>
-              </p>
+              <div className="brain-qa-state">
+                <AskWorking
+                  word="Answering"
+                  startedAt={e.startedAt}
+                  onStop={() => stopBrainAsk(taskId)}
+                />
+              </div>
+            )}
+            {e.status === 'stopped' && (
+              <div className="brain-qa-state">
+                <AskStopped
+                  afterMs={e.endedAt ? e.endedAt - e.startedAt : null}
+                  onAgain={() => again(e)}
+                  againOff={running}
+                />
+              </div>
             )}
             {e.status === 'failed' && (
-              <div className="brain-qa-failed">
-                <p role="alert">{e.error}</p>
-                <div className="brain-qa-actions">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={running}
-                    onClick={() =>
-                      void askBrain(taskId, brain.id, e.question, 'typed')
-                    }
-                  >
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => void terminal()}
-                  >
-                    Open the brain's terminal
-                  </button>
-                </div>
+              <div className="brain-qa-state">
+                <AskFailed
+                  reason={e.error ?? ''}
+                  onRetry={() => again(e)}
+                  retryOff={running}
+                  second={
+                    e.refused === 'held'
+                      ? {
+                          label: 'Open settings',
+                          run: () =>
+                            go({
+                              kind: 'settings',
+                              scope: 'project',
+                              connectionId: brain.connectionId,
+                              section: 'project-brains',
+                            }),
+                        }
+                      : {
+                          label: "Open the brain's terminal",
+                          run: () => void terminal(),
+                        }
+                  }
+                />
               </div>
             )}
             {e.status === 'done' && e.answer && (
@@ -197,7 +216,7 @@ export function BrainAnswers({
                       className="btn btn-sm"
                       onClick={() => copy(e)}
                     >
-                      Copy
+                      {copied === e.id ? 'Copied' : 'Copy'}
                     </button>
                     {e.answer.sessionId && (
                       <button
@@ -214,17 +233,16 @@ export function BrainAnswers({
                       {sendNote[e.id]}
                     </p>
                   )}
-                  <p className="brain-qa-foot muted small">
-                    {[
-                      `Took ${Math.round(e.answer.durationMs / 1000)} s`,
-                      ...(e.answer.costEur === null
-                        ? []
-                        : [`${eur(e.answer.costEur)} on the brain`]),
+                  <AskFoot
+                    parts={[
+                      `Took ${tookWords(e.answer.durationMs)}`,
+                      e.answer.costEur !== null &&
+                        `${eur(e.answer.costEur)} on the brain`,
                       e.answer.changed
                         ? "The brain's folder changed while this was answered (a job or someone at work, most likely). Check the brain's Health."
                         : 'nothing was changed in the brain',
-                    ].join(' · ')}
-                  </p>
+                    ]}
+                  />
                 </div>
                 {cited.length > 0 && (
                   <aside className="brain-qa-sources">
@@ -263,23 +281,16 @@ export function BrainAnswers({
           </section>
         );
       })}
-      {!running && thread.length > 0 && (
-        <form className="brain-qa-follow" onSubmit={submit}>
-          <input
-            className="field"
-            aria-label="Follow-up question"
-            placeholder="Ask a follow-up"
+      {thread.length > 0 && (
+        <div className="brain-qa-follow">
+          <AskComposer
+            label="Ask a follow-up"
             value={followUp}
-            onChange={(ev) => setFollowUp(ev.target.value)}
+            onChange={setFollowUp}
+            onSend={submit}
+            waiting={running ? 'Wait for this answer, or stop it' : null}
           />
-          <button
-            type="submit"
-            className="btn btn-sm"
-            disabled={!followUp.trim()}
-          >
-            Ask
-          </button>
-        </form>
+        </div>
       )}
       {lightbox}
     </div>

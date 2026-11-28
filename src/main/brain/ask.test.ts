@@ -343,7 +343,12 @@ describe('BrainAsks', () => {
     const p = a.ask('t1', 'b1', 'Why?', null);
     await Promise.resolve();
     a.stop('t1');
-    expect(await p).toEqual({ ok: false, refused: null, message: 'Stopped' });
+    expect(await p).toEqual({
+      ok: false,
+      refused: null,
+      message: 'Stopped',
+      stopped: true,
+    });
     // The key is free again.
     run = async () => claudeOut('ok', 's2');
     expect((await a.ask('t1', 'b1', 'Again?', null)).ok).toBe(true);

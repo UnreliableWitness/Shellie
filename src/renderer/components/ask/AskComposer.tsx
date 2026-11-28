@@ -14,6 +14,7 @@ export function AskComposer({
   onChange,
   onSend,
   label,
+  placeholder,
   hint = null,
   quote = null,
   onQuoteRemove,
@@ -28,8 +29,9 @@ export function AskComposer({
   value: string;
   onChange: (next: string) => void;
   onSend: () => void;
-  /** The box's name and placeholder. */
+  /** The box's name, and its placeholder unless `placeholder` is given. */
   label: string;
+  placeholder?: string;
   /** Shown under an empty box. */
   hint?: string | null;
   /** The selected text the ask is about. */
@@ -89,7 +91,7 @@ export function AskComposer({
         rows={rows}
         aria-label={label}
         aria-describedby={under ? `${id}-under` : undefined}
-        placeholder={label}
+        placeholder={placeholder ?? label}
         maxLength={maxLength}
         disabled={off !== null}
         readOnly={sending}

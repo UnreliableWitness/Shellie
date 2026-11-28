@@ -105,8 +105,13 @@ export type AskRefusal = 'cap' | 'held';
 
 export type AskOutcome =
   | { ok: true; answer: BrainAnswer }
-  /** `refused` null: the run failed, timed out or was stopped. */
-  | { ok: false; refused: AskRefusal | null; message: string };
+  /** `refused` null: the run failed, timed out or was stopped (`stopped`: by the person). */
+  | {
+      ok: false;
+      refused: AskRefusal | null;
+      message: string;
+      stopped?: true;
+    };
 
 export const ASK_CAP_MESSAGE =
   "The brain reached today's limit. Open the brain's terminal to ask anyway, or raise the limit in Settings.";

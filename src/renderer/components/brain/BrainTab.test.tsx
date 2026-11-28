@@ -156,6 +156,20 @@ describe('BrainTab', () => {
     ).toBeTruthy();
   });
 
+  it('keeps a question typed while another is being answered', async () => {
+    const a = show({ 'brain:ask': () => new Promise(() => undefined) });
+    const ask = screen.getByRole('region', { name: '1 · Ask' });
+    const box = () =>
+      within(ask).getByRole('textbox', { name: 'Question for the brain' });
+    await userEvent.type(box(), 'First?{Enter}');
+    await userEvent.click(
+      await screen.findByRole('button', { name: "Back to the brain's start" }),
+    );
+    await userEvent.type(box(), 'One{Shift>}{Enter}{/Shift}two{Enter}');
+    expect(box()).toHaveValue('One\ntwo');
+    expect(a.calls.filter((c) => c.channel === 'brain:ask')).toHaveLength(1);
+  });
+
   it('asks each suggestion at once', async () => {
     const a = show();
     for (const s of ASK_SUGGESTIONS)
