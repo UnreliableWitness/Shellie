@@ -1,6 +1,7 @@
 /** Asking a brain from a task: the shapes main and the renderer share, and the helpers that need no I/O. */
 
 import type { AskStep } from './askProgress';
+import type { BrainAgent } from './brain';
 
 /** The questions the task's Brain tab offers; "this" is the task's work item (askWithContext). */
 export const ASK_SUGGESTIONS = [
@@ -104,6 +105,10 @@ export type BrainAnswer = {
   steps?: AskStep[];
   /** How many different files it read; left out when the agent's steps could not be read. */
   pagesRead?: number;
+  /** The agent that answered, so a follow-up continues its session only on the same one. */
+  agent?: BrainAgent;
+  /** The follow-up could not continue the session before it (the brain's agent changed): a new conversation. */
+  restarted?: true;
 };
 
 /** Why a question was not run: the brain's daily token cap, or its jobs being held. */
@@ -123,3 +128,42 @@ export const ASK_CAP_MESSAGE =
   "The brain reached today's limit. Open the brain's terminal to ask anyway, or raise the limit in Settings.";
 
 export const ASK_STOPPED = 'Stopped';
+
+/** One question asked of a brain, and what came back. */
+export type AskExchange = {
+  id: string;
+  /** As the person typed it, without the task's context sentence. */
+  question: string;
+  /** `stopped`: by the person, which is not a failure. */
+  status: 'running' | 'done' | 'failed' | 'stopped';
+  startedAt: number;
+  /** When a stopped run ended; missing on one that is running or was kept before this existed. */
+  endedAt?: number | null;
+  answer: BrainAnswer | null;
+  error: string | null;
+  refused: AskRefusal | null;
+};
+
+/**
+ * The questions one asker put to a brain, oldest first. The asker is a task (`taskId`) or the brain's own page
+ * (null); each asker has one `current` thread and any number of earlier ones. Kept on this computer only.
+ */
+export type AskThread = {
+  id: string;
+  brainId: string;
+  taskId: string | null;
+  startedAt: number;
+  current: boolean;
+  exchanges: AskExchange[];
+};
+
+/** How many threads are kept per brain; the oldest that are not current go first. */
+export const ASK_THREADS_MAX = 50;
+
+/** What a question says that was being answered when Shellie closed. */
+export const ASK_LEFT_BY_QUIT =
+  'Shellie was closed while this was being answered';
+
+/** The key of an asker in the renderer's store and in `brain:ask`: the task's id, or the brain's own page. */
+export const askOwner = (taskId: string | null, brainId: string): string =>
+  taskId ?? `brain:${brainId}`;

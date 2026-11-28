@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
 import { brainAskKey, type AskProgress } from '../shared/askProgress';
-import type { AskRefusal, BrainAnswer } from '../shared/brainAsk';
+import type { AskExchange } from '../shared/brainAsk';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { ReadingBrain } from '../shared/reading';
 import type { AppSettings } from '../shared/usage';
@@ -42,20 +42,7 @@ const VIEW_PREFIX = 'view:';
 /** Tabs that are not a terminal: always valid. */
 const FIXED_TABS = new Set([USAGE_TAB, DOCS_TAB, CHANGES_TAB, BRAIN_TAB]);
 
-/** One question a task asked its brain, and what came back. */
-export type AskExchange = {
-  id: string;
-  /** As the person typed it, without the task's context sentence. */
-  question: string;
-  /** `stopped`: by the person, which is not a failure. */
-  status: 'running' | 'done' | 'failed' | 'stopped';
-  startedAt: number;
-  /** When a stopped run ended; missing on one that is running or was kept before this existed. */
-  endedAt?: number | null;
-  answer: BrainAnswer | null;
-  error: string | null;
-  refused: AskRefusal | null;
-};
+export type { AskExchange };
 /** How a question was asked, for the count of each. */
 export type AskVia = 'typed' | 'suggested' | 'follow-up';
 let askSeq = 0;
