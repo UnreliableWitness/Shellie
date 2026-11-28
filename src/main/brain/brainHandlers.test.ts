@@ -492,22 +492,40 @@ describe('brain handlers', () => {
       },
       { id: 't10', name: 'spike', workItem: null },
     ] as unknown as Task[];
-    expect(await h['brain:ask'](v.id, 't9', 'Who\nknows?', null)).toEqual({
+    expect(
+      await h['brain:ask'](v.id, 't9', 'Who\nknows?', null, 't9', null),
+    ).toEqual({
       ok: false,
       refused: 'cap',
       message: 'cap',
     });
-    await h['brain:ask'](v.id, 't10', 'Why?', 's1');
+    await h['brain:ask'](v.id, 't10', 'Why?', 's1', 't10', 'claude');
+    // From the brain's own page: no task, the question as asked, under the page's key.
+    await h['brain:ask'](
+      v.id,
+      null,
+      'What\nis decided?',
+      null,
+      `brain:${v.id}`,
+      null,
+    );
     expect(asked).toEqual([
       [
         't9',
         v.id,
         'Who knows? (Asked from the task for work item 412: Export invoices as CSV.)',
         null,
+        null,
       ],
-      ['t10', v.id, 'Why? (Asked from the task "spike".)', 's1'],
+      ['t10', v.id, 'Why? (Asked from the task "spike".)', 's1', 'claude'],
+      [`brain:${v.id}`, v.id, 'What is decided?', null, null],
     ]);
-    await expect(h['brain:ask']('nope', 't9', 'Why?', null)).rejects.toThrow();
+    await expect(
+      h['brain:ask']('nope', 't9', 'Why?', null, 't9', null),
+    ).rejects.toThrow();
+    await expect(
+      h['brain:ask'](v.id, 't9', 'Why?', null, '', null),
+    ).rejects.toThrow('The question has no asker');
     await h['brain:askStop']('t9');
     expect(stopped).toEqual(['t9']);
   });

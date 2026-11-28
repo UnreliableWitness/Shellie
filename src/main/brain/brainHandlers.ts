@@ -66,6 +66,7 @@ import { getInstallId } from '../installId';
 import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
 import type { BrainAsks } from './ask';
+import type { AskThreadStore } from './askThreads';
 import type { createBrainTerminals } from './brainTerminal';
 import {
   imagesBucket,
@@ -175,6 +176,8 @@ export type BrainChannels =
   | 'brain:relevant'
   | 'brain:ask'
   | 'brain:askStop'
+  | 'brainAsk:load'
+  | 'brainAsk:save'
   | 'brain:openSource'
   | 'brain:pictures'
   | 'brain:acceptDrop';
@@ -195,6 +198,8 @@ export type BrainHandlerDeps = {
   runner: BrainRunner;
   /** Questions from a task's Brain tab (BrainAsks); absent in tests that ask none. */
   asks?: Pick<BrainAsks, 'ask' | 'stop'>;
+  /** What was asked and answered, kept over a restart; absent in tests that keep none. */
+  askThreads?: Pick<AskThreadStore, 'list' | 'save'>;
   /** The brain's Claude terminal (main); absent in tests that do not open one. */
   terminals?: Pick<ReturnType<typeof createBrainTerminals>, 'open' | 'kill'>;
   mirrorAuth: (connectionId: string, gitUrl: string) => MirrorAuth;
@@ -1210,22 +1215,32 @@ export function createBrainHandlers(
         );
       return relevantPages(await pageRows(b.path), taskWords(texts));
     },
-    'brain:ask': async (id, taskId, question, resume) => {
+    'brain:ask': async (id, taskId, question, resume, key, resumeAgent) => {
       brainOf(id);
       if (!d.asks) throw new Error('Asking a brain is not available');
-      const task = d.task(taskId);
+      if (typeof key !== 'string' || key === '')
+        throw new Error('The question has no asker');
+      // From a task, "this" is its work item; from the brain's own page the question stands alone.
+      const task = taskId === null ? null : d.task(taskId);
       return d.asks.ask(
-        taskId,
+        key,
         id,
-        askWithContext(question, {
-          workItemId: task.workItem?.id ?? null,
-          title: task.workItem?.title || task.name,
-        }),
+        task
+          ? askWithContext(question, {
+              workItemId: task.workItem?.id ?? null,
+              title: task.workItem?.title || task.name,
+            })
+          : question.replace(/\s+/g, ' ').trim(),
         resume,
+        resumeAgent,
       );
     },
-    'brain:askStop': async (taskId) => {
-      d.asks?.stop(taskId);
+    'brain:askStop': async (key) => {
+      d.asks?.stop(key);
+    },
+    'brainAsk:load': async () => d.askThreads?.list() ?? [],
+    'brainAsk:save': async (threads) => {
+      await d.askThreads?.save(threads);
     },
     'brain:openSource': async (id, rel) => {
       const b = brainOf(id);

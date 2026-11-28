@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
 import { brainAskKey, type AskProgress } from '../shared/askProgress';
-import type { AskExchange } from '../shared/brainAsk';
+import type { AskExchange, AskThread } from '../shared/brainAsk';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { ReadingBrain } from '../shared/reading';
 import type { AppSettings } from '../shared/usage';
@@ -43,6 +43,31 @@ const VIEW_PREFIX = 'view:';
 const FIXED_TABS = new Set([USAGE_TAB, DOCS_TAB, CHANGES_TAB, BRAIN_TAB]);
 
 export type { AskExchange };
+
+/** Which thread an asker's current exchanges are: its id, its brain and when it began. */
+type ThreadMeta = { id: string; brainId: string; startedAt: number };
+
+/** The task of an asker's key (`askOwner`); null for a brain's own page. */
+const ownerTask = (owner: string): string | null =>
+  owner.startsWith('brain:') ? null : owner;
+
+let threadSeq = 0;
+const newThreadId = () => `th${Date.now().toString(36)}-${++threadSeq}`;
+
+/** Every thread, the askers' current ones marked, as main keeps them (`brainAsk:save`). */
+export function askThreadsToSave(
+  s: Pick<Store, 'brainAsksByTask' | 'brainAskThread' | 'brainAskEarlier'>,
+): AskThread[] {
+  const current = Object.entries(s.brainAsksByTask).flatMap(
+    ([owner, exchanges]): AskThread[] => {
+      const meta = s.brainAskThread[owner];
+      return meta && exchanges.length > 0
+        ? [{ ...meta, taskId: ownerTask(owner), current: true, exchanges }]
+        : [];
+    },
+  );
+  return [...current, ...s.brainAskEarlier];
+}
 /** How a question was asked, for the count of each. */
 export type AskVia = 'typed' | 'suggested' | 'follow-up';
 let askSeq = 0;
@@ -224,7 +249,18 @@ export type Store = {
    * Asks the task's brain and shows the answers: a follow-up continues the session of the last answer. Nothing for
    * an empty question or while one runs. Never rejects: a failure is kept on the exchange.
    */
+  /** The thread each asker's current exchanges are (`brainAsksByTask`); set by its first question. */
+  brainAskThread: Record<string, ThreadMeta>;
+  /** The threads that are no asker's current one: put away by New question, or of a task that is gone. */
+  brainAskEarlier: AskThread[];
+  /** Puts the asker's thread away as an earlier one and starts empty. Nothing while an answer is coming. */
+  newBrainQuestion(owner: string): void;
+  /** Makes an earlier thread the asker's current one; the current one takes its place among the earlier. */
+  openBrainThread(owner: string, threadId: string): void;
+  /** Takes in the threads main kept (once, at the start): an asker that asked meanwhile keeps what it has. */
+  loadBrainThreads(threads: AskThread[]): void;
   askBrain(
+    /** The asker (`askOwner`): a task's id, or `brain:<id>` for the brain's own page. */
     taskId: string,
     brainId: string,
     question: string,
@@ -471,15 +507,30 @@ export const useStore = create<Store>((set, get) => ({
     const selected = get().selectedTaskId;
     const stillThere = tasks.some((t) => t.id === selected);
     const ids = new Set(tasks.map((t) => t.id));
+    // An asker that is a task which is gone; a brain's own page is never one.
+    const stays = (owner: string) =>
+      ownerTask(owner) === null || ids.has(owner);
     const kept = <T>(by: Record<string, T>) =>
-      Object.keys(by).every((id) => ids.has(id))
+      Object.keys(by).every(stays)
         ? by
-        : Object.fromEntries(Object.entries(by).filter(([id]) => ids.has(id)));
+        : Object.fromEntries(Object.entries(by).filter(([id]) => stays(id)));
+    const before = get();
+    // What a removed task asked stays, among the earlier threads (the Brain page lists them).
+    const orphaned = askThreadsToSave({
+      ...before,
+      brainAskEarlier: [],
+    })
+      .filter((t) => t.taskId !== null && !ids.has(t.taskId))
+      .map((t) => ({ ...t, current: false }));
     set({
-      tasks: keepUnchanged(get().tasks, tasks),
+      tasks: keepUnchanged(before.tasks, tasks),
       selectedTaskId: stillThere ? selected : null,
-      brainAsksByTask: kept(get().brainAsksByTask),
-      brainAskOpenByTask: kept(get().brainAskOpenByTask),
+      brainAsksByTask: kept(before.brainAsksByTask),
+      brainAskOpenByTask: kept(before.brainAskOpenByTask),
+      brainAskThread: kept(before.brainAskThread),
+      ...(orphaned.length > 0
+        ? { brainAskEarlier: [...before.brainAskEarlier, ...orphaned] }
+        : {}),
     });
   },
   notify: (level, message) => {
@@ -522,6 +573,78 @@ export const useStore = create<Store>((set, get) => ({
   },
   brainAsksByTask: {},
   brainAskOpenByTask: {},
+  brainAskThread: {},
+  brainAskEarlier: [],
+  newBrainQuestion: (owner) =>
+    set((s) => {
+      const exchanges = s.brainAsksByTask[owner] ?? [];
+      const meta = s.brainAskThread[owner];
+      if (
+        !meta ||
+        exchanges.length === 0 ||
+        exchanges.some((e) => e.status === 'running')
+      )
+        return {};
+      const { [owner]: _thread, ...threads } = s.brainAskThread;
+      const { [owner]: _asks, ...asks } = s.brainAsksByTask;
+      return {
+        brainAskThread: threads,
+        brainAsksByTask: asks,
+        brainAskEarlier: [
+          { ...meta, taskId: ownerTask(owner), current: false, exchanges },
+          ...s.brainAskEarlier,
+        ],
+      };
+    }),
+  openBrainThread: (owner, threadId) =>
+    set((s) => {
+      const wanted = s.brainAskEarlier.find((t) => t.id === threadId);
+      const exchanges = s.brainAsksByTask[owner] ?? [];
+      if (!wanted || exchanges.some((e) => e.status === 'running')) return {};
+      const meta = s.brainAskThread[owner];
+      const put: AskThread[] =
+        meta && exchanges.length > 0
+          ? [{ ...meta, taskId: ownerTask(owner), current: false, exchanges }]
+          : [];
+      return {
+        brainAskThread: {
+          ...s.brainAskThread,
+          [owner]: {
+            id: wanted.id,
+            brainId: wanted.brainId,
+            startedAt: wanted.startedAt,
+          },
+        },
+        brainAsksByTask: { ...s.brainAsksByTask, [owner]: wanted.exchanges },
+        brainAskOpenByTask: { ...s.brainAskOpenByTask, [owner]: true },
+        brainAskEarlier: [
+          ...put,
+          ...s.brainAskEarlier.filter((t) => t.id !== threadId),
+        ],
+      };
+    }),
+  loadBrainThreads: (threads) =>
+    set((s) => {
+      const asks = { ...s.brainAsksByTask };
+      const meta = { ...s.brainAskThread };
+      const earlier = [...s.brainAskEarlier];
+      for (const t of threads) {
+        const owner = t.taskId ?? `brain:${t.brainId}`;
+        if (t.current && !meta[owner] && !(asks[owner]?.length ?? 0)) {
+          asks[owner] = t.exchanges;
+          meta[owner] = {
+            id: t.id,
+            brainId: t.brainId,
+            startedAt: t.startedAt,
+          };
+        } else earlier.push({ ...t, current: false });
+      }
+      return {
+        brainAsksByTask: asks,
+        brainAskThread: meta,
+        brainAskEarlier: earlier,
+      };
+    }),
   askProgress: {},
   setAskProgress: (key, p) =>
     set((s) => ({ askProgress: { ...s.askProgress, [key]: p } })),
@@ -530,7 +653,8 @@ export const useStore = create<Store>((set, get) => ({
     const all = get().brainAsksByTask[taskId] ?? [];
     if (!q || all.some((e) => e.status === 'running')) return;
     track('brain.screen.action', { action: `ask-${via}` });
-    const id = `ask${++askSeq}`;
+    // Unlike any id kept from an earlier start of the app.
+    const id = `ask${Date.now().toString(36)}-${++askSeq}`;
     // What the agent of the question before was doing is not this one's (main says so too, a moment later).
     const key = brainAskKey(taskId);
     if (get().askProgress[key])
@@ -542,8 +666,8 @@ export const useStore = create<Store>((set, get) => ({
     const at = replaceId ? all.findIndex((e) => e.id === replaceId) : -1;
     const before = at === -1 ? all : all.slice(0, at);
     const after = at === -1 ? [] : all.slice(at + 1);
-    const resume =
-      before.findLast((e) => e.answer?.sessionId)?.answer?.sessionId ?? null;
+    const resumed = before.findLast((e) => e.answer?.sessionId)?.answer;
+    const resume = resumed?.sessionId ?? null;
     const patch = (over: Partial<AskExchange>) =>
       set((s) => {
         const thread = s.brainAsksByTask[taskId];
@@ -574,9 +698,26 @@ export const useStore = create<Store>((set, get) => ({
         ],
       },
       brainAskOpenByTask: { ...s.brainAskOpenByTask, [taskId]: true },
+      // The asker's first question begins its thread.
+      ...(s.brainAskThread[taskId]
+        ? {}
+        : {
+            brainAskThread: {
+              ...s.brainAskThread,
+              [taskId]: { id: newThreadId(), brainId, startedAt: Date.now() },
+            },
+          }),
     }));
     try {
-      const out = await api().invoke('brain:ask', brainId, taskId, q, resume);
+      const out = await api().invoke(
+        'brain:ask',
+        brainId,
+        ownerTask(taskId),
+        q,
+        resume,
+        taskId,
+        resumed?.agent ?? null,
+      );
       if (out.ok) patch({ status: 'done', answer: out.answer });
       else if (out.stopped) patch({ status: 'stopped', endedAt: Date.now() });
       else

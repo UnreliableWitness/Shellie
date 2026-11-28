@@ -20,7 +20,7 @@ import type {
   SourcePictures,
   SourceType,
 } from './brain';
-import type { AskOutcome } from './brainAsk';
+import type { AskOutcome, AskThread } from './brainAsk';
 import type {
   BrainActivityEntry,
   BrainHome,
@@ -740,14 +740,23 @@ export type Channels = {
   'brain:ask': {
     args: [
       brainId: string,
-      taskId: string,
+      /** The task that asks, for what "this" means; null from the brain's own page. */
+      taskId: string | null,
       question: string,
       resume: string | null,
+      /** The asker (`askOwner`): one question runs per asker, and `ask:progress` is keyed by it. */
+      key: string,
+      /** The agent that held the session `resume` names. */
+      resumeAgent: BrainAgent | null,
     ];
     result: AskOutcome;
   };
-  /** Stops the task's running question; nothing when none runs. */
-  'brain:askStop': { args: [taskId: string]; result: void };
+  /** Stops the asker's running question; nothing when none runs. */
+  'brain:askStop': { args: [key: string]; result: void };
+  /** What was asked of the brains and answered, as last saved (`AskThreadStore`). */
+  'brainAsk:load': { args: []; result: AskThread[] };
+  /** Replaces what is kept by `threads`; main applies the limits. */
+  'brainAsk:save': { args: [threads: AskThread[]]; result: void };
   /**
    * Hands a brain's answer to the task's agent: written to `.shellie/brain-answer-<n>.md` in the agent tab's folder,
    * and one line naming it typed into the tab's prompt, not sent. Only into a running, unpaused agent tab that waits

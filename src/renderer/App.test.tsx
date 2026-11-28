@@ -115,6 +115,7 @@ describe('App', () => {
         'attention:view',
         'brain:list',
         'brain:pendingJoin',
+        'brainAsk:load',
         'connections:list',
         'pulse:get',
         'reading:get',

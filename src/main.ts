@@ -33,6 +33,7 @@ import {
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
 import { brainAskKey, dreamAskKey } from './shared/askProgress';
+import { AskThreadStore } from './main/brain/askThreads';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { capturedSessionIds } from './main/brain/state';
@@ -1211,10 +1212,20 @@ async function boot(): Promise<void> {
       | 'opencodeModel'
       | 'ready'
     >;
+    // What was asked of the brains, kept over a restart; a file that cannot be read starts empty (kept aside).
+    const askThreads = new AskThreadStore(
+      path.join(userData, 'brain-asks.json'),
+      () => brains.list().map((b) => b.id),
+    );
+    await askThreads
+      .load()
+      .catch((e: unknown) =>
+        console.error('[brain] the kept questions could not be read', e),
+      );
     const brainAsks = new BrainAsks({
       ...brainRunDeps,
-      progress: (taskId, p) =>
-        broadcast('ask:progress', { key: brainAskKey(taskId), ...p }),
+      progress: (owner, p) =>
+        broadcast('ask:progress', { key: brainAskKey(owner), ...p }),
       now: () => Date.now(),
       heldReason: (id) => {
         const b = brains.get(id);
@@ -1393,6 +1404,7 @@ async function boot(): Promise<void> {
         signIn: repoSignIn,
         runner: brainRunner,
         asks: brainAsks,
+        askThreads,
         ledgerToday: brainToday,
         userData,
         installId: installIdHere,

@@ -17,6 +17,7 @@ import { BrainNewScreen } from './screens/BrainNewScreen';
 import { BrainJoinScreen } from './screens/BrainJoinScreen';
 import { BrainScreen } from './screens/BrainScreen';
 import { useReadingFeed } from './hooks/useReadingFeed';
+import { useAskThreads } from './hooks/useAskThreads';
 import { ConnectScreen } from './screens/ConnectScreen';
 import { FinishScreen } from './screens/FinishScreen';
 import { GetStartedScreen } from './screens/GetStartedScreen';
@@ -147,6 +148,7 @@ export function App() {
   useTimeFocus();
   useAttention();
   useReadingFeed();
+  useAskThreads();
 
   useEffect(() => {
     void load().catch((e: Error) => notify('error', e.message));
