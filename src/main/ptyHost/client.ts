@@ -53,7 +53,12 @@ type Pty = {
   forgotten: boolean;
 };
 
-type Run = { resolve(stdout: string): void; reject(e: Error): void };
+type Run = {
+  resolve(stdout: string): void;
+  reject(e: Error): void;
+  /** Given the run's lines as the host sends them. */
+  onLine?: (line: string) => void;
+};
 
 /**
  * Main's side of the pty host (#271): starts the host on first use, relays spawns and runs to it, and routes its
@@ -120,6 +125,7 @@ export class PtyHostClient implements PtyHost {
       };
       const settled = () => signal?.removeEventListener('abort', onAbort);
       this.runs.set(n, {
+        onLine: o.onLine,
         resolve: (stdout) => {
           settled();
           resolve(stdout);
@@ -139,6 +145,7 @@ export class PtyHostClient implements PtyHost {
         input: o.input,
         timeoutMs: o.timeoutMs,
         env: definedEnv({ ...process.env, ...o.env, ...env }),
+        ...(o.onLine ? { lines: true as const } : {}),
       });
     });
   }
@@ -165,6 +172,12 @@ export class PtyHostClient implements PtyHost {
   }
 
   private receive(m: FromHost): void {
+    if (m.t === 'runLines') {
+      // A run that has settled takes no more lines.
+      const onLine = this.runs.get(m.n)?.onLine;
+      if (onLine) for (const line of m.lines) onLine(line);
+      return;
+    }
     if (m.t === 'ran' || m.t === 'runError') {
       const r = this.runs.get(m.n);
       if (!r) return;

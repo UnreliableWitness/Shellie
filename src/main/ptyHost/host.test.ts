@@ -1,5 +1,5 @@
 import type { IPty } from 'node-pty';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ExitError } from '../services/prSummary';
 import { createPtyHost, type PtyModule } from './host';
 import type { FromHost } from './protocol';
@@ -160,6 +160,72 @@ describe('createPtyHost', () => {
       },
       { t: 'runError', n: 3, message: 'spawn claude ENOENT', code: 'ENOENT' },
     ]);
+  });
+
+  it('posts the lines of a run that asked for them, before its end', async () => {
+    vi.useFakeTimers();
+    try {
+      const { pty } = fake();
+      const out: FromHost[] = [];
+      let line: (l: string) => void = () => undefined;
+      let end: (s: string) => void = () => undefined;
+      const handle = createPtyHost(
+        pty,
+        (m) => out.push(m),
+        (_cmd, o) => {
+          line = o.onLine ?? (() => undefined);
+          return new Promise<string>((r) => (end = r));
+        },
+      );
+      const run = {
+        t: 'run' as const,
+        n: 7,
+        command: 'opencode',
+        args: ['run'],
+        cwd: '/b',
+        input: 'go',
+        timeoutMs: 5000,
+        env: {},
+      };
+      handle({ ...run, lines: true });
+      line('one');
+      line('two');
+      expect(out).toEqual([]);
+      vi.advanceTimersByTime(250);
+      expect(out).toEqual([{ t: 'runLines', n: 7, lines: ['one', 'two'] }]);
+      line('three');
+      end('all');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(out.slice(1)).toEqual([
+        { t: 'runLines', n: 7, lines: ['three'] },
+        { t: 'ran', n: 7, stdout: 'all' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives a run that did not ask for lines no line callback', () => {
+    const { pty } = fake();
+    let seen: unknown = 'unset';
+    createPtyHost(
+      pty,
+      () => undefined,
+      (_cmd, o) => {
+        seen = o.onLine;
+        return new Promise<string>(() => undefined);
+      },
+    )({
+      t: 'run',
+      n: 1,
+      command: 'claude',
+      args: [],
+      cwd: '/b',
+      input: '',
+      timeoutMs: 1,
+      env: {},
+    });
+    expect(seen).toBeUndefined();
   });
 
   it('cancels a run: its process is killed and the run fails as stopped', async () => {

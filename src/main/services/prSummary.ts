@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { PR_JOB_TITLE, type PrSummaryModel } from '../../shared/prDraft';
 import { clip } from '../../shared/text';
 import type { Turn } from '../brain/sessionDigest';
@@ -266,6 +267,9 @@ export const KILL_WAIT_MS = 2000;
  * process tree is killed and the run rejects, at most `KILL_WAIT_MS` later even when a process the kill missed keeps
  * the pipes open (an npm shim's PowerShell on Windows, a child on macOS).
  */
+/** The longest line `onLine` is given. */
+const LINE_MAX = 65_536;
+
 export function runWithInput(
   { command, args, env }: Command,
   o: {
@@ -275,6 +279,12 @@ export function runWithInput(
     env?: Record<string, string>;
     /** Stops the run: the process is killed and the promise rejects with `stopped`. */
     signal?: AbortSignal;
+    /**
+     * Called for each whole line of standard output as it arrives (without its line end, cut at
+     * `LINE_MAX` characters), and for an unterminated last line when the run ends. For showing what a run is
+     * doing; the promise still resolves to the whole output.
+     */
+    onLine?: (line: string) => void;
   },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -321,9 +331,35 @@ export function runWithInput(
       );
     };
     o.signal?.addEventListener('abort', onAbort, { once: true });
-    child.stdout.on('data', (d: Buffer) => {
-      if (out.length < 4_000_000) out += d.toString();
-    });
+    // Chunks end anywhere, also inside a character: decoded as a stream, then cut into lines.
+    const decoder = new StringDecoder('utf8');
+    let line = '';
+    const giveLine = () => {
+      const whole = line.endsWith('\r') ? line.slice(0, -1) : line;
+      line = '';
+      try {
+        o.onLine?.(whole.slice(0, LINE_MAX));
+      } catch (e) {
+        console.error('[run] a line could not be handled', e);
+      }
+    };
+    const take = (text: string) => {
+      if (out.length < 4_000_000) out += text;
+      if (!o.onLine) return;
+      let from = 0;
+      for (
+        let at = text.indexOf('\n');
+        at !== -1;
+        at = text.indexOf('\n', from)
+      ) {
+        // A line far past the cut is not kept whole in memory.
+        if (line.length < LINE_MAX * 2) line += text.slice(from, at);
+        giveLine();
+        from = at + 1;
+      }
+      if (line.length < LINE_MAX * 2) line += text.slice(from);
+    };
+    child.stdout.on('data', (d: Buffer) => take(decoder.write(d)));
     child.stderr.on('data', (d: Buffer) => {
       err = (err + d.toString()).slice(-4000);
     });
@@ -341,6 +377,8 @@ export function runWithInput(
       o.signal?.removeEventListener('abort', onAbort);
       if (done) return;
       done = true;
+      take(decoder.end());
+      if (line !== '') giveLine();
       if (stopped) return reject(new Error('stopped'));
       if (timedOut) return reject(timedOutError());
       if (code === 0) return resolve(out);
