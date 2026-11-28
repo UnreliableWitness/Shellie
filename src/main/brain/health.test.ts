@@ -4,7 +4,12 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CostRecord } from '../../shared/ledger';
 import { GitClient } from '../services/GitClient';
-import { brainCostSince, brainHealth, ledgerToday } from './health';
+import {
+  brainCostSince,
+  brainHealth,
+  ledgerToday,
+  outsideEdits,
+} from './health';
 import { scaffoldBrain } from './scaffold';
 import { addSource } from './sources';
 import { updateConflicts } from './conflicts';
@@ -180,6 +185,51 @@ describe('brainHealth', () => {
     await commit('Brain: sync');
     const h = await brainHealth(dir, git, today, false);
     expect(h.outsideEdits).toEqual([]);
+  });
+
+  it('lists an edit after the last sync and not one before it', async () => {
+    await write('wiki/before.md', 'before\n');
+    await commit('Edited outside a capture');
+    await write('log.md', 'synced\n');
+    await commit('Brain: sync');
+    await write('wiki/after.md', 'after\n');
+    await commit('Fix a typo');
+    expect(await outsideEdits(dir, git)).toEqual(['wiki/after.md']);
+  });
+
+  it('lists every outside wiki edit when there was no sync', async () => {
+    await write('wiki/a.md', 'a\n');
+    await commit('First edit');
+    await write('wiki/captured.md', 'by the agent\n');
+    await commit('Brain: capture sources/x.md');
+    await write('wiki/b.md', 'b\n');
+    await commit('Second edit');
+    expect(await outsideEdits(dir, git)).toEqual(['wiki/a.md', 'wiki/b.md']);
+  });
+
+  it('does not stop at a commit that names a sync only in its body', async () => {
+    await write('wiki/a.md', 'a\n');
+    await commit('First edit');
+    await write('wiki/b.md', 'b\n');
+    await commit('Second edit\n\nBrain: sync was not run yet');
+    expect(await outsideEdits(dir, git)).toEqual(['wiki/a.md', 'wiki/b.md']);
+  });
+
+  it('never lists the files of every commit without a wiki/ pathspec', async () => {
+    await write('wiki/a.md', 'a\n');
+    await commit('Edited outside a capture');
+    await write('log.md', 'synced\n');
+    await commit('Brain: sync');
+    const calls: string[][] = [];
+    const spy = Object.create(git) as GitClient;
+    spy.run = (cwd, args, opts) => {
+      calls.push(args);
+      return git.run(cwd, args, opts);
+    };
+    await outsideEdits(dir, spy);
+    const logs = calls.filter((a) => a.includes('--name-only'));
+    expect(logs.length).toBeGreaterThan(0);
+    for (const a of logs) expect(a.slice(-2)).toEqual(['--', 'wiki/']);
   });
 
   it("merges Shellie's own findings with the lint's, dropping the kinds Shellie computes", async () => {

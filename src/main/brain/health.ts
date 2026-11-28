@@ -65,15 +65,34 @@ export async function uncommittedWikiEdits(
  */
 export async function outsideEdits(brainDir: string, git: GitClient) {
   const found = new Set<string>();
-  // Every commit, not only those touching wiki/: a /sync that changed no page (only state.json and the log) still
-  // ends the list. With a wiki/ pathspec such a sync was skipped, and the edits before it stayed listed for good.
-  const log = await git
-    .run(brainDir, [...RAW, 'log', `--format=${SUBJECT}%s`, '--name-only'])
+  // The last sync is found first, over every commit and without file names: a /sync that changed no page (only
+  // state.json and the log) still ends the list. --grep also matches body lines, so the subject is checked here.
+  const syncs = await git
+    .run(brainDir, [
+      'log',
+      '--format=%H%x01%s',
+      '-E',
+      '--grep=^Brain: sync( |$)',
+    ])
     .catch(() => '');
-  // Newest first: stop at the first sync.
+  const sync = syncs
+    .split('\n')
+    .map((line) => line.split(SUBJECT))
+    .find(([, subject]) => subject !== undefined && isSyncCommit(subject))?.[0];
+  // Then only the commits after it that touched wiki/, so the cost does not grow with the history.
+  const log = await git
+    .run(brainDir, [
+      ...RAW,
+      'log',
+      ...(sync ? [`${sync}..HEAD`] : []),
+      `--format=${SUBJECT}%s`,
+      '--name-only',
+      '--',
+      'wiki/',
+    ])
+    .catch(() => '');
   for (const block of log.split(SUBJECT).slice(1)) {
     const [subject, ...files] = block.split('\n');
-    if (isSyncCommit(subject)) break;
     if (isBrainCommit(subject)) continue;
     for (const f of files) {
       const file = f.trim();
