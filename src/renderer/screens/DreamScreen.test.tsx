@@ -111,6 +111,22 @@ const diffs: Record<string, DreamFileDiff[]> = {
       ],
     },
   ],
+  own: [
+    {
+      path: '.apm/instructions/database.instructions.md',
+      added: 1,
+      removed: 0,
+      hunks: [
+        {
+          header: '@@ -3,1 +3,2 @@',
+          lines: [
+            line('context', '- keep', 3, 3),
+            line('add', 'only this ask', null, 4),
+          ],
+        },
+      ],
+    },
+  ],
   p2: [
     {
       path: '.apm/skills/release-notes/SKILL.md',
@@ -1103,8 +1119,8 @@ describe('DreamScreen: asking for a change', () => {
       .getAllByRole('listitem')
       .map((li) => li.textContent);
     expect(asks).toEqual([
-      'You: make it shorterAbout: “the second example”Changed: Cut the second example.UndoLeft as they were: src/app.ts, package.json',
-      'You: why this folder?Answer: It is where the rules live.',
+      'You: make it shorterAbout: “the second example”ChangedCut the second example.UndoLeft as they were: src/app.ts, package.json',
+      'You: why this folder?AnswerIt is where the rules live.',
     ]);
     expect(screen.queryByRole('button', { name: /^Earlier asks/ })).toBeNull();
     expect(rowButton('Migrations')).toHaveTextContent(
@@ -1116,6 +1132,130 @@ describe('DreamScreen: asking for a change', () => {
     expect(callsOf(calls, 'dream:adjustUndo')).toEqual([['r1', 'p1']]);
     await waitFor(() => expect(box()).toHaveFocus());
     expect(said()).toHaveTextContent('The change was taken back');
+  });
+
+  it('shows a note as Markdown, and what an ask changed: its files, its lines, and its own diff', async () => {
+    const at = '2026-11-28T10:00:00.000Z';
+    const { calls } = fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', 'Cut the **second** example.', {
+            at,
+            after: { commit: 'c'.repeat(40), files: [], title: 'T', why: 'W' },
+            stat: [
+              { path: '.apm/rules/b.md', added: 4, removed: 2 },
+              { path: '.apm/rules/c.md', added: 1, removed: 0 },
+            ],
+          }),
+        ],
+      }),
+      {
+        'dream:diff': (_repo: string, _p: string, askAt?: string) =>
+          askAt ? diffs.own : diffs.p1,
+      },
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(within(foot()).getByText('second').tagName).toBe('STRONG');
+    const strip = within(foot()).getByRole('group', {
+      name: 'What this ask changed',
+    });
+    expect(strip).toHaveTextContent('.apm/rules/b.md+4−2');
+    expect(strip).toHaveTextContent('.apm/rules/c.md+1−0');
+
+    await userEvent.click(
+      within(strip).getByRole('button', { name: 'Show what this changed' }),
+    );
+    expect(callsOf(calls, 'dream:diff')).toContainEqual(['r1', 'p1', at]);
+    const showing = screen.getByRole('group', { name: 'Showing' });
+    expect(
+      within(showing).getByRole('button', { name: 'This ask' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByText('only this ask')).toBeInTheDocument();
+    await userEvent.click(
+      within(showing).getByRole('button', { name: 'The whole proposal' }),
+    );
+    expect(screen.queryByText('only this ask')).toBeNull();
+  });
+
+  it('keeps an undone change in the list, struck through, with Redo where it can be put back', async () => {
+    const { calls } = fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('one', 'First.', {
+            after: { commit: 'c'.repeat(40), files: [], title: 'T', why: 'W' },
+          }),
+          adjustment('two', 'Second.', {
+            undone: true,
+            after: { commit: 'd'.repeat(40), files: [], title: 'T', why: 'W' },
+          }),
+          adjustment('three', 'Third.', {
+            undone: true,
+            after: { commit: 'e'.repeat(40), files: [], title: 'T', why: 'W' },
+          }),
+        ],
+      }),
+      { 'dream:adjustRedo': () => undefined },
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    const rows = within(foot()).getAllByRole('listitem');
+    // Undo on the newest change that stands; Redo on the oldest that was taken back.
+    expect(within(rows[0]).getByRole('button', { name: 'Undo' })).toBeEnabled();
+    expect(rows[1]).toHaveClass('is-undone');
+    expect(rows[1]).toHaveTextContent('Taken back');
+    expect(within(rows[1]).queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(within(rows[2]).queryByRole('button', { name: 'Redo' })).toBeNull();
+    await userEvent.click(
+      within(rows[1]).getByRole('button', { name: 'Redo' }),
+    );
+    expect(callsOf(calls, 'dream:adjustRedo')).toEqual([['r1', 'p1']]);
+    await waitFor(() =>
+      expect(said()).toHaveTextContent('The change was put back'),
+    );
+    expect(rowButton('Migrations')).toHaveTextContent('changed');
+    expect(rowButton('Migrations')).not.toHaveTextContent('changed twice');
+  });
+
+  it('offers no Redo for a change that can no longer be put back', async () => {
+    fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('one', 'First.', {
+            undone: true,
+            spent: true,
+            after: { commit: 'c'.repeat(40), files: [], title: 'T', why: 'W' },
+          }),
+          adjustment('two', 'Second.'),
+        ],
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(within(foot()).queryByRole('button', { name: 'Redo' })).toBeNull();
+    expect(within(foot()).getByRole('button', { name: 'Undo' })).toBeEnabled();
+  });
+
+  it('says what Create pull request waits for, and has Open as a task in the head', async () => {
+    const m = fakeMain(twoProposals(running('p1')), {
+      'dream:openAsTask': () => ({ branch: 'dream/2026-11-26-1' }),
+    });
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(
+      screen.getByText(
+        'Create pull request waits: a change to “Migrations are written by hand, never generated” is being made.',
+      ),
+    ).toBeInTheDocument();
+    const open = screen.getByRole('button', { name: 'Open as a task' });
+    expect(open).toBeDisabled();
+    m.set(twoProposals());
+    await waitFor(() => expect(open).toBeEnabled());
+    expect(screen.queryByText(/Create pull request waits/)).toBeNull();
+    await userEvent.click(open);
+    await waitFor(() =>
+      expect(useStore.getState().screen).toMatchObject({ kind: 'new-task' }),
+    );
   });
 
   it('has no Undo when no ask changed the proposal, and none is pressed while a run is under way', async () => {

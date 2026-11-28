@@ -189,6 +189,34 @@ function Review({
       );
   }, [chosenPid, diffKey, result.repoId]);
 
+  // The ask whose own change the pane shows, per proposal (its `at`); none shows the whole proposal.
+  const [shownAsk, setShownAsk] = useState<Record<string, string>>({});
+  const [askDiffs, setAskDiffs] = useState<Record<string, DiffState>>({});
+  const askedAsks = useRef(new Set<string>());
+  // Only an ask that still stands can be shown: one taken back, or gone with a retry, shows the whole again.
+  const shownAt =
+    chosen && shownAsk[chosen.id]
+      ? (chosen.adjustments?.find(
+          (a) => a.at === shownAsk[chosen.id] && a.after && !a.undone,
+        )?.at ?? null)
+      : null;
+  const askKey =
+    chosen && shownAt
+      ? `${result.repoId}/${result.id}/${chosen.id}/ask/${shownAt}`
+      : null;
+  useEffect(() => {
+    if (!chosenPid || !askKey || !shownAt || askedAsks.current.has(askKey))
+      return;
+    askedAsks.current.add(askKey);
+    void api()
+      .invoke('dream:diff', result.repoId, chosenPid, shownAt)
+      .then(
+        (files): DiffState => ({ files }),
+        (e: unknown): DiffState => ({ error: errorMessage(e) }),
+      )
+      .then((state) => setAskDiffs((d) => ({ ...d, [askKey]: state })));
+  }, [chosenPid, askKey, shownAt, result.repoId]);
+
   // What is being written in each proposal's box, kept while another proposal is read.
   const [drafts, setDrafts] = useState<Record<string, AskDraft>>({});
   const setDraft = useCallback(
@@ -349,6 +377,15 @@ function Review({
             <button
               type="button"
               className="btn"
+              disabled={!canOpen}
+              title="Work on these proposals in a task, on the dream's branch"
+              onClick={() => void openAsTask()}
+            >
+              Open as a task
+            </button>
+            <button
+              type="button"
+              className="btn"
               disabled={closing}
               onClick={() => setConfirmDiscard(true)}
             >
@@ -390,6 +427,11 @@ function Review({
       {target && !target.available && (
         <p className="muted small dream-review-note">
           {`Shellie cannot make a pull request here: ${target.reason ?? 'unknown reason'}. It pushes the branch instead.`}
+        </p>
+      )}
+      {adjusting && (
+        <p className="muted small dream-review-note" role="status">
+          {`${target && !target.available ? 'Push branch' : 'Create pull request'} waits: ${adjusting.charAt(0).toLowerCase()}${adjusting.slice(1)}.`}
         </p>
       )}
       {leak && (
@@ -446,7 +488,9 @@ function Review({
                     >
                       {p.title}
                     </span>
-                    <span className="muted small">{proposalLine(p)}</span>
+                    <span className="muted small">
+                      {proposalLine(p, result.adjusting?.proposalId === p.id)}
+                    </span>
                   </span>
                   {result.adjusting?.proposalId === p.id && (
                     <span
@@ -478,9 +522,18 @@ function Review({
             result={result}
             proposal={chosen}
             diff={
-              diffKey
-                ? (diffs[diffKey] ?? diffs[`shown/${chosen.id}`] ?? null)
-                : null
+              askKey
+                ? (askDiffs[askKey] ?? null)
+                : diffKey
+                  ? (diffs[diffKey] ?? diffs[`shown/${chosen.id}`] ?? null)
+                  : null
+            }
+            shownAsk={shownAt}
+            onShowAsk={(at) =>
+              setShownAsk((s) => {
+                const { [chosen.id]: _was, ...rest } = s;
+                return at === null ? rest : { ...rest, [chosen.id]: at };
+              })
             }
             busy={dropping(chosen)}
             onDrop={(dropped) => void drop(chosen, dropped)}
@@ -501,9 +554,14 @@ function Detail({
   onDrop,
   draft,
   onDraft,
+  shownAsk,
+  onShowAsk,
 }: {
   result: DreamResult;
   proposal: DreamProposal;
+  /** The ask whose own change `diff` is; null when it is the whole proposal's. */
+  shownAsk: string | null;
+  onShowAsk: (at: string | null) => void;
   diff: DiffState | null;
   busy: boolean;
   onDrop: (dropped: boolean) => void;
@@ -577,7 +635,27 @@ function Detail({
         </section>
       )}
       <section aria-labelledby={`${id}-ch`} className="dream-detail-part">
-        <h3 id={`${id}-ch`}>What it changes</h3>
+        <div className="dream-detail-part-head">
+          <h3 id={`${id}-ch`}>
+            {shownAsk ? 'What this ask changed' : 'What it changes'}
+          </h3>
+          {shownAsk && (
+            <div role="group" aria-label="Showing" className="dream-showing">
+              <span className="muted small">Showing</span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                aria-pressed={false}
+                onClick={() => onShowAsk(null)}
+              >
+                The whole proposal
+              </button>
+              <button type="button" className="btn btn-sm" aria-pressed={true}>
+                This ask
+              </button>
+            </div>
+          )}
+        </div>
         <Changes
           repoId={result.repoId}
           dreamId={result.id}
@@ -592,6 +670,8 @@ function Detail({
         draft={draft}
         onDraft={onDraft}
         scope={pane}
+        shownAsk={shownAsk}
+        onShowAsk={onShowAsk}
       />
     </section>
   );

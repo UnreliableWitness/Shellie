@@ -650,6 +650,69 @@
   line-height: 1.4;
   overflow-y: auto;
 }
+/* The head of What it changes, with the switch back to the whole proposal while one ask's change shows. */
+.dream-detail-part-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.dream-showing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dream-showing .btn[aria-pressed='true'] {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+/* A changed ask's strip: its files and lines, its own diff, Undo or Redo. */
+.dream-asked-strip {
+  align-items: flex-start;
+  white-space: normal;
+}
+.dream-asked-stat {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dream-asked-stat li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+.dream-stat-add {
+  color: var(--green);
+}
+.dream-stat-del {
+  color: var(--red);
+}
+.dream-asked-strip-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* A change that was taken back: still there to read, and to put back. */
+.dream-asked.is-undone .dream-asked-note {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+/* A note is Markdown: its own paragraphs, not the list's pre-wrapped text. */
+.dream-asked-note {
+  white-space: normal;
+}
+.dream-asked-note > :first-child {
+  margin-top: 0;
+}
+.dream-asked-note > :last-child {
+  margin-bottom: 0;
+}
 .dream-ask-earlier {
   align-self: flex-start;
 }
@@ -669,12 +732,6 @@
   gap: 2px;
   max-width: 80ch;
   white-space: pre-wrap;
-}
-.dream-asked-note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
 }
 .dream-proposal-dot {
   background: var(--link);

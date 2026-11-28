@@ -296,7 +296,7 @@ describe('proposalLine', () => {
       'Changed skill · seen in 1 task · changed',
     );
     expect(proposalLine({ ...p([]), adjustments: [ask(false)] })).toBe(
-      'Changed skill',
+      'Changed skill · 1 answer',
     );
   });
   it('says Dropped for a dropped one', () => {
@@ -363,5 +363,47 @@ describe('waitingCount', () => {
     expect(waitingCount(view)).toBe(2);
     view.repos[2].state = emptyState({ opened: OPENED });
     expect(waitingCount(view)).toBe(3);
+  });
+});
+
+describe('proposalLine: what was asked of a proposal', () => {
+  const ask = (over: object = {}) => ({
+    ask: 'x',
+    at: '',
+    note: '',
+    changed: true,
+    reverted: [],
+    ...over,
+  });
+  const p = (adjustments: object[], working = false) =>
+    proposalLine(
+      {
+        kind: 'new-rule',
+        dropped: false,
+        evidence: [],
+        adjustments: adjustments as never,
+      },
+      working,
+    );
+  it('counts the changes that stand and the answers', () => {
+    expect(p([ask()])).toBe('New rule · changed');
+    expect(p([ask(), ask()])).toBe('New rule · changed twice');
+    expect(p([ask(), ask(), ask()])).toBe('New rule · changed 3 times');
+    expect(p([ask({ changed: false })])).toBe('New rule · 1 answer');
+    expect(p([ask(), ask({ changed: false }), ask({ changed: false })])).toBe(
+      'New rule · changed · 2 answers',
+    );
+  });
+  it('leaves out what was taken back, stopped or could not finish', () => {
+    expect(
+      p([
+        ask({ undone: true }),
+        ask({ changed: false, outcome: 'stopped' }),
+        ask({ changed: false, outcome: 'failed' }),
+      ]),
+    ).toBe('New rule');
+  });
+  it('says working while its ask runs', () => {
+    expect(p([ask()], true)).toBe('New rule · changed · working');
   });
 });
