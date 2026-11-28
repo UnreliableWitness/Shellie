@@ -316,6 +316,25 @@ export const DreamAdjustmentSchema = z.object({
   durationMs: z.number().optional(),
   /** Where the cause of a failure can be put right: the dream's settings. */
   fix: z.enum(['settings']).optional(),
+  /** The proposal as this ask left it: Redo puts these back, and its own change is `before` to `after`. Only when `changed`. */
+  after: z
+    .object({
+      commit: z.string(),
+      files: z.array(z.string()),
+      title: z.string(),
+      why: z.string(),
+    })
+    .optional(),
+  /** The files this ask changed, with the lines it added and removed; at most twenty. */
+  stat: z
+    .array(
+      z.object({ path: z.string(), added: z.number(), removed: z.number() }),
+    )
+    .optional(),
+  /** The change was taken back (Undo); the row stays. */
+  undone: z.boolean().optional(),
+  /** An undone change that can no longer be put back: the proposal was changed again after it. */
+  spent: z.boolean().optional(),
   /** What the agent did on the way, oldest first (`AskStep`), at most forty. */
   steps: z
     .array(
@@ -716,3 +735,11 @@ export function dreamPrDescription(
   const short = build(false);
   return short.length <= max ? short : `${short.slice(0, max - 1)}\u2026`;
 }
+
+/** The change Undo takes back: the newest that changed the proposal and is not undone; -1 when there is none. */
+export const undoAt = (asks: DreamAdjustment[]): number =>
+  asks.findLastIndex((a) => a.changed && !!a.before && !a.undone);
+
+/** The change Redo puts back: the oldest undone one that still can be; -1 when there is none. */
+export const redoAt = (asks: DreamAdjustment[]): number =>
+  asks.findIndex((a) => a.changed && !!a.undone && !a.spent && !!a.after);

@@ -34,6 +34,8 @@ import {
   type DreamingAll,
   dreamBriefing,
   askEndedBadly,
+  redoAt,
+  undoAt,
   endAsk,
 } from '../../shared/dreams';
 import type { Handlers } from '../../shared/ipc';
@@ -105,13 +107,17 @@ export const ASK = {
   apply: 'The change does not fit with the other proposals',
   finish: 'Shellie could not finish the change',
   noUndo: 'This proposal has no change to take back',
+  noRedo: 'This proposal has no change to put back',
+  redo: 'The change could not be put back',
   undo: 'The change could not be taken back',
 } as const;
 /** The note of an ask whose run left none. */
 const NO_NOTE = 'No note';
 const TITLE_MAX = 200;
 const WHY_MAX = 1000;
-const NOTE_MAX = 1000;
+const NOTE_MAX = 8000;
+/** How many files an ask's row names. */
+const STAT_MAX = 20;
 /** `adjust.json` is three short texts: a larger file is not read. */
 const NOTE_FILE_MAX = 64 * 1024;
 /** At most this many put-back paths are kept with an ask, each cut to `REVERTED_PATH_MAX` characters. */
@@ -277,6 +283,7 @@ export function noDreams(): DreamApi {
       'dream:adjust': no,
       'dream:adjustStop': no,
       'dream:adjustUndo': no,
+      'dream:adjustRedo': no,
       'dream:discard': no,
       'dream:openAsTask': no,
       'dream:leaveBranch': no,
@@ -752,6 +759,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
               title: p.title,
               why: p.why,
             },
+            after: {
+              commit: made.commit,
+              files: made.files,
+              title,
+              why: said.why ?? p.why,
+            },
           }),
     };
     // The old commit and the new one are on no branch: kept by a ref each until the dream closes.
@@ -763,6 +776,20 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         [p.commit, made.commit],
         config,
       );
+    // Which files this ask touched and by how many lines; the change stands without it when git cannot say.
+    if (made !== 'same')
+      try {
+        adjustment.stat = (
+          await proposalDiff(d.git, repo.path, config, made.commit, p.commit)
+        )
+          .slice(0, STAT_MAX)
+          .map((f) => ({ path: f.path, added: f.added, removed: f.removed }));
+      } catch (e) {
+        console.error(
+          '[dreams] an ask’s changed lines could not be counted',
+          e,
+        );
+      }
     // Before anything is stored: a change the branch cannot be built with is no change.
     await cleaned(
       r,
@@ -781,7 +808,13 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         target.title = title;
         target.why = said.why ?? p.why;
       }
-      target.adjustments = [...(target.adjustments ?? []), adjustment];
+      target.adjustments = [
+        // The proposal changed again: what was undone before can no longer be put back.
+        ...(target.adjustments ?? []).map((y) =>
+          made !== 'same' && y.undone ? { ...y, spent: true } : y,
+        ),
+        adjustment,
+      ];
       x.adjusting = null;
       x.adjustFailed = null;
     });
@@ -1319,6 +1352,10 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             proposal: { title: p.title, why: p.why, files: p.files },
             ask: a.ask,
             quote: a.quote,
+            // What stands: an undone change is not part of the proposal, a stopped or failed ask left nothing.
+            earlier: (p.adjustments ?? [])
+              .filter((x) => !x.undone && !askEndedBadly(x))
+              .map((x) => ({ ask: x.ask, note: x.note, changed: x.changed })),
           });
           await d.store.updateResult(repoId, r.id, (x) => {
             x.adjusting = {
@@ -1381,7 +1418,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           if (!p) throw refuse('This dream has no such proposal');
           if (asks.has(repoId)) throw refuse(ASK.busy);
           const list = p.adjustments ?? [];
-          const at = list.findLastIndex((x) => x.changed && x.before);
+          const at = undoAt(list);
           const before = list[at]?.before;
           if (!before) throw refuse(ASK.noUndo);
           const { worktree } = await checked(repoId, r);
@@ -1402,9 +1439,50 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             target.files = before.files;
             target.title = before.title;
             target.why = before.why;
-            // That ask and the answers after it leave the list.
-            target.adjustments = list.slice(0, at);
+            // The row stays, marked: Redo can put the change back.
+            target.adjustments = list.map((y, i) =>
+              i === at ? { ...y, undone: true } : y,
+            );
             x.adjustFailed = null;
+          });
+          d.broadcast();
+        }),
+      ),
+
+    'dream:adjustRedo': (repoId, proposalId) =>
+      serial(() =>
+        phrased(ASK.redo, async () => {
+          started();
+          const r = openResult(repoId);
+          const p = r.proposals.find((x) => x.id === proposalId);
+          if (!p) throw refuse('This dream has no such proposal');
+          if (p.dropped) throw refuse(ASK.dropped);
+          if (asks.has(repoId)) throw refuse(ASK.busy);
+          const list = p.adjustments ?? [];
+          const at = redoAt(list);
+          const after = list[at]?.after;
+          if (!after) throw refuse(ASK.noRedo);
+          const { worktree } = await checked(repoId, r);
+          if (worktree !== 'live') throw refuse(ASK.gone);
+          if (!FULL_SHA.test(after.commit)) throw refuse(MISMATCH);
+          // The branch first: a change the branch cannot be built with is not put back.
+          await cleaned(
+            r,
+            keptOf(r).map((x) =>
+              x.id === p.id ? { ...x, commit: after.commit } : x,
+            ),
+            ASK.redo,
+          );
+          await d.store.updateResult(repoId, r.id, (x) => {
+            const target = x.proposals.find((y) => y.id === p.id);
+            if (!target) return;
+            target.commit = after.commit;
+            target.files = after.files;
+            target.title = after.title;
+            target.why = after.why;
+            target.adjustments = list.map((y, i) =>
+              i === at ? { ...y, undone: false } : y,
+            );
           });
           d.broadcast();
         }),
@@ -1523,10 +1601,20 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       }),
 
     // Reads: not one after another with the changes, and answered before the scheduler started.
-    'dream:diff': (repoId, proposalId) =>
+    'dream:diff': (repoId, proposalId, askAt) =>
       phrased(DIFF_FAILED, async () => {
         const src = await proposalSource(repoId, proposalId);
-        return proposalDiff(d.git, src.repoPath, src.config, src.commit);
+        if (askAt === undefined)
+          return proposalDiff(d.git, src.repoPath, src.config, src.commit);
+        // One ask's own change: from the proposal as it was before it to what it left.
+        const asked = openResult(repoId)
+          .proposals.find((x) => x.id === proposalId)
+          ?.adjustments?.find((x) => x.at === askAt);
+        const from = asked?.before?.commit;
+        const to = asked?.after?.commit;
+        if (!from || !to || !FULL_SHA.test(from) || !FULL_SHA.test(to))
+          throw refuse(DIFF_FAILED);
+        return proposalDiff(d.git, src.repoPath, src.config, to, from);
       }),
 
     'dream:file': (repoId, proposalId, file) =>
