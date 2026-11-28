@@ -1,5 +1,7 @@
 /** Asking a brain from a task: the shapes main and the renderer share, and the helpers that need no I/O. */
 
+import type { AskStep } from './askProgress';
+
 /** The questions the task's Brain tab offers; "this" is the task's work item (askWithContext). */
 export const ASK_SUGGESTIONS = [
   'What should I know before I start on this?',
@@ -98,6 +100,10 @@ export type BrainAnswer = {
    * so this is a job or a person at work at the same moment, or a hole worth knowing about.
    */
   changed: boolean;
+  /** What the agent did on the way, oldest first; missing on an answer of before 2026-11-28. */
+  steps?: AskStep[];
+  /** How many different files it read; left out when the agent's steps could not be read. */
+  pagesRead?: number;
 };
 
 /** Why a question was not run: the brain's daily token cap, or its jobs being held. */

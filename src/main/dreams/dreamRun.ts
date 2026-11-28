@@ -105,6 +105,8 @@ export async function dreamCall(
     prompt: string;
     timeoutMs: number;
     signal: AbortSignal;
+    /** Given each line the agent prints as it arrives (its events), to show what it is doing. */
+    onLine?: (line: string) => void;
   },
 ): Promise<string[]> {
   const cmd = d.platform.opencodeCommand(
@@ -125,6 +127,7 @@ export async function dreamCall(
       timeoutMs: o.timeoutMs,
       env,
       signal: o.signal,
+      ...(o.onLine ? { onLine: o.onLine } : {}),
     },
   );
   let stdout: string;

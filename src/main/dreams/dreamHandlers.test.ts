@@ -27,6 +27,7 @@ import {
   type DreamProposal,
   type DreamResult,
 } from '../../shared/dreams';
+import type { AskProgress } from '../../shared/askProgress';
 import { GitClient } from '../services/GitClient';
 import { ExitError } from '../services/prSummary';
 import { SettingsStore } from '../usage/SettingsStore';
@@ -2047,6 +2048,7 @@ describe('asking for a change to a proposal', () => {
     input: string;
     timeoutMs: number;
     signal: AbortSignal;
+    onLine?: (line: string) => void;
   };
   /** What the fake agent does in the worktree and the data folder; then it answers as OpenCode does. */
   const agent = (work: (wt: string, data: string, o: RunOpts) => void) =>
@@ -2381,6 +2383,55 @@ describe('asking for a change to a proposal', () => {
     // Stop with no run does nothing.
     await a.handlers['dream:adjustStop']('r1');
     expect(changed()).toBe(2);
+  });
+
+  it('says what the agent does while it works, and keeps the steps on the ask', async () => {
+    await dreamWithThree();
+    const seen: [string, AskProgress][] = [];
+    deps.progress = (repoId, p) => seen.push([repoId, p]);
+    const tool = (name: string, filePath: string) =>
+      JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: name,
+          state: { status: 'completed', input: { filePath } },
+        },
+      });
+    agent((wt, data, o) => {
+      o.onLine?.(tool('read', path.join(wt, '.apm/rules/b.md')));
+      o.onLine?.(tool('edit', '.apm/rules/b.md'));
+      o.onLine?.(tool('read', '/etc/passwd'));
+      writeFileSync(path.join(wt, '.apm/rules/b.md'), 'shorter\n');
+      note(data, { note: 'Cut it.' });
+    });
+    await ask(api());
+    const steps = [
+      { kind: 'read', label: 'Read .apm/rules/b.md' },
+      { kind: 'edit', label: 'Edited .apm/rules/b.md' },
+      { kind: 'read', label: 'Read a file outside the folder' },
+    ];
+    expect(seen.at(-1)).toEqual(['r1', { steps, earlier: 0, text: '' }]);
+    expect(lastAsk()).toMatchObject({ outcome: 'changed', steps });
+  });
+
+  it('keeps the steps of an ask that could not finish', async () => {
+    await dreamWithThree();
+    agent((_wt, _data, o) => {
+      o.onLine?.(
+        JSON.stringify({
+          type: 'tool_use',
+          part: {
+            tool: 'grep',
+            state: { status: 'completed', input: { pattern: 'rule' } },
+          },
+        }),
+      );
+    });
+    await ask(api());
+    expect(lastAsk()).toMatchObject({
+      outcome: 'failed',
+      steps: [{ kind: 'search', label: 'Searched for “rule”' }],
+    });
   });
 
   it('Undo finds the latest change under a stopped ask', async () => {

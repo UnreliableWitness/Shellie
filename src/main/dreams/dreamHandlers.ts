@@ -8,6 +8,8 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { AskProgress, AskStep } from '../../shared/askProgress';
+import { opencodeStep, progressLog } from '../ask/steps';
 import { isOpencodeModel } from '../../shared/brain';
 import {
   canSwitchOn,
@@ -246,6 +248,8 @@ export type DreamHandlerDeps = {
   dreamsDir: string;
   /** Sends `dream:changed`. */
   broadcast: () => void;
+  /** Told what a repo's ask is doing while its run is under way (`ask:progress`). */
+  progress?: (repoId: string, p: AskProgress) => void;
   now?: () => number;
   /** `dream.enabled`, `dream.switched_off`, `dream.test`, `dream.result`, `dream.adjust` (`docs/telemetry.md`); none when absent. */
   event?: DreamEvent;
@@ -598,6 +602,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     folders: string[];
     stop: AbortController;
     startedAt: number;
+    /** What the run did, as far as its events said; filled while it runs. */
+    steps: AskStep[];
     /** Settles once the run ended and the result says what came of it. */
     done: Promise<void>;
   };
@@ -732,6 +738,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       reverted,
       outcome: made === 'same' ? 'answer' : 'changed',
       durationMs: now() - a.startedAt,
+      ...(a.steps.length ? { steps: a.steps } : {}),
       ...(made === 'same'
         ? {}
         : {
@@ -827,6 +834,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           outcome: stopped ? 'stopped' : 'failed',
           at: new Date(now()).toISOString(),
           durationMs: now() - a.startedAt,
+          steps: a.steps,
           ...(stopped ? {} : { reason }),
           ...(reason === ASK.wrongModel ? { fix: 'settings' as const } : {}),
         }),
@@ -844,9 +852,22 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
   /** The run of an ask, outside the chain (so Stop, drop and the reads go on), then its end inside it. */
   const runAsk = async (repo: Repo, r: DreamResult, a: Ask, prompt: string) => {
     let end: RunEnd;
+    const log = progressLog((p) => {
+      try {
+        d.progress?.(repo.id, p);
+      } catch (e) {
+        console.error('[dreams] an ask’s progress could not be sent', e);
+      }
+    });
     try {
       end = {
         others: await dreamCall(d, {
+          onLine: (line) => {
+            // After Stop nothing more is said of the run.
+            if (a.stop.signal.aborted) return;
+            const step = opencodeStep(line, r.worktreePath);
+            if (step) log.step(step);
+          },
           model: a.model,
           what: 'adjust',
           project: a.project,
@@ -867,6 +888,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
         end = { failed: ASK.finish, stopped: false };
       }
     }
+    log.flush();
+    a.steps = log.snapshot().steps;
     await serial(() => finishAsk(repo, a, end)).catch((e: unknown) =>
       console.error('[dreams] an ask could not be finished', e),
     );
@@ -1275,6 +1298,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             folders,
             stop: new AbortController(),
             startedAt: now(),
+            steps: [],
             done: Promise.resolve(),
           };
           const prompt = adjustPrompt({
