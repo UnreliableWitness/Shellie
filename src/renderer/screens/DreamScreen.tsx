@@ -32,11 +32,11 @@ import {
 import { spacedNumber } from '../components/dreams/folders';
 import { useDreamsState } from '../components/dreams/useDreams';
 import {
-  AskBox,
+  DreamAsk,
   adjustingSentence,
   NO_DRAFT,
   type AskDraft,
-} from '../components/dreams/AskBox';
+} from '../components/dreams/DreamAsk';
 import { DreamsLoading } from '../components/dreams/DreamsLoading';
 import { DiffView } from '../components/review/DiffView';
 import { ConfirmBar, PageHeader } from '../components/ui';
@@ -586,7 +586,7 @@ function Detail({
           diff={diff}
         />
       </section>
-      <AskBox
+      <DreamAsk
         result={result}
         proposal={p}
         draft={draft}

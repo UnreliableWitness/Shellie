@@ -1,13 +1,23 @@
-import { Dismiss12Regular } from '@fluentui/react-icons';
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   DREAM_ASK_MAX,
   DREAM_QUOTE_MAX,
+  type DreamAdjustment,
   type DreamProposal,
   type DreamResult,
 } from '../../../shared/dreams';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
+import { useStore } from '../../store';
+import {
+  ASK_HINT,
+  AskComposer,
+  AskFailed,
+  AskFoot,
+  AskStopped,
+  AskWorking,
+  tookWords,
+} from '../ask';
 
 /** An ask as it is being written: the text and the lines it is about. */
 export type AskDraft = { text: string; quote: string | null };
@@ -15,6 +25,12 @@ export const NO_DRAFT: AskDraft = { text: '', quote: null };
 
 /** How many asks show before "Earlier asks" opens the rest. */
 const SHOWN = 3;
+/** The reason an older Shellie stored for a stopped ask (`result.adjustFailed`). */
+const OLD_STOPPED = 'It was stopped';
+
+/** What came of an ask: `outcome`, or for a row of before it existed what `changed` says. */
+const outcomeOf = (a: DreamAdjustment) =>
+  a.outcome ?? (a.changed ? 'changed' : 'answer');
 
 /** The sentence that says another proposal is being changed; also the reason Create pull request is off. */
 export const adjustingSentence = (result: DreamResult): string | null => {
@@ -31,7 +47,7 @@ export const adjustingSentence = (result: DreamResult): string | null => {
  * change (`dream:adjust`). Everything shown is the result's, so the page can be left and come back to; nothing
  * here moves by itself.
  */
-export function AskBox({
+export function DreamAsk({
   result,
   proposal: p,
   draft,
@@ -58,9 +74,30 @@ export function AskBox({
 
   const run = result.adjusting ?? null;
   const mine = run?.proposalId === p.id;
-  const failed =
+  const go = useStore((s) => s.go);
+  // A failure an older Shellie stored on the result shows as the proposal's last row.
+  const old =
     result.adjustFailed?.proposalId === p.id ? result.adjustFailed : null;
-  const asks = p.adjustments ?? [];
+  const asks: DreamAdjustment[] = [
+    ...(p.adjustments ?? []),
+    ...(old
+      ? [
+          {
+            ask: old.ask,
+            ...(old.quote === undefined ? {} : { quote: old.quote }),
+            at: '',
+            note: '',
+            changed: false,
+            reverted: [],
+            outcome:
+              old.reason === OLD_STOPPED
+                ? ('stopped' as const)
+                : ('failed' as const),
+            reason: old.reason,
+          },
+        ]
+      : []),
+  ];
   const off = p.dropped
     ? 'Take the proposal back to change it'
     : run && !mine
@@ -69,6 +106,11 @@ export function AskBox({
   const text = draft.text.trim();
 
   // The run started or ended: the focus follows what took the place of what held it, and the end is said.
+  // An ask was sent again and the result has not said so yet: a second press starts nothing.
+  const rerun = useRef(false);
+  useEffect(() => {
+    rerun.current = false;
+  }, [run, asks.length]);
   const was = useRef({ mine, count: asks.length });
   useEffect(() => {
     const before = was.current;
@@ -81,16 +123,23 @@ export function AskBox({
       if (free) working.current?.focus({ preventScroll: true });
       return;
     }
-    const last = asks.length > before.count ? asks[asks.length - 1] : null;
+    const last = asks.at(-1);
+    const end = last ? outcomeOf(last) : null;
     setSaid(
-      last
-        ? `${last.changed ? 'Changed' : 'Answer'}: ${last.note}`
-        : failed
-          ? `Could not make the change: ${failed.reason}`
-          : '',
+      !last
+        ? ''
+        : end === 'changed'
+          ? `Changed: ${last.note}`
+          : end === 'answer'
+            ? `Answer: ${last.note}`
+            : end === 'stopped'
+              ? 'Stopped'
+              : `Could not finish: ${last.reason ?? ''}`,
     );
     if (free) box.current?.focus({ preventScroll: true });
-  }, [mine, asks, failed]);
+    // `asks` is rebuilt on every render: its length says whether it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mine, asks.length]);
 
   /** The selected text when it lies in the proposal's pane and not in this foot; null otherwise. */
   const selected = (): string | null => {
@@ -134,20 +183,37 @@ export function AskBox({
     }
   };
 
+  const adjust = (ask: string, quote: string | null | undefined) =>
+    api().invoke(
+      'dream:adjust',
+      result.repoId,
+      p.id,
+      ask,
+      ...(quote ? ([quote] as const) : []),
+    );
   const send = () => {
     if (!text || off || mine || busy) return;
     setSaid('');
     void call('send', async () => {
-      await api().invoke(
-        'dream:adjust',
-        result.repoId,
-        p.id,
-        text,
-        ...(draft.quote ? ([draft.quote] as const) : []),
-      );
+      await adjust(text, draft.quote);
       onDraft(() => NO_DRAFT);
     });
   };
+  /** Runs an ask that was stopped or could not finish once more, as it was; its row goes when the run starts. */
+  const again = (a: DreamAdjustment) => {
+    if (run || busy || p.dropped || rerun.current) return;
+    rerun.current = true;
+    setSaid('');
+    void call('send', async () => {
+      try {
+        await adjust(a.ask, a.quote);
+      } catch (e) {
+        rerun.current = false;
+        throw e;
+      }
+    });
+  };
+  const againOff = run !== null || busy !== null || p.dropped;
 
   const undo = () =>
     call('undo', async () => {
@@ -155,18 +221,6 @@ export function AskBox({
       setSaid('The change was taken back');
       box.current?.focus({ preventScroll: true });
     });
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Escape' && draft.quote) {
-      e.preventDefault();
-      e.stopPropagation();
-      onDraft((d) => ({ ...d, quote: null }));
-      return;
-    }
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    send();
-  };
 
   // The newest ask that changed the proposal is the one Undo takes back.
   let undoAt = -1;
@@ -197,6 +251,7 @@ export function AskBox({
         <ol aria-label="Asks about this proposal" className="dream-asks">
           {asks.slice(first).map((a, k) => {
             const i = first + k;
+            const end = outcomeOf(a);
             return (
               <li key={`${a.at}-${i}`} className="dream-asked">
                 <p id={`${id}-ask-${i}`}>
@@ -204,135 +259,121 @@ export function AskBox({
                   {a.ask}
                 </p>
                 {a.quote && (
-                  <p className="muted small dream-ask-line">{`About: “${a.quote}”`}</p>
+                  <p className="muted small ask-chip-text">{`About: “${a.quote}”`}</p>
                 )}
-                <p className="dream-asked-note">
-                  <span>
-                    <span className="muted">
-                      {a.changed ? 'Changed: ' : 'Answer: '}
-                    </span>
-                    {a.note}
-                  </span>
-                  {i === undoAt && (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      aria-describedby={`${id}-ask-${i}`}
-                      disabled={run !== null || busy !== null || p.dropped}
-                      onClick={() => void undo()}
-                    >
-                      Undo
-                    </button>
-                  )}
-                </p>
-                {a.reverted.length > 0 && (
-                  <p className="text-warn small">
-                    {`Left as they were: ${a.reverted.join(', ')}`}
-                  </p>
+                {end === 'stopped' ? (
+                  <AskStopped
+                    afterMs={a.durationMs ?? null}
+                    onAgain={() => again(a)}
+                    againOff={againOff}
+                  />
+                ) : end === 'failed' ? (
+                  <AskFailed
+                    reason={a.reason ?? ''}
+                    onRetry={() => again(a)}
+                    retryOff={againOff}
+                    second={
+                      a.fix === 'settings'
+                        ? {
+                            label: "Open the dream's settings",
+                            run: () => go({ kind: 'dream-setup' }),
+                          }
+                        : undefined
+                    }
+                  />
+                ) : (
+                  <>
+                    <p className="dream-asked-note">
+                      <span>
+                        <span className="muted">
+                          {end === 'changed' ? 'Changed: ' : 'Answer: '}
+                        </span>
+                        {a.note}
+                      </span>
+                      {i === undoAt && (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          aria-describedby={`${id}-ask-${i}`}
+                          disabled={run !== null || busy !== null || p.dropped}
+                          onClick={() => void undo()}
+                        >
+                          Undo
+                        </button>
+                      )}
+                    </p>
+                    {a.reverted.length > 0 && (
+                      <p className="text-warn small">
+                        {`Left as they were: ${a.reverted.join(', ')}`}
+                      </p>
+                    )}
+                    <AskFoot
+                      parts={[
+                        a.durationMs !== undefined &&
+                          `Took ${tookWords(a.durationMs)}`,
+                      ]}
+                    />
+                  </>
                 )}
               </li>
             );
           })}
         </ol>
       )}
-      {mine && run ? (
-        <div className="dream-ask-row">
-          <span className="dot dream-ask-dot" aria-hidden="true" />
-          <p ref={working} tabIndex={-1} className="dream-ask-working">
-            {`Working on: “${run.ask}”`}
+      {mine && run && (
+        <div className="dream-asked">
+          <p>
+            <span className="muted">You: </span>
+            {run.ask}
           </p>
-          <button
-            type="button"
-            className="btn"
-            disabled={busy !== null}
-            onClick={() =>
+          {run.quote && (
+            <p className="muted small ask-chip-text">{`About: “${run.quote}”`}</p>
+          )}
+          <AskWorking
+            word="Working"
+            startedAt={run.startedAt}
+            focusRef={working}
+            stopOff={busy !== null}
+            onStop={() =>
               void call('stop', () =>
                 api().invoke('dream:adjustStop', result.repoId),
               )
             }
-          >
-            Stop
-          </button>
+          />
         </div>
-      ) : (
-        <>
-          {draft.quote && (
-            <p className="small dream-ask-chip">
-              <span className="dream-ask-line">{`About: “${draft.quote}”`}</span>
-              <button
-                type="button"
-                className="ibtn dream-ask-chip-x"
-                aria-label="Remove the selected text from the ask"
-                onClick={() => {
-                  onDraft((d) => ({ ...d, quote: null }));
-                  box.current?.focus({ preventScroll: true });
-                }}
-              >
-                <Dismiss12Regular aria-hidden="true" />
-              </button>
-            </p>
-          )}
-          <div className="dream-ask-row">
-            <textarea
-              ref={box}
-              className="input dream-ask-box"
-              rows={2}
-              aria-label="Ask for a change to this proposal"
-              aria-describedby={off ? `${id}-off` : undefined}
-              placeholder="Ask for a change to this proposal"
-              maxLength={DREAM_ASK_MAX}
-              disabled={off !== null}
-              readOnly={busy === 'send'}
-              value={draft.text}
-              onChange={(e) => {
-                const next = e.target.value;
-                onDraft((d) => ({ ...d, text: next }));
-              }}
-              onKeyDown={onKeyDown}
-              onMouseDown={takeQuote}
-              onFocus={takeQuote}
-            />
-            <button
-              type="button"
-              className="btn"
-              disabled={off !== null || !text || busy !== null}
-              onClick={send}
-            >
-              Ask
-            </button>
-          </div>
-          {off && (
-            <p id={`${id}-off`} className="muted small">
-              {off}
-            </p>
-          )}
-          {failed && (
-            <p className="text-warn small dream-ask-failed">
-              <span>{`Could not make the change: ${failed.reason}`}</span>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={off !== null}
-                onClick={() => {
-                  onDraft(() => ({
-                    text: failed.ask,
-                    quote: failed.quote ?? null,
-                  }));
-                  box.current?.focus({ preventScroll: true });
-                }}
-              >
-                Try again
-              </button>
-            </p>
-          )}
-        </>
       )}
+      <AskComposer
+        label="Ask for a change to this proposal"
+        value={draft.text}
+        onChange={(next) => onDraft((d) => ({ ...d, text: next }))}
+        onSend={send}
+        hint={
+          asks.length === 0
+            ? `${ASK_HINT} · select text above to ask about it`
+            : null
+        }
+        quote={draft.quote}
+        onQuoteRemove={() => {
+          onDraft((d) => ({ ...d, quote: null }));
+          box.current?.focus({ preventScroll: true });
+        }}
+        off={off}
+        waiting={mine ? 'Wait for this one, or stop it' : null}
+        sending={busy === 'send'}
+        maxLength={DREAM_ASK_MAX}
+        boxRef={box}
+        boxProps={{ onMouseDown: takeQuote, onFocus: takeQuote }}
+      />
       {error && (
         <p role="alert" className="text-red small">
           {error}
         </p>
       )}
-      <p role="status" className="dream-ask-said">
+      <p
+        role="status"
+        aria-label="What the ask came to"
+        className="dream-ask-said"
+      >
         {said}
       </p>
     </div>

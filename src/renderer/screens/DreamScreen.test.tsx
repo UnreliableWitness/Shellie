@@ -841,6 +841,9 @@ describe('DreamScreen: asking for a change', () => {
   const box = () =>
     screen.getByRole('textbox', { name: 'Ask for a change to this proposal' });
   const foot = () => screen.getByRole('group', { name: 'Ask for a change' });
+  const said = () =>
+    within(foot()).getByRole('status', { name: 'What the ask came to' });
+  const working = () => within(foot()).getByText(/^(Working) · /);
   const adjustment = (
     ask: string,
     note: string,
@@ -887,6 +890,17 @@ describe('DreamScreen: asking for a change', () => {
       ['r1', 'p1', 'make it shorter'],
     ]);
     await waitFor(() => expect(box()).toHaveValue(''));
+  });
+
+  it('says how to send and how to ask about a line, until the proposal has an ask', async () => {
+    const m = fakeMain(twoProposals());
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    const hint =
+      'Enter sends · Shift+Enter starts a new line · select text above to ask about it';
+    expect(within(foot()).getByText(hint)).toBeInTheDocument();
+    m.set(withP1({ adjustments: [adjustment('shorter', 'Cut it.')] }));
+    await waitFor(() => expect(within(foot()).queryByText(hint)).toBeNull());
   });
 
   it('makes a new line with Shift+Enter, and sends with the Ask button', async () => {
@@ -997,14 +1011,16 @@ describe('DreamScreen: asking for a change', () => {
     const { calls } = fakeMain(twoProposals(running('p1')));
     render(<DreamScreen repoId="r1" />);
     await screen.findByRole('list', { name: 'Proposals' });
+    expect(within(foot()).getByText('make it shorter')).toBeInTheDocument();
+    expect(working()).toHaveTextContent(/^Working · /);
+    // The box stays: what is typed while the run is under way is kept, and nothing is sent.
+    await userEvent.type(box(), 'and add an example{Enter}');
+    expect(box()).toHaveValue('and add an example');
+    expect(callsOf(calls, 'dream:adjust')).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
     expect(
-      within(foot()).getByText('Working on: “make it shorter”'),
+      within(foot()).getByText('Wait for this one, or stop it'),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('textbox', {
-        name: 'Ask for a change to this proposal',
-      }),
-    ).toBeNull();
     expect(
       within(rowButton('Migrations')).getByRole('img', {
         name: 'A change is being made',
@@ -1041,9 +1057,8 @@ describe('DreamScreen: asking for a change', () => {
     await screen.findByRole('list', { name: 'Proposals' });
     await userEvent.type(box(), 'make it shorter{Enter}');
     m.set(twoProposals(running('p1')));
-    const working = await screen.findByText('Working on: “make it shorter”');
-    expect(working).toHaveFocus();
-    expect(within(foot()).getByRole('status')).toHaveTextContent('');
+    await waitFor(() => expect(working()).toHaveFocus());
+    expect(said()).toHaveTextContent('');
 
     m.set(
       withP1({
@@ -1053,9 +1068,7 @@ describe('DreamScreen: asking for a change', () => {
       }),
     );
     await waitFor(() =>
-      expect(within(foot()).getByRole('status')).toHaveTextContent(
-        'Changed: Cut the second example.',
-      ),
+      expect(said()).toHaveTextContent('Changed: Cut the second example.'),
     );
     expect(box()).toHaveFocus();
     expect(
@@ -1102,9 +1115,7 @@ describe('DreamScreen: asking for a change', () => {
     await userEvent.click(within(foot()).getByRole('button', { name: 'Undo' }));
     expect(callsOf(calls, 'dream:adjustUndo')).toEqual([['r1', 'p1']]);
     await waitFor(() => expect(box()).toHaveFocus());
-    expect(within(foot()).getByRole('status')).toHaveTextContent(
-      'The change was taken back',
-    );
+    expect(said()).toHaveTextContent('The change was taken back');
   });
 
   it('has no Undo when no ask changed the proposal, and none is pressed while a run is under way', async () => {
@@ -1162,55 +1173,163 @@ describe('DreamScreen: asking for a change', () => {
     ]);
   });
 
-  it('shows a failed ask with its phrase; Try again puts the ask and its quote back', async () => {
+  it('shows an ask that could not finish; Try again runs it at once, with its quote', async () => {
+    const { calls } = fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', '', {
+            changed: false,
+            before: undefined,
+            quote: 'the second example',
+            outcome: 'failed',
+            reason: 'The agent changed nothing',
+          }),
+        ],
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(within(foot()).getByRole('alert')).toHaveTextContent(
+      'Could not finish. The agent changed nothing',
+    );
+    expect(
+      screen.queryByRole('button', { name: "Open the dream's settings" }),
+    ).toBeNull();
+    const again = screen.getByRole('button', { name: 'Try again' });
+    await userEvent.dblClick(again);
+    expect(callsOf(calls, 'dream:adjust')).toEqual([
+      ['r1', 'p1', 'make it shorter', 'the second example'],
+    ]);
+    expect(box()).toHaveValue('');
+
+    // The failure is the other proposal's: nothing about it here.
+    await userEvent.click(rowButton('Skill release-notes'));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('leads to the dream’s settings when the cause is there', async () => {
+    fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', '', {
+            changed: false,
+            before: undefined,
+            outcome: 'failed',
+            reason: 'Another model answered',
+            fix: 'settings',
+          }),
+        ],
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    await userEvent.click(
+      screen.getByRole('button', { name: "Open the dream's settings" }),
+    );
+    expect(useStore.getState().screen).toEqual({ kind: 'dream-setup' });
+  });
+
+  it('shows a stopped ask as stopped, not as an error; Ask again runs it at once', async () => {
+    const { calls } = fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', '', {
+            changed: false,
+            before: undefined,
+            outcome: 'stopped',
+            durationMs: 18_000,
+          }),
+        ],
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(
+      within(foot()).getByText('Stopped after 18 s. Nothing was changed.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Ask again' }));
+    expect(callsOf(calls, 'dream:adjust')).toEqual([
+      ['r1', 'p1', 'make it shorter'],
+    ]);
+  });
+
+  it('offers no Ask again while a change is being made', async () => {
+    fakeMain(
+      withP1(
+        {
+          adjustments: [
+            adjustment('make it shorter', '', {
+              changed: false,
+              before: undefined,
+              outcome: 'stopped',
+            }),
+          ],
+        },
+        running('p2'),
+      ),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(
+      within(foot()).getByText('Stopped. Nothing was changed.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ask again' })).toBeDisabled();
+  });
+
+  it('shows a failure an older Shellie stored on the result', async () => {
     fakeMain(
       twoProposals({
         adjustFailed: {
           proposalId: 'p1',
           ask: 'make it shorter',
-          quote: 'the second example',
           reason: 'The agent changed nothing',
         },
       }),
     );
     render(<DreamScreen repoId="r1" />);
     await screen.findByRole('list', { name: 'Proposals' });
-    expect(
-      within(foot()).getByText(
-        'Could not make the change: The agent changed nothing',
-      ),
-    ).toBeInTheDocument();
-    expect(box()).toHaveValue('');
-    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(box()).toHaveValue('make it shorter');
-    expect(box()).toHaveFocus();
-    expect(screen.getByText('About: “the second example”')).toBeInTheDocument();
-
-    // The failure is the other proposal's: nothing about it here.
+    expect(within(foot()).getByRole('alert')).toHaveTextContent(
+      'Could not finish. The agent changed nothing',
+    );
     await userEvent.click(rowButton('Skill release-notes'));
-    expect(screen.queryByText(/Could not make the change/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('says a run that failed when it ends', async () => {
+  it('says how long a finished ask took', async () => {
+    fakeMain(
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', 'Cut it.', { durationMs: 72_000 }),
+        ],
+      }),
+    );
+    render(<DreamScreen repoId="r1" />);
+    await screen.findByRole('list', { name: 'Proposals' });
+    expect(within(foot()).getByText('Took 1 min 12 s')).toBeInTheDocument();
+  });
+
+  it('says a run that could not finish when it ends', async () => {
     const m = fakeMain(twoProposals(running('p1')));
     render(<DreamScreen repoId="r1" />);
-    await screen.findByText('Working on: “make it shorter”');
+    await screen.findByRole('list', { name: 'Proposals' });
     m.set(
-      twoProposals({
-        adjustFailed: {
-          proposalId: 'p1',
-          ask: 'make it shorter',
-          reason: 'Stopped',
-        },
+      withP1({
+        adjustments: [
+          adjustment('make it shorter', '', {
+            changed: false,
+            before: undefined,
+            outcome: 'failed',
+            reason: 'OpenCode stopped',
+          }),
+        ],
       }),
     );
     await waitFor(() =>
-      expect(within(foot()).getByRole('status')).toHaveTextContent(
-        'Could not make the change: Stopped',
-      ),
+      expect(said()).toHaveTextContent('Could not finish: OpenCode stopped'),
     );
-    expect(box()).toHaveFocus();
   });
 
   it('switches the box off for a dropped proposal', async () => {
