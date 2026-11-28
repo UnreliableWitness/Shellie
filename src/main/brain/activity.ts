@@ -93,6 +93,28 @@ function kindOf(subject: string, pages: boolean, sources: boolean): Kinded {
 }
 
 /**
+ * The last history read per brain folder, by the HEAD it was read at: most brain changes (a job queued or done, a
+ * sync with nothing new) make no commit, so the long log is read again only when HEAD moved.
+ */
+const kept = new Map<
+  string,
+  {
+    head: string;
+    mine: string | null;
+    limit: number;
+    entries: BrainActivityEntry[];
+  }
+>();
+
+/** Drops the kept history of a brain folder (the brain was removed). */
+export function forgetBrainActivity(dir: string): void {
+  kept.delete(dir);
+}
+
+const copy = (entries: BrainActivityEntry[]) =>
+  entries.map((e) => ({ ...e, pages: e.pages.map((p) => ({ ...p })) }));
+
+/**
  * The brain's history, newest first. `installId`: this machine's commits in a shared brain carry it as their author
  * email; in a local brain (`null`) every commit is this person's.
  */
@@ -100,6 +122,25 @@ export async function brainActivity(
   git: GitClient,
   dir: string,
   o: { installId: string | null; limit?: number },
+): Promise<BrainActivityEntry[]> {
+  const mine = o.installId ? `${o.installId}@install.shellie` : null;
+  const limit = o.limit ?? ACTIVITY_LIMIT;
+  // No HEAD (an empty repo, a missing folder): nothing is kept.
+  const at = (await git.run(dir, ['rev-parse', 'HEAD']).catch(() => '')).trim();
+  const last = kept.get(dir);
+  if (at && last?.head === at && last.mine === mine && last.limit === limit)
+    return copy(last.entries);
+  const entries = await readActivity(git, dir, mine, limit);
+  if (at) kept.set(dir, { head: at, mine, limit, entries: copy(entries) });
+  else kept.delete(dir);
+  return entries;
+}
+
+async function readActivity(
+  git: GitClient,
+  dir: string,
+  mine: string | null,
+  limit: number,
 ): Promise<BrainActivityEntry[]> {
   const out = await git
     .run(dir, [
@@ -114,10 +155,9 @@ export async function brainActivity(
       `--format=${RECORD}%H${FIELD}%aI${FIELD}%aN${FIELD}%aE${FIELD}%s`,
     ])
     .catch(() => '');
-  const mine = o.installId ? `${o.installId}@install.shellie` : null;
   const entries: BrainActivityEntry[] = [];
   for (const record of out.split(RECORD)) {
-    if (entries.length >= (o.limit ?? ACTIVITY_LIMIT)) break;
+    if (entries.length >= limit) break;
     const [head, ...lines] = record.split('\n');
     const [id, at, who, email, subject] = head.split(FIELD);
     if (!id || subject === undefined) continue;
