@@ -1,3 +1,4 @@
+import { ASK_LEFT_BY_QUIT } from '../../shared/brainAsk';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -528,6 +529,57 @@ describe('brain handlers', () => {
     ).rejects.toThrow('The question has no asker');
     await h['brain:askStop']('t9');
     expect(stopped).toEqual(['t9']);
+  });
+
+  it('refuses a question whose key is not its asker', async () => {
+    const v = await h['brain:create'](NEW);
+    tasks = [{ id: 't9', name: 'x', workItem: null }] as unknown as Task[];
+    await expect(
+      h['brain:ask'](v.id, 't9', 'Why?', null, 't10', null),
+    ).rejects.toThrow('The question has no asker');
+    await expect(
+      h['brain:ask'](v.id, null, 'Why?', null, 'brain:other', null),
+    ).rejects.toThrow('The question has no asker');
+    expect(asked).toEqual([]);
+  });
+
+  it('gives the kept threads to a window that asks again, with what was being answered as not finished', async () => {
+    const exchange = (status: 'done' | 'running') => ({
+      id: status,
+      question: 'Why?',
+      status,
+      startedAt: 1,
+      answer: null,
+      error: null,
+      refused: null,
+    });
+    const kept = [
+      {
+        id: 'a',
+        brainId: 'b1',
+        taskId: 't9',
+        startedAt: 1,
+        current: true,
+        exchanges: [exchange('done'), exchange('running')],
+      },
+      {
+        id: 'b',
+        brainId: 'b1',
+        taskId: null,
+        startedAt: 1,
+        current: true,
+        exchanges: [exchange('done')],
+      },
+    ];
+    deps.askThreads = { list: () => kept, save: async () => undefined };
+    const out = await h['brainAsk:load']();
+    // The window that asked is gone (a reload): its run is stopped and the question could not finish.
+    expect(stopped).toEqual(['t9']);
+    expect(out[0].exchanges.map((e) => e.status)).toEqual(['done', 'failed']);
+    expect(out[0].exchanges[1].error).toBe(ASK_LEFT_BY_QUIT);
+    expect(out[1]).toEqual(kept[1]);
+    // What is kept is not changed by reading it.
+    expect(kept[0].exchanges[1].status).toBe('running');
   });
 
   it('serves pages, search, relevance and opening a source', async () => {

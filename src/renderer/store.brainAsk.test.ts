@@ -197,6 +197,32 @@ describe("a task's questions to its brain", () => {
     expect(resumeAgents).toEqual([null, 'opencode']);
   });
 
+  it('takes a kept thread in once, however often it is given', () => {
+    const kept: AskThread = {
+      id: 'a',
+      brainId: 'b1',
+      taskId: 't1',
+      startedAt: 5,
+      current: true,
+      exchanges: [
+        {
+          id: 'e1',
+          question: 'Kept?',
+          status: 'done',
+          startedAt: 5,
+          answer: null,
+          error: null,
+          refused: null,
+        },
+      ],
+    };
+    const other = { ...kept, id: 'b', current: false };
+    useStore.getState().loadBrainThreads([kept, other]);
+    useStore.getState().loadBrainThreads([kept, other]);
+    expect(thread()).toHaveLength(1);
+    expect(useStore.getState().brainAskEarlier.map((t) => t.id)).toEqual(['b']);
+  });
+
   it('starts a new question: the thread so far is kept as an earlier one', async () => {
     const p = useStore.getState().askBrain('t1', 'b1', 'Why?', 'typed');
     settle[0](answer('s1'));

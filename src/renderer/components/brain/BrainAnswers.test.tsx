@@ -252,6 +252,21 @@ describe('BrainAnswers', () => {
     ).toBeNull();
   });
 
+  it('shows a question that is being answered elsewhere without a way to stop it here', () => {
+    useStore.getState().setAskProgress('brain:t1', {
+      steps: [{ kind: 'read', label: 'Read mine.md' }],
+      earlier: 0,
+      text: 'My own answer',
+    });
+    show([], {}, true, {
+      exchanges: [exchange({ status: 'running', answer: null })],
+    });
+    expect(screen.getByText('Being answered in the task.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    expect(screen.queryByText('Read mine.md')).toBeNull();
+    expect(screen.queryByText('My own answer')).toBeNull();
+  });
+
   it('shows a stopped question as stopped, and asks it again in its place', async () => {
     const a = show([
       exchange({

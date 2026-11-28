@@ -24,7 +24,11 @@ import {
   writeReady,
   writeTarget,
 } from '../../shared/brain';
-import { askWithContext } from '../../shared/brainAsk';
+import {
+  ASK_LEFT_BY_QUIT,
+  askOwner,
+  askWithContext,
+} from '../../shared/brainAsk';
 import type { Events, Handlers } from '../../shared/ipc';
 import type { TelemetryProps } from '../../shared/telemetry';
 import type { Connection, Repo, Task } from '../../shared/types';
@@ -1218,7 +1222,8 @@ export function createBrainHandlers(
     'brain:ask': async (id, taskId, question, resume, key, resumeAgent) => {
       brainOf(id);
       if (!d.asks) throw new Error('Asking a brain is not available');
-      if (typeof key !== 'string' || key === '')
+      // The key is the asker's own: no window can run, stop or stand in for another asker's question.
+      if (key !== askOwner(taskId, id))
         throw new Error('The question has no asker');
       // From a task, "this" is its work item; from the brain's own page the question stands alone.
       const task = taskId === null ? null : d.task(taskId);
@@ -1238,7 +1243,26 @@ export function createBrainHandlers(
     'brain:askStop': async (key) => {
       d.asks?.stop(key);
     },
-    'brainAsk:load': async () => d.askThreads?.list() ?? [],
+    // A window asks for the threads when it starts. One that was being answered then has nobody waiting for it
+    // any more (the window was reloaded): its run is stopped, and it reads as a question that could not finish.
+    'brainAsk:load': async () =>
+      (d.askThreads?.list() ?? []).map((t) => {
+        if (!t.exchanges.some((e) => e.status === 'running')) return t;
+        d.asks?.stop(askOwner(t.taskId, t.brainId));
+        return {
+          ...t,
+          exchanges: t.exchanges.map((e) =>
+            e.status === 'running'
+              ? {
+                  ...e,
+                  status: 'failed' as const,
+                  error: ASK_LEFT_BY_QUIT,
+                  answer: null,
+                }
+              : e,
+          ),
+        };
+      }),
     'brainAsk:save': async (threads) => {
       await d.askThreads?.save(threads);
     },

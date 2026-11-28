@@ -66,9 +66,21 @@ export class AskThreadStore {
     );
   }
 
+  /** Set when the file could not be read: nothing is given or saved then, so the file stays as it is. */
+  private unread = false;
+
+  private readable(): void {
+    if (this.unread) throw new Error('The kept questions could not be read');
+  }
+
   /** Reads the file; a question that was being answered when Shellie closed could not finish. */
   async load(): Promise<void> {
-    await this.store.load();
+    try {
+      await this.store.load();
+    } catch (e) {
+      this.unread = true;
+      throw e;
+    }
     const left = this.store.value.threads.some((t) =>
       t.exchanges.some((e) => e.status === 'running'),
     );
@@ -85,6 +97,7 @@ export class AskThreadStore {
   }
 
   list(): AskThread[] {
+    this.readable();
     return this.store.value.threads as AskThread[];
   }
 
@@ -93,6 +106,7 @@ export class AskThreadStore {
    * brain the current ones plus the most recently asked others up to `ASK_THREADS_MAX`.
    */
   async save(threads: AskThread[]): Promise<void> {
+    this.readable();
     const brains = new Set(this.brainIds());
     const byBrain = new Map<string, AskThread[]>();
     for (const t of threads) {

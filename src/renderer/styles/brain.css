@@ -828,6 +828,11 @@
   border-radius: 6px;
   box-shadow: var(--shadow-1);
 }
+/* On the tab's start the link sits at the left: its list opens to the right of it. */
+.brain-step-head .brain-qa-earlier > ul {
+  left: 0;
+  right: auto;
+}
 .brain-qa-earlier-row {
   width: 100%;
   display: flex;
@@ -1632,6 +1637,14 @@ button.brain-front-chapter:hover {
 .brain-ask-empty h2,
 .brain-ask-empty p {
   margin: 0;
+}
+/* A long question shows its first two lines in the list. */
+.brain-ask-row > :first-child,
+.brain-qa-earlier-row > :first-child {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 /* A narrow window: the list goes above the thread. */
 @media (max-width: 900px) {

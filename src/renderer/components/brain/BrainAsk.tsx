@@ -52,10 +52,13 @@ export function BrainAsk({
   const [question, setQuestion] = useState('');
   /** A task's thread chosen to read; null shows the brain's own. */
   const [reading, setReading] = useState<string | null>(null);
+  // The box that shows: the first question's, or the open thread's follow-up.
   const box = useRef<HTMLTextAreaElement>(null);
+  /** Counts up when the cursor is wanted in the box once it is there (after New question). */
+  const [wanted, setWanted] = useState(0);
   useEffect(() => {
-    if (active && focusBox) box.current?.focus();
-  }, [active, focusBox]);
+    if (active && (focusBox || wanted > 0)) box.current?.focus();
+  }, [active, focusBox, wanted]);
 
   const all = askThreadsToSave({
     brainAsksByTask: asksByOwner,
@@ -94,7 +97,7 @@ export function BrainAsk({
               trackBrain('ask-new');
               setReading(null);
               newBrainQuestion(owner);
-              box.current?.focus();
+              setWanted((n) => n + 1);
             }}
           >
             New question
@@ -188,6 +191,8 @@ export function BrainAsk({
             owner={owner}
             taskId={null}
             back={false}
+            bar={false}
+            boxRef={box}
             rows={rows}
             sources={sources}
             hasAgentTab={false}

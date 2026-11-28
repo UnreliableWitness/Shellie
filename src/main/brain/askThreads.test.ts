@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -116,6 +116,15 @@ describe('AskThreadStore', () => {
       answer: null,
     });
     expect(b.list()[0].exchanges[0].status).toBe('done');
+  });
+
+  it('gives nothing and saves nothing when the file could not be read at all', async () => {
+    // A folder where the file should be: reading fails, and nothing can be kept aside.
+    mkdirSync(file);
+    const a = store();
+    await expect(a.load()).rejects.toThrow();
+    expect(() => a.list()).toThrow('could not be read');
+    await expect(a.save([thread('t1')])).rejects.toThrow('could not be read');
   });
 
   it('starts empty on a file it cannot read, and keeps that file aside', async () => {

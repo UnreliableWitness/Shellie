@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
 import { brainAskKey, type AskProgress } from '../shared/askProgress';
-import type { AskExchange, AskThread } from '../shared/brainAsk';
+import { askOwner, type AskExchange, type AskThread } from '../shared/brainAsk';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { ReadingBrain } from '../shared/reading';
 import type { AppSettings } from '../shared/usage';
@@ -628,8 +628,15 @@ export const useStore = create<Store>((set, get) => ({
       const asks = { ...s.brainAsksByTask };
       const meta = { ...s.brainAskThread };
       const earlier = [...s.brainAskEarlier];
+      // A thread that is here already (the load ran twice) is not taken in again.
+      const have = new Set([
+        ...Object.values(meta).map((m) => m.id),
+        ...earlier.map((t) => t.id),
+      ]);
       for (const t of threads) {
-        const owner = t.taskId ?? `brain:${t.brainId}`;
+        if (have.has(t.id)) continue;
+        have.add(t.id);
+        const owner = askOwner(t.taskId, t.brainId);
         if (t.current && !meta[owner] && !(asks[owner]?.length ?? 0)) {
           asks[owner] = t.exchanges;
           meta[owner] = {

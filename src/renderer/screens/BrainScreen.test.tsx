@@ -241,6 +241,31 @@ describe('BrainScreen', () => {
     await waitFor(() => expect(box).toHaveFocus());
   });
 
+  it('puts the cursor in the follow-up box when the route asks for Ask and a thread is open', async () => {
+    setup();
+    useStore.setState({
+      brainAsksByTask: {
+        'brain:b1': [
+          {
+            id: 'e1',
+            question: 'Why is cost local?',
+            status: 'done',
+            startedAt: 5,
+            answer: null,
+            error: null,
+            refused: null,
+          },
+        ],
+      },
+      brainAskThread: {
+        'brain:b1': { id: 'own', brainId: 'b1', startedAt: 9 },
+      },
+    });
+    render(<BrainScreen brainId="b1" focus="ask" />);
+    const box = await screen.findByRole('textbox', { name: 'Ask a follow-up' });
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
   it("lists the brain's questions and those asked in tasks, a task's to read only", async () => {
     setup();
     const done = (id: string, question: string) => ({
@@ -306,6 +331,19 @@ describe('BrainScreen', () => {
     expect(
       screen.getByRole('textbox', { name: 'Ask a follow-up' }),
     ).toBeInTheDocument();
+    // One New question on the page, and it leaves the cursor in the empty box.
+    expect(
+      screen.getAllByRole('button', { name: 'New question' }),
+    ).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'New question' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('textbox', { name: 'Question for the brain' }),
+      ).toHaveFocus(),
+    );
+    await userEvent.click(
+      list.getByRole('button', { name: /Who owns the rate table\?/ }),
+    );
     // A task's: read only, with the way to the task.
     await userEvent.click(
       list.getByRole('button', { name: /How do we refresh the token\?/ }),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type Ref, useEffect, useRef, useState } from 'react';
 import type {
   BrainPageRow,
   BrainSourceRow,
@@ -111,6 +111,8 @@ export function BrainAnswers({
   taskId,
   exchanges,
   back = true,
+  bar = true,
+  boxRef,
   rows,
   sources,
   hasAgentTab,
@@ -126,6 +128,10 @@ export function BrainAnswers({
   exchanges?: AskExchange[];
   /** Whether there is a start to go back to (the task's tab has one). */
   back?: boolean;
+  /** Whether the bar with New question and Earlier questions shows (the Brain page has its own list). */
+  bar?: boolean;
+  /** The follow-up box, for a page that puts the cursor in it. */
+  boxRef?: Ref<HTMLTextAreaElement>;
   rows: BrainPageRow[];
   sources: BrainSourceRow[];
   /** The task has a Claude Code or OpenCode tab an answer can be handed to. */
@@ -204,7 +210,7 @@ export function BrainAnswers({
 
   return (
     <div className="brain-qas">
-      {!readOnly && (
+      {!readOnly && bar && (
         <div className="brain-qas-bar">
           {back && (
             <button
@@ -240,7 +246,10 @@ export function BrainAnswers({
           <section key={e.id} className="brain-qa">
             <p className="brain-qa-asked muted small">You asked</p>
             <h2 className="brain-qa-question">{e.question}</h2>
-            {e.status === 'running' && (
+            {e.status === 'running' && readOnly && (
+              <p className="muted small">Being answered in the task.</p>
+            )}
+            {e.status === 'running' && !readOnly && (
               <div className="brain-qa-state">
                 <AskWorking
                   word="Answering"
@@ -406,6 +415,7 @@ export function BrainAnswers({
         <div className="brain-qa-follow">
           <AskComposer
             label="Ask a follow-up"
+            boxRef={boxRef}
             value={followUp}
             onChange={setFollowUp}
             onSend={submit}
