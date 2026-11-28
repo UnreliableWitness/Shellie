@@ -641,9 +641,13 @@
 .dream-ask .ask-box {
   max-width: 80ch;
 }
-/* The ask being worked on: a long one scrolls in its own few lines and does not grow the foot over the proposal. */
+/*
+ * The ask being worked on: a long one scrolls in its own three lines, so the foot does not grow over the proposal
+ * and the time and Stop under it stay in view.
+ */
 .dream-ask-running {
-  max-height: 9em;
+  max-height: 4.2em;
+  line-height: 1.4;
   overflow-y: auto;
 }
 .dream-ask-earlier {
