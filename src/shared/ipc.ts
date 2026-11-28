@@ -1,3 +1,4 @@
+import type { AskProgress } from './askProgress';
 import type {
   AddSourceResult,
   AdoWiki,
@@ -1121,6 +1122,11 @@ export type Events = {
   'brain:openJoin': { link: string };
   /** A dream started or ended, or what dreams remember or wait for changed; the renderer fetches `dream:get` again. */
   'dream:changed': Record<string, never>;
+  /**
+   * What the agent of a running ask is doing: its steps so far and, where the agent says, the answer as far as it
+   * is written. `key` is `brainAskKey(taskId)` or `dreamAskKey(repoId)`. At most four a second per run; never kept.
+   */
+  'ask:progress': { key: string } & AskProgress;
 };
 
 /** `version` is null when the release name holds none. */

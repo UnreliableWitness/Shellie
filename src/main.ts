@@ -32,6 +32,7 @@ import {
 } from './shared/brainShare';
 import type { UsageEvent } from './shared/usage';
 import type { Task } from './shared/types';
+import { brainAskKey, dreamAskKey } from './shared/askProgress';
 import { brainTaskId, opencodeReady, type Brain } from './shared/brain';
 import { createBrainTerminals } from './main/brain/brainTerminal';
 import { capturedSessionIds } from './main/brain/state';
@@ -1212,6 +1213,8 @@ async function boot(): Promise<void> {
     >;
     const brainAsks = new BrainAsks({
       ...brainRunDeps,
+      progress: (taskId, p) =>
+        broadcast('ask:progress', { key: brainAskKey(taskId), ...p }),
       now: () => Date.now(),
       heldReason: (id) => {
         const b = brains.get(id);
@@ -1371,6 +1374,8 @@ async function boot(): Promise<void> {
       usage: dreamLimit.usage,
       dreamsDir,
       broadcast: () => broadcast('dream:changed', {}),
+      progress: (repoId, p) =>
+        broadcast('ask:progress', { key: dreamAskKey(repoId), ...p }),
       event: (name, props) => telemetry.event(name, props),
     });
     /** The tasks as the last `tasks:changed` left them, to tell which repos' tasks changed. */

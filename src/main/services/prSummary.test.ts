@@ -251,6 +251,50 @@ describe('runWithInput', () => {
     expect(out).toBe('HELLO!');
   });
 
+  it('hands each whole line to onLine, in order, with the tail at the end', async () => {
+    const lines: string[] = [];
+    // Chunks that end inside a line and inside a multi-byte character (é is two bytes).
+    const script = `
+      const w = (b) => new Promise((r) => process.stdout.write(b, r));
+      const wait = () => new Promise((r) => setTimeout(r, 30));
+      (async () => {
+        await w(Buffer.from('fir')); await wait();
+        await w(Buffer.from('st\\r\\ncaf')); await wait();
+        await w(Buffer.from([0xc3])); await wait();
+        await w(Buffer.from([0xa9, 0x0a])); await wait();
+        await w(Buffer.from('tail'));
+      })();`;
+    const out = await runWithInput(
+      { command: node, args: ['-e', script] },
+      {
+        cwd: process.cwd(),
+        input: '',
+        timeoutMs: 10_000,
+        onLine: (l) => lines.push(l),
+      },
+    );
+    expect(lines).toEqual(['first', 'café', 'tail']);
+    expect(out).toBe('first\r\ncafé\ntail');
+  });
+
+  it('cuts a very long line for onLine and keeps the whole output', async () => {
+    const lines: string[] = [];
+    const out = await runWithInput(
+      {
+        command: node,
+        args: ['-e', "process.stdout.write('x'.repeat(200000)+'\\nend\\n')"],
+      },
+      {
+        cwd: process.cwd(),
+        input: '',
+        timeoutMs: 10_000,
+        onLine: (l) => lines.push(l),
+      },
+    );
+    expect(lines.map((l) => l.length)).toEqual([65_536, 3]);
+    expect(out.length).toBe(200_005);
+  });
+
   it('rejects with the last stderr line on a failed exit', async () => {
     await expect(
       runWithInput(

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AttentionSnapshot } from '../shared/attention';
 import type { SourceType } from '../shared/brain';
+import { brainAskKey, type AskProgress } from '../shared/askProgress';
 import type { AskRefusal, BrainAnswer } from '../shared/brainAsk';
 import type { NewReviewComment, ReviewScope } from '../shared/review';
 import type { ReadingBrain } from '../shared/reading';
@@ -245,6 +246,12 @@ export type Store = {
     replaceId?: string,
   ): Promise<void>;
   stopBrainAsk(taskId: string): void;
+  /**
+   * What the agent of each running ask is doing (`ask:progress`), by `brainAskKey` or `dreamAskKey`. Main sends an
+   * empty one when a run starts, so what an earlier run left is never shown for the next.
+   */
+  askProgress: Record<string, AskProgress>;
+  setAskProgress(key: string, p: AskProgress): void;
   setBrainAskOpen(taskId: string, open: boolean): void;
   /** A document a terminal link asked the Docs tab to open; the nonce makes repeats count. */
   docTarget: Record<
@@ -528,12 +535,22 @@ export const useStore = create<Store>((set, get) => ({
   },
   brainAsksByTask: {},
   brainAskOpenByTask: {},
+  askProgress: {},
+  setAskProgress: (key, p) =>
+    set((s) => ({ askProgress: { ...s.askProgress, [key]: p } })),
   askBrain: async (taskId, brainId, question, via, replaceId) => {
     const q = question.trim();
     const all = get().brainAsksByTask[taskId] ?? [];
     if (!q || all.some((e) => e.status === 'running')) return;
     track('brain.screen.action', { action: `ask-${via}` });
     const id = `ask${++askSeq}`;
+    // What the agent of the question before was doing is not this one's (main says so too, a moment later).
+    const key = brainAskKey(taskId);
+    if (get().askProgress[key])
+      set((s) => {
+        const { [key]: _gone, ...rest } = s.askProgress;
+        return { askProgress: rest };
+      });
     // Asked again: the new exchange takes the place of the one that was stopped or could not finish.
     const at = replaceId ? all.findIndex((e) => e.id === replaceId) : -1;
     const before = at === -1 ? all : all.slice(0, at);

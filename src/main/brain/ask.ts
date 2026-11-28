@@ -13,7 +13,15 @@ import {
   ASK_TIMEOUT_MS,
   type AskOutcome,
 } from '../../shared/brainAsk';
-import { claudeResultWithSession, programMissing } from '../services/prSummary';
+import { NO_PROGRESS, type AskProgress } from '../../shared/askProgress';
+import {
+  claudeEvent,
+  claudeStreamResult,
+  isClaudeResultLine,
+  opencodeStep,
+  progressLog,
+} from '../ask/steps';
+import { programMissing } from '../services/prSummary';
 import { opencodeFailure, type BrainJobDeps } from './jobs';
 import { opencodeResultWithSession } from './opencodeResult';
 import { brainOpencodePermission } from './templates';
@@ -22,8 +30,9 @@ import { brainOpencodePermission } from './templates';
 const ASK_TOOLS = 'Read,Glob,Grep';
 
 /**
- * Claude Code's flags for a question: headless, the answer as JSON, and only the reading tools, so the run cannot
- * write, edit or run a command whatever the skill or a page says. `resume` continues that session (a follow-up).
+ * Claude Code's flags for a question: headless, a stream of events (what it does as it goes, the text in pieces,
+ * the answer last), and only the reading tools, so the run cannot write, edit or run a command whatever the skill
+ * or a page says. `resume` continues that session (a follow-up).
  */
 export function askClaudeFlags(
   model: BrainModel,
@@ -32,7 +41,9 @@ export function askClaudeFlags(
   return [
     '-p',
     '--output-format',
-    'json',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
     '--model',
     model,
     '--tools',
@@ -209,6 +220,8 @@ export type BrainAsksDeps = Pick<
   ) => number | null;
   /** The patterns the OpenCode configs of a run in the folder name (opencodeRulePatterns); tests pass their own. */
   rulePatterns?: (brainDir: string) => Promise<RulePatterns>;
+  /** Told what the run is doing while it is under way (`ask:progress`). */
+  progress?: (key: string, p: AskProgress) => void;
   /** The folder's state (its commit and uncommitted changes) as one string, to tell whether a question left it as it was. */
   snapshot: (brainDir: string) => Promise<string>;
 };
@@ -239,6 +252,7 @@ export class BrainAsks {
     this.running.set(key, stop);
     const since = d.now();
     const opencode = d.agent(brainId) === 'opencode';
+    let quiet = () => undefined as void;
     try {
       const cwd = d.brainDir(brainId);
       // Read before anything runs: an OpenCode question never starts on rules Shellie could not see.
@@ -251,7 +265,33 @@ export class BrainAsks {
       const before = await d.snapshot(cwd).catch(() => null);
       // Stop pressed while the rules and the folder were read: nothing is started.
       if (stop.signal.aborted) throw new Error('stopped');
-      const o = { cwd, timeoutMs: ASK_TIMEOUT_MS, signal: stop.signal };
+      // An empty one first: what an earlier run of this asker left is not this run's.
+      d.progress?.(key, NO_PROGRESS);
+      const log = progressLog((p) => d.progress?.(key, p));
+      quiet = () => log.stop();
+      let resultLine: string | null = null;
+      const onLine = (line: string) => {
+        // After Stop nothing more is said of the run.
+        if (stop.signal.aborted) return;
+        if (opencode) {
+          const step = opencodeStep(line, cwd);
+          if (step) log.step(step);
+          return;
+        }
+        // Kept as it passes: a long run prints more than the runner collects, and the result comes last.
+        if (isClaudeResultLine(line)) resultLine = line;
+        const e = claudeEvent(line, cwd);
+        if (!e) return;
+        if (e.reset) log.resetText();
+        if (e.step) log.step(e.step);
+        if (e.text) log.text(e.text);
+      };
+      const o = {
+        cwd,
+        timeoutMs: ASK_TIMEOUT_MS,
+        signal: stop.signal,
+        onLine,
+      };
       let found: { result: string; sessionId: string | null };
       if (opencode) {
         const stdout = await d
@@ -284,8 +324,15 @@ export class BrainAsks {
           ),
           { ...o, input: askPrompt('claude', question), env: d.env(brainId) },
         );
-        found = claudeResultWithSession(stdout);
+        found = claudeStreamResult(
+          resultLine === null ? stdout : `${stdout}\n${resultLine}`,
+        );
       }
+      log.flush();
+      const { steps } = log.snapshot();
+      const read = new Set(
+        steps.filter((s) => s.kind === 'read').map((s) => s.label),
+      ).size;
       let costEur: number | null = null;
       try {
         costEur = d.costOf(brainId, found.sessionId, since);
@@ -301,6 +348,8 @@ export class BrainAsks {
           answer: found.result,
           durationMs: d.now() - since,
           costEur,
+          steps,
+          ...(steps.length > 0 ? { pagesRead: read } : {}),
         },
       };
     } catch (e) {
@@ -319,6 +368,8 @@ export class BrainAsks {
         };
       return { ok: false, refused: null, message: (e as Error).message };
     } finally {
+      // Whatever the run still had to say is not said after its end.
+      quiet();
       this.running.delete(key);
     }
   }

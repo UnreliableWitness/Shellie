@@ -11,6 +11,9 @@ export type PtyModule = {
   ): IPty;
 };
 
+/** How often a run's lines are sent to main. */
+const LINES_EVERY_MS = 250;
+
 const message = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
 
@@ -81,6 +84,16 @@ export function createPtyHost(
       case 'run': {
         const stop = new AbortController();
         runs.set(m.n, stop);
+        // Lines go to main in batches: one message per line would flood the channel on a busy run.
+        let batch: string[] = [];
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const flush = () => {
+          clearTimeout(timer);
+          timer = undefined;
+          if (batch.length === 0) return;
+          post({ t: 'runLines', n: m.n, lines: batch });
+          batch = [];
+        };
         run(
           { command: m.command, args: m.args },
           {
@@ -89,9 +102,20 @@ export function createPtyHost(
             timeoutMs: m.timeoutMs,
             env: m.env,
             signal: stop.signal,
+            ...(m.lines
+              ? {
+                  onLine: (line: string) => {
+                    batch.push(line);
+                    timer ??= setTimeout(flush, LINES_EVERY_MS);
+                  },
+                }
+              : {}),
           },
         )
-          .finally(() => runs.delete(m.n))
+          .finally(() => {
+            runs.delete(m.n);
+            flush();
+          })
           .then(
             (stdout) => post({ t: 'ran', n: m.n, stdout }),
             (e: unknown) => {

@@ -6,6 +6,7 @@ import {
   type DreamProposal,
   type DreamResult,
 } from '../../../shared/dreams';
+import { dreamAskKey } from '../../../shared/askProgress';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { useStore } from '../../store';
@@ -14,6 +15,7 @@ import {
   AskComposer,
   AskFailed,
   AskFoot,
+  AskStepsFold,
   AskStopped,
   AskWorking,
   tookWords,
@@ -75,6 +77,7 @@ export function DreamAsk({
   const run = result.adjusting ?? null;
   const mine = run?.proposalId === p.id;
   const go = useStore((s) => s.go);
+  const progress = useStore((s) => s.askProgress[dreamAskKey(result.repoId)]);
   // A failure an older Shellie stored on the result shows as the proposal's last row.
   const old =
     result.adjustFailed?.proposalId === p.id ? result.adjustFailed : null;
@@ -323,6 +326,7 @@ export function DreamAsk({
                           `Took ${tookWords(a.durationMs)}`,
                       ]}
                     />
+                    <AskStepsFold steps={a.steps} />
                   </>
                 )}
               </li>
@@ -342,6 +346,7 @@ export function DreamAsk({
           <AskWorking
             word="Working"
             startedAt={run.startedAt}
+            progress={progress}
             focusRef={working}
             stopOff={busy !== null}
             onStop={() =>

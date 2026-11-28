@@ -28,6 +28,8 @@ export type ToHost =
       timeoutMs: number;
       /** The whole environment, as main built it. */
       env: Record<string, string>;
+      /** The run's lines of standard output are wanted as they arrive (`runLines`). */
+      lines?: true;
     }
   /** Stops a run: its process tree is killed and the run fails with `stopped`. Ignored for a run that is done. */
   | { t: 'cancelRun'; n: number };
@@ -37,6 +39,8 @@ export type FromHost =
   | { t: 'spawnError'; n: number; message: string }
   | { t: 'data'; n: number; data: string }
   | { t: 'exit'; n: number; exitCode: unknown }
+  /** Lines a run printed since the last batch, for a run that asked (`lines`); always before its `ran` or `runError`. */
+  | { t: 'runLines'; n: number; lines: string[] }
   | { t: 'ran'; n: number; stdout: string }
   | {
       t: 'runError';

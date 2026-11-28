@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrainPageRow, BrainSourceRow } from '../../../shared/brain';
@@ -111,6 +111,46 @@ describe('BrainAnswers', () => {
       screen.getByText('Wait for this answer, or stop it'),
     ).toBeInTheDocument();
     expect(a.calls.filter((c) => c.channel === 'brain:ask')).toEqual([]);
+  });
+
+  it('shows what the agent reads and the answer as far as it is written', () => {
+    show([exchange({ status: 'running', answer: null })]);
+    act(() =>
+      useStore.getState().setAskProgress('brain:t1', {
+        steps: [{ kind: 'read', label: 'Read wiki/a.md' }],
+        earlier: 0,
+        text: 'Semi',
+      }),
+    );
+    expect(
+      screen.getByRole('list', { name: 'What the agent did' }),
+    ).toHaveTextContent('Read wiki/a.md');
+    expect(screen.getByText('Semi')).toBeInTheDocument();
+  });
+
+  it('says how many pages an answer read, with its steps behind their count', () => {
+    show([
+      exchange({
+        answer: {
+          sessionId: 's1',
+          answer: 'Semicolons.',
+          durationMs: 18_400,
+          costEur: null,
+          changed: false,
+          steps: [
+            { kind: 'read', label: 'Read wiki/a.md' },
+            { kind: 'read', label: 'Read wiki/b.md' },
+          ],
+          pagesRead: 2,
+        },
+      }),
+    ]);
+    expect(
+      screen.getByText(
+        'Took 18 s · read 2 pages · nothing was changed in the brain',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('2 steps')).toBeInTheDocument();
   });
 
   it('shows a stopped question as stopped, and asks it again in its place', async () => {

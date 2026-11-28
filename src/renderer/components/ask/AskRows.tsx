@@ -1,4 +1,6 @@
-import { type Ref, useEffect, useState } from 'react';
+import { type ReactNode, type Ref, useEffect, useState } from 'react';
+import type { AskProgress } from '../../../shared/askProgress';
+import { AskSteps } from './AskSteps';
 import { tookWords } from './askWords';
 
 /** The time since `startedAt`, counted while mounted. */
@@ -11,13 +13,18 @@ export function Elapsed({ startedAt }: { startedAt: number }) {
   return <>{tookWords(Math.max(0, now - startedAt))}</>;
 }
 
-/** A run under way: what it is doing in a word, for how long, and Stop. */
+/**
+ * A run under way: what the agent did so far (when it says), what the surface shows of the answer (`children`),
+ * then what it is doing in a word, for how long, and Stop.
+ */
 export function AskWorking({
   word,
   startedAt,
   onStop,
   stopOff = false,
   focusRef,
+  progress,
+  children,
 }: {
   word: 'Working' | 'Answering';
   startedAt: number;
@@ -25,23 +32,31 @@ export function AskWorking({
   stopOff?: boolean;
   /** Takes the focus when the run starts where the box had it. */
   focusRef?: Ref<HTMLParagraphElement>;
+  progress?: AskProgress;
+  children?: ReactNode;
 }) {
   return (
-    <div className="ask-working">
-      <span className="dot ask-working-dot" aria-hidden="true" />
-      {/* Only the word is said, once: a live region around the counting time would speak every second. */}
-      <p ref={focusRef} tabIndex={-1} className="muted small">
-        <span role="status">{word}</span> · <Elapsed startedAt={startedAt} />
-      </p>
-      <button
-        type="button"
-        className="btn btn-sm"
-        disabled={stopOff}
-        onClick={onStop}
-      >
-        Stop
-      </button>
-    </div>
+    <>
+      {progress && (
+        <AskSteps steps={progress.steps} earlier={progress.earlier} />
+      )}
+      {children}
+      <div className="ask-working">
+        <span className="dot ask-working-dot" aria-hidden="true" />
+        {/* Only the word is said, once: a live region around the counting time would speak every second. */}
+        <p ref={focusRef} tabIndex={-1} className="muted small">
+          <span role="status">{word}</span> · <Elapsed startedAt={startedAt} />
+        </p>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={stopOff}
+          onClick={onStop}
+        >
+          Stop
+        </button>
+      </div>
+    </>
   );
 }
 

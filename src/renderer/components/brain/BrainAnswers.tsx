@@ -4,6 +4,7 @@ import type {
   BrainSourceRow,
   BrainView,
 } from '../../../shared/brain';
+import { brainAskKey } from '../../../shared/askProgress';
 import { citedPaths, linkCited } from '../../../shared/brainAsk';
 import { errorMessage } from '../../../shared/errors';
 import type { SendAnswerResult } from '../../../shared/ipc';
@@ -15,6 +16,7 @@ import {
   AskComposer,
   AskFailed,
   AskFoot,
+  AskStepsFold,
   AskStopped,
   AskWorking,
   tookWords,
@@ -67,6 +69,7 @@ export function BrainAnswers({
   const setBrainAskOpen = useStore((s) => s.setBrainAskOpen);
   const setTab = useStore((s) => s.setTab);
   const go = useStore((s) => s.go);
+  const progress = useStore((s) => s.askProgress[brainAskKey(taskId)]);
   const notify = useStore((s) => s.notify);
   const { asset, openFile, lightbox } = usePageMedia(brain.id);
   const [followUp, setFollowUp] = useState('');
@@ -150,7 +153,21 @@ export function BrainAnswers({
                   word="Answering"
                   startedAt={e.startedAt}
                   onStop={() => stopBrainAsk(taskId)}
-                />
+                  progress={progress}
+                >
+                  {progress?.text && (
+                    <div className="brain-doc brain-qa-text brain-qa-coming">
+                      <MarkdownView
+                        asset={asset}
+                        path="index.md"
+                        text={progress.text}
+                        onOpenDoc={onOpen}
+                        onOpenFile={openFile}
+                        idPrefix={`${e.id}-coming-`}
+                      />
+                    </div>
+                  )}
+                </AskWorking>
               </div>
             )}
             {e.status === 'stopped' && (
@@ -236,6 +253,8 @@ export function BrainAnswers({
                   <AskFoot
                     parts={[
                       `Took ${tookWords(e.answer.durationMs)}`,
+                      e.answer.pagesRead !== undefined &&
+                        `read ${e.answer.pagesRead} ${e.answer.pagesRead === 1 ? 'page' : 'pages'}`,
                       e.answer.costEur !== null &&
                         `${eur(e.answer.costEur)} on the brain`,
                       e.answer.changed
@@ -243,6 +262,7 @@ export function BrainAnswers({
                         : 'nothing was changed in the brain',
                     ]}
                   />
+                  <AskStepsFold steps={e.answer.steps} />
                 </div>
                 {cited.length > 0 && (
                   <aside className="brain-qa-sources">

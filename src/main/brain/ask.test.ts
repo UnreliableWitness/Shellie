@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { BRAIN_JOB_TITLE } from '../../shared/brain';
 import { ASK_CAP_MESSAGE } from '../../shared/brainAsk';
 import type { Command } from '../platform/Platform';
+import type { AskProgress } from '../../shared/askProgress';
 import {
   askClaudeFlags,
   askOpencodeArgs,
@@ -26,6 +27,7 @@ const claudeOut = (result: string, id: string) =>
 
 type Call = {
   cmd: Command;
+  onLine?: (line: string) => void;
   cwd: string;
   input: string;
   timeoutMs: number;
@@ -87,6 +89,11 @@ describe('the ask flags', () => {
         '--model',
         'sonnet',
       ]),
+    );
+    // The run says what it does as it goes: a stream of events, with the text in pieces.
+    expect(f[f.indexOf('--output-format') + 1]).toBe('stream-json');
+    expect(f).toEqual(
+      expect.arrayContaining(['--verbose', '--include-partial-messages']),
     );
     expect(f).not.toContain('acceptEdits');
     expect(f).not.toContain('--resume');
@@ -221,6 +228,7 @@ describe('BrainAsks', () => {
         durationMs: 18_000,
         costEur: 0.03,
         changed: false,
+        steps: [],
       },
     });
   });
@@ -332,6 +340,103 @@ describe('BrainAsks', () => {
       message: 'The skills are out of date',
     });
     expect(calls).toHaveLength(0);
+  });
+
+  it('says what the agent does while it reads, and keeps the steps with the answer', async () => {
+    const seen: [string, AskProgress][] = [];
+    const tool = (name: string, input: unknown) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name, input }] },
+      });
+    const delta = (text: string) =>
+      JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text },
+        },
+      });
+    run = async (_c, o) => {
+      o.onLine?.(delta('Let me look.'));
+      o.onLine?.(tool('Grep', { pattern: 'export' }));
+      o.onLine?.(tool('Read', { file_path: '/brains/b1/wiki/a.md' }));
+      o.onLine?.(tool('Read', { file_path: '/brains/b1/wiki/b.md' }));
+      o.onLine?.(tool('Read', { file_path: '/brains/b1/wiki/a.md' }));
+      o.onLine?.(delta('Semi'));
+      o.onLine?.(delta('colons.'));
+      return claudeOut('Semicolons.', 's1');
+    };
+    const out = await asks({ progress: (key, p) => seen.push([key, p]) }).ask(
+      't1',
+      'b1',
+      'Why?',
+      null,
+    );
+    expect(seen.every(([key]) => key === 't1')).toBe(true);
+    expect(seen.at(-1)?.[1]).toEqual({
+      steps: [
+        { kind: 'search', label: 'Searched for “export”' },
+        { kind: 'read', label: 'Read wiki/a.md' },
+        { kind: 'read', label: 'Read wiki/b.md' },
+        { kind: 'read', label: 'Read wiki/a.md' },
+      ],
+      earlier: 0,
+      text: 'Semicolons.',
+    });
+    expect(out).toMatchObject({
+      ok: true,
+      answer: { answer: 'Semicolons.', pagesRead: 2 },
+    });
+    if (!out.ok) throw new Error('not ok');
+    expect(out.answer.steps).toHaveLength(4);
+  });
+
+  it('takes the answer from the lines when the collected output was cut before it', async () => {
+    run = async (_c, o) => {
+      o.onLine?.(claudeOut('Semicolons.', 's7'));
+      // What a run that printed more than the runner keeps looks like: the result line is not in it.
+      return '{"type":"user","message":{}}';
+    };
+    expect(await asks().ask('t1', 'b1', 'Why?', null)).toMatchObject({
+      ok: true,
+      answer: { answer: 'Semicolons.', sessionId: 's7' },
+    });
+  });
+
+  it("reads OpenCode's finished tool calls as steps", async () => {
+    const seen: AskProgress[] = [];
+    run = async (_c, o) => {
+      o.onLine?.(
+        JSON.stringify({
+          type: 'tool_use',
+          part: {
+            tool: 'read',
+            state: { status: 'completed', input: { filePath: 'wiki/a.md' } },
+          },
+        }),
+      );
+      return [
+        JSON.stringify({ type: 'step_start', sessionID: 'o1' }),
+        JSON.stringify({ type: 'text', part: { text: 'Semicolons.' } }),
+      ].join('\n');
+    };
+    const out = await asks({
+      agent: () => 'opencode',
+      progress: (_key, p) => seen.push(p),
+    }).ask('t1', 'b1', 'Why?', null);
+    expect(seen.at(-1)?.steps).toEqual([
+      { kind: 'read', label: 'Read wiki/a.md' },
+    ]);
+    expect(out).toMatchObject({ ok: true, answer: { pagesRead: 1 } });
+  });
+
+  it('answers as before when the agent says nothing readable on the way', async () => {
+    const out = await asks().ask('t1', 'b1', 'Why?', null);
+    expect(out).toMatchObject({ ok: true, answer: { sessionId: 's1' } });
+    if (!out.ok) throw new Error('not ok');
+    expect(out.answer.steps).toEqual([]);
+    expect(out.answer).not.toHaveProperty('pagesRead');
   });
 
   it('stop aborts the run and resolves Stopped', async () => {

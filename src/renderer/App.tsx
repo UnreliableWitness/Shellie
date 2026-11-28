@@ -161,6 +161,9 @@ export function App() {
         setConnections(connections);
       }),
       api().on('notice', (n) => notify(n.level, n.message)),
+      api().on('ask:progress', ({ key, ...p }) =>
+        useStore.getState().setAskProgress(key, p),
+      ),
     ];
     return () => offs.forEach((off) => off());
   }, [load, setTasks, setRepos, setConnections, notify]);

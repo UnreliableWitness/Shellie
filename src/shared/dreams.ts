@@ -316,6 +316,15 @@ export const DreamAdjustmentSchema = z.object({
   durationMs: z.number().optional(),
   /** Where the cause of a failure can be put right: the dream's settings. */
   fix: z.enum(['settings']).optional(),
+  /** What the agent did on the way, oldest first (`AskStep`), at most forty. */
+  steps: z
+    .array(
+      z.object({
+        kind: z.enum(['read', 'search', 'edit', 'write', 'other']),
+        label: z.string(),
+      }),
+    )
+    .optional(),
   /** The proposal as it was before this ask: `dream:adjustUndo` puts these back. Only when `changed`. */
   before: z
     .object({
@@ -353,6 +362,7 @@ export function endAsk(
     reason?: string;
     durationMs?: number;
     fix?: 'settings';
+    steps?: DreamAdjustment['steps'];
   },
 ): void {
   result.adjusting = null;
@@ -372,6 +382,7 @@ export function endAsk(
       ...(end.reason === undefined ? {} : { reason: end.reason }),
       ...(end.durationMs === undefined ? {} : { durationMs: end.durationMs }),
       ...(end.fix === undefined ? {} : { fix: end.fix }),
+      ...(end.steps?.length ? { steps: end.steps } : {}),
     },
   ];
 }

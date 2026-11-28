@@ -178,6 +178,34 @@ describe('PtyHostClient.run', () => {
     expect(await out).toBe('done');
   });
 
+  it('asks the host for lines only when given onLine, and hands them over until the run ends', async () => {
+    const { client, hosts } = fakeHosts();
+    const lines: string[] = [];
+    const out = client.run(
+      { command: 'opencode', args: ['run'] },
+      {
+        cwd: '/b',
+        input: 'go',
+        timeoutMs: 1000,
+        onLine: (l) => lines.push(l),
+      },
+    );
+    const [run] = hosts[0].posted;
+    expect(run).toMatchObject({ t: 'run', lines: true });
+    hosts[0].answer({ t: 'runLines', n: run.n, lines: ['a', 'b'] });
+    expect(lines).toEqual(['a', 'b']);
+    hosts[0].answer({ t: 'ran', n: run.n, stdout: 'done' });
+    await out;
+    hosts[0].answer({ t: 'runLines', n: run.n, lines: ['late'] });
+    expect(lines).toEqual(['a', 'b']);
+
+    void client.run(
+      { command: 'claude', args: [] },
+      { cwd: '/b', input: '', timeoutMs: 1000 },
+    );
+    expect(hosts[0].posted[1]).not.toHaveProperty('lines');
+  });
+
   it('gives back an ExitError and the error code as runWithInput does', async () => {
     const { client, hosts } = fakeHosts();
     const cmd = { command: 'opencode', args: [] };
