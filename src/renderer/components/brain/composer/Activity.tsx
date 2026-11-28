@@ -305,7 +305,7 @@ function ActivityLine({
       {/* A paused job runs again on Resume (Health); only a failed one is retried, never the book's: a retry would be a full sync. */}
       {failed && job && !isBookJob(job) && (
         <button type="button" className="btn btn-sm" onClick={retry}>
-          Retry
+          Try again
         </button>
       )}
       {!job && source && (

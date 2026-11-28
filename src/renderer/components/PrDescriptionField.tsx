@@ -78,7 +78,10 @@ export function PrDescriptionField({
         onChange={(e) => onChange(e.target.value)}
       />
       {draft.status === 'failed' && (
-        <div className="muted small">{`Not written: ${draft.error ?? 'unknown error'}. Type one here, or leave it empty for the commit list only.`}</div>
+        <div
+          role="alert"
+          className="text-red small"
+        >{`Not written: ${draft.error ?? 'unknown error'}. Type one here, or leave it empty for the commit list only.`}</div>
       )}
       {draft.status === 'ready' && draft.source === 'tab' && tab && (
         <div className="muted small">{`Written by ${tab.label} from this task's session.`}</div>

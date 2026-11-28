@@ -443,7 +443,7 @@ describe('SettleView: the list', () => {
       'wiki/decision-2026-11-09-endpoint.md',
     );
     await userEvent.click(
-      within(settled).getByRole('button', { name: 'Retry' }),
+      within(settled).getByRole('button', { name: 'Try again' }),
     );
     expect(calls(a, 'brain:settleRetry')).toEqual([['b1', 's2']]);
   });

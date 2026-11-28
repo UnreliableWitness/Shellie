@@ -96,7 +96,9 @@ describe('Activity', () => {
     expect(rows[0]).toHaveTextContent('new.vtt');
     expect(rows[1]).toHaveTextContent('old.vtt');
     expect(rows[0]).toHaveTextContent('agent exited 1');
-    await userEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Try again' })[0],
+    );
     expect(runs(a)).toContainEqual(['b1', 'capture', 'sources/new.vtt']);
     await userEvent.click(
       screen.getAllByRole('button', { name: 'Continue in terminal' })[0],
@@ -119,7 +121,7 @@ describe('Activity', () => {
       }),
     );
     expect(screen.getByRole('listitem')).toHaveTextContent('Opus');
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(runs(a)).toEqual([['b1', 'capture', 'sources/deck.pptx', 'opus']]);
   });
 
@@ -182,7 +184,7 @@ describe('Activity', () => {
       'daily token cap reached',
     );
     expect(screen.queryByRole('list', { name: 'Earlier' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });
 
   it('a source being captured is running, not counted as needing you', () => {
@@ -293,7 +295,7 @@ describe('Activity', () => {
       }),
     );
     expect(screen.getByText('x')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     await userEvent.click(screen.getByText('Takeaways'));
     expect(
       screen.getByText('- The SOW fixes the delivery date'),
@@ -425,7 +427,7 @@ describe('Activity', () => {
       }),
     );
     expect(screen.getByRole('listitem')).toHaveTextContent('chapter Orders');
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(a.calls).toContainEqual({
       channel: 'brain:write',
       args: ['b1', 'chapter:Orders'],

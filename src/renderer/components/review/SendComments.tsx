@@ -103,7 +103,7 @@ export function SendComments({
         type="button"
         className="btn btn-sm"
         disabled
-        title="Open a Claude Code tab first"
+        title="Open an agent tab first"
       >
         <Send16Regular aria-hidden="true" />
         {`Send ${n}`}
