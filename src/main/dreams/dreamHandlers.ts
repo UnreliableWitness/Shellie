@@ -27,6 +27,8 @@ import {
   projectsOnModel,
   type DreamingAll,
   dreamBriefing,
+  askEndedBadly,
+  endAsk,
 } from '../../shared/dreams';
 import type { Handlers } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/usage';
@@ -595,6 +597,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
     /** The folders the run may change, as the settings said when it started. */
     folders: string[];
     stop: AbortController;
+    startedAt: number;
     /** Settles once the run ended and the result says what came of it. */
     done: Promise<void>;
   };
@@ -727,6 +730,8 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       note: said.note ?? NO_NOTE,
       changed: made !== 'same',
       reverted,
+      outcome: made === 'same' ? 'answer' : 'changed',
+      durationMs: now() - a.startedAt,
       ...(made === 'same'
         ? {}
         : {
@@ -816,15 +821,16 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
       } catch (e) {
         console.error('[dreams] the dream worktree was not put back', e);
       }
-      await d.store.updateResult(repo.id, r.id, (x) => {
-        x.adjusting = null;
-        x.adjustFailed = {
-          proposalId: a.proposalId,
-          ask: a.ask,
-          ...(a.quote === undefined ? {} : { quote: a.quote }),
-          reason,
-        };
-      });
+      const stopped = outcome === 'stopped';
+      await d.store.updateResult(repo.id, r.id, (x) =>
+        endAsk(x, a, {
+          outcome: stopped ? 'stopped' : 'failed',
+          at: new Date(now()).toISOString(),
+          durationMs: now() - a.startedAt,
+          ...(stopped ? {} : { reason }),
+          ...(reason === ASK.wrongModel ? { fix: 'settings' as const } : {}),
+        }),
+      );
     } catch (e) {
       // The store could not be written: `dream:adjustStop` clears what is left of the ask.
       console.error('[dreams] an ask’s outcome could not be saved', e);
@@ -1268,6 +1274,7 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
             model: s.model,
             folders,
             stop: new AbortController(),
+            startedAt: now(),
             done: Promise.resolve(),
           };
           const prompt = adjustPrompt({
@@ -1282,9 +1289,15 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
               proposalId: a.proposalId,
               ask: a.ask,
               ...(a.quote === undefined ? {} : { quote: a.quote }),
-              startedAt: now(),
+              startedAt: a.startedAt,
             };
             x.adjustFailed = null;
+            // A run of this proposal that was stopped or could not finish: this ask takes its row's place.
+            const target = x.proposals.find((y) => y.id === p.id);
+            if (target?.adjustments)
+              target.adjustments = target.adjustments.filter(
+                (y) => !askEndedBadly(y),
+              );
           });
           asks.set(repoId, a);
           a.done = runAsk(repo, r, a, prompt);
@@ -1312,15 +1325,12 @@ export function createDreamHandlers(d: DreamHandlerDeps): DreamApi {
           const r = d.store.repo(repoId).result;
           const left = r?.adjusting;
           if (!r || !left) return;
-          await d.store.updateResult(repoId, r.id, (x) => {
-            x.adjusting = null;
-            x.adjustFailed = {
-              proposalId: left.proposalId,
-              ask: left.ask,
-              ...(left.quote === undefined ? {} : { quote: left.quote }),
-              reason: ASK.stopped,
-            };
-          });
+          await d.store.updateResult(repoId, r.id, (x) =>
+            endAsk(x, left, {
+              outcome: 'stopped',
+              at: new Date(now()).toISOString(),
+            }),
+          );
           d.broadcast();
         }),
       );

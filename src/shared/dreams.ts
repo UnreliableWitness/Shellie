@@ -304,6 +304,18 @@ export const DreamAdjustmentSchema = z.object({
   changed: z.boolean(),
   /** Paths the run changed that Shellie put back (outside the allowed folders, or another proposal's). */
   reverted: z.array(z.string()),
+  /**
+   * What came of the ask: a change, an answer, or a run that was stopped or could not finish (those two leave the
+   * proposal as it was, with an empty note). Missing in a result of before 2026-11-28: then `changed` says which
+   * of the first two.
+   */
+  outcome: z.enum(['changed', 'answer', 'stopped', 'failed']).optional(),
+  /** Why it could not finish, in a fixed phrase. Only when `failed`. */
+  reason: z.string().optional(),
+  /** How long the run took. */
+  durationMs: z.number().optional(),
+  /** Where the cause of a failure can be put right: the dream's settings. */
+  fix: z.enum(['settings']).optional(),
   /** The proposal as it was before this ask: `dream:adjustUndo` puts these back. Only when `changed`. */
   before: z
     .object({
@@ -315,6 +327,58 @@ export const DreamAdjustmentSchema = z.object({
     .optional(),
 });
 export type DreamAdjustment = z.infer<typeof DreamAdjustmentSchema>;
+
+/** An ask that is being worked on, as the result names it. */
+export type DreamAsking = {
+  proposalId: string;
+  ask: string;
+  quote?: string;
+  startedAt: number;
+};
+
+/**
+ * The result with its running ask ended without a change: the ask becomes a stopped or failed row of its
+ * proposal's own list and nothing is being worked on any more. Changes `result` in place (a store draft).
+ */
+export function endAsk(
+  result: {
+    proposals: DreamProposal[];
+    adjusting?: DreamAsking | null;
+    adjustFailed?: unknown;
+  },
+  asking: Pick<DreamAsking, 'proposalId' | 'ask' | 'quote'>,
+  end: {
+    outcome: 'stopped' | 'failed';
+    at: string;
+    reason?: string;
+    durationMs?: number;
+    fix?: 'settings';
+  },
+): void {
+  result.adjusting = null;
+  result.adjustFailed = null;
+  const target = result.proposals.find((p) => p.id === asking.proposalId);
+  if (!target) return;
+  target.adjustments = [
+    ...(target.adjustments ?? []),
+    {
+      ask: asking.ask,
+      ...(asking.quote === undefined ? {} : { quote: asking.quote }),
+      at: end.at,
+      note: '',
+      changed: false,
+      reverted: [],
+      outcome: end.outcome,
+      ...(end.reason === undefined ? {} : { reason: end.reason }),
+      ...(end.durationMs === undefined ? {} : { durationMs: end.durationMs }),
+      ...(end.fix === undefined ? {} : { fix: end.fix }),
+    },
+  ];
+}
+
+/** A row of a run that ended without a change: the next ask about the proposal takes its place. */
+export const askEndedBadly = (a: DreamAdjustment): boolean =>
+  a.outcome === 'stopped' || a.outcome === 'failed';
 
 export const DreamProposalSchema = z.object({
   id: z.string(),

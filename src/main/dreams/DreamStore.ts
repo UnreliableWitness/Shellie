@@ -12,6 +12,7 @@ import {
   type DreamResult,
   type DreamSighting,
   type DreamSwitchedOff,
+  endAsk,
 } from '../../shared/dreams';
 import { JsonFileStore } from '../usage/JsonFileStore';
 
@@ -177,13 +178,11 @@ export class DreamStore {
       for (const r of Object.values(f.repos)) {
         const a = r.result?.adjusting;
         if (!r.result || !a) continue;
-        r.result.adjusting = null;
-        r.result.adjustFailed = {
-          proposalId: a.proposalId,
-          ask: a.ask,
-          ...(a.quote === undefined ? {} : { quote: a.quote }),
+        endAsk(r.result, a, {
+          outcome: 'failed',
+          at: new Date().toISOString(),
           reason,
-        };
+        });
       }
     });
   }
