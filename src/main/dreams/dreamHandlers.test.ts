@@ -2158,11 +2158,8 @@ describe('asking for a change to a proposal', () => {
           why: p.why,
         },
         stat: [
-          {
-            path: '.apm/rules/b.md',
-            added: expect.any(Number),
-            removed: expect.any(Number),
-          },
+          { path: '.apm/rules/b-example.md', added: 1, removed: 0 },
+          { path: '.apm/rules/b.md', added: 1, removed: 1 },
         ],
       },
     ]);
