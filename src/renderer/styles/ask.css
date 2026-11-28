@@ -1,0 +1,110 @@
+/* The ask, the same on a dream's proposal and in a brain's answers (components/ask). */
+.ask-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg-chrome);
+}
+.ask-box:focus-within {
+  border-color: var(--accent);
+}
+.ask-box p {
+  margin: 0;
+}
+.ask-box-text {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+}
+.ask-box-text::placeholder {
+  color: var(--muted);
+}
+.ask-box-text:disabled {
+  color: var(--disabled);
+}
+.ask-box-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ask-box-foot > span {
+  min-width: 0;
+}
+.ask-box-foot > .btn {
+  flex: none;
+  margin-left: auto;
+}
+.ask-chip {
+  align-self: flex-start;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 2px 1px 8px;
+  border-radius: 4px;
+  background: var(--bg-selected);
+}
+/* A quoted selection, on one line. */
+.ask-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ask-chip-x {
+  width: 24px;
+  height: 24px;
+  color: inherit;
+}
+.ask-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ask-working p {
+  flex: 1;
+  margin: 0;
+}
+.ask-working p:focus {
+  outline: none;
+}
+.ask-working-dot {
+  background: var(--link);
+}
+.ask-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.ask-strip p {
+  margin: 0;
+}
+.ask-strip.is-failed {
+  border-color: var(--red);
+}
+.ask-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ask-foot {
+  margin: 0;
+}
