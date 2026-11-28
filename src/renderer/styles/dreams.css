@@ -637,6 +637,11 @@
 .dream-ask p {
   margin: 0;
 }
+/* The ask being worked on: a long one scrolls in its own few lines and does not grow the foot over the proposal. */
+.dream-ask-running {
+  max-height: 9em;
+  overflow-y: auto;
+}
 .dream-ask-earlier {
   align-self: flex-start;
 }

@@ -29,8 +29,9 @@ export function AskWorking({
   return (
     <div className="ask-working">
       <span className="dot ask-working-dot" aria-hidden="true" />
-      <p ref={focusRef} tabIndex={-1} role="status" className="muted small">
-        {word} · <Elapsed startedAt={startedAt} />
+      {/* Only the word is said, once: a live region around the counting time would speak every second. */}
+      <p ref={focusRef} tabIndex={-1} className="muted small">
+        <span role="status">{word}</span> · <Elapsed startedAt={startedAt} />
       </p>
       <button
         type="button"

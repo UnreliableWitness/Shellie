@@ -19,11 +19,14 @@ describe('AskWorking', () => {
         onStop={onStop}
       />,
     );
-    expect(screen.getByRole('status')).toHaveTextContent('Answering · 11 s');
+    const row = () => screen.getByRole('status').closest('p');
+    expect(row()).toHaveTextContent('Answering · 11 s');
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    expect(screen.getByRole('status')).toHaveTextContent('Answering · 13 s');
+    expect(row()).toHaveTextContent('Answering · 13 s');
+    // Said once when the run starts: the counting time is not in the live region.
+    expect(screen.getByRole('status')).toHaveTextContent(/^Answering$/);
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(onStop).toHaveBeenCalledTimes(1);
   });

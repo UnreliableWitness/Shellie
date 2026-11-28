@@ -815,6 +815,8 @@
   font-size: 20px;
   line-height: 28px;
   font-weight: 600;
+  /* A pasted word without spaces wraps instead of widening the tab. */
+  overflow-wrap: anywhere;
 }
 /* A question that is being answered, was stopped or could not finish (components/ask). */
 .brain-qa-state {

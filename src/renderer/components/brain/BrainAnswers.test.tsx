@@ -94,7 +94,9 @@ describe('BrainAnswers', () => {
     expect(
       screen.getByRole('heading', { name: 'What was decided?' }),
     ).toBeTruthy();
-    expect(screen.getByRole('status')).toHaveTextContent(/^Answering · /);
+    expect(screen.getByRole('status').closest('p')).toHaveTextContent(
+      /^Answering · /,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(a.calls).toContainEqual({ channel: 'brain:askStop', args: ['t1'] });
   });

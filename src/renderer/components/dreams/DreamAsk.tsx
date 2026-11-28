@@ -321,7 +321,7 @@ export function DreamAsk({
         </ol>
       )}
       {mine && run && (
-        <div className="dream-asked">
+        <div className="dream-asked dream-ask-running">
           <p>
             <span className="muted">You: </span>
             {run.ask}

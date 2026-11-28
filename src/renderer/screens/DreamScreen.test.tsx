@@ -843,7 +843,7 @@ describe('DreamScreen: asking for a change', () => {
   const foot = () => screen.getByRole('group', { name: 'Ask for a change' });
   const said = () =>
     within(foot()).getByRole('status', { name: 'What the ask came to' });
-  const working = () => within(foot()).getByText(/^(Working) · /);
+  const working = () => within(foot()).getByText('Working').closest('p')!;
   const adjustment = (
     ask: string,
     note: string,
