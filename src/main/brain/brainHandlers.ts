@@ -61,7 +61,7 @@ import {
 } from './share/keeper';
 import { unsentCount } from './share/gitUtil';
 import { joinLink, NEWER_SHELLIE, repoJoinLink } from '../../shared/brainShare';
-import { brainActivity } from './activity';
+import { brainActivity, forgetBrainActivity } from './activity';
 import { getInstallId } from '../installId';
 import { INDEX_MESSAGE, VERIFIED_PREFIX } from './brainCommits';
 import type { BrainStore } from './BrainStore';
@@ -512,6 +512,7 @@ export function createBrainHandlers(
     if (b.terminal) await d.terminals?.kill(b.terminal.id);
     // Queued jobs of the brain stay in the runner; they fail on the missing folder or brain.
     await d.brains.remove(id);
+    forgetBrainActivity(b.path);
     if (deleteFolder) await fs.rm(b.path, { recursive: true, force: true });
     d.event('brain.deleted', { folder: deleteFolder });
     changed(id);

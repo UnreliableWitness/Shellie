@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activityText } from '../../shared/brainShare';
 import { GitClient } from '../services/GitClient';
-import { brainActivity } from './activity';
+import { brainActivity, forgetBrainActivity } from './activity';
 import {
   INDEX_MESSAGE,
   JOIN_MESSAGE,
@@ -116,5 +116,33 @@ describe('brainActivity', () => {
     const [e] = await brainActivity(git, dir, { installId: 'me' });
     expect(e.pages).toHaveLength(6);
     expect(e.morePages).toBe(3);
+  });
+
+  it('reads the log again only when HEAD moved or the person reading changed', async () => {
+    await commit('Brain: add source a.md', { 'sources/a.md': 'a' }, anna);
+    const run = vi.spyOn(git, 'run');
+    const logs = () =>
+      run.mock.calls.filter(([, args]) => args.includes('log')).length;
+    const first = await brainActivity(git, dir, { installId: 'her' });
+    const again = await brainActivity(git, dir, { installId: 'her' });
+    expect(logs()).toBe(1);
+    expect(again).toEqual(first);
+    // What a caller does to its list does not reach the kept one.
+    again.pop();
+    expect(await brainActivity(git, dir, { installId: 'her' })).toEqual(first);
+    expect(logs()).toBe(1);
+
+    expect((await lines('me'))[0]).toBe('Anna added a.md');
+    expect((await lines(null))[0]).toBe('You added a.md');
+    expect(logs()).toBe(3);
+
+    await commit('Brain: add source b.md', { 'sources/b.md': 'b' }, anna);
+    expect((await lines(null))[0]).toBe('You added b.md');
+    expect(logs()).toBe(4);
+
+    forgetBrainActivity(dir);
+    await lines(null);
+    expect(logs()).toBe(5);
+    run.mockRestore();
   });
 });
