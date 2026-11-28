@@ -229,6 +229,7 @@ describe('BrainAsks', () => {
         costEur: 0.03,
         changed: false,
         steps: [],
+        agent: 'claude',
       },
     });
   });
