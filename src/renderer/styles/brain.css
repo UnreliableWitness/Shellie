@@ -799,7 +799,55 @@
 .brain-qas-bar {
   display: flex;
   align-items: center;
+  gap: 12px;
   min-height: 28px;
+}
+.brain-qas-bar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* "Earlier questions (n)" and the list it opens, under the link. */
+.brain-qa-earlier {
+  position: relative;
+}
+.brain-qa-earlier > ul {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(420px, 70vw);
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow-1);
+}
+.brain-qa-earlier-row {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.brain-qa-earlier-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.brain-qa-earlier-row > .muted {
+  flex: none;
 }
 .brain-qa {
   display: flex;

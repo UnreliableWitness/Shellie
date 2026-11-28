@@ -8,6 +8,10 @@ export type BrainAction =
   | 'lint'
   | 'digest'
   | 'ask'
+  /** A new question started, an earlier thread got back, the Ask view chosen on the brain's page. */
+  | 'ask-new'
+  | 'ask-earlier'
+  | 'view-ask'
   | 'drop'
   /** The dropped files sent in, with their types and notes. */
   | 'add'

@@ -139,7 +139,7 @@ describe('BrainTab', () => {
     await userEvent.click(within(ask).getByRole('button', { name: 'Ask' }));
     expect(a.calls).toContainEqual({
       channel: 'brain:ask',
-      args: ['b1', 't1', 'What was decided?', null],
+      args: ['b1', 't1', 'What was decided?', null, 't1', null],
     });
     expect(await screen.findByText('Semicolons.')).toBeTruthy();
     expect(
@@ -179,7 +179,7 @@ describe('BrainTab', () => {
     );
     expect(a.calls).toContainEqual({
       channel: 'brain:ask',
-      args: ['b1', 't1', ASK_SUGGESTIONS[1], null],
+      args: ['b1', 't1', ASK_SUGGESTIONS[1], null, 't1', null],
     });
   });
 
