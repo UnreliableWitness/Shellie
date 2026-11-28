@@ -337,6 +337,34 @@ describe('DoneTaskPage', () => {
     ).toBe(false);
   });
 
+  it('says Shellie stopped when another worktree holds the branch (#400)', () => {
+    installFakeApi({ 'workItems:get': () => null });
+    render(
+      <DoneTaskPage
+        task={{
+          ...task,
+          pendingCleanup: [
+            {
+              workspaceId: 'home',
+              repoPath: '/r',
+              worktreePath: '/w/a',
+              branch: task.branch,
+              since: finished.toISOString(),
+              attempts: 2,
+              error: "cannot delete branch 'x' used by worktree at '/w/b'",
+              code: 'branch-in-use',
+              notified: true,
+              final: true,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByRole('status', { name: 'Cleanup' })).toHaveTextContent(
+      'Shellie stopped trying to delete the branch: another worktree still has it checked out.',
+    );
+  });
+
   it('shows no cleanup status when everything was removed', () => {
     installFakeApi({ 'workItems:get': () => null });
     render(<DoneTaskPage task={task} />);

@@ -1,4 +1,12 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type {
@@ -14,6 +22,7 @@ import {
 } from '../test-helpers/gitRepo';
 import { GitClient, GitError } from './GitClient';
 import {
+  BRANCH_IN_USE_ATTEMPTS,
   cleanupErrorCode,
   GIVE_UP_MS,
   removeWorkspace,
@@ -206,6 +215,67 @@ describe('removeWorkspace', () => {
     expect(f.branches.has('feature/x')).toBe(true);
   });
 
+  it('frees its own worktree when git lists it under a link to the same folder (#400)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'shellie-cleanup-'));
+    const real = path.join(dir, 'real');
+    const link = path.join(dir, 'link');
+    mkdirSync(real);
+    symlinkSync(real, link, 'junction');
+    try {
+      const f = fakeGit();
+      f.branches.add('feature/x');
+      f.worktrees.push(
+        { path: '/repo', branch: 'main' },
+        { path: real, branch: 'feature/x' },
+      );
+      f.blocked.set('feature/x', { path: real, error: usedByWorktree(real) });
+      const left = await removeWorkspace(
+        f.git,
+        { ...ws, worktreePath: link },
+        { exists: f.exists, now: () => T0 },
+      );
+      expect(left).toBeNull();
+      expect(f.calls).toContain(`remove ${real}`);
+      expect(f.branches.has('feature/x')).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks it final when another worktree that is there holds the branch (#400)', async () => {
+    const f = fakeGit();
+    f.branches.add('feature/x');
+    f.folders.add('/other');
+    f.worktrees.push(
+      { path: '/repo', branch: 'main' },
+      { path: '/other', branch: 'feature/x' },
+    );
+    f.blocked.set('feature/x', {
+      path: '/other',
+      error: usedByWorktree('/other'),
+    });
+    const left = await removeWorkspace(f.git, ws, {
+      exists: f.exists,
+      now: () => T0,
+    });
+    expect(left).toMatchObject({ code: 'branch-in-use', final: true });
+  });
+
+  it('keeps retrying when the holder is not listed', async () => {
+    const f = fakeGit();
+    f.branches.add('feature/x');
+    f.blocked.set('feature/x', {
+      path: '/other',
+      error: usedByWorktree('/other'),
+    });
+    const left = await removeWorkspace(f.git, ws, {
+      exists: f.exists,
+      now: () => T0,
+    });
+    expect(left).toMatchObject({ code: 'branch-in-use' });
+    expect(left?.final).toBeUndefined();
+  });
+
   it('still deletes uncommitted files and unpushed commits: the user chose that at Finish or Discard (#244)', async () => {
     const repo = makeRepo();
     const wt = path.join(path.dirname(repo), 'wt');
@@ -329,6 +399,71 @@ describe('WorktreeCleanup', () => {
     h.tasks[0].status = 'ready';
     await h.cleanup.retryAll();
     expect(h.f.calls).toEqual([]);
+  });
+
+  it('stops retrying a branch another worktree holds, with one notice (#400)', async () => {
+    const h = harness(
+      doneTask([entry({ code: 'branch-in-use' })]),
+      () => T0 + 60_000,
+    );
+    h.f.branches.add('feature/x');
+    h.f.folders.add('/other');
+    h.f.worktrees.push({ path: '/other', branch: 'feature/x' });
+    h.f.blocked.set('feature/x', {
+      path: '/other',
+      error: usedByWorktree('/other'),
+    });
+    await h.cleanup.retryAll();
+    expect(h.tasks[0].pendingCleanup[0]).toMatchObject({
+      attempts: 2,
+      final: true,
+      notified: true,
+    });
+    h.f.calls.length = 0;
+    await h.cleanup.retryAll();
+    await h.cleanup.retryAll();
+    expect(h.f.calls).toEqual([]);
+    expect(h.f.folders.has('/other')).toBe(true);
+    expect(h.notices).toHaveLength(1);
+    expect(h.notices[0]).toContain('feature/x');
+    expect(h.events).toEqual([
+      {
+        name: 'cleanup.gaveUp',
+        props: { code: 'branch-in-use', reason: 'other-worktree' },
+        m: { attempts: 2 },
+      },
+    ]);
+    // Retry now on the Done page still tries it.
+    expect(await h.cleanup.retryTask('t1')).toBe(false);
+    expect(h.f.calls).toContain('branch -D feature/x');
+    expect(h.notices).toHaveLength(1);
+  });
+
+  it('gives up on a branch an unlisted worktree holds after a few attempts (#400)', async () => {
+    const h = harness(
+      doneTask([entry({ code: 'branch-in-use' })]),
+      () => T0 + 60_000,
+    );
+    h.f.branches.add('feature/x');
+    h.f.blocked.set('feature/x', {
+      path: '/gone',
+      error: usedByWorktree('/gone'),
+    });
+    for (let i = 0; i < BRANCH_IN_USE_ATTEMPTS + 3; i++)
+      await h.cleanup.retryAll();
+    expect(h.tasks[0].pendingCleanup[0]).toMatchObject({
+      attempts: BRANCH_IN_USE_ATTEMPTS,
+      final: true,
+      notified: true,
+    });
+    expect(h.notices).toHaveLength(1);
+    expect(h.events).toEqual([
+      {
+        name: 'cleanup.gaveUp',
+        props: { code: 'branch-in-use', reason: 'attempts' },
+        m: { attempts: BRANCH_IN_USE_ATTEMPTS },
+      },
+    ]);
   });
 
   it('retries one task on demand and says whether anything is left', async () => {

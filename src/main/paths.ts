@@ -35,6 +35,19 @@ export function samePath(a: string, b: string): boolean {
     : x === y;
 }
 
+/**
+ * `samePath`, or the same folder once both resolve through links (a junction, /var and /private/var, an 8.3 name
+ * on Windows). A path that does not resolve falls back to `samePath`.
+ */
+export function sameFolder(a: string, b: string): boolean {
+  if (samePath(a, b)) return true;
+  try {
+    return samePath(realpathSync.native(a), realpathSync.native(b));
+  } catch {
+    return false;
+  }
+}
+
 /** True when `target` is `root` or inside it; Windows paths compare case-insensitively. */
 export function isInside(
   root: string,
