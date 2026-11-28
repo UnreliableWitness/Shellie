@@ -1009,8 +1009,13 @@ export type Channels = {
   };
   /** Stops the ask being worked on; the proposal stays as it was. */
   'dream:adjustStop': { args: [repoId: string]; result: void };
-  /** Takes back the proposal's latest ask that changed it (and the answers after it). */
+  /** Takes back the proposal's newest change that is not undone; its row stays, marked. */
   'dream:adjustUndo': {
+    args: [repoId: string, proposalId: string];
+    result: void;
+  };
+  /** Puts back the oldest undone change of the proposal that still can be. */
+  'dream:adjustRedo': {
     args: [repoId: string, proposalId: string];
     result: void;
   };
@@ -1057,7 +1062,8 @@ export type Channels = {
    * (`DreamFileDiff`); read from the repo's git objects, so also once the dream worktree is gone.
    */
   'dream:diff': {
-    args: [repoId: string, proposalId: string];
+    /** With `askAt` (an ask's `at`): only what that ask changed. */
+    args: [repoId: string, proposalId: string, askAt?: string];
     result: DreamFileDiff[];
   };
   /** Both texts of one file the proposal's commit changes (exactly as git lists it), for the full diff. */

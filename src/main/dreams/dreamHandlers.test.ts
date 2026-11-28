@@ -2151,6 +2151,16 @@ describe('asking for a change to a proposal', () => {
           title: 'Rule 2',
           why: 'Why 2',
         },
+        after: {
+          commit: p.commit,
+          files: p.files,
+          title: p.title,
+          why: p.why,
+        },
+        stat: [
+          { path: '.apm/rules/b-example.md', added: 1, removed: 0 },
+          { path: '.apm/rules/b.md', added: 1, removed: 1 },
+        ],
       },
     ]);
     expect(result().adjusting ?? null).toBeNull();
@@ -2238,14 +2248,14 @@ describe('asking for a change to a proposal', () => {
     await ask(api());
     const p = p2();
     expect(p.files).toEqual(['.apm/rules/b.md']);
-    // A title too long and an empty reason are not taken; a long note is cut.
+    // A title too long and an empty reason are not taken; a note of 1 200 characters is kept whole.
     expect(p.title).toBe('Rule 2');
     expect(p.why).toBe('Why 2');
     expect(p.adjustments![0]).toMatchObject({
       changed: true,
       reverted: ['.apm/hooks/run.sh', '.apm/rules/a.md', 'outside.md'],
     });
-    expect(p.adjustments![0].note).toHaveLength(1000);
+    expect(p.adjustments![0].note).toHaveLength(1200);
     expect(dirty(r.worktreePath)).toBe('');
     expect(
       readFileSync(path.join(r.worktreePath, '.apm/rules/a.md'), 'utf8'),
@@ -2451,7 +2461,11 @@ describe('asking for a change to a proposal', () => {
       'stopped',
     ]);
     await a.handlers['dream:adjustUndo']('r1', 'p2');
-    expect(p2()).toEqual({ ...r.proposals[1], adjustments: [] });
+    expect(p2().commit).toBe(r.proposals[1].commit);
+    expect(p2().adjustments!.map((x) => x.undone === true)).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it('Stop clears an ask the result still names when no run is under way', async () => {
@@ -2465,9 +2479,11 @@ describe('asking for a change to a proposal', () => {
     expect(changed()).toBe(1);
   });
 
-  it('Undo takes back the latest change and the answers after it', async () => {
+  it('Undo takes back the latest change and keeps every row; Redo puts it back', async () => {
     const r = await dreamWithThree();
     const a = api();
+    const file = () =>
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8');
     agent((wt, data) => {
       writeFileSync(path.join(wt, '.apm/rules/b.md'), 'first change\n');
       note(data, { title: 'First', why: 'Why first', note: 'Changed once.' });
@@ -2479,40 +2495,148 @@ describe('asking for a change to a proposal', () => {
       note(data, { title: 'Second', note: 'Changed twice.' });
     });
     await ask(a, 'two');
+    const second = p2();
     agent((_wt, data) => note(data, { note: 'An answer.' }));
     await ask(a, 'three?');
-    expect(p2().adjustments!.map((x) => x.changed)).toEqual([
-      true,
-      true,
-      false,
-    ]);
     expect(p2().adjustments!.map((x) => x.outcome)).toEqual([
       'changed',
       'changed',
       'answer',
     ]);
     expect(p2().adjustments![0].durationMs).toEqual(expect.any(Number));
+    // Each change knows what it left and which lines it touched.
+    expect(p2().adjustments![1].after).toEqual({
+      commit: second.commit,
+      files: second.files,
+      title: 'Second',
+      why: second.why,
+    });
+    expect(p2().adjustments![1].stat).toEqual([
+      { path: '.apm/rules/b.md', added: 1, removed: 1 },
+    ]);
+    const undoneOf = () => p2().adjustments!.map((x) => x.undone === true);
 
     vi.mocked(deps.broadcast).mockClear();
     await a.handlers['dream:adjustUndo']('r1', 'p2');
     expect(changed()).toBe(1);
-    expect(p2()).toEqual(first);
-    expect(
-      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
-    ).toBe('first change\n');
+    expect(undoneOf()).toEqual([false, true, false]);
+    expect(p2()).toMatchObject({ commit: first.commit, title: 'First' });
+    expect(file()).toBe('first change\n');
     expect(dirty(r.worktreePath)).toBe('');
 
     await a.handlers['dream:adjustUndo']('r1', 'p2');
-    expect(p2()).toEqual({ ...r.proposals[1], adjustments: [] });
-    expect(
-      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
-    ).toBe('rule 2\n');
+    expect(undoneOf()).toEqual([true, true, false]);
+    expect(p2()).toMatchObject({
+      commit: r.proposals[1].commit,
+      title: r.proposals[1].title,
+    });
+    expect(file()).toBe('rule 2\n');
     await expect(a.handlers['dream:adjustUndo']('r1', 'p2')).rejects.toThrow(
       'This proposal has no change to take back',
     );
     await expect(a.handlers['dream:adjustUndo']('r1', 'p9')).rejects.toThrow(
       'This dream has no such proposal',
     );
+
+    // Redo: the oldest undone change first.
+    await a.handlers['dream:adjustRedo']('r1', 'p2');
+    expect(undoneOf()).toEqual([false, true, false]);
+    expect(p2()).toMatchObject({ commit: first.commit, title: 'First' });
+    expect(file()).toBe('first change\n');
+    await a.handlers['dream:adjustRedo']('r1', 'p2');
+    expect(undoneOf()).toEqual([false, false, false]);
+    expect(p2()).toMatchObject({ commit: second.commit, title: 'Second' });
+    expect(file()).toBe('second change\n');
+    await expect(a.handlers['dream:adjustRedo']('r1', 'p2')).rejects.toThrow(
+      'This proposal has no change to put back',
+    );
+  });
+
+  it('a new change makes what was undone before it unredoable, and Undo takes the new one back', async () => {
+    const r = await dreamWithThree();
+    const a = api();
+    const change = (text: string) =>
+      agent((wt, data) => {
+        writeFileSync(path.join(wt, '.apm/rules/b.md'), `${text}\n`);
+        note(data, { note: `Wrote ${text}.` });
+      });
+    change('one');
+    await ask(a, 'one');
+    change('two');
+    await ask(a, 'two');
+    await a.handlers['dream:adjustUndo']('r1', 'p2');
+    change('three');
+    await ask(a, 'three');
+    expect(
+      p2().adjustments!.map((x) => [x.undone === true, x.spent === true]),
+    ).toEqual([
+      [false, false],
+      [true, true],
+      [false, false],
+    ]);
+    await expect(a.handlers['dream:adjustRedo']('r1', 'p2')).rejects.toThrow(
+      'This proposal has no change to put back',
+    );
+    await a.handlers['dream:adjustUndo']('r1', 'p2');
+    expect(
+      readFileSync(path.join(r.worktreePath, '.apm/rules/b.md'), 'utf8'),
+    ).toBe('one\n');
+  });
+
+  it('tells the agent what was asked before about the proposal, as history', async () => {
+    await dreamWithThree();
+    const a = api();
+    const prompts: string[] = [];
+    const answer = (text: string) =>
+      agent((_wt, data, o) => {
+        prompts.push(o.input);
+        note(data, { note: text });
+      });
+    answer('It is about the build step.');
+    await ask(a, 'what is this about?');
+    answer('Yes.');
+    await ask(a, 'and is it still true?');
+    expect(prompts[0]).not.toContain('asked before');
+    expect(prompts[1]).toContain(
+      'What the developer asked before about this proposal',
+    );
+    expect(prompts[1]).toContain('what is this about?');
+    expect(prompts[1]).toContain('It is about the build step.');
+    // The one instruction is still the new ask.
+    expect(prompts[1]).toMatch(/<ask>\s*and is it still true\?\s*<\/ask>/);
+  });
+
+  it("gives one ask's own change as a diff, and the whole proposal's without it", async () => {
+    await dreamWithThree();
+    const a = api();
+    agent((wt, data) => {
+      writeFileSync(
+        path.join(wt, '.apm/rules/b.md'),
+        'rule 2\nand an example\n',
+      );
+      note(data, { note: 'Added an example.' });
+    });
+    await ask(a, 'add an example');
+    const at = p2().adjustments![0].at;
+    const whole = await a.handlers['dream:diff']('r1', 'p2');
+    const own = await a.handlers['dream:diff']('r1', 'p2', at);
+    const lines = (d: typeof whole) =>
+      d
+        .flatMap((f) => f.hunks.flatMap((h) => h.lines))
+        .map((l) => `${l.kind}:${l.text}`);
+    // The whole proposal adds the file; the ask only its second line.
+    expect(lines(whole)).toEqual(['add:rule 2', 'add:and an example']);
+    expect(lines(own)).toEqual(['context:rule 2', 'add:and an example']);
+    await expect(
+      a.handlers['dream:diff']('r1', 'p2', 'no such ask'),
+    ).rejects.toThrow('The changes could not be read');
+  });
+
+  it('keeps a long note, up to 8 000 characters', async () => {
+    await dreamWithThree();
+    agent((_wt, data) => note(data, { note: 'x'.repeat(9000) }));
+    await ask(api());
+    expect(lastAsk()?.note).toHaveLength(8000);
   });
 
   it('refuses a dropped or unknown proposal, an empty or too long ask, and a dream whose worktree is gone', async () => {

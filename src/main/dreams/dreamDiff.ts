@@ -44,10 +44,11 @@ const reader =
 
 const absent = (blob: string) => /^0+$/.test(blob);
 
-/** Every file `commit` changes against its parent, as git lists it (exact paths, no renames). */
+/** Every file `commit` changes against its parent (or against `from`), as git lists it (exact paths, no renames). */
 async function changedFiles(
   run: (args: string[]) => Promise<string>,
   commit: string,
+  from?: string,
 ): Promise<Entry[]> {
   const tree = (format: string) =>
     run([
@@ -59,6 +60,7 @@ async function changedFiles(
       '--no-ext-diff',
       '--no-textconv',
       format,
+      ...(from ? [from] : []),
       commit,
     ]);
   const counts = new Map<string, Entry['counts']>();
@@ -174,9 +176,11 @@ export async function proposalDiff(
   repoPath: string,
   config: string[],
   commit: string,
+  /** Another commit to compare with in place of the parent: what one ask changed. */
+  from?: string,
 ): Promise<DreamFileDiff[]> {
   const run = reader(git, repoPath, config);
-  const entries = (await changedFiles(run, commit)).slice(0, MAX_FILES);
+  const entries = (await changedFiles(run, commit, from)).slice(0, MAX_FILES);
   const files: DreamFileDiff[] = [];
   let budget = MAX_ANSWER - RESERVE;
   // One file after another: never a burst of git processes.
@@ -207,6 +211,7 @@ export async function proposalDiff(
         '--no-ext-diff',
         '--no-textconv',
         '--no-color',
+        ...(from ? [from] : []),
         commit,
         '--',
         e.path,

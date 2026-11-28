@@ -264,13 +264,31 @@ export const KIND_LABEL: Record<DreamProposalKind, string> = {
  */
 export function proposalLine(
   p: Pick<DreamProposal, 'kind' | 'dropped' | 'evidence' | 'adjustments'>,
+  /** An ask about the proposal is being worked on. */
+  working = false,
 ): string {
   if (p.dropped) return 'Dropped';
   const tasks = new Set(p.evidence.map((e) => e.taskId)).size;
+  const asks = p.adjustments ?? [];
+  // The changes that stand (not taken back), and the questions that were answered.
+  const changes = asks.filter((a) => a.changed && !a.undone).length;
+  const answers = asks.filter(
+    (a) => !a.changed && a.outcome !== 'stopped' && a.outcome !== 'failed',
+  ).length;
   return [
     KIND_LABEL[p.kind],
     ...(tasks > 0 ? [`seen in ${plural(tasks, 'task')}`] : []),
-    ...(p.adjustments?.some((a) => a.changed) ? ['changed'] : []),
+    ...(changes === 0
+      ? []
+      : [
+          changes === 1
+            ? 'changed'
+            : changes === 2
+              ? 'changed twice'
+              : `changed ${changes} times`,
+        ]),
+    ...(answers > 0 ? [plural(answers, 'answer')] : []),
+    ...(working ? ['working'] : []),
   ].join(' · ');
 }
 

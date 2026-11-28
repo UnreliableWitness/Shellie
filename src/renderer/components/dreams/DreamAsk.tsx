@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   DREAM_ASK_MAX,
   DREAM_QUOTE_MAX,
+  redoAt,
+  undoAt,
   type DreamAdjustment,
   type DreamProposal,
   type DreamResult,
@@ -10,6 +12,7 @@ import { dreamAskKey } from '../../../shared/askProgress';
 import { errorMessage } from '../../../shared/errors';
 import { api } from '../../api';
 import { useStore } from '../../store';
+import { MarkdownView } from '../docs/MarkdownView';
 import {
   ASK_HINT,
   AskComposer,
@@ -24,6 +27,14 @@ import {
 /** An ask as it is being written: the text and the lines it is about. */
 export type AskDraft = { text: string; quote: string | null };
 export const NO_DRAFT: AskDraft = { text: '', quote: null };
+
+/** A note has no pictures of its own, and its links lead nowhere in the app. */
+const NO_ASSET = () => Promise.reject(new Error('no pictures in a note'));
+const NOTHING = () => undefined;
+
+/** A note as it is said to a screen reader when the run ends: its start, not all 8 000 characters. */
+const spoken = (note: string) =>
+  note.length > 200 ? `${note.slice(0, 199)}…` : note;
 
 /** How many asks show before "Earlier asks" opens the rest. */
 const SHOWN = 3;
@@ -55,6 +66,8 @@ export function DreamAsk({
   draft,
   onDraft,
   scope,
+  shownAsk,
+  onShowAsk,
 }: {
   result: DreamResult;
   proposal: DreamProposal;
@@ -62,6 +75,9 @@ export function DreamAsk({
   onDraft: (update: (d: AskDraft) => AskDraft) => void;
   /** Where selected text counts as what an ask is about: the proposal's pane. */
   scope: RefObject<HTMLElement | null>;
+  /** The ask (its `at`) whose own change the pane shows; null for the whole proposal. */
+  shownAsk: string | null;
+  onShowAsk: (at: string) => void;
 }) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -138,9 +154,9 @@ export function DreamAsk({
       !last
         ? ''
         : end === 'changed'
-          ? `Changed: ${last.note}`
+          ? `Changed: ${spoken(last.note)}`
           : end === 'answer'
-            ? `Answer: ${last.note}`
+            ? `Answer: ${spoken(last.note)}`
             : end === 'stopped'
               ? 'Stopped'
               : `Could not finish: ${last.reason ?? ''}`,
@@ -224,6 +240,12 @@ export function DreamAsk({
   };
   const againOff = run !== null || busy !== null || p.dropped;
 
+  const redo = () =>
+    call('redo', async () => {
+      await api().invoke('dream:adjustRedo', result.repoId, p.id);
+      setSaid('The change was put back');
+      box.current?.focus({ preventScroll: true });
+    });
   const undo = () =>
     call('undo', async () => {
       await api().invoke('dream:adjustUndo', result.repoId, p.id);
@@ -232,10 +254,9 @@ export function DreamAsk({
     });
 
   // The newest ask that changed the proposal is the one Undo takes back.
-  let undoAt = -1;
-  asks.forEach((a, i) => {
-    if (a.changed) undoAt = i;
-  });
+  // Undo takes back the newest change that stands; Redo puts back the oldest that was taken back.
+  const undoIndex = undoAt(asks);
+  const redoIndex = redoAt(asks);
   const hidden = Math.max(0, asks.length - SHOWN);
   const first = earlier ? 0 : hidden;
 
@@ -266,7 +287,10 @@ export function DreamAsk({
             const i = first + k;
             const end = outcomeOf(a);
             return (
-              <li key={`${a.at}-${i}`} className="dream-asked">
+              <li
+                key={`${a.at}-${i}`}
+                className={a.undone ? 'dream-asked is-undone' : 'dream-asked'}
+              >
                 <p id={`${id}-ask-${i}`}>
                   <span className="muted">You: </span>
                   {a.ask}
@@ -296,25 +320,80 @@ export function DreamAsk({
                   />
                 ) : (
                   <>
-                    <p className="dream-asked-note">
-                      <span>
-                        <span className="muted">
-                          {end === 'changed' ? 'Changed: ' : 'Answer: '}
-                        </span>
-                        {a.note}
-                      </span>
-                      {i === undoAt && (
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          aria-describedby={`${id}-ask-${i}`}
-                          disabled={run !== null || busy !== null || p.dropped}
-                          onClick={() => void undo()}
-                        >
-                          Undo
-                        </button>
-                      )}
+                    <p className="muted small dream-asked-label">
+                      {a.undone
+                        ? 'Taken back'
+                        : end === 'changed'
+                          ? 'Changed'
+                          : 'Answer'}
                     </p>
+                    <div className="dream-asked-note">
+                      <MarkdownView
+                        asset={NO_ASSET}
+                        path="note.md"
+                        text={a.note}
+                        onOpenDoc={NOTHING}
+                        onOpenFile={NOTHING}
+                        idPrefix={`${id}-note-${i}-`}
+                      />
+                    </div>
+                    {end === 'changed' && (
+                      <div
+                        role="group"
+                        aria-label="What this ask changed"
+                        className="ask-strip dream-asked-strip"
+                      >
+                        {(a.stat?.length ?? 0) > 0 && (
+                          <ul className="dream-asked-stat">
+                            {a.stat?.map((f) => (
+                              <li key={f.path}>
+                                <span className="mono small">{f.path}</span>
+                                <span className="mono small dream-stat-add">{`+${f.added}`}</span>
+                                <span className="mono small dream-stat-del">{`−${f.removed}`}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <span className="dream-asked-strip-end">
+                          {a.after && !a.undone && (
+                            <button
+                              type="button"
+                              className="link small"
+                              aria-pressed={shownAsk === a.at}
+                              onClick={() => onShowAsk(a.at)}
+                            >
+                              Show what this changed
+                            </button>
+                          )}
+                          {i === undoIndex && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              aria-describedby={`${id}-ask-${i}`}
+                              disabled={
+                                run !== null || busy !== null || p.dropped
+                              }
+                              onClick={() => void undo()}
+                            >
+                              Undo
+                            </button>
+                          )}
+                          {i === redoIndex && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              aria-describedby={`${id}-ask-${i}`}
+                              disabled={
+                                run !== null || busy !== null || p.dropped
+                              }
+                              onClick={() => void redo()}
+                            >
+                              Redo
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    )}
                     {a.reverted.length > 0 && (
                       <p className="text-warn small">
                         {`Left as they were: ${a.reverted.join(', ')}`}

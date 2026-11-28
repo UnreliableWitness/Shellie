@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  redoAt,
+  undoAt,
+  type DreamAdjustment,
   canSwitchOn,
   confirmSentence,
   defaultDreaming,
@@ -429,5 +432,52 @@ describe('what is written about a dream', () => {
     expect(text).toContain('- `AGENTS.md`');
     expect(text).not.toContain('add a line to');
     expect(text).not.toContain('boil timer');
+  });
+});
+
+describe('undoAt and redoAt', () => {
+  const sha = (c: string) => c.repeat(40);
+  const state = (c: string) => ({
+    commit: sha(c),
+    files: [],
+    title: 't',
+    why: 'w',
+  });
+  const change = (over: Partial<DreamAdjustment> = {}): DreamAdjustment => ({
+    ask: 'a',
+    at: '',
+    note: '',
+    changed: true,
+    reverted: [],
+    before: state('a'),
+    after: state('b'),
+    ...over,
+  });
+  const answer = change({
+    changed: false,
+    before: undefined,
+    after: undefined,
+  });
+
+  it('Undo is the newest change that stands, Redo the oldest that was taken back', () => {
+    const asks = [
+      change(),
+      change({ undone: true }),
+      answer,
+      change({ undone: true }),
+    ];
+    expect(undoAt(asks)).toBe(0);
+    expect(redoAt(asks)).toBe(1);
+    expect(undoAt([answer])).toBe(-1);
+    expect(redoAt([change(), answer])).toBe(-1);
+  });
+  it('offers no Redo past a change that cannot be put back', () => {
+    // A row of before `after` was kept, taken back: the ones after it stand on it and cannot go first.
+    const legacy = change({ undone: true, after: undefined });
+    expect(redoAt([legacy, change({ undone: true })])).toBe(-1);
+    // A spent one is passed over: nothing stands on it any more.
+    expect(
+      redoAt([change({ undone: true, spent: true }), change({ undone: true })]),
+    ).toBe(1);
   });
 });
