@@ -1,5 +1,6 @@
 /* The ask, the same on a dream's proposal and in a brain's answers (components/ask). */
 .ask-box {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -25,6 +26,14 @@
   font: inherit;
   line-height: 1.4;
   resize: none;
+  /* As tall as its text, wrapped lines included, from two lines to eight; the rows attribute is the fallback. */
+  field-sizing: content;
+  min-height: 2.8em;
+  max-height: 11.2em;
+}
+/* The box itself shows the focus (its border): no second ring inside it. */
+.ask-box-text:focus-visible {
+  outline: none;
 }
 .ask-box-text::placeholder {
   color: var(--muted);

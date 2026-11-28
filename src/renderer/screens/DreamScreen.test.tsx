@@ -1298,6 +1298,37 @@ describe('DreamScreen: asking for a change', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('keeps the newest ask in view when the list is longer than its room', async () => {
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(900);
+    try {
+      const m = fakeMain(withP1({ adjustments: [adjustment('one', 'Done.')] }));
+      render(<DreamScreen repoId="r1" />);
+      const asks = await screen.findByRole('list', {
+        name: 'Asks about this proposal',
+      });
+      expect(asks.scrollTop).toBe(900);
+      asks.scrollTop = 0;
+      m.set(
+        withP1({
+          adjustments: [
+            adjustment('one', 'Done.'),
+            adjustment('two', '', {
+              changed: false,
+              before: undefined,
+              outcome: 'failed',
+              reason: 'OpenCode stopped',
+            }),
+          ],
+        }),
+      );
+      await waitFor(() => expect(asks.scrollTop).toBe(900));
+    } finally {
+      height.mockRestore();
+    }
+  });
+
   it('says how long a finished ask took', async () => {
     fakeMain(
       withP1({

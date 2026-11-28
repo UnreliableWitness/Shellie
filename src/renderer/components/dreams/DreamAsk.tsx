@@ -111,6 +111,12 @@ export function DreamAsk({
   useEffect(() => {
     rerun.current = false;
   }, [run, asks.length]);
+  // The newest ask is the one that matters: the list, which scrolls in its own room, shows its end.
+  const list = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [asks.length, earlier]);
   const was = useRef({ mine, count: asks.length });
   useEffect(() => {
     const before = was.current;
@@ -248,7 +254,11 @@ export function DreamAsk({
         </button>
       )}
       {asks.length > 0 && (
-        <ol aria-label="Asks about this proposal" className="dream-asks">
+        <ol
+          ref={list}
+          aria-label="Asks about this proposal"
+          className="dream-asks"
+        >
           {asks.slice(first).map((a, k) => {
             const i = first + k;
             const end = outcomeOf(a);

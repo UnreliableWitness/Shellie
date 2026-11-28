@@ -637,6 +637,10 @@
 .dream-ask p {
   margin: 0;
 }
+/* The box is as wide as the rows above it. */
+.dream-ask .ask-box {
+  max-width: 80ch;
+}
 /* The ask being worked on: a long one scrolls in its own few lines and does not grow the foot over the proposal. */
 .dream-ask-running {
   max-height: 9em;
